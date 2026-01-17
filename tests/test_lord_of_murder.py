@@ -5,8 +5,8 @@ from types import SimpleNamespace
 
 class TestLordOfMurder(unittest.TestCase):
     def test_grants_lone_operative_within_3_of_friendly_world_eaters_infantry(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         lom = Ability(
             name="Lord of Murder",
@@ -65,8 +65,8 @@ class TestLordOfMurder(unittest.TestCase):
         self.assertTrue(res)
 
     def test_does_not_grant_lone_operative_when_no_friendly_infantry_in_range(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         lom = Ability(
             name="Lord of Murder",

@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -48,9 +48,9 @@ class _MockDatasheet:
 
 class TestIconOfKhorne(unittest.TestCase):
     def _make_game(self):
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
 
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
@@ -60,15 +60,15 @@ class TestIconOfKhorne(unittest.TestCase):
         enemy_army = Army("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=we_army)
-        p2 = Player("P2", player_type=PlayerType.AI, army=enemy_army)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=we_army)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)
         game.add_player(p1)
         game.add_player(p2)
 
         return game, we_army, enemy_army
 
     def _make_unit(self, name, *, ability_names=None, faction_name="World Eaters", faction_keywords=None, attached_to=None):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         datasheet = _MockDatasheet(
             name,

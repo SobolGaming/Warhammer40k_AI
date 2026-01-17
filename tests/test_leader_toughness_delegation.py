@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestLeaderToughnessDelegation(unittest.TestCase):
     def test_attached_leader_uses_bodyguard_toughness(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         class _M:
             def __init__(self, t):

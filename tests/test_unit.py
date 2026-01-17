@@ -1,6 +1,6 @@
 import unittest
 from warhammer40k_ai.waha_helper import WahaHelper
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.calcs import convert_mm_to_inches
 import pytest
 import logging

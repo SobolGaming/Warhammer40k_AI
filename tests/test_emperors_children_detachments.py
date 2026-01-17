@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -48,7 +48,7 @@ class _StubUnit:
 
 
 def _make_game(turn: int = 1, phase_name: str = "FIGHT_PHASE"):
-    from warhammer40k_ai.classes.event_system import EventSystem
+    from warhammer40k_ai.engine.event.system import EventSystem
     return SimpleNamespace(
         turn=turn,
         phase=SimpleNamespace(name=phase_name),
@@ -58,7 +58,7 @@ def _make_game(turn: int = 1, phase_name: str = "FIGHT_PHASE"):
 
 
 def _make_melee_profile():
-    from warhammer40k_ai.classes.wargear import WargearProfile
+    from warhammer40k_ai.units.wargear import WargearProfile
     parent = SimpleNamespace(name="Blade", is_melee=lambda: True, is_ranged=lambda: False)
     return WargearProfile(
         profile_name="Melee",
@@ -77,8 +77,8 @@ def _make_melee_profile():
 
 class TestEmperorsChildrenDetachments(unittest.TestCase):
     def test_quicksilver_grace_allows_advance_reroll(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.unit import Unit
 
         army = Army("Emperor's Children", detachment_type="Mercurial Host")
         army.faction_id = "EC"
@@ -90,10 +90,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         self.assertFalse(Unit.can_reroll_advance_roll(unit))
 
     def test_pact_points_reroll_hit_and_wound(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
@@ -157,10 +157,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_pact_points_critical_on_five(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
@@ -205,10 +205,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_pact_points_melee_lethal_and_sustained(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
@@ -253,10 +253,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_mechanised_murder_rerolls(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("Emperor's Children", detachment_type="Rapid Evisceration")
         army.faction_id = "EC"
@@ -318,8 +318,8 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_internal_rivalries_filters_negative_roll_modifiers(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.unit import Unit
 
         army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
@@ -331,7 +331,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         self.assertEqual(filtered, [(1, "Buff")])
 
     def test_sensational_performance_restriction_only_attack_targets(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         army = SimpleNamespace()
         attacker = _StubUnit("Attacker", army)
@@ -355,10 +355,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         self.assertIsNone(reason)
 
     def test_sensational_performance_bonuses(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
         army.faction_id = "EC"
@@ -409,14 +409,14 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_sensational_performance_action_log(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
         from warhammer40k_ai.utility.event_bus import get_recent_actions
 
         army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
         army.faction_id = "EC"
-        player = Player("P1_Sensational_Log", PlayerType.AI, army=army)
+        player = Player("P1_Sensational_Log", PlayerControl.REMOTE, army=army)
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
         game.add_player(player)
 
@@ -430,13 +430,13 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         self.assertTrue(any("Sensational Performance" in entry for entry in actions))
 
     def test_master_of_the_pageant_discount_and_usage(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
         army.faction_id = "EC"
-        player = Player("P1", PlayerType.HUMAN, army=army)
+        player = Player("P1", PlayerControl.LOCAL, army=army)
         player.game = SimpleNamespace(turn=1)
 
         fulgrim_unit = _StubUnit("Fulgrim", army, keywords=["FULGRIM"])
@@ -464,12 +464,12 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         self.assertEqual(int(prev2.get("discount", 0)), 0)
 
     def test_unbound_arrogance_increases_pledge(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
-        player = Player("P1", PlayerType.HUMAN, army=army)
+        player = Player("P1", PlayerControl.LOCAL, army=army)
 
         game = SimpleNamespace(
             turn=1,

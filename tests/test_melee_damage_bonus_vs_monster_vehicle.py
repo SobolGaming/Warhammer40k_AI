@@ -30,7 +30,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None, keywords=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities, keywords=keywords)
     return Unit(datasheet)
@@ -38,7 +38,7 @@ def _make_unit(name, *, abilities=None, keywords=None):
 
 class TestMeleeDamageBonusVsMonsterVehicle(unittest.TestCase):
     def _make_melee_profile(self, *, damage: str = "1"):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "range": "Melee",

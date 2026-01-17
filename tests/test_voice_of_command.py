@@ -11,7 +11,8 @@ class _Ability:
 class _PlayerStub:
     def __init__(self, name="Player", *, is_human=True):
         self.name = name
-        self.type = SimpleNamespace(name="HUMAN" if is_human else "AI")
+        self.control = SimpleNamespace(name="LOCAL" if is_human else "REMOTE")
+        self.has_control = lambda: is_human
         self.game = None
 
 
@@ -113,7 +114,7 @@ class _ModelStub:
 
 class TestVoiceOfCommand(unittest.TestCase):
     def _make_profile(self, *, weapon_type="Ranged", skill="4+", description=""):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         parent = SimpleNamespace(
             name="Test Weapon",
@@ -132,7 +133,7 @@ class TestVoiceOfCommand(unittest.TestCase):
         return WargearProfile("Profile", wargear_data=data, parent_wargear=parent)
 
     def test_orders_profile_parsing(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager
 
         officer = _UnitStub(
             "Officer",
@@ -145,7 +146,7 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertEqual(allowed, [])
 
     def test_orders_profile_parsing_variants(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager
 
         cases = [
             (
@@ -170,7 +171,7 @@ class TestVoiceOfCommand(unittest.TestCase):
             self.assertEqual(allowed, [])
 
     def test_orders_profile_restricted_orders(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_DUTY_HONOUR, ORDER_FIX_BAYONETS, ORDER_TAKE_AIM
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_DUTY_HONOUR, ORDER_FIX_BAYONETS, ORDER_TAKE_AIM
 
         orders_text = (
             "This OFFICER can issue 1 Order to a REGIMENT unit. "
@@ -208,8 +209,8 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertTrue(mgr.issue_order(game, officer, target, ORDER_DUTY_HONOUR.key, phase_name="COMMAND_PHASE"))
 
     def test_move_order_increases_movement_and_consumes_order(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+        from warhammer40k_ai.units.unit import Unit
 
         orders_text = "This model can issue 2 orders to REGIMENT units within 6\"."
         army = _ArmyStub()
@@ -252,8 +253,8 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertEqual(int(move_val), 9)
 
     def test_take_cover_caps_save(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_TAKE_COVER
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_TAKE_COVER
+        from warhammer40k_ai.units.unit import Unit
 
         orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
         army = _ArmyStub()
@@ -293,8 +294,8 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertEqual(int(save_better), 2)
 
     def test_duty_and_honour_improves_leadership_and_oc(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_DUTY_HONOUR
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_DUTY_HONOUR
+        from warhammer40k_ai.units.unit import Unit
 
         orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
         army = _ArmyStub()
@@ -339,7 +340,7 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertEqual(int(oc_val), 3)
 
     def test_take_aim_and_fix_bayonets_modify_hit_skill(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_TAKE_AIM, ORDER_FIX_BAYONETS
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_TAKE_AIM, ORDER_FIX_BAYONETS
 
         orders_text = "This model can issue 2 orders to REGIMENT units within 6\"."
         army = _ArmyStub()
@@ -379,7 +380,7 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertEqual(hit.get("base_skill"), 3)
 
     def test_first_rank_fire_adds_attack(self):
-        from warhammer40k_ai.classes.voice_of_command import VoiceOfCommandManager, ORDER_FRFSRF
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_FRFSRF
 
         orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
         army = _ArmyStub()

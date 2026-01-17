@@ -1,6 +1,6 @@
 import logging
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)

@@ -32,14 +32,14 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities)
     return Unit(datasheet)
 
 
 def _make_profile(*, weapon_type: str, range_val: str):
-    from warhammer40k_ai.classes.wargear import Wargear
+    from warhammer40k_ai.units.wargear import Wargear
 
     data = {
         "range": range_val,
@@ -82,7 +82,7 @@ class TestLeadingLethalHits(unittest.TestCase):
             has_keyword=lambda k: False,
         )
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertTrue(attack_instance.get("lethal_hit", False))
@@ -109,7 +109,7 @@ class TestLeadingLethalHits(unittest.TestCase):
             has_keyword=lambda k: False,
         )
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertTrue(attack_instance.get("lethal_hit", False))
@@ -138,13 +138,13 @@ class TestLeadingLethalHits(unittest.TestCase):
         )
 
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = melee_profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertTrue(attack_instance.get("lethal_hit", False))
 
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = ranged_profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertFalse(attack_instance.get("lethal_hit", False))

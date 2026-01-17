@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestDatasheetsOptionsConstraints(unittest.TestCase):
     def _make_wargear(self, name: str, wtype: str = "Ranged"):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         return Wargear(
             {
@@ -21,8 +21,8 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         )
 
     def test_equipped_with_condition_only_applies_to_matching_models(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         pulse_carbine = self._make_wargear("pulse carbine")
         grenade_launcher = self._make_wargear("semi-automatic grenade launcher")
@@ -50,8 +50,8 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         self.assertEqual([wg.name for wg in u.models[1].wargear], [])
 
     def test_contains_models_condition_blocks_when_not_met(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         sniper = self._make_wargear("sniper rifle")
         tankstopper = self._make_wargear("tankstopper rifle")
@@ -81,8 +81,8 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         self.assertEqual([wg.name for wg in u_big.models[0].wargear], ["tankstopper rifle"])
 
     def test_cannot_replace_lock_prevents_future_replacement(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         lasgun = self._make_wargear("lasgun")
         vox = self._make_wargear("vox-caster")
@@ -120,8 +120,8 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         self.assertEqual(sorted([wg.name for wg in u.models[0].wargear]), sorted(["lasgun", "vox-caster"]))
 
     def test_unit_unique_weapon_caps_at_one(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         plasma = self._make_wargear("plasma gun")
         u = Unit.__new__(Unit)
@@ -148,8 +148,8 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         If a wargear name appears in multiple different option-choices, apply_wargear_options(name) should
         not guess. It should no-op until a disambiguating item is chosen.
         """
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         plasma = self._make_wargear("plasma gun")
         melta = self._make_wargear("meltagun")
@@ -192,8 +192,8 @@ class TestDatasheetsOptionsConstraints(unittest.TestCase):
         e.g. "For each Helbrute fist this model is equipped with, it can be equipped with..."
         should add the chosen item once per equipped fist.
         """
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         fist = self._make_wargear("helbrute fist", wtype="Melee")
         combi = self._make_wargear("combi-bolter")

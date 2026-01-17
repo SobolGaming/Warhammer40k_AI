@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 Example demonstrating the Mission Selection Dialog for Chapter Approved 2025/2026.
 This shows how to integrate the dialog into the game setup process.
@@ -12,8 +12,8 @@ import pygame
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from warhammer40k_ai.UI.dialogs.mission_selection_dialog import MissionSelectionDialog
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
 
 
 def main():
@@ -27,8 +27,8 @@ def main():
     
     # Create game instance for context
     battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
-    player1 = Player("Player 1", PlayerType.HUMAN, None)
-    player2 = Player("Player 2", PlayerType.AI, None)
+    player1 = Player("Player 1", PlayerControl.LOCAL, None)
+    player2 = Player("Player 2", PlayerControl.REMOTE, None)
     game = Game(battlefield, [player1, player2])
     
     # Create and show the mission selection dialog
@@ -38,7 +38,7 @@ def main():
     running = True
     dialog_result = None
     
-    print("🎯 Mission Selection Dialog Example")
+    print("ðŸŽ¯ Mission Selection Dialog Example")
     print("=" * 50)
     print("Instructions:")
     print("- Click on mission combinations to select them")
@@ -81,7 +81,7 @@ def main():
             combination = dialog_result["combination"]
             layout = dialog_result["layout"]
             
-            print(f"\n✅ Mission Selected:")
+            print(f"\nâœ… Mission Selected:")
             print(f"   ID: {combination['id']}")
             print(f"   Primary Mission: {combination['primary']}")
             print(f"   Deployment: {combination['deployment']}")
@@ -94,32 +94,32 @@ def main():
                 "layout": layout
             }
             
-            print(f"\n🎮 Setting up battlefield with selected mission...")
+            print(f"\nðŸŽ® Setting up battlefield with selected mission...")
             
             # Execute the mission setup phases
             try:
                 game.execute_select_mission_objectives_phase()
                 game.execute_create_battlefield_phase()
-                print(f"✅ Battlefield setup complete!")
+                print(f"âœ… Battlefield setup complete!")
                 
                 # Show mission summary
-                print(f"\n📋 Mission Summary:")
+                print(f"\nðŸ“‹ Mission Summary:")
                 print(f"   Battlefield: {game.get_battlefield_size()}")
                 print(f"   Deployment zones: {len(game.deployment_zones)}")
                 print(f"   Objectives: {len(game.objectives)}")
                 
             except Exception as e:
-                print(f"❌ Error setting up battlefield: {e}")
+                print(f"âŒ Error setting up battlefield: {e}")
                 import traceback
                 traceback.print_exc()
                 
         else:
-            print("\n❌ Mission selection cancelled")
+            print("\nâŒ Mission selection cancelled")
     else:
-        print("\n❌ Dialog closed without selection")
+        print("\nâŒ Dialog closed without selection")
     
     pygame.quit()
-    print("\n🎉 Example completed!")
+    print("\nðŸŽ‰ Example completed!")
 
 
 if __name__ == "__main__":

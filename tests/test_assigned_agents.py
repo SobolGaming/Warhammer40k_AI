@@ -1,8 +1,8 @@
 import pytest
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.army import Army, ArmyValidationError
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.roster.army import Army, ArmyValidationError
+from warhammer40k_ai.units.unit import Unit
 
 
 class MockDatasheet:

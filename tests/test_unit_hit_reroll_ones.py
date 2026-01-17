@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -38,16 +38,16 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities)
     return Unit(datasheet)
 
 
 def _build_game():
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
@@ -57,8 +57,8 @@ def _build_game():
     army2 = Army("Enemy", "Other")
     army2.faction_id = "EN"
 
-    p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
-    p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+    p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+    p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -80,8 +80,8 @@ def _aura_stub():
 
 class TestUnitHitRerollOnes(unittest.TestCase):
     def test_ranged_hit_reroll_ones(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Dat's Our Loot!",
@@ -122,8 +122,8 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertEqual(int(result.get("reroll_of_one", 0)), 1)
 
     def test_melee_hit_reroll_ones(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Choppa Skill",
@@ -164,8 +164,8 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertEqual(int(result.get("reroll_of_one", 0)), 1)
 
     def test_any_attack_hit_reroll_ones(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Scrap Savvy",
@@ -206,9 +206,9 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertEqual(int(result.get("reroll_of_one", 0)), 1)
 
     def test_objective_full_hit_reroll(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Dat's Our Loot!",
@@ -268,8 +268,8 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertIn("objective", str(called.get("reason", "")).lower())
 
     def test_conditional_target_hit_reroll_not_applied(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Conditional Reroll",
@@ -311,9 +311,9 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertIsNone(result.get("reroll"))
 
     def test_extra_clause_does_not_trigger_objective_full_reroll(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Swift Demise",
@@ -373,8 +373,8 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertFalse(called)
 
     def test_ranged_hit_reroll_closest_enemy_unit(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Surgical Advance",
@@ -438,8 +438,8 @@ class TestUnitHitRerollOnes(unittest.TestCase):
         self.assertIsNotNone(result.hit_results[0].get("reroll"))
 
     def test_ranged_hit_reroll_not_closest_enemy_unit(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         ability = {
             "name": "Surgical Advance",

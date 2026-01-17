@@ -65,7 +65,7 @@ class TestUnitCompositionOrSelection(unittest.TestCase):
         return counts
 
     def test_selects_first_option_for_ten(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         unit = Unit(MockDatasheet(), quantity=10)
         self.assertEqual(
@@ -74,7 +74,7 @@ class TestUnitCompositionOrSelection(unittest.TestCase):
         )
 
     def test_selects_second_option_for_twenty(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         unit = Unit(MockDatasheet(), quantity=20)
         self.assertEqual(

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestLeaderWoundAllocation(unittest.TestCase):
     def test_bodyguards_take_wounds_first_then_leaders(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         class _M:
             def __init__(self, alive=True):

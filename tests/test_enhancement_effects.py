@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 class TestEnhancementEffects(unittest.TestCase):
     def test_move_add_uses_modifier_pipeline(self):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+        from warhammer40k_ai.rules.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
         from warhammer40k_ai.utility.modifiers import apply_numeric_modifiers, apply_characteristic_caps
 
         class UnitStub:
@@ -51,9 +51,9 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertEqual(m.movement, 8)
 
     def test_wounds_add_increases_base_and_current(self):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+        from warhammer40k_ai.rules.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
 
         unit = SimpleNamespace(stats={}, special_rules={}, models=[], starting_total_wounds=0)
         m = Model(
@@ -81,8 +81,8 @@ class TestEnhancementEffects(unittest.TestCase):
         # S4 vs T5 normally wounds on 5+. With +1S enhancement, wounds on 4+.
         from unittest.mock import patch
 
-        from warhammer40k_ai.classes.wargear import Wargear, WargearProfile
-        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+        from warhammer40k_ai.units.wargear import Wargear, WargearProfile
+        from warhammer40k_ai.rules.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
 
         attacker_unit = SimpleNamespace(stats={}, special_rules={}, models=[])
         attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
@@ -104,7 +104,7 @@ class TestEnhancementEffects(unittest.TestCase):
         profile: WargearProfile = parent.profiles["default"]
 
         # No enhancement: roll 4 should fail (needs 5+)
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance={})
         self.assertFalse(res["wound"])
 
@@ -114,15 +114,15 @@ class TestEnhancementEffects(unittest.TestCase):
         )
         apply_enhancement_effects(attacker_unit, effects)
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res2 = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance={})
         self.assertTrue(res2["wound"])
 
     def test_reduce_damage_taken_applies_min_1(self):
-        from warhammer40k_ai.classes.wargear import Wargear, WargearProfile
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.wargear import Wargear, WargearProfile
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.enhancement_effects import apply_enhancement_effects, parse_enhancement_effects
+        from warhammer40k_ai.rules.enhancement_effects import apply_enhancement_effects, parse_enhancement_effects
 
         attacker_unit = SimpleNamespace(stats={}, special_rules={}, models=[])
         attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
@@ -174,7 +174,7 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertEqual(target_model.wounds, before - 1)
 
     def test_reroll_advance_charge_enhancement_sets_flags(self):
-        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+        from warhammer40k_ai.rules.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
 
         unit = SimpleNamespace(stats={}, special_rules={}, models=[])
         effects = parse_enhancement_effects(
@@ -186,7 +186,7 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("enhancement_charge_reroll"))
 
     def test_reroll_charge_objective_enhancement_sets_flag(self):
-        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+        from warhammer40k_ai.rules.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
 
         unit = SimpleNamespace(stats={}, special_rules={}, models=[])
         effects = parse_enhancement_effects(
@@ -197,7 +197,7 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("enhancement_charge_reroll_if_target_on_objective"))
 
     def test_reroll_charge_setup_turn_enhancement_sets_flag(self):
-        from warhammer40k_ai.classes.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
+        from warhammer40k_ai.rules.enhancement_effects import parse_enhancement_effects, apply_enhancement_effects
 
         unit = SimpleNamespace(stats={}, special_rules={}, models=[])
         effects = parse_enhancement_effects(

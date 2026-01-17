@@ -56,7 +56,7 @@ class IndividualModelMovementDialog(BaseDialog):
         # Dialog-specific initialization
         # If this unit is an Attached unit (bodyguard + leader(s)), use a proxy with combined models.
         try:
-            from ...classes.attached_unit import AttachedUnitView
+            from warhammer40k_ai.units.attached_unit import AttachedUnitView
         except Exception:
             AttachedUnitView = None
 
@@ -1050,7 +1050,7 @@ class IndividualModelMovementDialog(BaseDialog):
         except Exception:
             base_geom = None
 
-        from ...classes.map import validate_ruins_placement
+        from warhammer40k_ai.battlefield.map import validate_ruins_placement
 
         for terrain in getattr(self.game_map, 'terrain_features', []) or []:
             try:
@@ -1073,7 +1073,7 @@ class IndividualModelMovementDialog(BaseDialog):
                     except Exception:
                         continue
                 else:
-                    # Best-effort fallback: require point inside footprint
+                    # Require point inside footprint.
                     if _ShPoint is None:
                         continue
                     try:

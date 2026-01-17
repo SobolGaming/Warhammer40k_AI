@@ -1,9 +1,9 @@
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize, SetupPhase
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.deployment import DeploymentManager
-from warhammer40k_ai.classes.map import Map
-from warhammer40k_ai.classes.unit import Unit, MovementAction
+﻿from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, SetupPhase
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.engine.deployment import DeploymentManager
+from warhammer40k_ai.battlefield.map import Map
+from warhammer40k_ai.units.unit import Unit, MovementAction
 from warhammer40k_ai.utility.calcs import (
     build_collision_trees,
     get_validation_rules,
@@ -53,8 +53,8 @@ def test_aircraft_start_in_reserves_and_promote_after_setup():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, None)
-    p2 = Player("P2", PlayerType.AI, None)
+    p1 = Player("P1", PlayerControl.LOCAL, None)
+    p2 = Player("P2", PlayerControl.REMOTE, None)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -130,7 +130,7 @@ def test_aircraft_move_off_board_sends_to_strategic_reserves_next_turn():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, None)
+    p1 = Player("P1", PlayerControl.LOCAL, None)
     game.add_player(p1)
 
     army = Army("ArmyA", "DetA")

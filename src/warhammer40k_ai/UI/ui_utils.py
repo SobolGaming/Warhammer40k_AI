@@ -1,10 +1,10 @@
 """
-Shared UI utility functions for the Warhammer 40k AI interface.
+Shared UI utility functions for the Warhammer 40k interface.
 """
 
 import pygame
 from typing import List, Tuple
-from ..classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 def get_unit_color_variation(unit: Unit, all_units: List[Unit]) -> Tuple[int, int, int]:

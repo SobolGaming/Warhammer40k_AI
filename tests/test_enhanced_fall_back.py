@@ -7,9 +7,9 @@ import logging
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from warhammer40k_ai.classes.unit import Unit, MovementAction
-from warhammer40k_ai.classes.map import Map
-from warhammer40k_ai.classes.status_effects import BattleShockEffect
+from warhammer40k_ai.units.unit import Unit, MovementAction
+from warhammer40k_ai.battlefield.map import Map
+from warhammer40k_ai.units.status_effects import BattleShockEffect
 
 # Add this at the beginning of your test file
 @pytest.fixture(autouse=True)

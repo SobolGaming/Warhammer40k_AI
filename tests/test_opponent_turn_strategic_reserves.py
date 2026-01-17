@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -29,16 +29,16 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities)
     return Unit(datasheet)
 
 
 def _build_game():
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     army1 = Army("P1", "Det")
@@ -46,8 +46,8 @@ def _build_game():
     army2 = Army("P2", "Det")
     army2.faction_id = "TST"
 
-    p1 = Player("P1", player_type=PlayerType.AI, army=army1)
-    p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+    p1 = Player("P1", control=PlayerControl.REMOTE, army=army1)
+    p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
     game.add_player(p1)
     game.add_player(p2)
     return game, army1, army2, p1, p2

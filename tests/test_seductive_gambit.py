@@ -1,7 +1,7 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class TestSeductiveGambit(unittest.TestCase):
@@ -23,14 +23,14 @@ class TestSeductiveGambit(unittest.TestCase):
         return _Unit()
 
     def test_seductive_gambit_sets_flag_on_charge(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Chaos Daemons", detachment_type="Legion of Excess")
         army.faction_id = "CD"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
         p1._next_optional_decisions = {"SEDUCTIVE_GAMBIT": True}
 
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
@@ -42,7 +42,7 @@ class TestSeductiveGambit(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("seductive_gambit_expires_phase"), "FIGHT_PHASE")
 
     def test_seductive_gambit_disables_fight_first(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         unit = Unit.__new__(Unit)
         unit.special_rules = {"seductive_gambit_active": True}

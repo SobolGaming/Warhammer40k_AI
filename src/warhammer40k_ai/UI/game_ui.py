@@ -5,14 +5,14 @@ from pathlib import Path
 from typing import Optional, Tuple, Dict, List, Protocol, Callable, Any
 from types import SimpleNamespace
 from abc import ABC, abstractmethod
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.model import Model
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
-from warhammer40k_ai.classes.player import Player
+from warhammer40k_ai.roster.player import Player
 from warhammer40k_ai.utility.dice import get_roll
-from warhammer40k_ai.classes.map import TerrainFeature, TerrainType, Objective, ObjectivePoint
-from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
+from warhammer40k_ai.battlefield.map import TerrainFeature, TerrainType, Objective, ObjectivePoint
+from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
 
 # Import UI panels
@@ -47,7 +47,7 @@ BATTLEFIELD_HEIGHT_INCHES = 44
 BATTLEFIELD_WIDTH = BATTLEFIELD_WIDTH_INCHES * TILE_SIZE
 BATTLEFIELD_HEIGHT = BATTLEFIELD_HEIGHT_INCHES * TILE_SIZE
 
-# Cult Ambush marker size (32mm ≈ 1.26" diameter)
+# Cult Ambush marker size (32mm ~= 1.26" diameter)
 CULT_AMBUSH_MARKER_RADIUS_INCHES = 0.63
 
 # Enhanced Colors - Modern UI Palette
@@ -361,25 +361,25 @@ class HumanUIInterface:
 
     def show_scout_dialog(self, unit, callback, game_map=None):
         """Show the scout move dialog for a unit."""
-        # print(f"🔍 HumanUIInterface.show_scout_dialog called for {unit.name}")
+        # print(f"HumanUIInterface.show_scout_dialog called for {unit.name}")
         self.scout_choice_dialog.show(unit, callback, game_map)
-        # print(f"🔍 DEBUG: Scout dialog show() completed, visible={self.scout_choice_dialog.visible}")
+        # print(f"DEBUG: Scout dialog show() completed, visible={self.scout_choice_dialog.visible}")
     
     def show_fight_unit_selection_dialog(self, stage_name: str, eligible_units: List['Unit'], 
                                         on_unit_selected: Callable[['Unit'], None], 
                                         on_cancel: Callable[[], None] = None):
         """Show the fight unit selection dialog for a stage."""
-        print(f"⚔️ HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} stage with {len(eligible_units)} units")
+        print(f"HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} stage with {len(eligible_units)} units")
         self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel)
 
     def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None, target_unit=None):
         """Show the melee weapon declaration dialog for a unit."""
-        print(f"⚔️ HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
+        print(f"HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
         # Delegate to the game view's dialog instance to avoid duplicates
         if hasattr(self, 'game_view') and hasattr(self.game_view, 'melee_weapon_declaration_dialog'):
             self.game_view.melee_weapon_declaration_dialog.show(unit, callback, game_map, target_unit=target_unit)
         else:
-            print(f"❌ Error: melee_weapon_declaration_dialog not found on game_view")
+            print(f"ERROR: Error: melee_weapon_declaration_dialog not found on game_view")
             # Call callback with empty declarations to prevent hanging
             if callback:
                 callback([])
@@ -408,7 +408,7 @@ class GameView:
         self._rule_support_cache = {}
         self._waha_helper = None
         
-        # UI scaling factor removed – rendering uses fixed inch grid with zoom only
+        # UI scaling factor removed - rendering uses fixed inch grid with zoom only
         
         # UI interface for human player interaction
         self.ui_interface = ui_interface
@@ -568,7 +568,7 @@ class GameView:
                     on_chosen(None)
                     return
                 try:
-                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                    from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
                 except Exception:
                     _unit_cannot_be_target_of_stratagem = None
                 for unit in player.get_army().units or []:
@@ -665,7 +665,7 @@ class GameView:
         def _request_hack_and_slash_unit(player, game, on_chosen):
             cand = []
             try:
-                from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
             except Exception:
                 _unit_cannot_be_target_of_stratagem = None
             try:
@@ -729,7 +729,7 @@ class GameView:
             cand = list(candidates or [])
             if not cand:
                 try:
-                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                    from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
                 except Exception:
                     _unit_cannot_be_target_of_stratagem = None
                 try:
@@ -834,7 +834,7 @@ class GameView:
             cand = list(candidates or [])
             if not cand:
                 try:
-                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                    from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
                 except Exception:
                     _unit_cannot_be_target_of_stratagem = None
                 try:
@@ -895,7 +895,7 @@ class GameView:
             cand = list(candidates or [])
             if not cand:
                 try:
-                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                    from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
                 except Exception:
                     _unit_cannot_be_target_of_stratagem = None
                 try:
@@ -1039,7 +1039,7 @@ class GameView:
             cand = list(candidates or [])
             if not cand:
                 try:
-                    from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+                    from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
                 except Exception:
                     _unit_cannot_be_target_of_stratagem = None
                 try:
@@ -1404,7 +1404,7 @@ class GameView:
             except Exception:
                 rerolls_allowed = 0
 
-            from ..classes.blessings_of_khorne import BlessingsTiming
+            from ..rules.blessings_of_khorne import BlessingsTiming
             unit = context.get("attacker_unit") or context.get("unit") or context.get("target_unit")
             try:
                 extra_active = mgr.get_unit_specific_blessings(unit, battle_round=int(getattr(game, "turn", 0) or 0))
@@ -1666,7 +1666,7 @@ class GameView:
             pass
 
     def _on_battle_round_started(self, game=None, battle_round: int = 0, **_kwargs):
-        """Event hook: at start of battle round, prompt human players for Blessings of Khorne selection."""
+        """Event hook: at start of battle round, prompt local players for Blessings of Khorne selection."""
         try:
             game = game or self.game
             br = int(battle_round or getattr(game, "turn", 0) or 0)
@@ -1686,7 +1686,7 @@ class GameView:
         queue = []
         for p in order:
             try:
-                if p is None or p.type.name != "HUMAN":
+                if p is None or not p.has_control():
                     continue
                 army = p.get_army()
                 if not self._army_has_blessings_of_khorne(army):
@@ -1706,7 +1706,7 @@ class GameView:
             queue = []
             for p in order:
                 try:
-                    if p is None or p.type.name != "HUMAN":
+                    if p is None or not p.has_control():
                         continue
                     army = p.get_army()
                     mgr = getattr(army, "templar_vows", None) if army is not None else None
@@ -1728,7 +1728,7 @@ class GameView:
             queue = []
             for p in order:
                 try:
-                    if p is None or p.type.name != "HUMAN":
+                    if p is None or not p.has_control():
                         continue
                     army = p.get_army()
                     mgr = getattr(army, "harbingers_of_dread", None) if army is not None else None
@@ -1749,7 +1749,7 @@ class GameView:
         queue = []
         for p in order:
             try:
-                if p is None or p.type.name != "HUMAN":
+                if p is None or not p.has_control():
                     continue
                 army = p.get_army()
                 mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
@@ -1768,7 +1768,7 @@ class GameView:
         queue = []
         for p in order:
             try:
-                if p is None or p.type.name != "HUMAN":
+                if p is None or not p.has_control():
                     continue
                 army = p.get_army()
                 mgr = getattr(army, "shadow_form", None) if army is not None else None
@@ -1778,7 +1778,7 @@ class GameView:
                 if not units:
                     continue
                 try:
-                    from ..classes.shadow_form import get_active_shadow_form_key
+                    from ..rules.shadow_form import get_active_shadow_form_key
                 except Exception:
                     get_active_shadow_form_key = None
                 for unit in units:
@@ -1796,7 +1796,7 @@ class GameView:
         queue = []
         for p in order:
             try:
-                if p is None or p.type.name != "HUMAN":
+                if p is None or not p.has_control():
                     continue
                 army = p.get_army()
                 mgr = getattr(army, "wrathful_presence", None) if army is not None else None
@@ -1806,7 +1806,7 @@ class GameView:
                 if not units:
                     continue
                 try:
-                    from ..classes.wrathful_presence import get_active_wrathful_presence_key
+                    from ..rules.wrathful_presence import get_active_wrathful_presence_key
                 except Exception:
                     get_active_wrathful_presence_key = None
                 for unit in units:
@@ -1847,9 +1847,9 @@ class GameView:
                     return
             except Exception:
                 pass
-            # Only for human players (AI will decide via decision_hook / agent)
+            # Only for local control (remote controller decides externally).
             try:
-                if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                if player is None or not getattr(player, "has_control", lambda: False)():
                     return
             except Exception:
                 return
@@ -1928,7 +1928,7 @@ class GameView:
         except Exception:
             pass
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -2243,7 +2243,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -2349,7 +2349,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -2504,7 +2504,7 @@ class GameView:
             options = mgr.get_available_orders(officer)
         except Exception:
             try:
-                from ..classes.voice_of_command import ORDER_LIST
+                from ..rules.voice_of_command import ORDER_LIST
                 options = list(ORDER_LIST or [])
             except Exception:
                 options = []
@@ -2626,7 +2626,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -2773,7 +2773,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -2888,7 +2888,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -2976,7 +2976,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3074,7 +3074,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3154,7 +3154,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3240,7 +3240,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3359,7 +3359,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3435,7 +3435,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3520,7 +3520,7 @@ class GameView:
         wrath = None
         phase_label = str(getattr(getattr(game_ctx, "phase", None), "name", "") or "").replace("_", " ").title()
         if manager is not None:
-            wrath = manager.get_by_name("BERZERKER’S WRATH") or manager.get_by_name("BERZERKER'S WRATH")
+            wrath = manager.get_by_name("BERZERKER'S WRATH") or manager.get_by_name("BERZERKER'S WRATH")
             if wrath is not None:
                 try:
                     if not manager.can_use(
@@ -3591,7 +3591,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3689,7 +3689,7 @@ class GameView:
         if player is None or unit is None or attacker_unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3793,7 +3793,7 @@ class GameView:
 
         is_human = False
         try:
-            is_human = getattr(player, "type", None) is not None and getattr(player.type, "name", "") == "HUMAN"
+            is_human = bool(getattr(player, "has_control", lambda: False)())
         except Exception:
             is_human = False
 
@@ -3899,7 +3899,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -3984,7 +3984,7 @@ class GameView:
         if player is None or unit is None or bodyguard is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -4074,7 +4074,7 @@ class GameView:
         if player is None or unit is None or model is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -4157,7 +4157,7 @@ class GameView:
         if player is None or attacker_unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -4243,7 +4243,7 @@ class GameView:
         if player is None or attacker_unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -4320,7 +4320,7 @@ class GameView:
         if player is None or transport is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -4533,11 +4533,11 @@ class GameView:
             self._open_next_transport_reactive_disembark_prompt(game)
 
     def _on_oath_of_moment_prompt(self, player=None, game=None, **_kwargs):
-        """Prompt human players to select an Oath of Moment target at Command phase start."""
+        """Prompt local players to select an Oath of Moment target at Command phase start."""
         if player is None:
             return
         try:
-            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            is_human = bool(getattr(player, "has_control", lambda: False)())
         except Exception:
             is_human = False
         if not is_human:
@@ -4612,7 +4612,7 @@ class GameView:
         if player is None:
             return
         try:
-            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            is_human = bool(getattr(player, "has_control", lambda: False)())
         except Exception:
             is_human = False
         if not is_human:
@@ -4671,7 +4671,7 @@ class GameView:
             return
 
         from ..utility.event_bus import append_action
-        from ..classes.code_chivalric import CODE_CHIVALRIC_DEEDS, CODE_CHIVALRIC_QUALITIES, DEED_LAY_LOW
+        from ..rules.code_chivalric import CODE_CHIVALRIC_DEEDS, CODE_CHIVALRIC_QUALITIES, DEED_LAY_LOW
 
         try:
             roll_option = SimpleNamespace(
@@ -4831,7 +4831,7 @@ class GameView:
         if player is None:
             return
         try:
-            is_human = bool(getattr(getattr(player, "type", None), "name", "") == "HUMAN")
+            is_human = bool(getattr(player, "has_control", lambda: False)())
         except Exception:
             is_human = False
         if not is_human:
@@ -4927,7 +4927,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -5009,7 +5009,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -5082,7 +5082,7 @@ class GameView:
         if player is None or unit is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -5196,7 +5196,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -5286,7 +5286,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -5540,7 +5540,7 @@ class GameView:
 
         action_map = {}
         try:
-            from ..classes.unit import MovementAction
+            from warhammer40k_ai.units.unit import MovementAction
             action_map = {
                 MovementAction.MOVE.value: "move",
                 MovementAction.ADVANCE.value: "advance",
@@ -5580,7 +5580,7 @@ class GameView:
         if self.game is None:
             return False
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return False
         except Exception:
             return False
@@ -5609,7 +5609,7 @@ class GameView:
         if self._battle_focus_flow_active:
             return "Battle Focus selection already active."
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return ""
         except Exception:
             return ""
@@ -5724,7 +5724,7 @@ class GameView:
             on_done()
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 on_done()
                 return
         except Exception:
@@ -5817,7 +5817,7 @@ class GameView:
             on_done()
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 on_done()
                 return
         except Exception:
@@ -5873,7 +5873,7 @@ class GameView:
             on_done()
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 on_done()
                 return
         except Exception:
@@ -5936,7 +5936,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -5989,7 +5989,7 @@ class GameView:
         if player is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -6059,7 +6059,7 @@ class GameView:
         if player is None or unit is None or self.game is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -6090,7 +6090,7 @@ class GameView:
         if player is None or unit is None or self.game is None:
             return
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -6130,7 +6130,7 @@ class GameView:
         if self.game is None or ritual is None or result is None:
             return
         try:
-            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return
         except Exception:
             return
@@ -6188,7 +6188,7 @@ class GameView:
         if self.game is None:
             return False
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return False
         except Exception:
             return False
@@ -6217,7 +6217,7 @@ class GameView:
         if self._cabal_flow_active:
             return "Cabal ritual selection already active."
         try:
-            if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return ""
         except Exception:
             return ""
@@ -6410,7 +6410,7 @@ class GameView:
         Returns True to reroll, False to keep.
         """
         try:
-            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return False
         except Exception:
             return False
@@ -6531,7 +6531,7 @@ class GameView:
         Returns: "use", "skip", or "suppress".
         """
         try:
-            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return "skip"
         except Exception:
             return "skip"
@@ -6630,7 +6630,7 @@ class GameView:
         Returns the chosen die value, or None to skip.
         """
         try:
-            if player is None or getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+            if player is None or not getattr(player, "has_control", lambda: False)():
                 return None
         except Exception:
             return None
@@ -6811,7 +6811,7 @@ class GameView:
                 continue
             # Cannot select embarked units as quarry (rules commentary)
             try:
-                if callable(getattr(root, "is_embarked", None)) and bool(root.is_embarked()):
+                if bool(getattr(root, "is_embarked", False)):
                     continue
                 if getattr(root, "embarked_in", None) is not None:
                     continue
@@ -6824,21 +6824,19 @@ class GameView:
             self._open_next_quarry_prompt()
             return
 
-        # AI owners: auto-pick first eligible
+        # Remote players must select quarry via an external controller.
         try:
-            if getattr(p, "type", None) is not None and getattr(p.type, "name", "") != "HUMAN":
-                self._set_monarch_quarry(shalaxi_unit, eligible[0])
-                self._open_next_quarry_prompt()
+            if not getattr(p, "has_control", lambda: False)():
+                print(f"dY- Waiting for remote quarry selection: {p.name}")
+                self._pending_quarry_queue.insert(0, (p, shalaxi_unit))
                 return
         except Exception:
             pass
 
         try:
             from .dialogs import QuarrySelectionDialog
-        except Exception:
-            self._set_monarch_quarry(shalaxi_unit, eligible[0])
-            self._open_next_quarry_prompt()
-            return
+        except Exception as exc:
+            raise RuntimeError("QuarrySelectionDialog unavailable") from exc
 
         if not hasattr(self, "quarry_selection_dialog") or self.quarry_selection_dialog is None:
             self.quarry_selection_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
@@ -7006,7 +7004,7 @@ class GameView:
         except Exception:
             reborn_available = False
 
-        from ..classes.blessings_of_khorne import BlessingsTiming
+        from ..rules.blessings_of_khorne import BlessingsTiming
         ctx = mgr.create_roll_context(
             battle_round=int(battle_round),
             timing=BlessingsTiming.START_OF_BATTLE_ROUND,
@@ -7087,7 +7085,7 @@ class GameView:
             return
 
         try:
-            from ..classes.templar_vows import VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD
+            from ..rules.templar_vows import VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD
             options = [VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD]
         except Exception:
             options = []
@@ -7227,7 +7225,7 @@ class GameView:
                 self.doctrina_imperatives_dialog = None
         if self.doctrina_imperatives_dialog is None:
             try:
-                from ..classes.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
+                from ..rules.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
                 from ..utility.dice import get_roll
                 roll = int(get_roll("D6") or 0)
                 choice = PROTECTOR_IMPERATIVE if roll <= 3 else CONQUEROR_IMPERATIVE
@@ -7238,7 +7236,7 @@ class GameView:
             return
 
         try:
-            from ..classes.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
+            from ..rules.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
             options = [PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE]
         except Exception:
             options = []
@@ -7280,7 +7278,7 @@ class GameView:
             self._open_next_shadow_form_prompt()
             return
         try:
-            from ..classes.shadow_form import SHADOW_FORM_OPTIONS, set_active_shadow_form, get_active_shadow_form_key
+            from ..rules.shadow_form import SHADOW_FORM_OPTIONS, set_active_shadow_form, get_active_shadow_form_key
         except Exception:
             self._open_next_shadow_form_prompt()
             return
@@ -7345,7 +7343,7 @@ class GameView:
             self._open_next_wrathful_presence_prompt()
             return
         try:
-            from ..classes.wrathful_presence import (
+            from ..rules.wrathful_presence import (
                 WRATHFUL_PRESENCE_OPTIONS,
                 set_active_wrathful_presence,
                 get_active_wrathful_presence_key,
@@ -7807,7 +7805,7 @@ class GameView:
             player1_units = _visible_roster(player1_units)
             player2_units = _visible_roster(player2_units)
             
-            print(f"🔄 Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
+            print(f"Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
             
             # Update roster units
             self.left_roster_pane.roster = player1_units
@@ -7834,7 +7832,7 @@ class GameView:
             self.left_roster_pane.create_buttons()
             self.right_roster_pane.create_buttons()
             
-            print(f"✅ Roster panes refreshed successfully")
+            print("Roster panes refreshed successfully")
 
     def _draw_top_status_pane(self, pane_height_px: int) -> None:
         left = self.battlefield_left
@@ -8222,7 +8220,7 @@ class GameView:
             return None
         if image_path in self._mission_image_surface_cache:
             return self._mission_image_surface_cache[image_path]
-        # pygame.image.load can raise if file is missing/corrupt; let caller handle fallback.
+        # pygame.image.load can raise if file is missing/corrupt; let caller handle it.
         surf = pygame.image.load(image_path).convert_alpha()
         self._mission_image_surface_cache[image_path] = surf
         return surf
@@ -8567,21 +8565,21 @@ class GameView:
         #     }.get(event.type, f"TYPE_{event.type}")
         #
         #     if event.type == pygame.KEYDOWN:
-        #         print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: key={pygame.key.name(event.key)}")
+        #         print(f"DEBUG: GameView.handle_pygame_event - {event_name}: key={pygame.key.name(event.key)}")
         #     elif event.type in [pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP]:
-        #         print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: button={event.button}, pos={event.pos}")
+        #         print(f"DEBUG: GameView.handle_pygame_event - {event_name}: button={event.button}, pos={event.pos}")
         #     elif event.type == pygame.MOUSEMOTION:
         #         # Only log mouse motion occasionally to avoid spam
         #         if hasattr(self, '_last_motion_log') and pygame.time.get_ticks() - self._last_motion_log < 100:
         #             pass  # Skip logging
         #         else:
-        #             print(f"🔍 DEBUG: GameView.handle_pygame_event - {event_name}: pos={event.pos}")
+        #             print(f"DEBUG: GameView.handle_pygame_event - {event_name}: pos={event.pos}")
         #             self._last_motion_log = pygame.time.get_ticks()
 
         # PRIORITY 0: Handle unit detail panel escape key
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             if self.detailed_unit and hasattr(self.unit_detail_panel, 'handle_event') and hasattr(self.unit_detail_panel, 'visible') and self.unit_detail_panel.visible:
-                # print(f"🔍 DEBUG: GameView - Delegating ESC to unit detail panel")
+                # print(f"DEBUG: GameView - Delegating ESC to unit detail panel")
                 if self.unit_detail_panel.handle_event(event):
                     self.close_unit_details()
                     return True
@@ -8688,12 +8686,12 @@ class GameView:
                         return True
 
         # PRIORITY 2: Let phase manager handle phase-specific events next
-        # print(f"🔍 DEBUG: GameView - Delegating to phase manager")
+        # print(f"DEBUG: GameView - Delegating to phase manager")
         if self.phase_manager.handle_event(event):
-            # print(f"🔍 DEBUG: GameView - Event was handled by phase manager")
+            # print(f"DEBUG: GameView - Event was handled by phase manager")
             return True
         else:
-            # print(f"🔍 DEBUG: GameView - Event was not handled by phase manager")
+            # print(f"DEBUG: GameView - Event was not handled by phase manager")
             pass
         
         # PRIORITY 3: Handle universal UI events that apply to all phases
@@ -9160,7 +9158,7 @@ class GameView:
             pass
 
         try:
-            from ..classes.stratagems import _unit_cannot_be_target_of_stratagem
+            from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
             if _unit_cannot_be_target_of_stratagem(unit):
                 print("Heroic Intervention: unit cannot be targeted by stratagems")
                 return
@@ -9410,7 +9408,7 @@ class GameView:
 
             # RUINS placement validation
             try:
-                from ..classes.map import validate_ruins_placement
+                from warhammer40k_ai.battlefield.map import validate_ruins_placement
                 ruins_validation = validate_ruins_placement(unit, (float(x), float(y), float(z)), game_map.terrain_features, moving_model=model)
                 if not ruins_validation.get("valid", False):
                     return {"valid": False, "reason": ruins_validation.get("reason", "RUINS placement invalid")}
@@ -9684,22 +9682,15 @@ class GameView:
         if rule_type == "detachment":
             info = self._get_detachment_rule_info(player)
             title = "Detachment Rule"
-            fallback_name = getattr(player.get_army(), "detachment_type", "Detachment") if player else "Detachment"
-            fallback_desc = f"No detachment rule data found for {fallback_name}."
         else:
             info = self._get_army_rule_info(player)
             title = "Army Rule"
-            fallback_name = getattr(player.get_army(), "faction", "Army") if player else "Army"
-            fallback_desc = f"No army rule data found for {fallback_name}."
 
-        if info:
-            rule_name = (info.get("name") or "").strip()
-            legend = (info.get("legend") or "").strip()
-            description = (info.get("description") or "").strip()
-        else:
-            rule_name = fallback_name
-            legend = ""
-            description = fallback_desc
+        if not info:
+            return
+        rule_name = (info.get("name") or "").strip()
+        legend = (info.get("legend") or "").strip()
+        description = (info.get("description") or "").strip()
 
         supported = self._is_supported_rule_name(rule_name, rule_type)
         highlight_words = []
@@ -10345,7 +10336,7 @@ class GameView:
             self.individual_model_movement_dialog.selected_model_index is not None and
             getattr(self.individual_model_movement_dialog, 'movement_type', '') != 'deploy'):
 
-            #print(f"🔍 DEBUG: Drawing individual model movement visualization")
+            #print(f"DEBUG: Drawing individual model movement visualization")
             unit = self.individual_model_movement_dialog.unit
             model_index = self.individual_model_movement_dialog.selected_model_index
 
@@ -10355,7 +10346,7 @@ class GameView:
                 max_distance = self.individual_model_movement_dialog.max_distance
                 game_map = self.individual_model_movement_dialog.game_map
 
-                #print(f"🔍 DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
+                #print(f"DEBUG: Drawing range circle for {selected_model.name} (type: {movement_type}, distance: {max_distance})")
                 # Draw range circle for the selected model
                 draw_individual_model_movement_range(
                     battlefield_surface,
@@ -10369,12 +10360,12 @@ class GameView:
                 )
 
                 # Draw real-time path preview if mouse is hovering over battlefield
-                #print(f"🔍 DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
+                #print(f"DEBUG: Checking for path preview - has target: {hasattr(self, 'individual_model_preview_target')}")
                 #if hasattr(self, 'individual_model_preview_target'):
-                    #print(f"🔍 DEBUG: Preview target value: {self.individual_model_preview_target}")
+                    #print(f"DEBUG: Preview target value: {self.individual_model_preview_target}")
 
                 if hasattr(self, 'individual_model_preview_target') and self.individual_model_preview_target:
-                    #print(f"🔍 DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
+                    #print(f"DEBUG: Drawing path preview for model {model_index} to {self.individual_model_preview_target}")
                     # Use unified pathfinding that accounts for already-moved models
                     from ..utility.calcs import unified_pathfinding, MovementType
 
@@ -10399,7 +10390,7 @@ class GameView:
                             'consolidate': MovementType.CONSOLIDATE
                         }
                         preview_movement_type = movement_type_map.get(dialog_movement_type, MovementType.MOVE)
-                        #print(f"🔍 DEBUG: Using movement type {preview_movement_type} for path preview (dialog type: {dialog_movement_type})")
+                        #print(f"DEBUG: Using movement type {preview_movement_type} for path preview (dialog type: {dialog_movement_type})")
 
                     # Convert 2D target to 3D if needed
                     if len(self.individual_model_preview_target) == 2:
@@ -10422,13 +10413,13 @@ class GameView:
                         moved_models_in_unit=moved_models_in_unit
                     )
 
-                    #print(f"🔍 DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
+                    #print(f"DEBUG: Path result - valid: {path_result['valid']}, path length: {len(path_result['path']) if path_result['path'] else 0}")
 
                     # Draw the path and model base preview similar to scout movement
                     self._draw_individual_model_path_preview(battlefield_surface, selected_model,
                                                            path_result, self.individual_model_preview_target)
                 #else:
-                #    print(f"🔍 DEBUG: No preview target set for individual model movement")
+                #    print(f"DEBUG: No preview target set for individual model movement")
 
         # Deployment placement: draw hover silhouette (base + facing arrow) while mouse moves over battlefield
         if (hasattr(self, 'individual_model_movement_dialog') and
@@ -10638,8 +10629,7 @@ class GameView:
                     pygame.draw.polygon(temp_surface, alpha_color, screen_points)
                     surface.blit(temp_surface, (0, 0))
                 except:
-                    # Fallback to outline only if alpha blending fails
-                    pygame.draw.polygon(surface, color[:3], screen_points, 2)
+                                        pygame.draw.polygon(surface, color[:3], screen_points, 2)
 
                 # Draw outline
                 pygame.draw.polygon(surface, color[:3], screen_points, 2)
@@ -10673,15 +10663,8 @@ class GameView:
                     pygame.draw.line(surface, color[:3], (ex, ey), (rx, ry), 3)
                 except Exception:
                     pass
-        except Exception as e:
-            # Ultimate fallback - draw simple circle and don't break the rendering
-            try:
-                screen_x = int(game_x * TILE_SIZE * self.zoom_level + self.offset_x)
-                screen_y = int(game_y * TILE_SIZE * self.zoom_level + self.offset_y)
-                pygame.draw.circle(surface, color[:3], (screen_x, screen_y), 8, 2)
-            except:
-                # If even the fallback fails, just skip drawing
-                pass
+        except Exception:
+            return
 
 
 ### Battlefield drawing functions
@@ -10919,7 +10902,7 @@ def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player
                         center_y = (min_y + max_y) // 2 - text_rect.height // 2
                         screen.blit(text_surface, (center_x, center_y))
         else:
-            # Deployment zones must be mission polygon zones; no rectangular fallback.
+            # Deployment zones must be mission polygon zones; rectangular zones are not supported.
             continue
             
             # Add zone label with better positioning
@@ -11097,11 +11080,6 @@ def draw_rotated_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_
     # Blit the rotated icon to the screen
     screen.blit(rotated_surface, (blit_x, blit_y))
 
-def draw_tinted_unit_icon(screen: pygame.Surface, center_x: int, center_y: int, size: int, unit: Unit, tint_color: Tuple[int, int, int]) -> None:
-    """Draw unit icon with color tinting (backward compatibility function for roster)"""
-    # Just call the rotated version with 0 rotation for backward compatibility
-    draw_rotated_tinted_unit_icon(screen, center_x, center_y, size, unit, tint_color, 0.0)
-
 def draw_model_identifier(screen: pygame.Surface, center_x: int, center_y: int, icon_size: int, model_index: int, unit: Unit, is_highlighted: bool = False) -> None:
     """Draw individual model identifier for multi-model units"""
     # Position the identifier at the top-right of the icon with more offset
@@ -11172,11 +11150,6 @@ def draw_unit_identification_on_surface(surface: pygame.Surface, center_x: int, 
     """Draw unit identification elements on a surface - now simplified since we have prominent icons"""
     # This function is now mainly for the health indicator ring
     # Note: Health indicator is drawn separately for surface-based rendering
-    pass
-
-def draw_model_count_indicator(surface: pygame.Surface, center_x: int, center_y: int, radius: int, unit: Unit) -> None:
-    """Draw a small indicator showing model count for multi-model units - now unused since we show individual model numbers"""
-    # This function is now unused but kept for compatibility
     pass
 
 def draw_enhanced_base(screen: pygame.Surface, base: Base, screen_x: int, screen_y: int, zoom_level: float, color: Tuple[int, int, int], unit: Unit, model: Model, is_highlighted: bool = False) -> None:
@@ -11491,10 +11464,10 @@ class SetupPhaseHandler(BasePhaseHandler):
                     'manual_phases': True
                 }
                 
-                # For DEPLOY_ARMIES phase, handle based on player types
+                # For DEPLOY_ARMIES phase, handle based on local control
                 if current_phase.name == 'DEPLOY_ARMIES':
-                    has_human_players = any(player.type.name == 'HUMAN' for player in self.game.players)
-                    if has_human_players:
+                    has_local_players = any(getattr(player, "has_control", lambda: False)() for player in self.game.players)
+                    if has_local_players:
                         setup_kwargs['manual_phases'] = True
                 
                 # Store which phase we're executing to know when to refresh UI
@@ -11521,17 +11494,17 @@ class SetupPhaseHandler(BasePhaseHandler):
                 if current_phase_before.name == 'MUSTER_ARMIES':
                     # Armies were just loaded - refresh roster panes
                     self.game_view.refresh_roster_panes()
-                    print("📋 UI updated after armies loaded")
+                    print("UI updated after armies loaded")
                 elif current_phase_before.name == 'DETERMINE_ATTACKER_AND_DEFENDER':
                     # Attacker/Defender roles determined - update titles
                     self.game_view.update_roster_pane_titles()
-                    print("📋 UI updated after attacker/defender determined")
+                    print("UI updated after attacker/defender determined")
                 
                 if setup_complete:
                     # Final update after all setup phases complete
                     self.game_view.refresh_roster_panes()
                     self.game_view.update_roster_pane_titles()
-                    print("📋 UI updated after setup completion")
+                    print("UI updated after setup completion")
                 
                 return True
         
@@ -11566,11 +11539,11 @@ class SetupPhaseHandler(BasePhaseHandler):
                 "deployment": combination["deployment"],
                 "layout": layout
             }
-            print(f"✅ Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
+            print(f"Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
 
             # Assign Primary Mission card to both players
             try:
-                from warhammer40k_ai.classes.mission_cards import (
+                from warhammer40k_ai.engine.mission_cards import (
                     TakeAndHoldPrimary,
                     TerraformPrimary,
                     LinchpinPrimary,
@@ -11617,14 +11590,14 @@ class SetupPhaseHandler(BasePhaseHandler):
                 for p in self.game.players:
                     p.set_primary_mission(card)
             except Exception as e:
-                print(f"⚠️ Failed to assign primary mission card: {e}")
+                print(f"Warning: Failed to assign primary mission card: {e}")
 
             # Execute the phase and advance
             self.game.execute_current_setup_phase()
             self.game.advance_setup_phase()
 
         def _cancel() -> None:
-            print("📋 Mission selection cancelled - using default")
+            print("Mission selection cancelled - using default")
             self.game.execute_current_setup_phase()
             self.game.advance_setup_phase()
 
@@ -11635,7 +11608,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        print("📋 Mission Selection Dialog opened - choose from approved combinations A-T")
+        print("Mission Selection Dialog opened - choose from approved combinations A-T")
 
     def _show_leader_attachment_dialog(self):
         """Show the leader attachment dialog for DECLARE_BATTLE_FORMATIONS phase."""
@@ -11657,7 +11630,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     if army:
                         army.validate_leaders()
             except Exception as e:
-                print(f"⚠️ Leader attachment validation failed: {e}")
+                print(f"  Leader attachment validation failed: {e}")
                 return
 
             # Refresh roster panes so attached leaders collapse (once implemented)
@@ -11690,7 +11663,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        print("📋 Leader Attachment Dialog opened - select leaders and attach to eligible units")
+        print("Leader Attachment Dialog opened - select leaders and attach to eligible units")
 
     def _show_transport_assignment_dialog(self):
         """Show the transport assignment dialog for DECLARE_BATTLE_FORMATIONS phase."""
@@ -11734,7 +11707,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                         except Exception:
                             pass
             except Exception as e:
-                print(f"⚠️ Transport assignment failed: {e}")
+                print(f"  Transport assignment failed: {e}")
 
             # Execute the phase and advance
             self.game.execute_current_setup_phase()
@@ -11752,14 +11725,14 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        print("📋 Transport Assignment Dialog opened - select transports and units to start embarked")
+        print("Transport Assignment Dialog opened - select transports and units to start embarked")
 
     def _start_hover_mode_selection_flow(self, players, on_done) -> None:
-        """Prompt human players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
+        """Prompt local players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
         queue = []
         for player in list(players or []):
             try:
-                if getattr(player, "type", None) is None or getattr(player.type, "name", "") != "HUMAN":
+                if player is None or not getattr(player, "has_control", lambda: False)():
                     continue
             except Exception:
                 continue
@@ -11797,7 +11770,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         self._open_next_hover_mode_prompt()
 
     def _finish_hover_mode_selection(self) -> None:
-        """Finalize Hover mode selection and apply AI declarations."""
+        """Finalize Hover mode selection and apply queued declarations."""
         try:
             if hasattr(self.game, "_apply_hover_declarations"):
                 self.game._apply_hover_declarations()
@@ -11872,7 +11845,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     return []
 
             if len(players) != 2:
-                print("⚠️ Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
+                print("  Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
                 # Keep existing behavior by running as two sequential dialogs (old implementation).
                 # (We intentionally do not duplicate the old nested functions here.)
                 try:
@@ -11963,7 +11936,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                         try:
                             if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
                                 if decision != "reserves":
-                                    print(f"ℹ️ {root.name} must start in Reserves (AIRCRAFT)")
+                                    print(f"{root.name} must start in Reserves (AIRCRAFT)")
                                 decision = "reserves"
                         except Exception:
                             pass
@@ -12067,7 +12040,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_left.validate_leaders()
                     except Exception as e:
-                        print(f"⚠️ {p_left.name} leader attachment validation failed: {e}")
+                        print(f"  {p_left.name} leader attachment validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_left)
                     modal.left_done = True
@@ -12077,7 +12050,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_right.validate_leaders()
                     except Exception as e:
-                        print(f"⚠️ {p_right.name} leader attachment validation failed: {e}")
+                        print(f"  {p_right.name} leader attachment validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_right)
                     modal.right_done = True
@@ -12116,14 +12089,14 @@ class SetupPhaseHandler(BasePhaseHandler):
 
                 def _l_done(assignments):
                     if not _apply_transport_assignments(a_left, units_l, assignments):
-                        print(f"⚠️ {p_left.name} transport assignment failed")
+                        print(f"  {p_left.name} transport assignment failed")
                         return
                     m.left_done = True
                     _maybe_advance()
 
                 def _r_done(assignments):
                     if not _apply_transport_assignments(a_right, units_r, assignments):
-                        print(f"⚠️ {p_right.name} transport assignment failed")
+                        print(f"  {p_right.name} transport assignment failed")
                         return
                     m.right_done = True
                     _maybe_advance()
@@ -12159,14 +12132,14 @@ class SetupPhaseHandler(BasePhaseHandler):
 
                 def _l_done(decisions):
                     if not _apply_reserves(a_left, decisions):
-                        print(f"⚠️ {p_left.name} reserves allocation failed")
+                        print(f"  {p_left.name} reserves allocation failed")
                         return
                     m.left_done = True
                     _maybe_advance()
 
                 def _r_done(decisions):
                     if not _apply_reserves(a_right, decisions):
-                        print(f"⚠️ {p_right.name} reserves allocation failed")
+                        print(f"  {p_right.name} reserves allocation failed")
                         return
                     m.right_done = True
                     _maybe_advance()
@@ -12216,7 +12189,7 @@ class SetupPhaseHandler(BasePhaseHandler):
 
                 from .dialogs import NurglesGiftPlagueDialog
                 try:
-                    from ..classes.nurgles_gift import DEFAULT_PLAGUES
+                    from ..rules.nurgles_gift import DEFAULT_PLAGUES
                     options = list(DEFAULT_PLAGUES)
                 except Exception:
                     options = []
@@ -12338,7 +12311,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 else:
                     self.game_view.individual_model_preview_target = None
 
-            # Mouse wheel rotates facing in 5° increments (consume to prevent zoom)
+            # Mouse wheel rotates facing in 5 deg increments (consume to prevent zoom)
             if event.type == pygame.MOUSEWHEEL:
                 mx, my = pygame.mouse.get_pos()
                 if self.game_view.battlefield_left < mx < self.game_view.battlefield_right:
@@ -12394,23 +12367,23 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         """Handle mouse clicks during deployment phase"""
         x, y = mouse_pos
 
-        print(f"🔍 DEBUG: _handle_deployment_click at ({x}, {y})")
-        print(f"🔍 DEBUG: Left roster rect: {self.game_view.left_roster_pane.rect}")
-        print(f"🔍 DEBUG: Right roster rect: {self.game_view.right_roster_pane.rect}")
+        print(f"DEBUG: _handle_deployment_click at ({x}, {y})")
+        print(f"DEBUG: Left roster rect: {self.game_view.left_roster_pane.rect}")
+        print(f"DEBUG: Right roster rect: {self.game_view.right_roster_pane.rect}")
 
         # Check roster pane clicks first
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
-            print(f"🔍 DEBUG: Click is in LEFT roster pane")
+            print(f"DEBUG: Click is in LEFT roster pane")
             self.game_view.left_roster_pane.on_mouse_press(x, y, 1)
             self.game_view.selected_unit = self.game_view.left_roster_pane.selected_unit
             return True
         elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
-            print(f"🔍 DEBUG: Click is in RIGHT roster pane")
+            print(f"DEBUG: Click is in RIGHT roster pane")
             self.game_view.right_roster_pane.on_mouse_press(x, y, 1)
             self.game_view.selected_unit = self.game_view.right_roster_pane.selected_unit
             return True
         else:
-            print(f"🔍 DEBUG: Click is NOT in any roster pane")
+            print(f"DEBUG: Click is NOT in any roster pane")
 
         # Handle battlefield deployment clicks
         if (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and
@@ -12436,7 +12409,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                     unit.deployed = True
                     # Ensure unit is registered on the map for downstream phases
                     if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
-                        print("❌ Deployment failed: game map unavailable to register unit")
+                        print("ERROR: Deployment failed: game map unavailable to register unit")
                         return
                     if unit not in self.game_view.game_map.units:
                         self.game_view.game_map.units.append(unit)
@@ -12475,7 +12448,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 except Exception:
                     pass
 
-            print(f"📣 [DeploymentPhaseHandler] Opening per-model deployment dialog for {self.game_view.selected_unit.name}")
+            print(f"[DeploymentPhaseHandler] Opening per-model deployment dialog for {self.game_view.selected_unit.name}")
             self.game_view.individual_model_movement_dialog.show(
                 self.game_view.selected_unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0
             )
@@ -12491,7 +12464,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         """Handle unit deployment on battlefield"""
         # Check if deployment zones are loaded
         if not hasattr(self.game, 'deployment_zones') or not self.game.deployment_zones:
-            print(f"📋 Press SPACE to begin deployment sequence first")
+            print(f"Press SPACE to begin deployment sequence first")
             return True
         
         # Convert screen coordinates to game coordinates using helper method
@@ -12525,9 +12498,9 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 self.game_view.selected_unit, unit_x, unit_y, player_name):
                 # Invalid position - reset and show error
                 if self.game_view.selected_unit.has_infiltrate():
-                    print(f"❌ Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")
+                    print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")
                 else:
-                    print(f"❌ Invalid deployment position for {self.game_view.selected_unit.name}")
+                    print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name}")
                 self.game_view.reset_unit_position(self.game_view.selected_unit,
                                                  None, original_model_positions)
                 return True
@@ -12587,7 +12560,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events during battle phases"""
         if event.type == pygame.MOUSEMOTION:
-            # print(f"🔍 DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
+            # print(f"DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
             pass
         
         # Handle keyboard events
@@ -12613,17 +12586,17 @@ class BattlePhaseHandler(BasePhaseHandler):
         if current_phase.name == 'FIGHT_PHASE':
             if self.fight_phase_manager and not self.fight_phase_manager.is_complete():
                 # Force complete the fight phase
-                print("⏭️ Manually completing fight phase...")
+                print("INFO: Manually completing fight phase...")
                 self.fight_phase_manager._complete_fight_phase()
                 return True
             else:
                 # Fight phase already complete, advance to next phase
-                print("⏭️ Fight phase complete, advancing to next phase...")
+                print("INFO: Fight phase complete, advancing to next phase...")
                 return False  # Let main loop advance phase
 
         # For other phases, let main loop handle advancement
         else:
-            print(f"⏭️ Manually advancing {current_phase.name}...")
+            print(f"INFO: Manually advancing {current_phase.name}...")
             return False  # Let main loop advance phase
 
     def _handle_battle_click(self, mouse_pos, button) -> bool:
@@ -12697,12 +12670,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Check if this unit belongs to the current player
         if not (unit.parent_army and unit.parent_army.player == current_player):
-            print(f"❌ {unit.name} does not belong to current player {current_player.name}")
+            print(f"ERROR: {unit.name} does not belong to current player {current_player.name}")
             return
         
-        # Only allow human players to interact with units during their turn
-        if current_player.type.name != 'HUMAN':
-            print(f"❌ Current player {current_player.name} is AI - no unit interaction allowed")
+        # Only allow local control to interact with units during their turn
+        if not current_player.has_control():
+            print(f"ERROR: Current player {current_player.name} has no local control")
             return
         
         # Synchronize selection across UI components
@@ -12718,7 +12691,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         elif current_phase.name == 'FIGHT_PHASE':
             self._handle_fight_phase_selection(unit)
         else:
-            print(f"❌ Unit selection not available in {current_phase.name}")
+            print(f"ERROR: Unit selection not available in {current_phase.name}")
     
     def _handle_movement_phase_selection(self, unit) -> None:
         """Handle unit selection during movement phase"""
@@ -12736,11 +12709,11 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Check if unit can shoot
         if unit.round_state.shot_this_round:
-            print(f"❌ {unit.name} has already shot this round")
+            print(f"ERROR: {unit.name} has already shot this round")
             return
         
         if unit.round_state.fell_back_this_round:
-            print(f"❌ {unit.name} cannot shoot after falling back")
+            print(f"ERROR: {unit.name} cannot shoot after falling back")
             return
         
         # Check if unit is engaged and can't shoot with detailed debugging
@@ -12754,12 +12727,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         is_engaged = len(engaged_enemies) > 0
 
         if is_engaged:
-            print(f"🔍 DEBUG: {unit.name} is in engagement range of: {', '.join(engaged_enemies)}")
+            print(f"DEBUG: {unit.name} is in engagement range of: {', '.join(engaged_enemies)}")
 
             # Show detailed position information
             if unit.models:
                 unit_pos = unit.models[0].get_location() if unit.models[0].is_alive else None
-                print(f"🔍 DEBUG: {unit.name} position: {unit_pos}")
+                print(f"DEBUG: {unit.name} position: {unit_pos}")
 
                 for enemy_name in engaged_enemies:
                     enemy_unit = next((e for e in enemy_units if e.name == enemy_name), None)
@@ -12767,7 +12740,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         enemy_pos = enemy_unit.models[0].get_location() if enemy_unit.models[0].is_alive else None
                         if unit_pos and enemy_pos:
                             distance = ((unit_pos[0] - enemy_pos[0])**2 + (unit_pos[1] - enemy_pos[1])**2)**0.5
-                            print(f"🔍 DEBUG: Distance to {enemy_name}: {distance:.1f}\"")
+                            print(f"DEBUG: Distance to {enemy_name}: {distance:.1f}\"")
 
         if is_engaged:
             # Check if unit has any weapons that can shoot while engaged
@@ -12787,7 +12760,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     break
             
             if not has_eligible_weapons:
-                print(f"❌ {unit.name} is engaged and has no weapons that can shoot in engagement range")
+                print(f"ERROR: {unit.name} is engaged and has no weapons that can shoot in engagement range")
                 return
         
         def _show_shooting_dialog():
@@ -12876,12 +12849,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Handle unit selection during charge phase"""
         # Check if unit has already charged this round
         if hasattr(unit.round_state, 'attempted_charge_this_round') and unit.round_state.attempted_charge_this_round:
-            print(f"❌ {unit.name} has already attempted a charge this round")
+            print(f"ERROR: {unit.name} has already attempted a charge this round")
             return
         
         # Check if unit can charge (not advanced unless allowed, not fell back, etc.)
         if unit.round_state.fell_back_this_round:
-            print(f"❌ {unit.name} fell back and cannot charge")
+            print(f"ERROR: {unit.name} fell back and cannot charge")
             return
         
         # Show charge declaration dialog
@@ -12941,40 +12914,40 @@ class BattlePhaseHandler(BasePhaseHandler):
         unit_owner = unit.get_parent_army().player if unit.get_parent_army() else None
         
         if not unit_owner:
-            print(f"❌ {unit.name} has no owner")
+            print(f"ERROR: {unit.name} has no owner")
             return
         
         if active_player != unit_owner:
-            print(f"❌ It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+            print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
             return
         
         # Check if unit is eligible to fight in current stage
         eligible_units = self.fight_phase_manager._get_eligible_units_for_player(unit_owner)
         if unit not in eligible_units:
-            print(f"❌ {unit.name} is not eligible to fight in the current stage")
+            print(f"ERROR: {unit.name} is not eligible to fight in the current stage")
             return
         
         # Unit is valid - process the selection
-        print(f"✅ {unit_owner.name} selected {unit.name} to fight")
+        print(f"OK: {unit_owner.name} selected {unit.name} to fight")
         def _after_battle_focus():
             self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
         self.game_view._maybe_prompt_battle_focus_sudden_strike(unit, _after_battle_focus)
     
     def _initialize_fight_phase_manager(self, current_player: Player, opponent_player: Player) -> None:
         """Initialize the fight phase manager with proper callbacks."""
-        print("🎯 Initializing Fight Phase Manager")
+        print("INFO: Initializing Fight Phase Manager")
         self.fight_phase_manager = FightPhaseManager(self.game)
         try:
             self.game.fight_phase_manager = self.fight_phase_manager
         except Exception:
             pass
         
-        # Set up callbacks for human player interaction
+        # Set up callbacks for local player interaction
         def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
-            print(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.type.name})")
+            print(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.control.name})")
             print(f"DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
 
-            if active_player.type.name == 'HUMAN':
+            if active_player.has_control():
                 print(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
                 print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
                 # Show fight unit selection dialog
@@ -12992,50 +12965,42 @@ class BattlePhaseHandler(BasePhaseHandler):
                         stage.value, eligible_units, on_unit_selected, on_cancel
                     )
             else:
-                # AI player - auto-select first eligible unit
-                print(f"AI player {active_player.name} selecting unit automatically")
-                if eligible_units:
-                    selected_unit = eligible_units[0]
-                    print(f"AI selected {selected_unit.name}")
-                    self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
+                print(f"Waiting for remote unit selection: {active_player.name}")
+                return
 
         def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
-            if active_player.type.name == 'HUMAN':
-                print(f"🎯 {active_player.name} must select targets for {fighting_unit.name}")
+            if active_player.has_control():
+                print(f"dYZ_ {active_player.name} must select targets for {fighting_unit.name}")
                 print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
-                
+
                 if len(eligible_targets) == 1:
                     # Single target - auto-select
                     target_unit = eligible_targets[0]
-                    print(f"🎯 Auto-selecting single target: {target_unit.name}")
+                    print(f"dYZ_ Auto-selecting single target: {target_unit.name}")
                     self._start_comprehensive_fight_sequence(fighting_unit, [target_unit], current_player, opponent_player)
                 else:
                     # Multiple targets - show target selection dialog
-                    print(f"🎯 Multiple targets available - showing target selection dialog")
-                    
+                    print(f"dYZ_ Multiple targets available - showing target selection dialog")
+
                     def on_target_selected(selected_target: Unit):
-                        print(f"🎯 Player selected target: {selected_target.name}")
+                        print(f"dYZ_ Player selected target: {selected_target.name}")
                         self._start_comprehensive_fight_sequence(fighting_unit, [selected_target], current_player, opponent_player)
-                    
+
                     def on_target_selection_cancelled():
-                        print("🎯 Target selection cancelled")
+                        print("dYZ_ Target selection cancelled")
                         # Return to unit selection or skip this unit's turn
                         self.fight_phase_manager._switch_active_player(current_player, opponent_player)
-                    
+
                     # Show the target selection dialog
                     self.game_view.fight_target_selection_dialog.show(
                         fighting_unit, eligible_targets, on_target_selected, on_target_selection_cancelled
                     )
             else:
-                # AI player - auto-select first target for now
-                print(f"🤖 AI player {active_player.name} selecting targets automatically")
-                if eligible_targets:
-                    target_unit = eligible_targets[0]
-                    print(f"🤖 AI selected target: {target_unit.name}")
-                    self._start_comprehensive_fight_sequence(fighting_unit, [target_unit], current_player, opponent_player)
+                print(f"Waiting for remote target selection: {active_player.name}")
+                return
         
         def on_stage_complete():
-            print("✅ Fight Phase complete")
+            print("OK: Fight Phase complete")
             self.fight_phase_manager = None
             try:
                 self.game.fight_phase_manager = None
@@ -13046,7 +13011,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         def on_movement_required(movement_type: str, unit: Unit, callback):
             """Handle pile-in and consolidate movements using Individual Model Movement Dialog"""
-            print(f"📍 {unit.name} needs to perform {movement_type} movement")
+            print(f"{unit.name} needs to perform {movement_type} movement")
 
             # Determine max distance based on movement type
             max_distance = 3.0  # Default is 3"
@@ -13063,7 +13028,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
             """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
-            print(f"⚔️ {unit.name} needs to select melee weapons against {target_unit.name}")
+            print(f"{unit.name} needs to select melee weapons against {target_unit.name}")
             def _show_weapons():
                 self.game_view.melee_weapon_declaration_dialog.show(
                     unit, callback, self.game.map, target_unit=target_unit
@@ -13084,11 +13049,11 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _start_comprehensive_fight_sequence(self, fighting_unit: Unit, target_units: List[Unit], current_player: Player, opponent_player: Player):
         """Start the comprehensive fight sequence following proper Warhammer 40k rules."""
-        print(f"⚔️ Starting comprehensive fight sequence: {fighting_unit.name} vs {[t.name for t in target_units]}")
+        print(f"Starting comprehensive fight sequence: {fighting_unit.name} vs {[t.name for t in target_units]}")
         
         # Step 1: Pile-in movement
         def on_pile_in_complete(completed: bool):
-            print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
+            print(f"{fighting_unit.name} pile-in completed: {completed}")
             
             if len(target_units) == 1:
                 # Single target - proceed directly to weapon allocation
@@ -13096,11 +13061,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             else:
                 # Multiple targets - implement weapon/attack allocation dialog
                 # TODO: Implement multi-target weapon allocation
-                print("⚠️ Multi-target weapon allocation not yet implemented - using first target")
+                print("  Multi-target weapon allocation not yet implemented - using first target")
                 self._start_weapon_allocation_phase(fighting_unit, target_units[0], current_player, opponent_player)
         
         # Start pile-in movement
-        print(f"📍 {fighting_unit.name} needs to perform pile_in movement")
+        print(f"{fighting_unit.name} needs to perform pile_in movement")
         max_distance = 3.0
         try:
             override = fighting_unit.get_fight_phase_move_distance_override("pile_in")
@@ -13114,10 +13079,10 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _start_weapon_allocation_phase(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player):
         """Handle weapon allocation phase - each model selects one weapon (except EXTRA ATTACKS)."""
-        print(f"⚔️ Starting weapon allocation: {fighting_unit.name} vs {target_unit.name}")
+        print(f"Starting weapon allocation: {fighting_unit.name} vs {target_unit.name}")
         
         def on_weapon_allocation_complete(weapon_declarations):
-            print(f"⚔️ Weapon allocation completed with {len(weapon_declarations)} declarations")
+            print(f"Weapon allocation completed with {len(weapon_declarations)} declarations")
             self._start_target_model_selection_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
         
         # Show melee weapon declaration dialog for weapon allocation
@@ -13132,28 +13097,28 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _start_target_model_selection_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
         """Handle target model selection phase."""
-        print(f"🎯 Starting target model selection phase")
+        print(f"INFO: Starting target model selection phase")
         
         # NOTE: PRECISION (10e) is *not* "pick a target model up-front".
         # It is an allocation override that happens after a successful wound is allocated.
         # We handle this during attack resolution (see _resolve_single_attack) via the
         # engine-level precision_allocation_provider + PrecisionAllocationDialog.
 
-        # Check if target unit has mixed attributes (legacy UI-only flow)
+        # Check if target unit has mixed attributes.
         has_mixed_attributes = self._unit_has_mixed_attributes(target_unit)
         
         if has_mixed_attributes:
-            print(f"🎯 Mixed attributes detected - defender selects wound allocation")
+            print(f"INFO: Mixed attributes detected - defender selects wound allocation")
             
             def on_wound_model_selected(selected_model):
-                print(f"🎯 Wound allocation: {selected_model.name} selected to receive wounds")
+                print(f"INFO: Wound allocation: {selected_model.name} selected to receive wounds")
                 # Store the wound allocation target
                 for decl in weapon_declarations:
                     decl['wound_target'] = selected_model
                 self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
             
             def on_wound_cancelled():
-                print("🎯 Wound allocation cancelled - using automatic allocation")
+                print("INFO: Wound allocation cancelled - using automatic allocation")
                 self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
             
             self.game_view.target_model_selection_dialog.show(
@@ -13162,7 +13127,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             )
             
         else:
-            print(f"🎯 No special targeting required - proceeding to attack resolution")
+            print(f"INFO: No special targeting required - proceeding to attack resolution")
             self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
     
     def _unit_has_mixed_attributes(self, unit: Unit) -> bool:
@@ -13180,19 +13145,19 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _start_attack_resolution_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
         """Handle sequential attack resolution."""
-        print(f"⚔️ Starting attack resolution phase")
+        print(f"Starting attack resolution phase")
         
         # Resolve attacks sequentially
         self._resolve_sequential_attacks(fighting_unit, target_unit, weapon_declarations)
         
         # Step 4: Consolidate movement
         def on_consolidate_complete(completed: bool):
-            print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+            print(f"INFO: {fighting_unit.name} consolidate completed: {completed}")
             
             self.fight_phase_manager.finalize_unit_fight(fighting_unit, current_player, opponent_player)
         
         # Start consolidate movement
-        print(f"🏃 {fighting_unit.name} needs to perform consolidate movement")
+        print(f"INFO: {fighting_unit.name} needs to perform consolidate movement")
         max_distance = 3.0
         try:
             override = fighting_unit.get_fight_phase_move_distance_override("consolidate")
@@ -13206,7 +13171,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _resolve_sequential_attacks(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List):
         """Resolve attacks one at a time with proper wound allocation."""
-        print(f"⚔️ Resolving {len(weapon_declarations)} weapon attacks sequentially")
+        print(f"Resolving {len(weapon_declarations)} weapon attacks sequentially")
         
         for i, weapon_decl in enumerate(weapon_declarations):
             model = weapon_decl.get('model')
@@ -13216,11 +13181,11 @@ class BattlePhaseHandler(BasePhaseHandler):
             if not model or not weapon_profile:
                 continue
             
-            print(f"⚔️ Attack {i+1}/{len(weapon_declarations)}: {model.name} with {weapon_profile.name}")
+            print(f"Attack {i+1}/{len(weapon_declarations)}: {model.name} with {weapon_profile.name}")
             
             # Get number of attacks for this weapon
             attacks = self._get_weapon_attacks(weapon_profile)
-            print(f"🎲 Rolling {attacks} attacks")
+            print(f"ROLL: Rolling {attacks} attacks")
 
             # Cache PRECISION allocation choice once per weapon profile for this sequence
             precision_choice_model = None
@@ -13237,7 +13202,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             # Resolve each attack individually
             for attack_num in range(attacks):
                 if not target_unit.is_alive():
-                    print("💀 Target unit destroyed - remaining attacks cancelled")
+                    print("' Target unit destroyed - remaining attacks cancelled")
                     break
                 
                 print(f"  Attack {attack_num + 1}/{attacks}")
@@ -13246,15 +13211,15 @@ class BattlePhaseHandler(BasePhaseHandler):
                 target_model = None
                 if wound_target and wound_target.is_alive:
                     target_model = wound_target
-                    print(f"  🎯 Wound allocation: {target_model.name}")
+                    print(f"  INFO: Wound allocation: {target_model.name}")
                 else:
                     # Standard wound allocation - wounded models first, then closest
                     target_model = self._select_wound_target(target_unit)
                     if target_model:
-                        print(f"  🎯 Auto-allocation: {target_model.name}")
+                        print(f"  INFO: Auto-allocation: {target_model.name}")
                 
                 if not target_model:
-                    print("  ❌ No valid target model - attack wasted")
+                    print("  ERROR: No valid target model - attack wasted")
                     continue
                 
                 # Resolve single attack
@@ -13270,7 +13235,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 # The take_damage() method has already handled model death if applicable
                 # No need for manual death checking since take_damage() calls die() automatically
         
-        print(f"⚔️ All attacks resolved")
+        print(f"All attacks resolved")
     
     def _get_weapon_attacks(self, weapon_profile) -> int:
         """Get the number of attacks for a weapon profile."""
@@ -13302,7 +13267,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
         try:
             defender_player = target_unit.get_parent_army().player
-            is_human = bool(getattr(getattr(defender_player, "type", None), "name", "") == "HUMAN")
+            is_human = bool(getattr(defender_player, "has_control", lambda: False)())
         except Exception:
             is_human = False
         provider = getattr(self.game.map, "damage_allocation_provider", None) if getattr(self, "game", None) is not None else None
@@ -13361,10 +13326,10 @@ class BattlePhaseHandler(BasePhaseHandler):
         game_map = getattr(gm, "map", None) if gm is not None else None
         provider = getattr(game_map, "precision_allocation_provider", None) if game_map is not None else None
 
-        # Human-only modal prompt; AI/headless defaults to first available CHARACTER
+        # Local modal prompt; remote/default falls back to first available CHARACTER.
         try:
             attacker_player = attacking_model.parent_unit.get_parent_army().player
-            is_human = bool(getattr(getattr(attacker_player, "type", None), "name", "") == "HUMAN")
+            is_human = bool(getattr(attacker_player, "has_control", lambda: False)())
         except Exception:
             is_human = False
 
@@ -13389,7 +13354,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             hit_roll = get_roll("1D6")
             hit_needed = weapon_skill
             
-            print(f"    🎯 Hit: {hit_roll} vs {hit_needed}+ = {'HIT' if hit_roll >= hit_needed else 'MISS'}")
+            print(f"    INFO: Hit: {hit_roll} vs {hit_needed}+ = {'HIT' if hit_roll >= hit_needed else 'MISS'}")
             
             if hit_roll < hit_needed:
                 return False
@@ -13398,7 +13363,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             wound_roll = get_roll("1D6")
             wound_needed = self._calculate_wound_target(strength, target_model.toughness)
             
-            print(f"    🩸 Wound: {wound_roll} vs {wound_needed}+ = {'WOUND' if wound_roll >= wound_needed else 'NO WOUND'}")
+            print(f"    WOUND: Wound: {wound_roll} vs {wound_needed}+ = {'WOUND' if wound_roll >= wound_needed else 'NO WOUND'}")
             
             if wound_roll < wound_needed:
                 return False
@@ -13412,7 +13377,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
                     if getattr(precision_choice_model, "is_alive", True) and (not callable(can_see) or can_see(attacking_model, precision_choice_model)):
                         target_model = precision_choice_model
-                        print(f"    🎯 PRECISION allocation: {getattr(target_model, 'name', 'CHARACTER')}")
+                        print(f"    INFO: PRECISION allocation: {getattr(target_model, 'name', 'CHARACTER')}")
                 except Exception:
                     pass
             
@@ -13458,7 +13423,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
 
-            print(f"    🛡️ Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
+            print(f"     Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
             
             if save_roll >= effective_needed:
                 return False
@@ -13469,7 +13434,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             else:
                 damage_dealt = int(damage) if damage else 1
             
-            print(f"    💥 Damage: {damage_dealt}")
+            print(f"    ' Damage: {damage_dealt}")
             
             # Use the model's take_damage method which handles FNP, death, etc.
             wounds_before = target_model.wounds
@@ -13479,7 +13444,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             return actual_damage > 0
             
         except Exception as e:
-            print(f"    ❌ Attack resolution error: {e}")
+            print(f"    ERROR: Attack resolution error: {e}")
             return False
     
     def _calculate_wound_target(self, strength: int, toughness: int) -> int:
@@ -13530,7 +13495,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _handle_movement_choice(self, unit, choice: str) -> None:
         """Handle movement choice selection using Unit's movement system"""
-        from warhammer40k_ai.classes.unit import MovementAction
+        from warhammer40k_ai.units.unit import MovementAction
         
         # Map UI choices to Unit's MovementAction enum
         choice_mapping = {
@@ -13546,7 +13511,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return self._show_transport_embark_dialog(unit)
             if choice == 'disembark' and getattr(unit, "is_transport", False):
                 return self._show_transport_disembark_dialog(unit)
-            print(f"❌ Invalid movement choice: {choice}")
+            print(f"ERROR: Invalid movement choice: {choice}")
             return
         
         # Get the unit's current engagement state
@@ -13556,7 +13521,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Check if the chosen action is available
         chosen_action = choice_mapping[choice]
         if chosen_action.value not in available_actions:
-            print(f"❌ {choice.title()} action not available for {unit.name}")
+            print(f"ERROR: {choice.title()} action not available for {unit.name}")
             return
 
         def _begin_movement():
@@ -13650,7 +13615,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 try:
                     u.embark(transport_unit)
                 except Exception as e:
-                    print(f"❌ Embark failed: {e}")
+                    print(f"ERROR: Embark failed: {e}")
 
         self.game_view.transport_embark_dialog.show(transport_unit, candidates, _confirm)
 
@@ -13660,7 +13625,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         passengers = list(getattr(transport_unit, "transport_passengers", []) or [])
         if not passengers:
-            print(f"❌ {transport_unit.name} has no embarked units")
+            print(f"ERROR: {transport_unit.name} has no embarked units")
             return
 
         if not hasattr(self.game_view, "transport_disembark_dialog"):
@@ -13677,7 +13642,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 try:
                     u.disembark(game_map=self.game.map, transport_unit=transport_unit, destroyed_transport=False, emergency=False, current_turn=self.game.turn)
                 except Exception as e:
-                    print(f"❌ Disembark failed: {e}")
+                    print(f"ERROR: Disembark failed: {e}")
 
         self.game_view.transport_disembark_dialog.show(transport_unit, passengers, _confirm)
     
@@ -13885,7 +13850,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # If fight phase manager is still None after initialization, fight phase is complete
         if not self.fight_phase_manager:
-            print("✅ Fight phase is complete - no actions available")
+            print("OK: Fight phase is complete - no actions available")
             return False
         
         # Always check if a unit was clicked on the battlefield first
@@ -13903,7 +13868,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self._handle_fight_phase_selection(clicked_unit)
                 return True
             else:
-                print(f"❌ It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
                 return False
         
         # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
@@ -13915,7 +13880,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self._handle_fight_phase_selection(self.game_view.selected_unit)
                 return True
             else:
-                print(f"❌ It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
                 return False
         
         return False
@@ -13927,38 +13892,38 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Base actions available in all phases
         base_actions = ["view_unit_details", "advance_phase"]
         
-        # Only allow unit selection for human players
-        if current_player.type.name == 'HUMAN':
+        # Only allow unit selection for local control
+        if current_player.has_control():
             base_actions.append("select_unit")
         
         # Phase-specific actions
         if current_phase.name == 'MOVEMENT_PHASE':
-            if current_player.type.name == 'HUMAN':
+            if current_player.has_control():
                 return base_actions + ["move_unit", "advance_unit", "remain_stationary", "fall_back"]
             else:
-                return base_actions + ["ai_movement_phase"]
+                return base_actions
         elif current_phase.name == 'SHOOTING_PHASE':
-            if current_player.type.name == 'HUMAN':
+            if current_player.has_control():
                 return base_actions + ["select_weapon", "target_unit", "cancel_shooting"]
             else:
-                return base_actions + ["ai_shooting_phase"]
+                return base_actions
         elif current_phase.name == 'CHARGE_PHASE':
-            if current_player.type.name == 'HUMAN':
+            if current_player.has_control():
                 return base_actions + ["declare_charge", "charge_move"]
             else:
-                return base_actions + ["ai_charge_phase"]
+                return base_actions
         elif current_phase.name == 'FIGHT_PHASE':
-            if current_player.type.name == 'HUMAN':
+            if current_player.has_control():
                 return base_actions + ["pile_in", "fight", "consolidate"]
             else:
-                return base_actions + ["ai_fight_phase"]
+                return base_actions
         else:
             return base_actions
     
     def _handle_battle_motion(self, mouse_pos) -> bool:
         """Handle mouse motion during battle phases"""
         x, y = mouse_pos
-        # print(f"🔍 DEBUG: _handle_battle_motion called with ({x}, {y})")
+        # print(f"DEBUG: _handle_battle_motion called with ({x}, {y})")
 
         # Individual model movement tracking now has priority over old systems
 
@@ -13980,7 +13945,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.individual_model_movement_dialog.visible and
             self.game_view.individual_model_movement_dialog.selected_model_index is not None):
 
-            print(f"🔍 DEBUG: Individual model movement tracking active at ({x}, {y})")
+            print(f"DEBUG: Individual model movement tracking active at ({x}, {y})")
 
             # Check if mouse is over battlefield area
             if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
@@ -13989,19 +13954,19 @@ class BattlePhaseHandler(BasePhaseHandler):
 
                 # Store mouse position for individual model movement preview
                 self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
-                print(f"🔍 DEBUG: Set preview target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                print(f"DEBUG: Set preview target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
                 return True
             else:
                 # Clear preview when mouse leaves battlefield
                 self.game_view.individual_model_preview_target = None
-                # print(f"🔍 DEBUG: Cleared preview target (mouse outside battlefield)")
+                # print(f"DEBUG: Cleared preview target (mouse outside battlefield)")
         else:
             # Debug why tracking isn't active
             if hasattr(self.game_view, 'individual_model_movement_dialog'):
                 dialog = self.game_view.individual_model_movement_dialog
-                # print(f"🔍 DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
+                # print(f"DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
             else:
-                print(f"🔍 DEBUG: No individual_model_movement_dialog found")
+                print(f"DEBUG: No individual_model_movement_dialog found")
 
         # Update roster pane hovers
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
@@ -14067,7 +14032,7 @@ class PhaseManager:
             elif current_setup_phase.name == 'RESOLVE_PREBATTLE_RULES':
                 # Start the scout phase if not already started for this phase
                 if not hasattr(self.prebattle_handler, 'scout_phase_started') or not self.prebattle_handler.scout_phase_started:
-                    print("🔍 Starting scout phase...")
+                    print("Starting scout phase...")
                     self.prebattle_handler.start_scout_phase()
                     self.prebattle_handler.scout_phase_started = True
                 return self.prebattle_handler
@@ -14080,7 +14045,7 @@ class PhaseManager:
             # Auto-start fight phase if we're in fight phase and it hasn't been started
             if self.game.is_fight_phase():
                 if not hasattr(self.battle_handler, 'fight_phase_started') or not self.battle_handler.fight_phase_started:
-                    print("⚔️ Auto-starting fight phase...")
+                    print("Auto-starting fight phase...")
                     current_player = self.game.get_current_player()
                     opponent_player = self.game.get_opponent()
                     self.battle_handler._initialize_fight_phase_manager(current_player, opponent_player)
@@ -14113,13 +14078,13 @@ class PhaseManager:
         #         pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
         #         pygame.MOUSEMOTION: "MOUSEMOTION"
         #     }.get(event.type, f"TYPE_{event.type}")
-        #     print(f"🔍 DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
+        #     print(f"DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
 
         result = handler.handle_event(event)
 
         # TODO: Uncomment for event debugging
         # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
-        #     print(f"🔍 DEBUG: PhaseManager - {handler_name} returned {result}")
+        #     print(f"DEBUG: PhaseManager - {handler_name} returned {result}")
 
         return result
     
@@ -14152,17 +14117,17 @@ class PhaseManager:
 
         if not is_coherent:
             # Movement must END in coherency. Do not remove models for movement-caused incoherency.
-            print(f"❌ {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
+            print(f"ERROR: {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
                   f"Movement ending out of coherency is not allowed.")
         else:
-            print(f"✅ {unit.name} maintains coherency after movement")
+            print(f"OK: {unit.name} maintains coherency after movement")
 
     def _on_coherency_resolution(self, models_removed: bool):
         """Called when coherency violation dialog is complete"""
         if models_removed:
-            print("✅ Coherency violations resolved")
+            print("OK: Coherency violations resolved")
         else:
-            print("❌ Coherency resolution cancelled")
+            print("ERROR: Coherency resolution cancelled")
 
 
 def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int, game_map=None) -> None:
@@ -14264,7 +14229,7 @@ def draw_pile_in_range(screen: pygame.Surface, model, current_position: tuple, m
     enemy_location = closest_enemy.get_location()
     enemy_position = (enemy_location[0], enemy_location[1])
     
-    print(f"🔍 DEBUG: Drawing pile-in range for {model.name} vs closest enemy {closest_enemy.name} at {closest_distance:.2f}\"")
+    print(f"DEBUG: Drawing pile-in range for {model.name} vs closest enemy {closest_enemy.name} at {closest_distance:.2f}\"")
     
     # Draw the intersection of movement circle and "closer to enemy" area
     draw_pile_in_intersection(screen, current_position[:2], enemy_position, closest_distance, 
@@ -14455,7 +14420,7 @@ def draw_weapon_ranges(screen: pygame.Surface, unit, selected_weapon_profile, zo
             font = pygame.font.SysFont('Arial', max(14, int(16 * zoom_level)), bold=True)
             weapon_name = selected_weapon_profile.parent_wargear.name
             if len(selected_weapon_profile.parent_wargear.profiles) > 1:
-                weapon_name += f" ({selected_weapon_profile.name})"
+                weapon_name += f"({selected_weapon_profile.name})"
             
             info_text = f"{weapon_name} - Range {weapon_range}\" ({len(models_with_weapon)} models)"
             text_surface = font.render(info_text, True, border_color)
@@ -14488,7 +14453,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
     def start_scout_phase(self):
         """Initialize the queue of eligible human scout units."""
-        print("🔍 Initializing scout phase...")
+        print("Initializing scout phase...")
         self.scout_units_queue = []
         self.current_scout_unit = None
         self.current_scout_player = None  # Reset player tracking
@@ -14507,33 +14472,33 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             first_turn_player = game.get_attacker() if game.attacker_index is not None else game.players[0]
         
         players_in_order = [first_turn_player] + [p for p in game.players if p != first_turn_player]
-        print(f"🔍 DEBUG: Scout phase players in order: {[p.name for p in players_in_order]}")
+        print(f"DEBUG: Scout phase players in order: {[p.name for p in players_in_order]}")
         
         for player in players_in_order:
-            if player.type.name == 'HUMAN' and player.get_army():
-                print(f"🔍 DEBUG: Checking {player.name}'s units for scout ability")
+            if player.has_control() and player.get_army():
+                print(f"DEBUG: Checking {player.name}'s units for scout ability")
                 for unit in player.get_army().units:
                     has_scout, scout_distance = unit.has_scout()
-                    print(f"🔍 DEBUG: {unit.name} - has_scout={has_scout}, deployed={unit.deployed}, reserve_status={unit.reserve_status}, scout_move_made={getattr(unit, 'scout_move_made', False)}")
+                    print(f"DEBUG: {unit.name} - has_scout={has_scout}, deployed={unit.deployed}, reserve_status={unit.reserve_status}, scout_move_made={getattr(unit, 'scout_move_made', False)}")
                     if has_scout and unit.deployed and unit.reserve_status == 'deployed' and not getattr(unit, 'scout_move_made', False):
                         self.scout_units_queue.append((unit, player, scout_distance))
-                        print(f"🔍 DEBUG: Added {unit.name} to scout queue")
+                        print(f"DEBUG: Added {unit.name} to scout queue")
         
-        print(f"🔍 DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
+        print(f"DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
         self._next_scout_unit()
 
     def _next_scout_unit(self):
-        print(f"🔍 DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")
+        print(f"DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")
         if self.scout_units_queue:
             unit, player, scout_distance = self.scout_units_queue.pop(0)
-            print(f"🔍 DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
+            print(f"DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
 
             # Check if player has changed and clear enemy model cache if so
             if self.current_scout_player != player:
                 if self.current_scout_player is not None:  # Not the first unit
 
                     clear_enemy_model_cache(id(self.game_view.game.map))
-                    print(f"🔍 Scout phase player switched to {player.name} - cleared enemy model cache")
+                    print(f"Scout phase player switched to {player.name} - cleared enemy model cache")
                 self.current_scout_player = player
 
             self.current_scout_unit = unit
@@ -14541,31 +14506,31 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             self.awaiting_battlefield_click = False
             self._show_scout_dialog(unit)
         else:
-            # print(f"🔍 DEBUG: Scout queue is empty, scout phase complete")
+            # print(f"DEBUG: Scout queue is empty, scout phase complete")
             self.current_scout_unit = None
             self.current_scout_player = None  # Reset player tracking
             self.awaiting_battlefield_click = False
             self.scout_callback = None
             self.scout_distance = 0
             self.mouse_pos = None
-            print("✅ All human SCOUT moves complete. Press SPACE to continue.")
+            print("OK: All human SCOUT moves complete. Press SPACE to continue.")
 
     def _show_scout_dialog(self, unit):
-        # print(f"🔍 DEBUG: _show_scout_dialog called for {unit.name}")
+        # print(f"DEBUG: _show_scout_dialog called for {unit.name}")
         def on_scout_choice(choice):
-            # print(f"🔍 DEBUG: Scout choice for {unit.name}: {choice}")
+            # print(f"DEBUG: Scout choice for {unit.name}: {choice}")
             if choice == 'scout':
                 # Open individual model movement dialog for scout movement
                 def on_scout_movement_complete(completed: bool):
-                    # print(f"🔍 DEBUG: Scout movement complete for {unit.name}: completed={completed}")
-                    # print(f"🔍 DEBUG: Setting scout_move_made=True for {unit.name}")
+                    # print(f"DEBUG: Scout movement complete for {unit.name}: completed={completed}")
+                    # print(f"DEBUG: Setting scout_move_made=True for {unit.name}")
                     if completed:
-                        print(f"✅ {unit.name} scout movement completed")
+                        print(f"OK: {unit.name} scout movement completed")
                         unit.scout_move_made = True
                     else:
-                        print(f"⏭️  {unit.name} scout movement skipped")
+                        print(f"INFO:  {unit.name} scout movement skipped")
                         unit.scout_move_made = True
-                    # print(f"🔍 DEBUG: Calling _next_scout_unit() to proceed to next unit")
+                    # print(f"DEBUG: Calling _next_scout_unit() to proceed to next unit")
                     self._next_scout_unit()
 
                 self.game_view.individual_model_movement_dialog.show(
@@ -14573,10 +14538,10 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                 )
             elif choice == 'skip':
                 unit.scout_move_made = True
-                print(f"✅ {unit.name} scout move skipped")
+                print(f"OK: {unit.name} scout move skipped")
                 self._next_scout_unit()
             elif choice == 'defer':
-                print(f"⏸️  {unit.name} scout decision deferred - moving to end of current player's queue")
+                print(f"INFO:  {unit.name} scout decision deferred - moving to end of current player's queue")
                 # Move this unit to the end of the current player's units in the queue
                 player = None
                 for p in self.game_view.game.players:
@@ -14598,17 +14563,17 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     insert_position = last_same_player_position + 1
 
                     self.scout_units_queue.insert(insert_position, (unit, player, self.scout_distance))
-                    # print(f"🔍 DEBUG: {unit.name} added back to position {insert_position} (after last {player.name} unit). Queue now has {len(self.scout_units_queue)} units")
+                    # print(f"DEBUG: {unit.name} added back to position {insert_position} (after last {player.name} unit). Queue now has {len(self.scout_units_queue)} units")
 
                     # Debug: show current queue
                     # queue_debug = [(u.name, p.name) for u, p, _ in self.scout_units_queue]
-                    # print(f"🔍 DEBUG: Current queue: {queue_debug}")
+                    # print(f"DEBUG: Current queue: {queue_debug}")
 
                 self._next_scout_unit()
-        # print(f"🔍 DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
+        # print(f"DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
         self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
-        # print(f"🔍 DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
-        # print(f"🔍 DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
+        # print(f"DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
+        # print(f"DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
 
     def _validate_scout_destination(self, unit, destination: Tuple[float, float]) -> dict:
         """Validate if a destination is valid for a scout move using pathfinding."""
@@ -14661,7 +14626,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.MOUSEMOTION:
-            # print(f"🔍 DEBUG: PreBattlePhaseHandler received MOUSEMOTION event at {event.pos}")
+            # print(f"DEBUG: PreBattlePhaseHandler received MOUSEMOTION event at {event.pos}")
             pass
 
         # Track mouse position for visual feedback
@@ -14670,22 +14635,22 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         
         # Handle mouse motion for path preview during individual model movement
         if event.type == pygame.MOUSEMOTION:
-            # print(f"🔍 DEBUG: PreBattlePhaseHandler mouse motion event received")
+            # print(f"DEBUG: PreBattlePhaseHandler mouse motion event received")
 
             # Debug: Check individual model movement dialog visibility
             has_dialog = hasattr(self.game_view, 'individual_model_movement_dialog')
-            # print(f"🔍 DEBUG: has_dialog={has_dialog}")
+            # print(f"DEBUG: has_dialog={has_dialog}")
 
             if has_dialog:
                 dialog_obj = self.game_view.individual_model_movement_dialog
                 dialog_visible = dialog_obj.visible
                 dialog_unit = getattr(dialog_obj, 'unit', None)
                 unit_name = dialog_unit.name if dialog_unit else None
-                # print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}, dialog_visible={dialog_visible}, dialog_unit={unit_name}")
+                # print(f"DEBUG: Mouse motion - has_dialog={has_dialog}, dialog_visible={dialog_visible}, dialog_unit={unit_name}")
 
                 if dialog_visible:
                     x, y = event.pos
-                    # print(f"🔍 DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
+                    # print(f"DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
 
                     # Check if mouse is over battlefield area
                     if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
@@ -14694,16 +14659,16 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
                         # Store mouse position for individual model movement preview
                         self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
-                        # print(f"🔍 DEBUG: PreBattlePhaseHandler set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                        # print(f"DEBUG: PreBattlePhaseHandler set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
                         return True
                     else:
                         # Clear preview when mouse leaves battlefield
                         self.game_view.individual_model_preview_target = None
-                        # print(f"🔍 DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
+                        # print(f"DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
                         return True
             else:
                 pass
-                # print(f"🔍 DEBUG: Mouse motion - has_dialog={has_dialog}")
+                # print(f"DEBUG: Mouse motion - has_dialog={has_dialog}")
 
         # Handle battlefield clicks for individual model movement during scout phase
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click

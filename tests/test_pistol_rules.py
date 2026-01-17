@@ -45,7 +45,7 @@ class _DummyMap:
 class TestPistolRules(unittest.TestCase):
     def test_pistol_does_not_allow_shooting_after_fall_back(self):
         # Create Unit instance without full init
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.has_fell_back_and_shoot = lambda: False
@@ -54,7 +54,7 @@ class TestPistolRules(unittest.TestCase):
         self.assertFalse(u.can_shoot_after_fall_back(pistol))
 
     def test_pistol_target_must_be_engaged_when_unit_is_engaged(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         # Make it not vehicle/monster
@@ -72,7 +72,7 @@ class TestPistolRules(unittest.TestCase):
         self.assertTrue(u._can_shoot_while_engaged(SimpleNamespace(is_alive=True), pistol, target, game_map2))
 
     def test_non_pistol_disallowed_when_engaged_for_non_vehicle_monster(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.has_keyword = lambda k: False  # not vehicle/monster
@@ -82,7 +82,7 @@ class TestPistolRules(unittest.TestCase):
         self.assertFalse(u._can_shoot_while_engaged(SimpleNamespace(is_alive=True), non_pistol, target, game_map))
 
     def test_vehicle_can_shoot_while_engaged_but_blast_blocked_into_engagement(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         # Vehicle yes, Monster no

@@ -43,7 +43,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, ds_id="", abilities=None, attached_to=None, leadership="7"):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -69,7 +69,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         )
 
     def test_bearer_unit_charge_bonus_applies(self):
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
         ability = {
             "name": "Instrument of Chaos",
@@ -85,7 +85,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertEqual(game._apply_charge_modifiers(unit, 7), 8)
 
     def test_bearer_unit_advance_and_charge_bonus_applies(self):
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
         ability = {
             "name": "War Drums",
@@ -239,7 +239,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertFalse(charge_rules.get("can_move_through_enemy_models"))
 
     def test_bearer_unit_sustained_hits_applies(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Aspect Relic",
@@ -271,13 +271,13 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
             has_keyword=lambda _k: False,
         )
         attack_instance = {"_aura_attack_mods": self._aura_stub()}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
 
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
 
     def test_leading_unit_melee_sustained_hits_applies_to_melee_only(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Bloody Example",
@@ -328,17 +328,17 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         )
 
         attack_instance = {"_aura_attack_mods": self._aura_stub()}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             melee_profile._hit_target_with_tracking(target, bodyguard.models[0], attack_instance)
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
 
         attack_instance = {"_aura_attack_mods": self._aura_stub()}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             ranged_profile._hit_target_with_tracking(target, bodyguard.models[0], attack_instance)
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 0)
 
     def test_bearer_unit_ignores_cover_applies(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Shadow Weave",
@@ -370,7 +370,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
             has_keyword=lambda _k: False,
         )
         attack_instance = {"_aura_attack_mods": self._aura_stub()}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
 
         self.assertTrue(attack_instance.get("ignores_cover", False))
@@ -391,7 +391,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertIn("-1 to hit from Deflective Field", reasons)
 
     def test_leading_unit_target_hit_penalty_applies(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         ability = {
             "name": "Shield of Duty",
@@ -427,7 +427,7 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         self.assertEqual(unit.leadership, 6)
 
     def test_attached_leader_bearer_unit_leadership_applies_to_bodyguard(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         ability = {
             "name": "Daemonic Icon",

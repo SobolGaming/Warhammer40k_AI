@@ -1,9 +1,9 @@
-import types
+﻿import types
 import pytest
 
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.mission_cards import (
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.engine.mission_cards import (
     BehindEnemyLinesSecondary,
     StormHostileObjectiveSecondary,
     EngageOnAllFrontsSecondary,
@@ -34,8 +34,8 @@ class DummyArmy:
 
 def make_game():
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
-    p1 = Player("Player 1", PlayerType.HUMAN, army=DummyArmy())
-    p2 = Player("Player 2", PlayerType.HUMAN, army=DummyArmy())
+    p1 = Player("Player 1", PlayerControl.LOCAL, army=DummyArmy())
+    p2 = Player("Player 2", PlayerControl.LOCAL, army=DummyArmy())
     game = Game(bf, players=[p1, p2])
     # Minimal DZ half-split zones
     game.deployment_zones = {

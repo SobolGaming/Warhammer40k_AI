@@ -5,8 +5,8 @@ import unicodedata
 import warnings
 from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from types import SimpleNamespace
-from warhammer40k_ai.classes.enhancement import Enhancement
-from warhammer40k_ai.classes.ability import Ability
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.units.ability import Ability
 
 # Suppress the specific warnings at the module level
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
@@ -333,19 +333,9 @@ class WahaHelper:
             enhancement_data = self.enhancements[enhancement_id]
             try:
                 return Enhancement.from_waha_dict(enhancement_data)
-            except Exception:
-                # Backwards-compatible fallback
-                return Enhancement(
-                    id=str(enhancement_data.get("id", "") or enhancement_id),
-                    name=enhancement_data.get('name', ''),
-                    faction_id=enhancement_data.get('faction_id', ''),
-                    detachment=enhancement_data.get('detachment', ''),
-                    detachment_id=enhancement_data.get('detachment_id', ''),
-                    points=int(enhancement_data.get('cost', 0) or 0),
-                    description=enhancement_data.get('description', ''),
-                    legend=enhancement_data.get('legend', ''),
-                    eligible_keywords=set(),
-                )
+            except Exception as exc:
+                print(f"Error parsing enhancement id {enhancement_id}: {exc}")
+                return None
         return None
 
     def get_enhancement_by_name(self, name: str) -> Enhancement:
@@ -356,18 +346,10 @@ class WahaHelper:
             if self.strip_special_chars(enhancement['name']) == self.strip_special_chars(name):
                 try:
                     return Enhancement.from_waha_dict(enhancement)
-                except Exception:
-                    return Enhancement(
-                        id=str(enhancement.get("id", "") or ""),
-                        name=enhancement.get('name', ''),
-                        faction_id=enhancement.get('faction_id', ''),
-                        detachment=enhancement.get('detachment', ''),
-                        detachment_id=enhancement.get('detachment_id', ''),
-                        points=int(enhancement.get('cost', 0) or 0),
-                        description=enhancement.get('description', ''),
-                        legend=enhancement.get('legend', ''),
-                        eligible_keywords=set(),
-                    )
+                except Exception as exc:
+                    enh_name = enhancement.get("name", "") or name
+                    print(f"Error parsing enhancement {enh_name}: {exc}")
+                    return None
         return None
 
     def get_ability(self, ability_id: str) -> Ability:

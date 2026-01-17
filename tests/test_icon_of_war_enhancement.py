@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 
 
@@ -40,7 +40,7 @@ class _MockDatasheet:
 
 class TestIconOfWarEnhancement(unittest.TestCase):
     def _make_unit(self, name, *, keywords=None, faction_keywords=None, leadership="6"):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         datasheet = _MockDatasheet(
             name,
@@ -55,19 +55,19 @@ class TestIconOfWarEnhancement(unittest.TestCase):
             model.set_location(float(x), float(y), 0.0, 0.0)
 
     def _make_game(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
         game.add_player(player)
         return game, army, player
 
     def test_icon_of_war_grants_blessings_within_range(self):
-        from warhammer40k_ai.classes.enhancement import Enhancement
+        from warhammer40k_ai.rules.enhancement import Enhancement
 
         _game, army, _player = self._make_game()
         bearer = self._make_unit(
@@ -100,7 +100,7 @@ class TestIconOfWarEnhancement(unittest.TestCase):
         self.assertTrue(target.attached_unit_has_blessings_of_khorne())
 
     def test_icon_of_war_battle_shock_reroll_logs_decision(self):
-        from warhammer40k_ai.classes.enhancement import Enhancement
+        from warhammer40k_ai.rules.enhancement import Enhancement
         from warhammer40k_ai.utility.event_bus import get_recent_actions
 
         game, army, player = self._make_game()
@@ -142,7 +142,7 @@ class TestIconOfWarEnhancement(unittest.TestCase):
 
         game.map.roll_reroll_provider = _provider
 
-        with patch("warhammer40k_ai.classes.unit.get_roll", side_effect=[9, 5]) as mock_roll:
+        with patch("warhammer40k_ai.units.unit.get_roll", side_effect=[9, 5]) as mock_roll:
             target.take_battle_shock_test(current_turn=1)
 
         self.assertEqual(calls["count"], 1)

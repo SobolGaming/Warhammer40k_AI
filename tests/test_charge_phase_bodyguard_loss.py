@@ -1,4 +1,4 @@
-from types import SimpleNamespace
+﻿from types import SimpleNamespace
 
 
 class _MockDatasheet:
@@ -33,7 +33,7 @@ class _MockDatasheet:
 
 
 def _make_unit(*, name, datasheet_id, model_count=1, abilities=None, attached_to=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -54,9 +54,9 @@ class _MapStub:
 
 
 def test_charge_phase_bodyguard_loss_ai(monkeypatch):
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     ability = {
         "name": "Battle Lust",
@@ -88,11 +88,12 @@ def test_charge_phase_bodyguard_loss_ai(monkeypatch):
     leader.deployed = True
     leader.reserve_status = "deployed"
 
-    player = Player("P1", player_type=PlayerType.AI, army=army)
+    player = Player("P1", control=PlayerControl.REMOTE, army=army)
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
     game.map = _MapStub()
 
-    monkeypatch.setattr("warhammer40k_ai.classes.unit.get_roll", lambda _die: 12)
+    monkeypatch.setattr("warhammer40k_ai.units.unit.get_roll", lambda _die: 12)
+    player.set_next_optional_selection("CHARGE_PHASE_BODYGUARD_LOSS_MODEL", bodyguard.models[0])
 
     game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.CHARGE_PHASE)
 
@@ -101,8 +102,8 @@ def test_charge_phase_bodyguard_loss_ai(monkeypatch):
 
 
 def test_charge_phase_bodyguard_loss_prompts_human(monkeypatch):
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
 
     ability = {
         "name": "Battle Lust",
@@ -134,14 +135,14 @@ def test_charge_phase_bodyguard_loss_prompts_human(monkeypatch):
     leader.deployed = True
     leader.reserve_status = "deployed"
 
-    player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), army=army)
+    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, army=army)
     army.player = player
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
     game.players = [player]
     game.map = _MapStub()
 
-    monkeypatch.setattr("warhammer40k_ai.classes.unit.get_roll", lambda _die: 12)
+    monkeypatch.setattr("warhammer40k_ai.units.unit.get_roll", lambda _die: 12)
 
     game.event_system.subscribe("charge_phase_bodyguard_loss_prompt", lambda **_k: None)
 

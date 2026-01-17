@@ -2,7 +2,7 @@ import unittest
 
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class _ModelStub:

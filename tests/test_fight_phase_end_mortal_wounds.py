@@ -1,4 +1,4 @@
-import types
+﻿import types
 from types import SimpleNamespace
 
 
@@ -32,7 +32,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, ability_desc=None, model_count=1):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     abilities = []
     if ability_desc:
@@ -57,7 +57,7 @@ class _MapStub:
 
 
 def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
     ability = (
         "At the end of the Fight phase, you can select one enemy unit within Engagement Range of this model "
@@ -68,8 +68,8 @@ def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
     unit.deployed = True
     enemy.deployed = True
 
-    player = SimpleNamespace(name="P1", type=SimpleNamespace(name="AI"))
-    enemy_player = SimpleNamespace(name="P2", type=SimpleNamespace(name="AI"))
+    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+    enemy_player = SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
     army = SimpleNamespace(player=player, units=[unit])
     enemy_army = SimpleNamespace(player=enemy_player, units=[enemy])
     player.army = army
@@ -106,7 +106,7 @@ def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
 
 
 def test_fight_phase_end_mortal_wounds_prompts_human(monkeypatch):
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
     ability = (
         "At the end of the Fight phase, you can select one enemy unit within Engagement Range of this model "
@@ -119,8 +119,8 @@ def test_fight_phase_end_mortal_wounds_prompts_human(monkeypatch):
     enemy1.deployed = True
     enemy2.deployed = True
 
-    player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"))
-    enemy_player = SimpleNamespace(name="P2", type=SimpleNamespace(name="AI"))
+    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True)
+    enemy_player = SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
     army = SimpleNamespace(player=player, units=[unit])
     enemy_army = SimpleNamespace(player=enemy_player, units=[enemy1, enemy2])
     player.army = army

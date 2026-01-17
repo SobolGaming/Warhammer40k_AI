@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestAspectShrineToken(unittest.TestCase):
     def test_parse_it_can_have_aspect_shrine_token(self):
-        from warhammer40k_ai.classes.wargear import parse_alternate_3
+        from warhammer40k_ai.units.wargear import parse_alternate_3
 
         unit = SimpleNamespace(models=[SimpleNamespace(name="Model") for _ in range(5)])
         desc = "For every 5 models in this unit, it can have 1 Aspect Shrine token."
@@ -16,8 +16,8 @@ class TestAspectShrineToken(unittest.TestCase):
         self.assertEqual(choice[0][1], "aspect shrine token")
 
     def test_apply_wargear_option_adds_tokens(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         u = Unit.__new__(Unit)
         u.models = [
@@ -49,8 +49,8 @@ class TestAspectShrineToken(unittest.TestCase):
         self.assertFalse(u.spend_aspect_shrine_token(5))
 
     def test_aspect_shrine_tokens_not_auto_applied(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         u = Unit.__new__(Unit)
         u.models = [SimpleNamespace(name="Model", wargear=[], optional_wargear=[])]

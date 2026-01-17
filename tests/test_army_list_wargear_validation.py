@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestArmyListWargearValidation(unittest.TestCase):
     def _make_wargear(self, name: str, wtype: str = "Ranged", keywords: str = ""):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         # Minimal valid wargear_data for construction
         return Wargear(
@@ -22,7 +22,7 @@ class TestArmyListWargearValidation(unittest.TestCase):
         )
 
     def test_validate_wargear_selection_enforces_two_ranged_requires_pistol(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         rifle = self._make_wargear("rifle", wtype="Ranged")
         carbine = self._make_wargear("carbine", wtype="Ranged")

@@ -5,8 +5,8 @@ import unittest
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.map import Map, ObjectivePoint
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.battlefield.map import Map, ObjectivePoint
 from warhammer40k_ai.utility.calcs import unified_pathfinding, MovementType, clear_enemy_model_cache, clear_collision_caches
 from warhammer40k_ai.utility.constants import BASE_CONTACT_EPSILON
 

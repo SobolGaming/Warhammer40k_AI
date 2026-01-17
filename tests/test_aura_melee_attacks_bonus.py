@@ -6,8 +6,8 @@ from types import SimpleNamespace
 class TestAuraMeleeAttacksBonus(unittest.TestCase):
     def test_melee_attacks_aura_parses_and_applies_once(self):
         from warhammer40k_ai.utility.aura_effects import get_aura_melee_attacks_bonus
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.units.wargear import Wargear
 
         aura = Ability(
             name="Rage Embodied (Aura)",

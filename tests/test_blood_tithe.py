@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -40,7 +40,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, faction_name="World Eaters", keywords=None, faction_keywords=None, cost=100):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -54,9 +54,9 @@ def _make_unit(name, *, faction_name="World Eaters", keywords=None, faction_keyw
 
 class TestBloodTithe(unittest.TestCase):
     def _make_game(self):
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
 
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
@@ -66,8 +66,8 @@ class TestBloodTithe(unittest.TestCase):
         enemy_army = Army("Enemy", "Other")
         enemy_army.faction_id = "EN"
 
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=we_army)
-        p2 = Player("P2", player_type=PlayerType.AI, army=enemy_army)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=we_army)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=enemy_army)
         game.add_player(p1)
         game.add_player(p2)
 
@@ -108,7 +108,7 @@ class TestBloodTithe(unittest.TestCase):
         self.assertEqual(we_army.world_eaters_detachments.blood_tithe_points, 0)
 
     def test_blood_tithe_enraged_abjuration_adds_fnp(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -126,8 +126,8 @@ class TestBloodTithe(unittest.TestCase):
         self.assertIn((5, "against psychic attacks and mortal wounds"), fnps)
 
     def test_blood_tithe_daemonic_rage_adds_lance_bonus(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -164,14 +164,14 @@ class TestBloodTithe(unittest.TestCase):
         )
 
         attacker = unit.models[0]
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance={})
         self.assertTrue(res.get("wound", False))
         self.assertIn("+1 to wound from Lance (Blood Tithe)", res.get("modifiers", []))
 
     def test_blood_tithe_boon_of_blood_sets_invulnerable(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -206,7 +206,7 @@ class TestBloodTithe(unittest.TestCase):
         self.assertEqual(int(save_res.get("final_save", 0)), 4)
 
     def test_blood_tithe_might_of_khorne_grants_blessings(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -255,7 +255,7 @@ class TestBloodTithe(unittest.TestCase):
         self.assertEqual(we_army.world_eaters_detachments.blood_tithe_points, 3)
 
     def test_khorne_daemonkin_points_cap_enforced(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
         army = Army("World Eaters", "Khorne Daemonkin", points_limit=2000)
         army.faction_id = "WE"
@@ -278,7 +278,7 @@ class TestBloodTithe(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_blood_legions_cannot_be_warlord(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -296,7 +296,7 @@ class TestBloodTithe(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_disciple_of_khorne_cannot_be_warlord(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"

@@ -26,7 +26,7 @@ class MovementChoiceDialog(BaseDialog):
             self.available_actions = unit.get_available_move_actions(engagement_state.value)
         else:
             # Fallback - assume all actions available
-            from warhammer40k_ai.classes.unit import MovementAction
+            from warhammer40k_ai.units.unit import MovementAction
             self.available_actions = [
                 MovementAction.REMAIN_STATIONARY.value,
                 MovementAction.MOVE.value,
@@ -49,7 +49,7 @@ class MovementChoiceDialog(BaseDialog):
 
     def is_action_available(self, action_name: str) -> bool:
         """Check if a movement action is available for the current unit"""
-        from warhammer40k_ai.classes.unit import MovementAction
+        from warhammer40k_ai.units.unit import MovementAction
         
         action_map = {
             'move': MovementAction.MOVE.value,

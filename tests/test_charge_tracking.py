@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 import sys
 import os
 import pytest
@@ -7,9 +7,9 @@ import logging
 # Add the src directory to the Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
 
 # Add this at the beginning of your test file
 @pytest.fixture(autouse=True)
@@ -51,8 +51,8 @@ class TestChargeTracking(unittest.TestCase):
         self.game = Game(self.battlefield)
         
         # Create players
-        self.player1 = Player("Player 1", PlayerType.HUMAN, None)
-        self.player2 = Player("Player 2", PlayerType.AI, None)
+        self.player1 = Player("Player 1", PlayerControl.LOCAL, None)
+        self.player2 = Player("Player 2", PlayerControl.REMOTE, None)
         self.game.add_player(self.player1)
         self.game.add_player(self.player2)
         
@@ -161,19 +161,19 @@ class TestChargeTracking(unittest.TestCase):
         # According to 10th edition rules, the distance needed should be current_distance - 1"
         # because we need to achieve edge-to-edge distance of 1" or less
         expected_distance_needed = max(0, current_distance - 1.0)
-        print(f"DEBUG: Expected distance needed to achieve ≤1\" edge-to-edge: {expected_distance_needed}\"")
+        print(f"DEBUG: Expected distance needed to achieve â‰¤1\" edge-to-edge: {expected_distance_needed}\"")
         
         # Test with a charge roll that should succeed
-        # If current_distance is 5", we need to roll at least 4" to achieve ≤1" edge-to-edge
+        # If current_distance is 5", we need to roll at least 4" to achieve â‰¤1" edge-to-edge
         test_charge_roll = 4.0
         if test_charge_roll >= expected_distance_needed:
             print(f"DEBUG: Charge roll {test_charge_roll}\" should succeed (>= {expected_distance_needed}\")")
         else:
             print(f"DEBUG: Charge roll {test_charge_roll}\" should fail (< {expected_distance_needed}\")")
         
-        # Verify the logic: if we roll enough to achieve ≤1" edge-to-edge, the charge should be possible
+        # Verify the logic: if we roll enough to achieve â‰¤1" edge-to-edge, the charge should be possible
         self.assertTrue(test_charge_roll >= expected_distance_needed,
-                       f"Charge roll {test_charge_roll}\" should be sufficient to achieve ≤1\" edge-to-edge distance")
+                       f"Charge roll {test_charge_roll}\" should be sufficient to achieve â‰¤1\" edge-to-edge distance")
         
         # Test with a charge roll that should fail
         test_charge_roll_fail = 2.0
@@ -183,7 +183,7 @@ class TestChargeTracking(unittest.TestCase):
             print(f"DEBUG: Charge roll {test_charge_roll_fail}\" should succeed (>= {expected_distance_needed}\")")
         
         self.assertTrue(test_charge_roll_fail < expected_distance_needed,
-                       f"Charge roll {test_charge_roll_fail}\" should be insufficient to achieve ≤1\" edge-to-edge distance")
+                       f"Charge roll {test_charge_roll_fail}\" should be insufficient to achieve â‰¤1\" edge-to-edge distance")
 
 
 if __name__ == '__main__':

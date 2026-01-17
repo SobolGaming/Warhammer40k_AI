@@ -1,4 +1,4 @@
-"""
+﻿"""
 warhammer40k_ai package bootstrap.
 
 This project runs on Windows where the default console encoding can be cp1252. A lot of

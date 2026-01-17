@@ -1,15 +1,15 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.ability import Ability
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
-from warhammer40k_ai.classes.model import Model
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.ability import Ability
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
+from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules, validate_final_position
 from warhammer40k_ai.utility.model_base import Base, BaseType
-from warhammer40k_ai.classes.map import Map
+from warhammer40k_ai.battlefield.map import Map
 
 
 class TestBloodSurge(unittest.TestCase):
@@ -43,8 +43,8 @@ class TestBloodSurge(unittest.TestCase):
         army2 = Army("Other", detachment_type="Other")
         army2.faction_id = "OT"
 
-        p1 = Player("P1", PlayerType.HUMAN, army=army1)
-        p2 = Player("P2", PlayerType.HUMAN, army=army2)
+        p1 = Player("P1", PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", PlayerControl.LOCAL, army=army2)
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])
@@ -179,8 +179,8 @@ class TestBloodSurge(unittest.TestCase):
         army2 = Army("Other", detachment_type="Other")
         army2.faction_id = "OT"
 
-        p1 = Player("P1", PlayerType.HUMAN, army=army1)
-        p2 = Player("P2", PlayerType.HUMAN, army=army2)
+        p1 = Player("P1", PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", PlayerControl.LOCAL, army=army2)
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])

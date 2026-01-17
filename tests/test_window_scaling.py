@@ -31,11 +31,19 @@ class TestWindowScaling(unittest.TestCase):
         print("🖥️  Testing Window Scaling Calculations")
         
         # Import constants
-        from warhammer40k_ai.UI.game_ui import ROSTER_PANE_WIDTH, BATTLEFIELD_WIDTH, BATTLEFIELD_HEIGHT, INFO_PANE_HEIGHT
+        from warhammer40k_ai.UI.game_ui import (
+            ROSTER_PANE_WIDTH,
+            STRATAGEM_PANE_WIDTH,
+            BATTLEFIELD_WIDTH,
+            BATTLEFIELD_HEIGHT,
+            INFO_PANE_HEIGHT,
+            TILE_SIZE,
+        )
         
         # Calculate desired window size
-        desired_width = BATTLEFIELD_WIDTH + 2 * ROSTER_PANE_WIDTH
-        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT
+        desired_width = BATTLEFIELD_WIDTH + 2 * (ROSTER_PANE_WIDTH + STRATAGEM_PANE_WIDTH)
+        top_pane_height = int(2 * TILE_SIZE)
+        desired_height = BATTLEFIELD_HEIGHT + INFO_PANE_HEIGHT + top_pane_height
         
         print(f"  📏 Desired window size: {desired_width}x{desired_height}")
         

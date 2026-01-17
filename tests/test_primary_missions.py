@@ -1,9 +1,9 @@
-import types
+﻿import types
 import pytest
 
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.mission_cards import (
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.engine.mission_cards import (
     TakeAndHoldPrimary,
     TerraformPrimary,
     LinchpinPrimary,
@@ -42,8 +42,8 @@ class DummyObjective:
 
 def make_game_with_players():
     battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
-    p1 = Player("Player 1", PlayerType.HUMAN, army=DummyArmy())
-    p2 = Player("Player 2", PlayerType.HUMAN, army=DummyArmy())
+    p1 = Player("Player 1", PlayerControl.LOCAL, army=DummyArmy())
+    p2 = Player("Player 2", PlayerControl.LOCAL, army=DummyArmy())
     game = Game(battlefield, players=[p1, p2])
     # Minimal deployment zones mapping for tests
     game.deployment_zones = {

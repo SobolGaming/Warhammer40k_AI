@@ -1,12 +1,12 @@
-import pytest
+﻿import pytest
 from types import SimpleNamespace
 
 
 def test_cp_guardrail_allows_only_one_non_normal_cp_per_battle_round():
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     game = SimpleNamespace(turn=1)
-    p = Player("P1", PlayerType.HUMAN, None)
+    p = Player("P1", PlayerControl.LOCAL, None)
     p.set_game(game)
     p.command_points = 0
 
@@ -36,16 +36,16 @@ def test_cp_guardrail_allows_only_one_non_normal_cp_per_battle_round():
 
 
 def test_command_phase_bonus_cp_is_subject_to_guardrail():
-    from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-    from warhammer40k_ai.classes.player import Player, PlayerType
-    from warhammer40k_ai.classes.army import Army
+    from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+    from warhammer40k_ai.roster.player import Player, PlayerControl
+    from warhammer40k_ai.roster.army import Army
 
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
     game.turn = 1
 
-    p1 = Player("P1", PlayerType.HUMAN, None)
-    p2 = Player("P2", PlayerType.AI, None)
+    p1 = Player("P1", PlayerControl.LOCAL, None)
+    p2 = Player("P2", PlayerControl.REMOTE, None)
     game.add_player(p1)
     game.add_player(p2)
 

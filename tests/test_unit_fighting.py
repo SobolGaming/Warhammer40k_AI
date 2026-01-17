@@ -1,12 +1,12 @@
-"""
-Test suite for Fight Phase functionality in Warhammer 40k AI
+﻿"""
+Test suite for Fight Phase functionality in Warhammer 40k
 
 This test suite covers:
 1. Fight phase stage management (Fight First vs Remaining Combatants)
 2. Player turn order (non-current player goes first)
 3. Unit eligibility for fighting
 4. Target selection and engagement range validation
-5. Fight sequence execution (Pile-in → Attack → Consolidate)
+5. Fight sequence execution (Pile-in â†’ Attack â†’ Consolidate)
 6. Alternating player selection
 7. Stage progression and completion
 """
@@ -20,13 +20,13 @@ import os
 # Add the src directory to the path so we can import the modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
-from warhammer40k_ai.classes.unit import Unit, UnitRoundState
-from warhammer40k_ai.classes.model import Model
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.game import Game
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.map import Map
+from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
+from warhammer40k_ai.units.unit import Unit, UnitRoundState
+from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.battlefield.map import Map
 
 
 class TestFightPhaseManager(unittest.TestCase):
@@ -42,13 +42,15 @@ class TestFightPhaseManager(unittest.TestCase):
         # Create mock players
         self.player1 = Mock(spec=Player)
         self.player1.name = "Player 1"
-        self.player1.type = Mock(spec=PlayerType)
-        self.player1.type.name = "HUMAN"
+        self.player1.control = Mock(spec=PlayerControl)
+        self.player1.control.name = "LOCAL"
+        self.player1.has_control = Mock(return_value=True)
         
         self.player2 = Mock(spec=Player)
         self.player2.name = "Player 2"
-        self.player2.type = Mock(spec=PlayerType)
-        self.player2.type.name = "HUMAN"
+        self.player2.control = Mock(spec=PlayerControl)
+        self.player2.control.name = "LOCAL"
+        self.player2.has_control = Mock(return_value=True)
         
         # Create mock armies
         self.army1 = Mock(spec=Army)
@@ -496,11 +498,6 @@ class TestFightPhaseIntegration(unittest.TestCase):
     def test_human_player_unit_selection_dialog(self):
         """Test that human players get unit selection dialogs."""
         # TODO: Implement when UI integration is ready
-        pass
-    
-    def test_ai_player_automatic_selection(self):
-        """Test that AI players automatically select units."""
-        # TODO: Implement when AI integration is ready
         pass
 
 

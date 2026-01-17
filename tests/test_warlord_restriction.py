@@ -34,7 +34,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities)
     return Unit(datasheet)
@@ -42,7 +42,7 @@ def _make_unit(name, *, abilities=None):
 
 class TestWarlordRestriction(unittest.TestCase):
     def test_cannot_be_warlord_rule_blocks_selection(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
         abilities = [
             {
@@ -62,7 +62,7 @@ class TestWarlordRestriction(unittest.TestCase):
             army.select_warlord(unit)
 
     def test_no_restriction_allows_selection(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         unit = _make_unit("Allowed")
         army = Army("Test", "Detachment")

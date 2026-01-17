@@ -1,10 +1,10 @@
 import pytest
 from typing import List
 
-from warhammer40k_ai.classes.map import Map, TerrainFactory
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.wargear import WargearProfile
+from warhammer40k_ai.battlefield.map import Map, TerrainFactory
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.units.wargear import WargearProfile
 
 
 class MockDatasheet:
@@ -86,7 +86,7 @@ class TestBenefitOfCover:
 
     def test_benefit_of_cover_adds_plus_one_to_armor_save_roll(self, monkeypatch):
         # Force a deterministic save roll of 3
-        import warhammer40k_ai.classes.wargear as wargear_mod
+        import warhammer40k_ai.units.wargear as wargear_mod
         monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 3)
 
         game_map = Map(width=48, height=72)
@@ -106,7 +106,7 @@ class TestBenefitOfCover:
 
     def test_sv_3_or_better_does_not_get_cover_vs_ap0(self, monkeypatch):
         # Force a deterministic save roll of 2
-        import warhammer40k_ai.classes.wargear as wargear_mod
+        import warhammer40k_ai.units.wargear as wargear_mod
         monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 2)
 
         game_map = Map(width=48, height=72)
@@ -134,7 +134,7 @@ class TestBenefitOfCover:
         assert attacker._can_model_shoot_weapon_at_target(attacker.models[0], indirect_wp, target, game_map) is True
 
     def test_indirect_fire_hit_roll_1_2_3_always_fail_and_minus_one_to_hit(self, monkeypatch):
-        import warhammer40k_ai.classes.wargear as wargear_mod
+        import warhammer40k_ai.units.wargear as wargear_mod
 
         # First test: 1-3 always fail (use roll=3)
         monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 3)

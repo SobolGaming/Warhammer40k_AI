@@ -51,7 +51,7 @@ class _Game:
 
 class TestBattleShockStratagemTargeting(unittest.TestCase):
     def test_battle_shocked_unit_cannot_be_target(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         p = _Player(cp=1)
         g = _Game(current_player=p)
@@ -69,7 +69,7 @@ class TestBattleShockStratagemTargeting(unittest.TestCase):
         self.assertFalse(s.can_use(p, g, target_unit=_BattleShockedUnit()))
 
     def test_non_battle_shocked_unit_can_be_target(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         p = _Player(cp=1)
         g = _Game(current_player=p)
@@ -87,7 +87,7 @@ class TestBattleShockStratagemTargeting(unittest.TestCase):
         self.assertTrue(s.can_use(p, g, target_unit=_NotBattleShockedUnit()))
 
     def test_insane_bravery_exempt_from_battle_shock_targeting_rule(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         p = _Player(cp=1)
         g = _Game(current_player=p)
@@ -106,7 +106,7 @@ class TestBattleShockStratagemTargeting(unittest.TestCase):
         self.assertTrue(s.can_use(p, g, unit=_BattleShockedUnit()))
 
     def test_embarked_unit_cannot_be_target_even_for_insane_bravery(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         p = _Player(cp=1)
         g = _Game(current_player=p)

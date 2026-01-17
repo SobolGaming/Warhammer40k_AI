@@ -836,11 +836,6 @@ class ShootingDeclarationDialog(BaseDialog):
         
         return False
     
-    def _handle_legacy_button_click(self, x, y):
-        """Legacy button click handler - now handled by BaseDialog"""
-        # This method is no longer used since we're using BaseDialog button system
-        return False
-    
     def get_max_scroll(self):
         """Calculate the maximum scroll offset based on content height"""
         # Calculate total content height

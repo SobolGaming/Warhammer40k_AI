@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestNeophyteHybridsMaxPer10Models(unittest.TestCase):
     def _make_wargear(self, name: str):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         return Wargear(
             {
@@ -21,8 +21,8 @@ class TestNeophyteHybridsMaxPer10Models(unittest.TestCase):
         )
 
     def test_to_a_maximum_of_1_per_10_models_is_enforced(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import parse_alternate_3
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import parse_alternate_3
 
         # Build a synthetic option list like Neophyte Hybrids heavy weapon option:
         # choices are starred; footnote sets cap.

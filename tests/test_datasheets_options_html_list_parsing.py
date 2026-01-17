@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestDatasheetsOptionsHtmlListParsing(unittest.TestCase):
     def test_html_ul_li_list_is_parsed(self):
-        from warhammer40k_ai.classes.wargear import parse_alternate_3, WargearOptionType
+        from warhammer40k_ai.units.wargear import parse_alternate_3, WargearOptionType
 
         unit = SimpleNamespace(models=[SimpleNamespace(name="Model") for _ in range(5)])
         desc = (

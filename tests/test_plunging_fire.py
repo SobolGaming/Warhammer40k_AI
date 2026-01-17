@@ -1,6 +1,6 @@
-from warhammer40k_ai.classes.map import Map, TerrainFactory
-from warhammer40k_ai.classes.model import Model
-from warhammer40k_ai.classes.wargear import Wargear
+from warhammer40k_ai.battlefield.map import Map, TerrainFactory
+from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
 

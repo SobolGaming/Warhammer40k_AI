@@ -5,7 +5,7 @@ import pytest
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.utility.placement_validation import bases_overlap_3d
 from warhammer40k_ai.utility.calcs import check_unit_coherency
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class _MockDatasheet:

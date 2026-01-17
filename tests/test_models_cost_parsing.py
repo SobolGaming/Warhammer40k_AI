@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestDatasheetsModelsCost(unittest.TestCase):
     def test_composite_description_sums_model_counts(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         parsed = u._parse_models_cost(
@@ -16,7 +16,7 @@ class TestDatasheetsModelsCost(unittest.TestCase):
         self.assertEqual(parsed, {10: 135, 20: 290})
 
     def test_addon_model_cost_is_added_to_unit_cost(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.models_cost = {3: 80, 6: 160}
@@ -32,7 +32,7 @@ class TestDatasheetsModelsCost(unittest.TestCase):
         self.assertEqual(u.get_unit_cost(), 215)
 
     def test_addon_cost_is_case_insensitive(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.models_cost = {5: 115}
@@ -42,7 +42,7 @@ class TestDatasheetsModelsCost(unittest.TestCase):
         self.assertEqual(u.get_unit_cost(), 145)
 
     def test_calculate_points_ignores_non_numeric_keys(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         # Simulate a fallback dict that may contain non-int keys

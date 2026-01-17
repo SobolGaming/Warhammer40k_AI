@@ -1,7 +1,7 @@
-import pytest
+﻿import pytest
 
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
 
 
 class DummyArmy:
@@ -30,8 +30,8 @@ class DummyUnit:
 
 def _make_game():
     battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
-    p_def = Player("Defender", PlayerType.HUMAN, army=DummyArmy())
-    p_att = Player("Attacker", PlayerType.HUMAN, army=DummyArmy())
+    p_def = Player("Defender", PlayerControl.LOCAL, army=DummyArmy())
+    p_att = Player("Attacker", PlayerControl.LOCAL, army=DummyArmy())
     game = Game(battlefield, players=[p_def, p_att])
     game.turn = 1
     game.defender_index = 0

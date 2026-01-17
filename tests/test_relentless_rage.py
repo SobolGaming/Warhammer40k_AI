@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -49,18 +49,18 @@ class TestRelentlessRage(unittest.TestCase):
         return unit
 
     def test_relentless_rage_applies_on_charge_and_expires(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("World Eaters", detachment_type="berzerker warband")
         army.faction_id = "WE"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])
@@ -150,14 +150,14 @@ class TestRelentlessRage(unittest.TestCase):
         self.assertNotIn("relentless_rage_melee_attacks_bonus", unit.special_rules)
 
     def test_relentless_rage_requires_berzerker_warband(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("World Eaters", detachment_type="Other Detachment")
         army.faction_id = "WE"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[p1, p2])

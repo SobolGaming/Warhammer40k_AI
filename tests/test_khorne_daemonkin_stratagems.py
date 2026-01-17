@@ -1,4 +1,4 @@
-import copy
+﻿import copy
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -39,7 +39,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, keywords=None, faction_keywords=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -50,9 +50,9 @@ def _make_unit(name, *, keywords=None, faction_keywords=None):
 
 
 def _build_game():
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
@@ -62,8 +62,8 @@ def _build_game():
     army2 = Army("Enemy", "Other")
     army2.faction_id = "EN"
 
-    p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
-    p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+    p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+    p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -74,7 +74,7 @@ def _build_game():
 
 class TestKhorneDaemonkinStratagems(unittest.TestCase):
     def test_daemonic_fury_grants_lance_and_twin_linked(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         game, p1, _p2, army1, army2 = _build_game()
         bl_unit = _make_unit("Bloodletters", keywords=["BLOOD LEGIONS", "INFANTRY"])
@@ -128,11 +128,11 @@ class TestKhorneDaemonkinStratagems(unittest.TestCase):
         )
 
         attacker = we_unit.models[0]
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance={})
         self.assertIn("+1 to wound from Lance (Daemonic Fury)", res.get("modifiers", []))
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[1, 4]):
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance={})
         self.assertTrue(res.get("wound"))
         self.assertEqual(res.get("reroll"), 4)
@@ -181,7 +181,7 @@ class TestKhorneDaemonkinStratagems(unittest.TestCase):
         self.assertEqual(len(bl_unit.models), 4)
 
     def test_blessing_of_burning_blood_sets_invulnerable(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         game, p1, p2, army1, army2 = _build_game()
         bl_unit = _make_unit("Bloodletters", keywords=["BLOOD LEGIONS", "INFANTRY"])
@@ -236,7 +236,7 @@ class TestKhorneDaemonkinStratagems(unittest.TestCase):
         self.assertEqual(int(save_res.get("final_save", 0)), 5)
 
     def test_blessing_of_burning_blood_uses_boon_of_blood(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         game, p1, p2, army1, army2 = _build_game()
         bl_unit = _make_unit("Bloodletters", keywords=["BLOOD LEGIONS", "INFANTRY"])

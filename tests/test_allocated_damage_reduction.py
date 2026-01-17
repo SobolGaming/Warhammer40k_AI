@@ -1,4 +1,4 @@
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class _MockDatasheet:
@@ -34,7 +34,7 @@ def _make_unit(name, *, abilities=None):
 
 def test_allocated_damage_reduction_applies():
     from types import SimpleNamespace
-    from warhammer40k_ai.classes.wargear import WargearProfile
+    from warhammer40k_ai.units.wargear import WargearProfile
 
     ability = {
         "name": "Staunch",
@@ -67,7 +67,7 @@ def test_allocated_damage_reduction_applies():
 
 def test_allocated_damage_halving_rounds_up():
     from types import SimpleNamespace
-    from warhammer40k_ai.classes.wargear import WargearProfile
+    from warhammer40k_ai.units.wargear import WargearProfile
 
     ability = {
         "name": "Stoic Endurance",

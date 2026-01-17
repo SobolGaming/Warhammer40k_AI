@@ -6,7 +6,7 @@ from types import SimpleNamespace
 class TestAuraAdvanceChargeBonus(unittest.TestCase):
     def test_advance_and_charge_aura_applies_once(self):
         from warhammer40k_ai.utility.aura_effects import get_aura_advance_charge_roll_modifiers
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.ability import Ability
 
         aura = Ability(
             name="Swift Wind (Aura)",

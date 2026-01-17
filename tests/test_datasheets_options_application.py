@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestDatasheetsOptionsApplication(unittest.TestCase):
     def _make_wargear(self, name: str, wtype: str = "Ranged"):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         # Minimal valid wargear_data for construction
         return Wargear(
@@ -22,8 +22,8 @@ class TestDatasheetsOptionsApplication(unittest.TestCase):
         )
 
     def test_apply_replacement_option_equips_new_wargear(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         bolt_pistol = self._make_wargear("bolt pistol")
         plasma_pistol = self._make_wargear("plasma pistol")
@@ -48,8 +48,8 @@ class TestDatasheetsOptionsApplication(unittest.TestCase):
         self.assertEqual([wg.name for wg in m.wargear], ["plasma pistol"])
 
     def test_apply_additional_option_adds_wargear(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         storm_bolter = self._make_wargear("storm bolter")
 
@@ -75,8 +75,8 @@ class TestDatasheetsOptionsApplication(unittest.TestCase):
         """
         "All models in this unit..." is a boolean toggle: either every model replaces, or none do.
         """
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import WargearOption, WargearOptionType, Quantity
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import WargearOption, WargearOptionType, Quantity
 
         flamestorm = self._make_wargear("flamestorm gauntlets")
         boltstorm = self._make_wargear("auto boltstorm gauntlets")

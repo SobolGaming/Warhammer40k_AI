@@ -73,7 +73,7 @@ class BaseDialog(ABC):
         self._update_title_bar()
         
     def _init_fonts(self):
-        """Initialize fonts with fallbacks"""
+        """Initialize fonts with explicit fall-through."""
         try:
             # Prefer a modern, clean UI font stack (best-effort across OSes).
             # On Windows, Segoe UI Variable / Segoe UI is typically available.
@@ -340,12 +340,12 @@ class BaseDialog(ABC):
 
         # If all else fails, position to the right of the rightmost dialog
         rightmost_x = max(rect.right for rect in existing_rects)
-        fallback_x = min(rightmost_x + self.DIALOG_OVERLAP_MARGIN,
+        next_x = min(rightmost_x + self.DIALOG_OVERLAP_MARGIN,
                         self.screen_width - self.width - self.DIALOG_MARGIN)
-        fallback_y = max(self.DIALOG_MARGIN,
+        next_y = max(self.DIALOG_MARGIN,
                         min(preferred_y, self.screen_height - self.height - self.DIALOG_MARGIN))
 
-        return fallback_x, fallback_y
+        return next_x, next_y
 
     def _rect_overlaps_any(self, test_rect: pygame.Rect, existing_rects: list) -> bool:
         """

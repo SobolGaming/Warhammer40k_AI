@@ -25,7 +25,7 @@ class _DummyTarget:
 
 class TestLanceTwinLinked(unittest.TestCase):
     def _make_profile(self, keywords: str, strength: int = 4):
-        from warhammer40k_ai.classes.wargear import WargearProfile, Wargear
+        from warhammer40k_ai.units.wargear import WargearProfile, Wargear
 
         data = {
             "range": "Melee",
@@ -46,7 +46,7 @@ class TestLanceTwinLinked(unittest.TestCase):
         attacker = _DummyModel(charged=True)
         target = _DummyTarget(toughness=5)
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance={})
         self.assertTrue(res["wound"])
         self.assertIn("+1 to wound from Lance (charged)", res.get("modifiers", []))
@@ -57,7 +57,7 @@ class TestLanceTwinLinked(unittest.TestCase):
         attacker = _DummyModel(charged=False)
         target = _DummyTarget(toughness=4)
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[1, 4]):
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance={})
         self.assertTrue(res["wound"])
         self.assertEqual(res.get("reroll"), 4)

@@ -165,9 +165,8 @@ class QuarrySelectionDialog(BaseDialog):
             except Exception:
                 pass
             try:
-                if getattr(u, "is_embarked", None) is not None and callable(getattr(u, "is_embarked")):
-                    if bool(u.is_embarked()):
-                        status_bits.append("EMBARKED")
+                if bool(getattr(u, "is_embarked", False)):
+                    status_bits.append("EMBARKED")
             except Exception:
                 pass
             suffix = f" [{' / '.join(status_bits)}]" if status_bits else ""

@@ -30,14 +30,14 @@ class _MockDatasheet:
 
 
 def _make_unit(*, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(abilities=abilities)
     return Unit(datasheet)
 
 
 def _make_melee_wargear(name: str):
-    from warhammer40k_ai.classes.wargear import Wargear
+    from warhammer40k_ai.units.wargear import Wargear
 
     return Wargear(
         {

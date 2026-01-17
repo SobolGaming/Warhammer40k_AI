@@ -1,8 +1,8 @@
-import pytest
+﻿import pytest
 
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.mission_cards import CleanseSecondary
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.engine.mission_cards import CleanseSecondary
 
 
 class DummyArmy:
@@ -16,8 +16,8 @@ class DummyArmy:
 
 def make_game():
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
-    p1 = Player("Player 1", PlayerType.HUMAN, army=DummyArmy())
-    p2 = Player("Player 2", PlayerType.HUMAN, army=DummyArmy())
+    p1 = Player("Player 1", PlayerControl.LOCAL, army=DummyArmy())
+    p2 = Player("Player 2", PlayerControl.LOCAL, army=DummyArmy())
     game = Game(bf, players=[p1, p2])
     p1.army.set_player(p1)
     p2.army.set_player(p2)

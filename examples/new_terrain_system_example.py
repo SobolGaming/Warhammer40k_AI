@@ -4,7 +4,7 @@ Example demonstrating the new polygon-based terrain system.
 """
 
 from shapely.geometry import Polygon, Point
-from src.warhammer40k_ai.classes.map import (
+from src.warhammer40k_ai.battlefield.map import (
     Map, TerrainFactory, 
     RuinsTerrain, WoodsTerrain, CraterTerrain, 
     BarricadeTerrain, DebrisTerrain, HillsBuildingsTerrain
@@ -117,7 +117,7 @@ def test_terrain_interactions():
     
     # Create test units
     from tests.mocks import MockDatasheet
-    from src.warhammer40k_ai.classes.unit import Unit
+    from src.warhammer40k_ai.units.unit import Unit
     
     # Infantry unit
     infantry_datasheet = MockDatasheet("Space Marines", movement=6, base_size="32mm")

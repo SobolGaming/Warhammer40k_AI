@@ -45,7 +45,14 @@ def distance_between_models_bases_3d(model_a, model_b) -> float:
         shape_b = b.get_base_shape()
         dxy = float(shape_a.distance(shape_b))
     except Exception:
-        dxy = float("inf")
+        try:
+            ax = float(getattr(a, "x", 0.0))
+            ay = float(getattr(a, "y", 0.0))
+            bx = float(getattr(b, "x", 0.0))
+            by = float(getattr(b, "y", 0.0))
+            dxy = float(math.hypot(ax - bx, ay - by))
+        except Exception:
+            dxy = float("inf")
 
     try:
         dz = abs(float(getattr(a, "z", 0.0)) - float(getattr(b, "z", 0.0)))
@@ -285,5 +292,4 @@ def unit_within_horizontal_distance_of_point(unit, x: float, y: float, radius: f
         if horizontal_distance_point_to_model_base_2d(m, x, y) <= r + 1e-6:
             return True
     return False
-
 

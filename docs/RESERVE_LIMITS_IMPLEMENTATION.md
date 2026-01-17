@@ -1,4 +1,4 @@
-# Reserve Unit & Point Limits Implementation
+# Reserve Unit and Point Limits Implementation
 
 This document summarizes the implementation of reserve unit and point limits according to Warhammer 40k 10th Edition rules.
 
@@ -12,7 +12,7 @@ The implementation enforces the official Warhammer 40k 10th Edition reserve limi
 
 ### 1. Army Class Enhancements
 
-Added new methods to the `Army` class in `src/warhammer40k_ai/classes/army.py`:
+Added methods to the `Army` class in `src/warhammer40k_ai/roster/army.py`:
 
 #### `get_reserve_limits() -> dict`
 - Calculates the 50% limits for the army
@@ -38,31 +38,21 @@ Added new methods to the `Army` class in `src/warhammer40k_ai/classes/army.py`:
 - Provides current reserve status and limits information
 - Used for UI display and debugging
 
-### 2. AI Agent Updates
-
-Updated `src/warhammer40k_ai/agents/hrl_agent.py`:
-
-#### Enhanced `declare_reserves()` method
-- Now uses Army reserve limit methods instead of manual calculations
-- Includes final validation and enforcement
-- Provides better logging of reserve decisions
-- Ensures AI decisions comply with limits
-
-### 3. Human Interface Updates
+### 2. Deployment Decision Updates
 
 Updated `src/warhammer40k_ai/classes/deployment.py`:
 
-#### Enhanced `HumanDeploymentDecisionMaker.declare_reserves()`
-- Shows reserve limits to user during console-based selection
-- Prevents users from exceeding limits during selection
+#### `HumanDeploymentDecisionMaker.declare_reserves()`
+- Shows reserve limits to the player during selection
+- Prevents selections that exceed limits
 - Includes final validation and enforcement
 - Provides real-time feedback on current reserve status
 
-### 4. UI Dialog Updates
+### 3. UI Dialog Updates
 
 Updated `src/warhammer40k_ai/UI/dialogs/reserves_selection_dialog.py`:
 
-#### Enhanced ReservesSelectionDialog
+#### ReservesSelectionDialog
 - Displays current reserve limits and status
 - Disables buttons when limits would be exceeded
 - Shows visual feedback for disabled options
@@ -72,12 +62,12 @@ Updated `src/warhammer40k_ai/UI/dialogs/reserves_selection_dialog.py`:
 ## Key Features
 
 ### 1. Consistent Enforcement
-- All interfaces (AI, Human console, Human UI) use the same Army methods
-- Prevents bypass bugs where different player types have different capabilities
+- All interfaces (UI and console) use the same Army methods
+- Prevents bypass bugs where different interfaces allow different limits
 - Ensures consistent 50% limits across all game types
 
 ### 2. Real-time Validation
-- UI prevents users from making invalid selections
+- UI prevents players from making invalid selections
 - Buttons are disabled when limits would be exceeded
 - Provides immediate feedback on current reserve status
 
@@ -93,16 +83,9 @@ Updated `src/warhammer40k_ai/UI/dialogs/reserves_selection_dialog.py`:
 
 ## Usage Examples
 
-### AI Reserve Selection
+### Console Reserve Selection
 ```python
-# AI automatically uses Army methods for validation
-reserves_decisions = ai_agent.declare_reserves()
-# Final validation ensures compliance with limits
-```
-
-### Human Console Reserve Selection
-```python
-# User sees limits and current status
+# Player sees limits and current status
 print(f"Reserve Limits: {limits['max_units']}/{limits['total_units']} units")
 # System prevents invalid selections
 ```
@@ -116,30 +99,28 @@ reserves_decisions = dialog.get_final_decisions()
 
 ## Testing
 
-The implementation includes comprehensive testing:
+The implementation includes coverage for:
 - Unit limit validation (50% of total units)
 - Points limit validation (50% of total points)
 - Edge cases (odd numbers, zero units, etc.)
 - Enforcement mechanism validation
 - Status tracking validation
 
-All tests pass successfully, confirming the implementation works correctly.
-
 ## Compliance with Warhammer 40k Rules
 
 The implementation follows the official 10th Edition rules:
-- ✅ Maximum 50% of units in reserves
-- ✅ Maximum 50% of points in reserves
-- ✅ Both limits must be satisfied
-- ✅ Applies to both Reserves and Strategic Reserves
-- ✅ Handles Leaders and transports correctly (when implemented)
+- Maximum 50% of units in reserves
+- Maximum 50% of points in reserves
+- Both limits must be satisfied
+- Applies to both Reserves and Strategic Reserves
+- Handles Leaders and transports correctly (when implemented)
 
 ## Architecture Benefits
 
 1. **Centralized Logic**: All reserve limit logic is in the Army class
 2. **Consistent Interfaces**: All players use the same validation methods
-3. **Prevents Bypass Bugs**: UI cannot exceed limits that AI cannot
+3. **Prevents Bypass Bugs**: UI cannot exceed limits that other interfaces cannot
 4. **Maintainable**: Single source of truth for reserve rules
 5. **Extensible**: Easy to modify for future rule changes
 
-This implementation ensures that reserve limits are properly enforced across all game types and player interfaces, providing a consistent and rule-compliant experience.
+This implementation ensures that reserve limits are properly enforced across all player interfaces, providing a consistent and rule-compliant experience.

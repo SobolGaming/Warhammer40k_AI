@@ -49,7 +49,7 @@ class _MapStub:
 
 class TestNurglesGift(unittest.TestCase):
     def _make_profile(self, *, melee: bool):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "range": "Melee" if melee else "24",
@@ -64,7 +64,7 @@ class TestNurglesGift(unittest.TestCase):
         return parent.profiles["default"]
 
     def test_contagion_range_by_battle_round(self):
-        from warhammer40k_ai.classes.nurgles_gift import NurglesGiftManager
+        from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager
 
         mgr = NurglesGiftManager()
         self.assertEqual(mgr.get_contagion_range(1), 3.0)
@@ -72,7 +72,7 @@ class TestNurglesGift(unittest.TestCase):
         self.assertEqual(mgr.get_contagion_range(3), 9.0)
 
     def test_skullsquirm_blight_hit_penalty(self):
-        from warhammer40k_ai.classes.nurgles_gift import NurglesGiftManager, PLAGUE_SKULLSQUIRM
+        from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager, PLAGUE_SKULLSQUIRM
 
         profile = self._make_profile(melee=True)
 
@@ -102,15 +102,15 @@ class TestNurglesGift(unittest.TestCase):
         )
 
         with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertFalse(res["hit"])
         self.assertTrue(any("Skullsquirm" in m for m in (res.get("modifiers") or [])))
 
     def test_rattlejoint_ague_worsens_save(self):
-        from warhammer40k_ai.classes.nurgles_gift import NurglesGiftManager, PLAGUE_RATTLEJOINT
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager, PLAGUE_RATTLEJOINT
+        from warhammer40k_ai.units.unit import Unit
 
         player_attacker = SimpleNamespace(name="P1")
         player_dg = SimpleNamespace(name="DG")
@@ -139,8 +139,8 @@ class TestNurglesGift(unittest.TestCase):
         self.assertEqual(int(save_val), 4)
 
     def test_scabrous_soulrot_worsens_move_ld_oc(self):
-        from warhammer40k_ai.classes.nurgles_gift import NurglesGiftManager, PLAGUE_SCABROUS
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager, PLAGUE_SCABROUS
+        from warhammer40k_ai.units.unit import Unit
 
         player_attacker = SimpleNamespace(name="P1")
         player_dg = SimpleNamespace(name="DG")

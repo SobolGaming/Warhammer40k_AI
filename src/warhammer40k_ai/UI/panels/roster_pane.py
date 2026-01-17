@@ -5,9 +5,9 @@ RosterPane component for displaying army rosters and unit selection.
 import pygame
 from typing import List, Optional, Tuple, Dict
 
-from ...classes.unit import Unit
-from ...classes.player import Player
-from ...classes.game import Game
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.player import Player
+from warhammer40k_ai.engine.game import Game
 
 # Import icon drawing functions from ui_utils to avoid circular imports
 from ..ui_utils import (
@@ -270,15 +270,12 @@ class RosterPane(pygame.sprite.Sprite):
         header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, 35)
         pygame.draw.rect(surface, DARK_GREY, header_rect)
         
-        # Player name with AI/Human indicator
-        player_type_str = ""
-        if self.player and hasattr(self.player, 'type'):
-            if self.player.type.name == 'AI':
-                player_type_str = " (AI)"
-            elif self.player.type.name == 'HUMAN':
-                player_type_str = " (HUMAN)"
-        
-        player_display_name = f"{self.player_name}{player_type_str}"
+        # Player name with control indicator
+        player_control_str = ""
+        if self.player and hasattr(self.player, 'control'):
+            player_control_str = f" ({self.player.control.name})"
+
+        player_display_name = f"{self.player_name}{player_control_str}"
         player_text = self.font_medium.render(player_display_name, True, TEXT_PRIMARY)
         surface.blit(player_text, (self.rect.left + 10, self.rect.top + 5))
         
@@ -417,7 +414,7 @@ class RosterPane(pygame.sprite.Sprite):
                     filled=(i < token_remaining),
                 )
 
-        # Extra roster details (composition + status), like the legacy pane
+        # Extra roster details (composition + status).
         def _composition_text(u: Unit) -> str:
             try:
                 all_models = []

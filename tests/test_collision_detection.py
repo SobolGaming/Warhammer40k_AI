@@ -1,4 +1,4 @@
-"""
+﻿"""
 Comprehensive test suite for collision detection across all movement types and scenarios.
 
 Tests cover:
@@ -25,11 +25,11 @@ from warhammer40k_ai.utility.calcs import (
     build_collision_trees
 )
 from warhammer40k_ai.utility.model_base import Base, BaseType
-from warhammer40k_ai.classes.map import Map, TerrainFactory, TerrainType
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.battlefield.map import Map, TerrainFactory, TerrainType
+from warhammer40k_ai.units.unit import Unit
 
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.player import Player, PlayerType
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
 from shapely.geometry import Polygon, Point
 
 
@@ -66,8 +66,8 @@ class TestCollisionDetection:
         self.game_map = Map(width=48, height=72)  # 4x6 feet battlefield
         
         # Create test players and armies
-        self.player1 = Player("Player1", PlayerType.HUMAN)
-        self.player2 = Player("Player2", PlayerType.HUMAN)
+        self.player1 = Player("Player1", PlayerControl.LOCAL)
+        self.player2 = Player("Player2", PlayerControl.LOCAL)
         self.army1 = Army("Test Faction 1", "Test Detachment 1")
         self.army2 = Army("Test Faction 2", "Test Detachment 2")
         self.player1.set_army(self.army1)
@@ -501,7 +501,7 @@ class TestCollisionDetection:
             # 1. The pathfinding allows movement through enemies (fall back rule)
             # 2. We can detect when Desperate Escape tests would be needed
             if path_through_enemy:
-                print(f"🔍 DEBUG: Path goes through enemy - Desperate Escape test would be required")
+                print(f"ðŸ” DEBUG: Path goes through enemy - Desperate Escape test would be required")
 
             # The Desperate Escape dice rolling would be handled by game logic, not pathfinding
 
@@ -521,7 +521,7 @@ class TestCollisionDetection:
         model = unit.models[0]
 
         # Make unit battle-shocked
-        from warhammer40k_ai.classes.status_effects import BattleShockEffect
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
         battle_shock_effect = BattleShockEffect(1)
         unit.apply_status_effect(battle_shock_effect)
 
@@ -586,8 +586,8 @@ class TestCollisionDetection:
             desperate_escape = result['desperate_escape']
             # Note: In a real test with TITANIC/FLY unit, this would be False
             # For this test unit (no special keywords), it should be True
-            print(f"🔍 DEBUG: Desperate Escape required: {desperate_escape.get('required', 'N/A')}")
-            print(f"🔍 DEBUG: Reason: {desperate_escape.get('reason', 'N/A')}")
+            print(f"ðŸ” DEBUG: Desperate Escape required: {desperate_escape.get('required', 'N/A')}")
+            print(f"ðŸ” DEBUG: Reason: {desperate_escape.get('reason', 'N/A')}")
 
     def test_normal_fall_back_no_desperate_escape(self):
         """Test that normal fall back without going through enemies doesn't require Desperate Escape."""
@@ -809,8 +809,8 @@ class TestCollisionDetection:
             # Try to move through woods to other side
             target_through_woods = (21.0, start_y, 0.0)
 
-            print(f"🔍 DEBUG: Testing {keywords[0]} unit - keywords: {unit.keywords}")
-            print(f"🔍 DEBUG: is_infantry: {unit.is_infantry}, is_beast: {unit.is_beast}, is_flying: {unit.is_flying}")
+            print(f"ðŸ” DEBUG: Testing {keywords[0]} unit - keywords: {unit.keywords}")
+            print(f"ðŸ” DEBUG: is_infantry: {unit.is_infantry}, is_beast: {unit.is_beast}, is_flying: {unit.is_flying}")
 
             result = unified_pathfinding(
                 model=model,
@@ -825,14 +825,14 @@ class TestCollisionDetection:
             assert result['distance'] <= 12.0, "Movement should be within distance limit"
 
     def test_low_height_terrain_traversable(self):
-        """Test that terrain ≤2" height can be traversed by all units."""
+        """Test that terrain â‰¤2" height can be traversed by all units."""
 
         # Create test scenario
         unit = self.create_circular_unit(x=10.0, y=10.0)
         self.setup_units_on_map([unit])
 
 
-        # Create low height terrain (≤2" is freely climbable) away from other units
+        # Create low height terrain (â‰¤2" is freely climbable) away from other units
         low_terrain_vertices = [(30.0, 40.0), (34.0, 40.0), (34.0, 44.0), (30.0, 44.0)]
         low_terrain = TerrainFactory.create_debris(low_terrain_vertices, height=2.0)  # 2" height
         self.game_map.add_terrain_feature(low_terrain)
@@ -862,7 +862,7 @@ class TestCollisionDetection:
         )
 
         # All units should be able to traverse low height terrain
-        assert result['valid'], "All units should be able to traverse terrain ≤2\" height"
+        assert result['valid'], "All units should be able to traverse terrain â‰¤2\" height"
         assert result['distance'] <= 10.0, "Movement should be within distance limit"
 
     def test_barricade_traversal_but_cannot_end_on(self):
@@ -917,7 +917,7 @@ class TestCollisionDetection:
         # Should not be able to end move on barricade
         # Note: This test depends on the final position validation being implemented
         # For now, we test that movement through is allowed
-        print(f"🔍 DEBUG: Movement to barricade center: {result_on_barricade['valid']}")
+        print(f"ðŸ” DEBUG: Movement to barricade center: {result_on_barricade['valid']}")
 
     def test_debris_traversal_but_cannot_end_on(self):
         """Test that units can traverse DEBRIS_AND_STATUARY but cannot end moves on it."""
@@ -1087,7 +1087,7 @@ class TestCollisionDetection:
         # In this scenario, the path should go through the enemy
         # (In a real game, this would trigger Desperate Escape tests)
         if path_through_enemy:
-            print(f"🔍 DEBUG: Desperate Escape test required - model moved through enemy")
+            print(f"ðŸ” DEBUG: Desperate Escape test required - model moved through enemy")
 
         # The key test: fall back is valid but may require Desperate Escape
         assert result['distance'] <= 6.0, "Fall back distance should be within limit"

@@ -83,8 +83,8 @@ class TestSuperHeavyWalker(unittest.TestCase):
 
     def test_super_heavy_walker_tall_terrain_battleshock(self):
         from shapely.geometry import Polygon
-        from warhammer40k_ai.classes.map import TerrainFeature, TerrainType
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.battlefield.map import TerrainFeature, TerrainType
+        from warhammer40k_ai.units.unit import Unit
 
         class _Datasheet:
             def __init__(self):
@@ -124,7 +124,7 @@ class TestSuperHeavyWalker(unittest.TestCase):
 
         unit.models[0].last_move_path = [(0.0, 0.0, 0.0, 0.0), (3.0, 3.0, 0.0, 0.0)]
 
-        with patch("warhammer40k_ai.classes.unit.get_roll", return_value=1):
+        with patch("warhammer40k_ai.units.unit.get_roll", return_value=1):
             unit._apply_super_heavy_walker_terrain_shock(game_map, action="move")
 
         self.assertTrue(unit.is_battle_shocked())

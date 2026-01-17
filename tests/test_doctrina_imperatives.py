@@ -5,7 +5,8 @@ from types import SimpleNamespace
 class _DummyPlayer:
     def __init__(self, name="Player", *, is_human=True):
         self.name = name
-        self.type = SimpleNamespace(name="HUMAN" if is_human else "AI")
+        self.control = SimpleNamespace(name="LOCAL" if is_human else "REMOTE")
+        self.has_control = lambda: is_human
         self.game = None
 
 
@@ -81,7 +82,7 @@ class _MapStub:
 
 class TestDoctrinaImperatives(unittest.TestCase):
     def _make_profile(self, *, weapon_type="Ranged", skill="4+"):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         parent = SimpleNamespace(
             name="Test Weapon",
@@ -100,7 +101,7 @@ class TestDoctrinaImperatives(unittest.TestCase):
         return WargearProfile("Profile", wargear_data=data, parent_wargear=parent)
 
     def test_protector_improves_bs_and_grants_heavy_bonus(self):
-        from warhammer40k_ai.classes.doctrina_imperatives import (
+        from warhammer40k_ai.rules.doctrina_imperatives import (
             DoctrinaImperativesManager,
             PROTECTOR_IMPERATIVE,
         )
@@ -128,7 +129,7 @@ class TestDoctrinaImperatives(unittest.TestCase):
         self.assertIn("+1 from Protector Imperative (counts as Heavy)", hit.get("modifiers", []))
 
     def test_protector_melee_penalty_near_battleline(self):
-        from warhammer40k_ai.classes.doctrina_imperatives import (
+        from warhammer40k_ai.rules.doctrina_imperatives import (
             DoctrinaImperativesManager,
             PROTECTOR_IMPERATIVE,
         )
@@ -154,7 +155,7 @@ class TestDoctrinaImperatives(unittest.TestCase):
         self.assertIn("-1 from Protector Imperative (battleline screen)", hit.get("modifiers", []))
 
     def test_conqueror_ws_and_assault(self):
-        from warhammer40k_ai.classes.doctrina_imperatives import (
+        from warhammer40k_ai.rules.doctrina_imperatives import (
             DoctrinaImperativesManager,
             CONQUEROR_IMPERATIVE,
         )
@@ -176,11 +177,11 @@ class TestDoctrinaImperatives(unittest.TestCase):
         self.assertEqual(hit.get("base_skill"), 3)
 
         ranged_profile = self._make_profile(weapon_type="Ranged", skill="4+")
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
         self.assertTrue(Unit.can_shoot_after_advance(unit, ranged_profile))
 
     def test_conqueror_ap_bonus_for_battleline(self):
-        from warhammer40k_ai.classes.doctrina_imperatives import (
+        from warhammer40k_ai.rules.doctrina_imperatives import (
             DoctrinaImperativesManager,
             CONQUEROR_IMPERATIVE,
         )

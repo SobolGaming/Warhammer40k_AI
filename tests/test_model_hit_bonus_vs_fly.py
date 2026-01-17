@@ -32,7 +32,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None, keywords=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities, keywords=keywords)
     return Unit(datasheet)
@@ -53,7 +53,7 @@ def _aura_stub():
 
 class TestModelHitBonusVsFly(unittest.TestCase):
     def test_hit_bonus_vs_fly_target(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Skyhunter",
@@ -82,7 +82,7 @@ class TestModelHitBonusVsFly(unittest.TestCase):
             parent_wargear=parent,
         )
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
             result = profile._hit_target_with_tracking(
                 target,
                 attacker.models[0],
@@ -94,7 +94,7 @@ class TestModelHitBonusVsFly(unittest.TestCase):
         self.assertIn("+1 to hit vs FLY from Skyhunter", result.get("modifiers", []))
 
     def test_no_bonus_vs_non_fly_target(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Skyhunter",
@@ -123,7 +123,7 @@ class TestModelHitBonusVsFly(unittest.TestCase):
             parent_wargear=parent,
         )
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
             result = profile._hit_target_with_tracking(
                 target,
                 attacker.models[0],

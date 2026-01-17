@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -48,7 +48,7 @@ class _EnemyUnit:
 
 class _Game:
     def __init__(self, active_player):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self._current_player = active_player
@@ -61,8 +61,8 @@ class _Game:
 
 class TestFrenziedResilience(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
@@ -74,8 +74,8 @@ class TestFrenziedResilience(unittest.TestCase):
         attacker = _EnemyUnit()
         enemy_army.add_unit(attacker)
 
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
-        enemy_player = Player("P2", player_type=PlayerType.HUMAN, army=enemy_army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
+        enemy_player = Player("P2", control=PlayerControl.LOCAL, army=enemy_army)
         game = _Game(active_player=enemy_player)
         player.set_game(game)
         enemy_player.set_game(game)
@@ -101,8 +101,8 @@ class TestFrenziedResilience(unittest.TestCase):
         self.assertTrue(any("FRENZIED RESILIENCE" == (r.get("stratagem", "") or "") for r in pending))
 
     def test_use_reduces_damage_to_min_one(self):
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         player, enemy_player, unit, attacker, game = self._build_env()

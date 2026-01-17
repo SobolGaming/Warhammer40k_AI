@@ -1,5 +1,5 @@
-import warhammer40k_ai.classes.model as model_module
-from warhammer40k_ai.classes.unit import Unit
+import warhammer40k_ai.units.model as model_module
+from warhammer40k_ai.units.unit import Unit
 
 
 class MockDatasheet:

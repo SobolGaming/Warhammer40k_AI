@@ -1,15 +1,14 @@
-# Warhammer 40k AI
+# Warhammer 40,000 Rules Engine
 
-A comprehensive AI system for playing Warhammer 40k 10th Edition, featuring hierarchical reinforcement learning agents, interactive gameplay, and official rule implementation.
+Interactive Warhammer 40k 10th Edition rules implementation with a graphical UI, official setup phases, and full deployment sequencing.
 
 ## Features
 
-- **Hierarchical AI System**: Three-layer reinforcement learning with strategic, tactical, and operational decision making
-- **Multiple Player Types**: Support for AI vs AI, Human vs AI, Human vs Human, and mixed gameplay
-- **Official Rules Implementation**: Complete setup phases, deployment system, and battle round mechanics
-- **Interactive UI**: Rich graphical interface with unit details, deployment controls, and battlefield visualization
-- **Manual Phase Control**: Step-through debugging and demonstration mode with `--manual-phases`
-- **Persistent Learning**: AI agents save progress and improve over multiple training sessions
+- Official setup phases, deployment system, and battle round mechanics
+- Interactive UI with unit details, deployment controls, and battlefield visualization
+- Manual phase control for step-through gameplay with `--manual-phases`
+- Wahapedia data import tooling for datasheets and rules
+- Support matrices and rules coverage documentation
 
 ## Quick Start
 
@@ -31,25 +30,13 @@ cd ..
 
 ### Usage Examples
 
-#### AI Training (Default)
-```bash
-# Train AI agents with 1000 episodes
-python3 scripts/main.py --mode train --episodes 1000
-
-# Shorter training with custom armies
-python3 scripts/main.py --mode train --episodes 100 --player1-army army_lists/my_army.txt
-```
-
 #### Interactive Gameplay
 ```bash
-# Human vs AI
-python3 scripts/main.py --mode play --player1 human --player2 ai
+# Local vs local
+python3 scripts/main.py --player1-army army_lists/chaos_test.txt --player2-army army_lists/aeldari_test.txt
 
-# AI vs AI with manual phase control (for learning/debugging)
-python3 scripts/main.py --mode play --player1 ai --player2 ai --manual-phases
-
-# Human vs Human with manual phase control
-python3 scripts/main.py --mode play --player1 human --player2 human --manual-phases
+# Manual phase control
+python3 scripts/main.py --manual-phases
 ```
 
 #### Data Exploration
@@ -60,44 +47,31 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 
 ## Command Line Options
 
-### Game Modes
-- `--mode {train|play}`: Training mode for AI development or play mode for interactive games
-- `--episodes N`: Number of training episodes (default: 1000)
-- `--checkpoint-interval N`: Save AI progress every N episodes (default: 10)
-
 ### Player Configuration
-- `--player1 {ai|human}`: Set Player 1 type (default: ai)
-- `--player2 {ai|human}`: Set Player 2 type (default: ai)
-- `--player1-army <file>`: Army list for Player 1 (default: army_lists/warhammer_app_dump.txt)
-- `--player2-army <file>`: Army list for Player 2 (default: army_lists/chaos_daemons_GT2023.txt)
+- `--player1-army <file>`: Army list file for Player 1 (default: army_lists/chaos_test.txt)
+- `--player2-army <file>`: Army list file for Player 2 (default: army_lists/aeldari_test.txt)
 
 ### Advanced Options
-- `--manual-phases`: Require SPACE key between each phase (useful for learning/debugging)
-- `--clear-checkpoints`: Start fresh training (clears existing AI progress)
+- `--manual-phases`: Require SPACE key to advance phases
 
 ## Architecture
 
-### AI System (Hierarchical Reinforcement Learning)
-- **High-Level Agent**: Strategic objective selection and command decisions
-- **Tactical Agent**: Phase-specific actions (movement, shooting, fighting)
-- **Low-Level Agent**: Precise unit positioning and movement execution
-
 ### Game System
-- **Complete Setup Phases**: Army loading, battlefield creation, attacker/defender determination, deployment, and first turn order
-- **Official Deployment**: Alternating deployment with proper zones, reserves, and strategic reserves
-- **Battle Round System**: Command, Movement, Shooting, Charge, and Fight phases with official rules
+- Complete setup phases: army loading, battlefield creation, attacker/defender determination, deployment, and first turn order
+- Official deployment: alternating deployment with proper zones, reserves, and strategic reserves
+- Battle round system: command, movement, shooting, charge, and fight phases with official rules
 
 ### User Interface
-- **Battlefield View**: Zoomable map with units, terrain, objectives, and deployment zones
-- **Roster Panes**: Interactive unit lists showing health, equipment, and deployment status
-- **Info Panel**: Game state, turn information, and deployment action tracking
-- **Unit Details**: Comprehensive stat sheets with weapons, abilities, and rules
+- Battlefield view: zoomable map with units, terrain, objectives, and deployment zones
+- Roster panes: interactive unit lists showing health, equipment, and deployment status
+- Info panel: game state, turn information, and deployment action tracking
+- Unit details: comprehensive stat sheets with weapons, abilities, and rules
 
 ## Files and Documentation
 
 - `README.md`: This file
 
-### Documentation (clickable)
+### Documentation
 
 - **Support matrices**
   - [Ability Support Matrix](docs/ABILITY_SUPPORT_MATRIX.md)
@@ -112,27 +86,85 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
   - [Reserve limits implementation](docs/RESERVE_LIMITS_IMPLEMENTATION.md)
   - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md)
   - [Pile-in implementation](docs/PILE_IN_IMPLEMENTATION.md)
-  - [Checkpoint migration](docs/CHECKPOINT_MIGRATION.md)
-  - [Training README](docs/README_training.md)
 
 ## Project Structure
 
 ```
 Warhammer40k_AI/
-├── scripts/main.py              # Main entry point
-├── src/warhammer40k_ai/
-│   ├── classes/                 # Core game classes
-│   ├── agents/                  # AI agents and learning
-│   ├── UI/                      # User interface components
-│   └── utility/                 # Helper functions
-├── army_lists/                  # Army configuration files
-├── checkpoints/                 # AI training checkpoints
-└── wahapedia_data/              # Game data from Wahapedia
+|-- README.md
+|-- AGENTS.md
+|-- scripts/
+|   |-- main.py
+|-- src/warhammer40k_ai/
+|   |-- battlefield/
+|   |   |-- map.py
+|   |   |-- terrain_layouts.py
+|   |-- engine/
+|   |   |-- game.py
+|   |   |-- phase.py
+|   |   |-- turn_manager.py
+|   |   |-- deployment.py
+|   |   |-- fight_phase_manager.py
+|   |   |-- mission_cards.py
+|   |   |-- missions.py
+|   |   |-- commands.py
+|   |   |-- decisions.py
+|   |   |-- random_source.py
+|   |-- roster/
+|   |   |-- army.py
+|   |   |-- army_muster.py
+|   |   |-- player.py
+|   |-- rules/
+|   |   |-- stratagems.py
+|   |   |-- enhancement.py
+|   |   |-- detachment_registry.py
+|   |   |-- <faction>_detachments.py
+|   |-- units/
+|   |   |-- unit.py
+|   |   |-- model.py
+|   |   |-- wargear.py
+|   |   |-- ability.py
+|   |   |-- status_effects.py
+|   |-- UI/
+|   |   |-- game_ui.py
+|   |   |-- panels/
+|   |   |-- dialogs/
+|   |   |-- ui_utils.py
+|   |   |-- wahapedia_ui.py
+|   |-- utility/
+|   |   |-- calcs.py
+|   |   |-- aura_utils.py
+|   |   |-- event_bus.py
+|   |   |-- dice.py
+|   |   |-- model_base.py
+|   |   |-- modifiers.py
+|   |-- waha_helper/
+|   |   |-- waha_helper.py
+|-- army_lists/
+|-- docs/
+|-- tests/
+|-- wahapedia_data/
+|-- RuleSets/
 ```
 
-## Contributing
+### Directory and File Roles
 
-This project has been developed primarily through AI-assisted programming using CursorAI and prompt engineering. The codebase implements official Warhammer 40k 10th Edition rules and provides a solid foundation for both AI research and interactive gameplay.
+- `README.md`: Project overview, setup, and architecture snapshot.
+- `AGENTS.md`: Local development instructions for Codex.
+- `scripts/`: Entry points and helper scripts (including `main.py`).
+- `src/warhammer40k_ai/battlefield/`: Map geometry, terrain layouts, objectives, and placement rules.
+- `src/warhammer40k_ai/engine/`: Game loop, setup/phase flow, missions, and decision plumbing.
+- `src/warhammer40k_ai/roster/`: Army composition, mustering, and player ownership.
+- `src/warhammer40k_ai/rules/`: Rule managers, detachments, enhancements, stratagems, and faction logic.
+- `src/warhammer40k_ai/units/`: Unit/model/wargear primitives plus status effects.
+- `src/warhammer40k_ai/UI/`: Rendering and interactive UI; no core rules live here.
+- `src/warhammer40k_ai/utility/`: Shared helpers (geometry, dice, modifiers, event bus).
+- `src/warhammer40k_ai/waha_helper/`: Wahapedia data ingestion and lookup helpers.
+- `army_lists/`: Example army lists for quick runs.
+- `docs/`: Design and support documentation.
+- `tests/`: Automated tests.
+- `wahapedia_data/`: Extracted data assets (not committed).
+- `RuleSets/`: Static ruleset sources and references.
 
 ## License
 

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 class TestBlessingsOfKhorne(unittest.TestCase):
     def test_double_requires_matching(self):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
 
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
@@ -26,7 +26,7 @@ class TestBlessingsOfKhorne(unittest.TestCase):
         self.assertFalse(preview["ok"])
 
     def test_activate_two_blessings_with_disjoint_pairs(self):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
 
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
@@ -49,7 +49,7 @@ class TestBlessingsOfKhorne(unittest.TestCase):
         self.assertTrue(mgr.is_blessing_active("WARP_BLADES", battle_round=1))
 
     def test_favoured_rerolls_up_to_two_indices(self):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsTiming
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsTiming
 
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
@@ -72,7 +72,7 @@ class TestBlessingsOfKhorne(unittest.TestCase):
         self.assertEqual(ctx.dice[7], 5)
 
     def test_reborn_in_blood_consumes_triple_six_and_activates_no_blessings(self):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager, BlessingsRollContext, BlessingsTiming
 
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
@@ -93,7 +93,7 @@ class TestBlessingsOfKhorne(unittest.TestCase):
         self.assertEqual(res["activated"], [])
 
     def test_total_carnage_queue_resolves_after_attacks(self):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
 
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
@@ -116,7 +116,7 @@ class TestBlessingsOfKhorne(unittest.TestCase):
 
 class TestBlessingsCombatInjection(unittest.TestCase):
     def _make_melee_profile(self, keywords: str = ""):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
         data = {
             "range": "Melee",
             "A": "1",
@@ -130,7 +130,7 @@ class TestBlessingsCombatInjection(unittest.TestCase):
         return parent.profiles["default"]
 
     def _mk_attacker_stack(self, *, active_keys: set[str]):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
 
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)
@@ -172,7 +172,7 @@ class TestBlessingsCombatInjection(unittest.TestCase):
         )
         attack_instance = {}
         # Hit roll 6 to trigger crit-hit branch
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertTrue(attack_instance.get("lethal_hit", False))
@@ -186,7 +186,7 @@ class TestBlessingsCombatInjection(unittest.TestCase):
             has_keyword=lambda k: False,
         )
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
@@ -205,7 +205,7 @@ class TestBlessingsCombatInjection(unittest.TestCase):
         target = _Target()
         attack_instance = {}
         # Wound roll 6 => critical wound branch; should apply mortal_wound due to blessings
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["wound"])
         self.assertTrue(attack_instance.get("mortal_wound", False))

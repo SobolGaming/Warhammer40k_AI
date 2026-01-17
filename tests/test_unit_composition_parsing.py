@@ -3,7 +3,7 @@ import unittest
 
 class TestUnitCompositionParsing(unittest.TestCase):
     def test_simple_and_range_entries(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [{"description": "1 Boss Nob"}, {"description": "2-5 Space Marine Bikers"}]
@@ -12,7 +12,7 @@ class TestUnitCompositionParsing(unittest.TestCase):
         self.assertEqual(parsed["Space Marine Bikers"], (2, 5))
 
     def test_composite_and_splits_into_multiple_entries(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [{"description": "1 Runtherd and 10 Gretchin"}]
@@ -21,7 +21,7 @@ class TestUnitCompositionParsing(unittest.TestCase):
         self.assertEqual(parsed["Gretchin"], (10, 10))
 
     def test_composite_commas_and_and(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [{"description": "1 Grenadier Sergeant, 7 Grenadiers and 1 Heavy Weapons Team"}]
@@ -32,7 +32,7 @@ class TestUnitCompositionParsing(unittest.TestCase):
 
     def test_does_not_split_and_inside_model_name(self):
         # "Adrasite and Pyrithite" is part of the model name; it should not split because it's not followed by a digit.
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [{"description": "5 Custodian Guard with Adrasite and Pyrithite Spears"}]
@@ -40,7 +40,7 @@ class TestUnitCompositionParsing(unittest.TestCase):
         self.assertEqual(parsed, {"Custodian Guard with Adrasite and Pyrithite Spears": (5, 5)})
 
     def test_or_splits_options_and_tracks_maximum(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [
@@ -63,7 +63,7 @@ class TestUnitCompositionParsing(unittest.TestCase):
         self.assertEqual(getattr(u, "unit_models_maximum", None), 20)
 
     def test_or_groups_multiline_entries(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         rows = [

@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -54,9 +54,9 @@ class _MapStub:
 
 class TestHarbingersOfDread(unittest.TestCase):
     def test_selection_and_roll(self):
-        from warhammer40k_ai.classes.harbingers_of_dread import HarbingersOfDreadManager, DOOM, DELIRIUM
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DOOM, DELIRIUM
 
-        army = SimpleNamespace(faction_id="QT", units=[], player=SimpleNamespace(type=SimpleNamespace(name="AI")))
+        army = SimpleNamespace(faction_id="QT", units=[], player=SimpleNamespace(control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
         mgr = HarbingersOfDreadManager(army)
         army.harbingers_of_dread = mgr
 
@@ -64,7 +64,7 @@ class TestHarbingersOfDread(unittest.TestCase):
         self.assertIn(DOOM.key, mgr.active_dread_keys)
         self.assertEqual(mgr.last_selection_round, 1)
 
-        with patch("warhammer40k_ai.classes.harbingers_of_dread.get_roll", side_effect=[2, 5]):
+        with patch("warhammer40k_ai.rules.harbingers_of_dread.get_roll", side_effect=[2, 5]):
             res = mgr.roll_dread_abilities(battle_round=3)
 
         self.assertEqual(res["rolls"], [2, 5])
@@ -72,9 +72,9 @@ class TestHarbingersOfDread(unittest.TestCase):
         self.assertEqual(mgr.last_selection_round, 3)
 
     def test_doom_wound_bonus(self):
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes.harbingers_of_dread import HarbingersOfDreadManager, DOOM
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DOOM
 
         class _Round:
             remained_stationary_this_round = False
@@ -108,7 +108,7 @@ class TestHarbingersOfDread(unittest.TestCase):
                 return True
 
         game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player, faction_id="QT", units=[])
 
         mgr = HarbingersOfDreadManager(army)
@@ -130,15 +130,15 @@ class TestHarbingersOfDread(unittest.TestCase):
         parent = Wargear({"name": "Test Weapon", "type": "Ranged", **data})
         profile = parent.profiles["default"]
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._wound_target_with_tracking(_Target(), attacker_model, {})
 
         self.assertTrue(any("Doom" in m for m in (res.get("modifiers") or [])))
 
     def test_darkness_hit_penalty(self):
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes.harbingers_of_dread import HarbingersOfDreadManager, DARKNESS
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DARKNESS
 
         class _Round:
             remained_stationary_this_round = False
@@ -188,12 +188,12 @@ class TestHarbingersOfDread(unittest.TestCase):
         )
         game = SimpleNamespace(event_system=EventSystem(), map=game_map)
 
-        attacker_player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        attacker_player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         attacker_army = SimpleNamespace(player=attacker_player, faction_id="CSM", units=[])
         attacker_unit = _Unit("Attacker", keywords=["INFANTRY"], army=attacker_army)
         attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
 
-        target_player = SimpleNamespace(name="P2", type=SimpleNamespace(name="HUMAN"), game=game)
+        target_player = SimpleNamespace(name="P2", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         target_army = SimpleNamespace(player=target_player, faction_id="QT", units=[])
         mgr = HarbingersOfDreadManager(target_army)
         mgr.active_dread_keys.add(DARKNESS.key)
@@ -211,14 +211,14 @@ class TestHarbingersOfDread(unittest.TestCase):
         parent = Wargear({"name": "Test Weapon", "type": "Ranged", **data})
         profile = parent.profiles["default"]
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             res = profile._hit_target_with_tracking(_Target(target_army), attacker_model, {})
 
         self.assertTrue(any("Darkness" in m for m in (res.get("modifiers") or [])))
 
     def test_leadership_auras_apply(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.harbingers_of_dread import HarbingersOfDreadManager, DESPAIR
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DESPAIR
 
         enemy_army = SimpleNamespace(faction_id="QT", units=[], player=None)
         mgr = HarbingersOfDreadManager(enemy_army)
@@ -241,8 +241,8 @@ class TestHarbingersOfDread(unittest.TestCase):
         self.assertEqual(int(ld_val), 8)
 
     def test_delirium_applies_mortals_on_failed_test(self):
-        from warhammer40k_ai.classes.game import Game
-        from warhammer40k_ai.classes.harbingers_of_dread import HarbingersOfDreadManager, DELIRIUM
+        from warhammer40k_ai.engine.game import Game
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DELIRIUM
 
         enemy_army = SimpleNamespace(faction_id="QT", units=[], player=None)
         mgr = HarbingersOfDreadManager(enemy_army)
@@ -266,8 +266,8 @@ class TestHarbingersOfDread(unittest.TestCase):
         self.assertEqual(target_unit.mortal_applied, 2)
 
     def test_dismay_forces_battle_shock(self):
-        from warhammer40k_ai.classes.game import Game
-        from warhammer40k_ai.classes.harbingers_of_dread import HarbingersOfDreadManager, DISMAY
+        from warhammer40k_ai.engine.game import Game
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DISMAY
 
         enemy_army = SimpleNamespace(faction_id="QT", units=[], player=None)
         mgr = HarbingersOfDreadManager(enemy_army)

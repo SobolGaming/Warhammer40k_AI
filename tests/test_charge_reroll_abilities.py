@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -36,7 +36,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, ds_id="", abilities=None, attached_to=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -59,7 +59,7 @@ class TestChargeRerollAbilities(unittest.TestCase):
         self.assertTrue(unit.can_reroll_charge_roll())
 
     def test_leading_reroll_charge_rolls_requires_attachment(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         ability = {
             "name": "Zealous Path",
@@ -165,9 +165,9 @@ class TestChargeRerollAbilities(unittest.TestCase):
         self.assertFalse(charger.can_reroll_charge_roll(target_unit=target, game_map=game_map))
 
     def test_charge_reroll_requires_closest_eligible_target(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         ability = {
             "name": "Surgical Advance",
@@ -186,8 +186,8 @@ class TestChargeRerollAbilities(unittest.TestCase):
         army2 = Army("Enemy", "Det")
         army2.faction_id = "EN"
 
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
-        p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
         game.add_player(p1)
         game.add_player(p2)
 

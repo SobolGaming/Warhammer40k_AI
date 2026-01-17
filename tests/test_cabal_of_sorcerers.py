@@ -1,14 +1,14 @@
-import pytest
+﻿import pytest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from warhammer40k_ai.classes.cabal_of_sorcerers import (
+from warhammer40k_ai.rules.cabal_of_sorcerers import (
     CabalOfSorcerersManager,
     RITUAL_DESTINYS_RUIN,
     RITUAL_TWIST_OF_FATE,
     RITUAL_TEMPORAL_SURGE,
 )
-from warhammer40k_ai.classes.wargear import Wargear
+from warhammer40k_ai.units.wargear import Wargear
 from warhammer40k_ai.utility.event_bus import get_recent_actions, get_recent_dice
 
 
@@ -73,7 +73,7 @@ class _GameStub:
 
 
 def _make_army():
-    player = SimpleNamespace(name="P1", type=SimpleNamespace(name="AI"))
+    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
     army = SimpleNamespace(faction_id="TS", units=[], player=player, _id="army-ts")
     mgr = CabalOfSorcerersManager(army)
     army.cabal_of_sorcerers = mgr
@@ -151,7 +151,7 @@ def test_destinys_ruin_reroll_ones():
     target.has_stealth = lambda: False
     target.has_first_prince_tzeentch_defense = lambda: False
 
-    with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[1, 4]):
+    with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
         res = profile._hit_target_with_tracking(target, attacker_model, {})
 
     assert res.get("reroll") == 4
@@ -188,7 +188,7 @@ def test_destinys_ruin_full_reroll():
     target.has_stealth = lambda: False
     target.has_first_prince_tzeentch_defense = lambda: False
 
-    with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[2, 5]):
+    with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 5]):
         res = profile._hit_target_with_tracking(target, attacker_model, {})
 
     assert res.get("reroll") == 5

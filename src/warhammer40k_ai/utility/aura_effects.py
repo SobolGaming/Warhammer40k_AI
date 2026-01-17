@@ -398,7 +398,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             # Belakor Shadow Form: Shadow Lord (Aura, Psychic) => re-roll Hit rolls of 1.
             if _norm_name(ab_name) == _norm_name("Shadow Lord (Aura, Psychic)"):
                 try:
-                    from ..classes.shadow_form import unit_has_active_shadow_form, KEY_SHADOW_LORD
+                    from ..rules.shadow_form import unit_has_active_shadow_form, KEY_SHADOW_LORD
                 except Exception:
                     continue
                 if not unit_has_active_shadow_form(source, KEY_SHADOW_LORD):

@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -22,7 +22,7 @@ class MockDatasheet:
 
 
 def make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = MockDatasheet(
         name,
@@ -36,7 +36,8 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=None
 class _PlayerStub:
     def __init__(self):
         self.name = "P1"
-        self.type = SimpleNamespace(name="AI")
+        self.control = SimpleNamespace(name="REMOTE")
+        self.has_control = lambda: False
         self.game = None
         self.gain_calls = []
 
@@ -46,8 +47,8 @@ class _PlayerStub:
 
 class TestCodeChivalric(unittest.TestCase):
     def test_eager_quality_applies_movement_and_bonuses(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.code_chivalric import CodeChivalricManager, QUALITY_EAGER
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.code_chivalric import CodeChivalricManager, QUALITY_EAGER
 
         unit = make_unit(
             "Knight",
@@ -71,17 +72,17 @@ class TestCodeChivalric(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("code_chivalric_charge_bonus"), 1)
 
     def test_valour_rerolls_hit_and_wound(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.code_chivalric import CodeChivalricManager, QUALITY_VALOUR
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.code_chivalric import CodeChivalricManager, QUALITY_VALOUR
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import WargearProfile
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         army = Army("Imperial Knights", "Detachment", points_limit=2000)
         army.faction_id = "QI"
         game = SimpleNamespace(event_system=EventSystem(), map=None, turn=1)
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="AI"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
         army.player = player
 
         attacker_unit = make_unit(
@@ -162,7 +163,7 @@ class TestCodeChivalric(unittest.TestCase):
             target_toughness_reasons=(),
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         seq = iter([
             2, 5,  # hit roll fail, then reroll success
             2, 5,  # wound roll fail, then reroll success
@@ -180,8 +181,8 @@ class TestCodeChivalric(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_deed_completion_grants_honour_and_cp(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.code_chivalric import CodeChivalricManager, DEED_TALLY
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.code_chivalric import CodeChivalricManager, DEED_TALLY
 
         army = Army("Imperial Knights", "Detachment", points_limit=2000)
         army.faction_id = "QI"

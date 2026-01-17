@@ -1,8 +1,8 @@
 import pytest
 
-from warhammer40k_ai.classes.map import Map, TerrainFactory
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.army import Army
+from warhammer40k_ai.battlefield.map import Map, TerrainFactory
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.army import Army
 
 
 class MockDatasheet:

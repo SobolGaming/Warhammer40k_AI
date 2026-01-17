@@ -6,7 +6,8 @@ from types import SimpleNamespace
 class _Player:
     def __init__(self, name: str):
         self.name = name
-        self.type = SimpleNamespace(name="HUMAN")
+        self.control = SimpleNamespace(name="LOCAL")
+        self.has_control = lambda: True
         self.army = None
 
     def set_game(self, game):
@@ -32,7 +33,7 @@ class _Army:
 
 class _CultUnit:
     def __init__(self, name: str, army: _Army, count: int = 5):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         self.name = name
@@ -80,7 +81,7 @@ class _CultUnit:
 
 class _StubGame:
     def __init__(self, players):
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize
 
         self.players = list(players)
         self.battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
@@ -98,8 +99,8 @@ class _StubGame:
 
 class TestCultAmbush(unittest.TestCase):
     def test_resurgence_points_by_size(self):
-        from warhammer40k_ai.classes.cult_ambush import CultAmbushManager
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize
 
         player = _Player("GSC")
         army = _Army("GC", player)
@@ -112,7 +113,7 @@ class TestCultAmbush(unittest.TestCase):
         self.assertEqual(mgr.resurgence_points, 10)
 
     def test_spend_resurgence_creates_unit_and_marker(self):
-        from warhammer40k_ai.classes.cult_ambush import CultAmbushManager
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager
 
         p1 = _Player("GSC")
         p2 = _Player("Enemy")
@@ -143,8 +144,8 @@ class TestCultAmbush(unittest.TestCase):
             self.assertEqual(len(used), 0)
 
     def test_marker_removed_on_enemy_move(self):
-        from warhammer40k_ai.classes.cult_ambush import CultAmbushManager, CultAmbushMarker
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.rules.cult_ambush import CultAmbushManager, CultAmbushMarker
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         p1 = _Player("GSC")
@@ -197,9 +198,9 @@ class TestCultAmbush(unittest.TestCase):
         self.assertTrue(marker2.active)
 
     def test_reserve_denial_blocks_reserves(self):
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         p1 = _Player("P1")
@@ -281,9 +282,9 @@ class TestCultAmbush(unittest.TestCase):
         self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, pos_ok))
 
     def test_reserve_denial_simple_12_inch_blocks_reserves(self):
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         p1 = _Player("P1")
@@ -362,9 +363,9 @@ class TestCultAmbush(unittest.TestCase):
         self.assertFalse(game.can_place_unit_arriving_from_reserves(arriving, pos_blocked))
 
     def test_reserve_denial_from_reserves_blocks_reserves(self):
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         p1 = _Player("P1")
@@ -448,9 +449,9 @@ class TestCultAmbush(unittest.TestCase):
         self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, pos_ok))
 
     def test_reserve_denial_horizontal_uses_horizontal_distance(self):
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         p1 = _Player("P1")
@@ -535,9 +536,9 @@ class TestCultAmbush(unittest.TestCase):
         self.assertTrue(game.can_place_unit_arriving_from_reserves(arriving, pos_ok))
 
     def test_reserve_denial_uses_3d_without_horizontal(self):
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         p1 = _Player("P1")

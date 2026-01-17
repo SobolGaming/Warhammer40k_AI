@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -42,7 +42,7 @@ class _TestUnit:
 
 class _Game:
     def __init__(self, player):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self._player = player
@@ -54,14 +54,14 @@ class _Game:
 
 class TestApoplecticFrenzy(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
         unit = _TestUnit()
         army.add_unit(unit)
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
         game = _Game(player)
         player.set_game(game)
         player.command_points = 1
@@ -80,7 +80,7 @@ class TestApoplecticFrenzy(unittest.TestCase):
         self.assertTrue(any(r.get("stratagem") == "APOPLECTIC FRENZY" for r in pending))
 
     def test_use_grants_advance_and_charge(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         player, unit, game = self._build_env()
         manager = player.stratagems

@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -31,7 +31,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities, keywords=keywords, faction_keywords=faction_keywords)
     return Unit(datasheet)
@@ -39,8 +39,8 @@ def _make_unit(name, *, abilities=None, keywords=None, faction_keywords=None):
 
 class TestTargetedStratagemCpDiscount(unittest.TestCase):
     def _make_player(self, units, *, battle_round=1):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("Test", "Test")
         if not isinstance(units, (list, tuple)):
@@ -51,7 +51,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
                 unit.set_parent_army(army)
             except Exception:
                 pass
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
         player.command_points = 1
         player.set_game(SimpleNamespace(turn=battle_round))
         return player
@@ -82,7 +82,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         self.assertIn("Strategic Coordination", sources)
 
     def test_discount_applies_once_per_battle_round(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         ability = {
             "name": "Strategic Coordination",
@@ -107,7 +107,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         self.assertFalse(ok2)
 
     def test_no_auto_use_without_decision_hook(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         ability = {
             "name": "Strategic Coordination",
@@ -123,7 +123,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         self.assertFalse(ok)
 
     def test_one_shot_override_allows_discount(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         ability = {
             "name": "Strategic Coordination",
@@ -153,7 +153,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         self.assertEqual(specs[0].get("keyword"), "WORLD EATERS")
 
     def test_discount_applies_within_range_for_friendly_world_eaters(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         ability = {
             "name": "Battlefield Tactician",
@@ -176,7 +176,7 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         self.assertEqual(int(player.command_points), 0)
 
     def test_discount_requires_range_for_aura(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         ability = {
             "name": "Battlefield Tactician",

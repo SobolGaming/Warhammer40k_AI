@@ -1,11 +1,11 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
 class TestOathOfMoment(unittest.TestCase):
     def test_oath_command_phase_clears_and_selects_target(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.oath_of_moment import OathOfMomentManager
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.oath_of_moment import OathOfMomentManager
 
         class _Round:
             remained_stationary_this_round = False
@@ -47,7 +47,7 @@ class TestOathOfMoment(unittest.TestCase):
 
         player = SimpleNamespace(
             name="P1",
-            type=SimpleNamespace(name="AI"),
+            control=SimpleNamespace(name="REMOTE"), has_control=lambda: False,
             _choose_optional_value=lambda *_a, **_k: None,
         )
         army = Army("Space Marines", "Gladius Task Force")
@@ -73,16 +73,16 @@ class TestOathOfMoment(unittest.TestCase):
         self.assertEqual(mgr.oathOfMomentTargetUnitId, enemy_unit._id)
 
     def test_oath_reroll_hit_and_wound_bonus(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes.oath_of_moment import OathOfMomentManager
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.rules.oath_of_moment import OathOfMomentManager
 
         # Minimal game/player/army wiring for roll_made publish calls
         game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = Army("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         army.player = player
@@ -181,7 +181,7 @@ class TestOathOfMoment(unittest.TestCase):
             target_toughness_reasons=(),
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         seq = iter([
             2, 5,  # hit roll fail then reroll success (4+)
             4,     # wound roll (S==T => 4+; +1 from Oath makes it 3+)
@@ -200,8 +200,8 @@ class TestOathOfMoment(unittest.TestCase):
             wargear_mod.get_roll = old_get_roll
 
     def test_oath_excludes_embarked_targets(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.oath_of_moment import OathOfMomentManager
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.oath_of_moment import OathOfMomentManager
 
         class _Unit:
             def __init__(self, name: str):
@@ -223,7 +223,7 @@ class TestOathOfMoment(unittest.TestCase):
         embarked.embarked_in = object()
         available = _Unit("AvailableUnit")
 
-        player = SimpleNamespace(type=SimpleNamespace(name="AI"), _choose_optional_value=lambda *_a, **_k: None)
+        player = SimpleNamespace(control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, _choose_optional_value=lambda *_a, **_k: None)
         army = Army("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         player.get_army = lambda: army

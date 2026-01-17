@@ -1,8 +1,8 @@
 import pytest
 
-from warhammer40k_ai.classes.army import Army, ArmyValidationError
-from warhammer40k_ai.classes.enhancement import Enhancement
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.roster.army import Army, ArmyValidationError
+from warhammer40k_ai.rules.enhancement import Enhancement
+from warhammer40k_ai.units.unit import Unit
 
 
 class MockDatasheet:
@@ -124,7 +124,7 @@ def test_daemonic_pact_rejects_other_factions():
 
 
 def test_daemonic_pact_disables_shadow_of_chaos():
-    from warhammer40k_ai.classes.shadow_of_chaos import ShadowOfChaosManager
+    from warhammer40k_ai.rules.shadow_of_chaos import ShadowOfChaosManager
 
     army = setup_csm_army()
     daemon = make_unit("Daemon", keywords=["LEGIONES DAEMONICA", "KHORNE"], battleline=True, cost=100)

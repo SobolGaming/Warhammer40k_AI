@@ -35,14 +35,14 @@ if SRC_DIR not in sys.path:
 
 from warhammer40k_ai.utility.faction_rule_metadata import FACTION_RULE_METADATA
 from warhammer40k_ai.utility.attack_roll_parser import parse_attack_roll_text
-from warhammer40k_ai.classes.army import SUPPORTED_FACTION_IDS
-from warhammer40k_ai.classes.stratagems import (
+from warhammer40k_ai.roster.army import SUPPORTED_FACTION_IDS
+from warhammer40k_ai.rules.stratagems import (
     IMPLEMENTED_STRATAGEM_NAMES,
     defensive_reaction_note,
     parse_defensive_reaction_stratagem,
 )
-from warhammer40k_ai.classes.enhancement_effects import classify_enhancement_support
-from warhammer40k_ai.classes.wargear import parse_alternate_3
+from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
+from warhammer40k_ai.units.wargear import parse_alternate_3
 
 
 ABILITY_SUPPORT_BY_ID: Dict[str, Tuple[str, str]] = {}

@@ -6,8 +6,8 @@ Example for generating and visualizing preset RUINS pieces (including low rubble
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
-from warhammer40k_ai.classes.map import TerrainFactory
-from warhammer40k_ai.classes.terrain_layouts import instantiate_layout
+from warhammer40k_ai.battlefield.map import TerrainFactory
+from warhammer40k_ai.battlefield.terrain_layouts import instantiate_layout
 from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.utility.calcs import convert_mm_to_inches
 from shapely.geometry import Polygon

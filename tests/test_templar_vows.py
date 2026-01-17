@@ -1,11 +1,12 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
 class _PlayerStub:
-    def __init__(self, name: str, type_name: str, choice=None):
+    def __init__(self, name: str, control_name: str, choice=None):
         self.name = name
-        self.type = SimpleNamespace(name=type_name)
+        self.control = SimpleNamespace(name=control_name)
+        self.has_control = lambda: control_name == "LOCAL"
         self._choice = choice
         self.army = None
 
@@ -58,34 +59,34 @@ class _UnitStub:
 
 
 class TestTemplarVows(unittest.TestCase):
-    def _make_manager(self, *, player_type: str, choice=None, units=None):
-        from warhammer40k_ai.classes.templar_vows import TemplarVowsManager
+    def _make_manager(self, *, control_name: str, choice=None, units=None):
+        from warhammer40k_ai.rules.templar_vows import TemplarVowsManager
 
-        player = _PlayerStub("P1", player_type, choice=choice)
+        player = _PlayerStub("P1", control_name, choice=choice)
         army = _ArmyStub("SM", units or [], player)
         player.army = army
         mgr = TemplarVowsManager(army)
         return mgr, player, army
 
     def test_selects_vow_for_non_human_players(self):
-        from warhammer40k_ai.classes.templar_vows import VOW_ACCEPT
+        from warhammer40k_ai.rules.templar_vows import VOW_ACCEPT
 
         mgr, _player, _army = self._make_manager(
-            player_type="AI",
+            control_name="REMOTE",
             choice="Accept Any Challenge, No Matter the Odds",
         )
         mgr.on_battle_round_start(1)
         self.assertEqual(mgr.active_vow_key, VOW_ACCEPT.key)
 
     def test_human_selection_defers_without_choice(self):
-        mgr, _player, _army = self._make_manager(player_type="HUMAN", choice=None)
+        mgr, _player, _army = self._make_manager(control_name="LOCAL", choice=None)
         mgr.on_battle_round_start(1)
         self.assertIsNone(mgr.active_vow_key)
 
     def test_abhor_reroll_and_precision_vs_psyker(self):
-        from warhammer40k_ai.classes.templar_vows import VOW_ABHOR
+        from warhammer40k_ai.rules.templar_vows import VOW_ABHOR
 
-        mgr, _player, _army = self._make_manager(player_type="AI")
+        mgr, _player, _army = self._make_manager(control_name="REMOTE")
         mgr.active_vow_key = VOW_ABHOR.key
 
         unit = _UnitStub(["ADEPTUS ASTARTES"], [object()])
@@ -98,9 +99,9 @@ class TestTemplarVows(unittest.TestCase):
         self.assertFalse(mgr.melee_precision_against(unit, non_psyker))
 
     def test_accept_any_challenge_melee_bonus(self):
-        from warhammer40k_ai.classes.templar_vows import VOW_ACCEPT
+        from warhammer40k_ai.rules.templar_vows import VOW_ACCEPT
 
-        mgr, _player, _army = self._make_manager(player_type="AI")
+        mgr, _player, _army = self._make_manager(control_name="REMOTE")
         mgr.active_vow_key = VOW_ACCEPT.key
         unit = _UnitStub(["ADEPTUS ASTARTES"], [object()])
 
@@ -109,9 +110,9 @@ class TestTemplarVows(unittest.TestCase):
         self.assertFalse(mgr.melee_wound_bonus_applies(unit, object(), strength=6, target_toughness=5))
 
     def test_suffer_not_the_unclean_rules(self):
-        from warhammer40k_ai.classes.templar_vows import VOW_SUFFER
+        from warhammer40k_ai.rules.templar_vows import VOW_SUFFER
 
-        mgr, _player, _army = self._make_manager(player_type="AI")
+        mgr, _player, _army = self._make_manager(control_name="REMOTE")
         mgr.active_vow_key = VOW_SUFFER.key
         unit = _UnitStub(["ADEPTUS ASTARTES"], [object()])
 
@@ -119,18 +120,18 @@ class TestTemplarVows(unittest.TestCase):
         self.assertTrue(mgr.use_closest_enemy_unit_rule(unit))
 
     def test_uphold_actions_and_sticky_objectives(self):
-        from warhammer40k_ai.classes.map import ObjectivePoint, Objective, ObjectiveCategory
-        from warhammer40k_ai.classes.templar_vows import VOW_UPHOLD
+        from warhammer40k_ai.battlefield.map import ObjectivePoint, Objective, ObjectiveCategory
+        from warhammer40k_ai.rules.templar_vows import VOW_UPHOLD
 
         model = _ModelStub(0.0, 0.0, oc=2)
         unit = _UnitStub(["ADEPTUS ASTARTES", "INFANTRY"], [model], deployed=True)
-        player = _PlayerStub("P1", "HUMAN")
+        player = _PlayerStub("P1", "LOCAL")
         army = _ArmyStub("SM", [unit], player)
         player.army = army
-        opponent = _PlayerStub("P2", "AI")
+        opponent = _PlayerStub("P2", "REMOTE")
         opponent.army = _ArmyStub("SM", [], opponent)
 
-        mgr = __import__("warhammer40k_ai.classes.templar_vows", fromlist=["TemplarVowsManager"]).TemplarVowsManager(army)
+        mgr = __import__("warhammer40k_ai.rules.templar_vows", fromlist=["TemplarVowsManager"]).TemplarVowsManager(army)
         mgr.active_vow_key = VOW_UPHOLD.key
 
         obj_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)

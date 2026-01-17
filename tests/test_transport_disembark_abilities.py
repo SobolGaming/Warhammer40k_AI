@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -38,7 +38,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None, keywords=None, transport=""):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -51,9 +51,9 @@ def _make_unit(name, *, abilities=None, keywords=None, transport=""):
 
 class TestTransportDisembarkAbilities(unittest.TestCase):
     def _build_game(self):
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
@@ -63,8 +63,8 @@ class TestTransportDisembarkAbilities(unittest.TestCase):
         army2 = Army("Enemy", "Detachment")
         army2.faction_id = "T2"
 
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
-        p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
         game.add_player(p1)
         game.add_player(p2)
 

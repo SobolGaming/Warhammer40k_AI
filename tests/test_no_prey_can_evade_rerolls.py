@@ -1,12 +1,12 @@
-import unittest
+﻿import unittest
 
 
 class TestNoPreyCanEvadeRerolls(unittest.TestCase):
     def test_advance_reroll_provider_updates_advance_roll_and_locks_command_reroll(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         class MockDatasheet:
             def __init__(self, name):
@@ -40,8 +40,8 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
         u = Unit(MockDatasheet("Shalaxi"))
         u.possible_abilities = [no_prey]
 
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=None)
-        p2 = Player("P2", player_type=PlayerType.AI, army=None)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=None)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=None)
         g.add_player(p1)
         g.add_player(p2)
 
@@ -76,7 +76,7 @@ class TestNoPreyCanEvadeRerolls(unittest.TestCase):
         g.event_system.publish = _cap
 
         # Patch Unit.get_roll (imported into module)
-        from warhammer40k_ai.classes import unit as unit_mod
+        from warhammer40k_ai.units import unit as unit_mod
         seq = iter([2, 5])  # initial, reroll
         old_get_roll = unit_mod.get_roll
         unit_mod.get_roll = lambda _s: next(seq)

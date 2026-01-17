@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -31,7 +31,7 @@ class _TestUnit:
 
 class _Game:
     def __init__(self, player):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self._player = player
@@ -44,22 +44,22 @@ class _Game:
 
 class TestHackAndSlash(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
         unit = _TestUnit()
         army.add_unit(unit)
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
         game = _Game(player)
         player.set_game(game)
         player.command_points = 1
         return player, unit, game
 
     def test_use_sets_ap_bonus(self):
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         player, unit, game = self._build_env()

@@ -1,5 +1,5 @@
-from warhammer40k_ai.classes.map import Map
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.battlefield.map import Map
+from warhammer40k_ai.units.unit import Unit
 
 
 class _MockDatasheet:

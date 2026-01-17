@@ -4,13 +4,15 @@ from types import SimpleNamespace
 
 class TestBattleShockRules(unittest.TestCase):
     def _mk_unit(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.name = "U"
         u.status_effects = []
         u.special_rules = {}
         u.stats = {}
+        u.deployed = True
+        u.reserve_status = "deployed"
         u.models = [SimpleNamespace(is_alive=True)]
         u.attached_leaders = []
         # Avoid needing full game wiring
@@ -18,7 +20,7 @@ class TestBattleShockRules(unittest.TestCase):
         return u
 
     def test_already_battle_shocked_unit_still_rolls_but_status_unchanged(self):
-        from warhammer40k_ai.classes.status_effects import BattleShockEffect
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
 
         u = self._mk_unit()
         # Apply battle-shock
@@ -53,8 +55,8 @@ class TestBattleShockRules(unittest.TestCase):
         self.assertEqual(len(u.status_effects), 0)
 
     def test_battleshock_clears_at_start_of_own_command_phase(self):
-        from warhammer40k_ai.classes.game import Game
-        from warhammer40k_ai.classes.status_effects import BattleShockEffect
+        from warhammer40k_ai.engine.game import Game
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
 
         u = self._mk_unit()
         u.apply_status_effect(BattleShockEffect(current_turn=1))
@@ -83,9 +85,18 @@ class TestBattleShockRules(unittest.TestCase):
             def gain_normal_command_phase_cp(self):
                 return None
 
+            def get_command_phase_bonus_cp_gain(self):
+                return 0
+
+            def gain_command_points(self, amount, **_kwargs):
+                self.command_points += int(amount or 0)
+                return int(amount or 0)
+
         # Minimal Game instance for calling start_command_phase()
         g = Game.__new__(Game)
         p = _Player(_Army([u]))
+        from warhammer40k_ai.engine.mission_cards import PrimaryMissionCard
+        p.primary_mission = PrimaryMissionCard(name="Test Primary")
         g.players = [p]
         g.current_player_index = 0
         g.turn = 1
@@ -93,6 +104,9 @@ class TestBattleShockRules(unittest.TestCase):
         g.map = SimpleNamespace(objectives=[])
 
         class _ES:
+            def __init__(self):
+                self.subscribers = {}
+
             def publish(self, *_args, **_kwargs):
                 return None
 
@@ -105,5 +119,3 @@ class TestBattleShockRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

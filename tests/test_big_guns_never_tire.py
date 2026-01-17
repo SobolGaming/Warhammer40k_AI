@@ -56,7 +56,7 @@ def _make_phase(player, *, shooting_phase: bool):
 
 
 def _make_stub_unit(name: str, army, *, keywords=()):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     u = Unit.__new__(Unit)
     u.name = name
@@ -73,7 +73,7 @@ def _make_stub_unit(name: str, army, *, keywords=()):
 
 
 def test_vehicle_engaged_shoots_out_of_combat_allowed_and_hit_penalty(monkeypatch):
-    from warhammer40k_ai.classes.wargear import WargearProfile
+    from warhammer40k_ai.units.wargear import WargearProfile
 
     # Shooter is a VEHICLE, locked in combat with enemy1, shooting enemy2 (not in ER)
     player_a = SimpleNamespace()
@@ -103,7 +103,7 @@ def test_vehicle_engaged_shoots_out_of_combat_allowed_and_hit_penalty(monkeypatc
     wp.is_lethal_hits = lambda: False
     wp.is_sustained_hits = lambda: False
 
-    monkeypatch.setattr("warhammer40k_ai.classes.wargear.get_roll", lambda _: 4)
+    monkeypatch.setattr("warhammer40k_ai.units.wargear.get_roll", lambda _: 4)
 
     setattr(vehicle, "_bgnt_locked_at_target_selection", True)
     hit = wp._hit_target_with_tracking(enemy2, vehicle.models[0], {})

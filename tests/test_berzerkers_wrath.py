@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -70,7 +70,7 @@ class _EnemyUnit:
 
 class _Game:
     def __init__(self, active_player):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self._current_player = active_player
@@ -83,8 +83,8 @@ class _Game:
 
 class TestBerzerkersWrath(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
@@ -96,8 +96,8 @@ class TestBerzerkersWrath(unittest.TestCase):
         attacker = _EnemyUnit()
         enemy_army.add_unit(attacker)
 
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
-        enemy_player = Player("P2", player_type=PlayerType.HUMAN, army=enemy_army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
+        enemy_player = Player("P2", control=PlayerControl.LOCAL, army=enemy_army)
         game = _Game(active_player=enemy_player)
         player.set_game(game)
         enemy_player.set_game(game)

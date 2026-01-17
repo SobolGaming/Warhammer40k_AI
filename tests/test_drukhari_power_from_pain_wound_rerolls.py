@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from warhammer40k_ai.classes.wargear import WargearProfile
+from warhammer40k_ai.units.wargear import WargearProfile
 
 
 class _GameStub:
@@ -19,7 +19,8 @@ class _GameStub:
 class _PlayerStub:
     def __init__(self, game):
         self.name = "P1"
-        self.type = SimpleNamespace(name="AI")
+        self.control = SimpleNamespace(name="REMOTE")
+        self.has_control = lambda: False
         self.game = game
 
 
@@ -101,7 +102,7 @@ class TestPowerFromPainWoundRerolls(unittest.TestCase):
         profile = _make_melee_profile()
         attack_instance = {"_aura_attack_mods": _aura_stub()}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[1, 4]):
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance)
 
         self.assertEqual(res.get("reroll"), 4)
@@ -120,7 +121,7 @@ class TestPowerFromPainWoundRerolls(unittest.TestCase):
         profile = _make_melee_profile()
         attack_instance = {"_aura_attack_mods": _aura_stub()}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[2, 5]):
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 5]):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance)
 
         self.assertEqual(res.get("reroll"), 5)
@@ -138,7 +139,7 @@ class TestPowerFromPainWoundRerolls(unittest.TestCase):
         profile = _make_melee_profile()
         attack_instance = {"_aura_attack_mods": _aura_stub()}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[2, 6]):
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 6]):
             res = profile._wound_target_with_tracking(target, attacker, attack_instance)
 
         self.assertEqual(res.get("reroll"), 6)

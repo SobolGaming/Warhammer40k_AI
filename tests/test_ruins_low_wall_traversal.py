@@ -5,7 +5,7 @@ class TestRuinsLowWallTraversal(unittest.TestCase):
     def test_low_ruins_walls_do_not_block_non_infantry_units(self):
         from shapely.geometry import Polygon
 
-        from warhammer40k_ai.classes.map import RuinsTerrain, TerrainType
+        from warhammer40k_ai.battlefield.map import RuinsTerrain, TerrainType
         from warhammer40k_ai.utility.calcs import get_terrain_blocking_polygons, is_terrain_impassable
 
         # Minimal unit stub: MONSTER-like (cannot traverse walls)
@@ -46,7 +46,7 @@ class TestRuinsLowWallTraversal(unittest.TestCase):
     def test_ruins_with_only_low_walls_are_not_impassable_for_non_infantry(self):
         from shapely.geometry import Polygon
 
-        from warhammer40k_ai.classes.map import RuinsTerrain
+        from warhammer40k_ai.battlefield.map import RuinsTerrain
         from warhammer40k_ai.utility.calcs import get_terrain_blocking_polygons, is_terrain_impassable
 
         class _Unit:

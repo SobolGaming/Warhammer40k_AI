@@ -14,7 +14,8 @@ class _Zone:
 class _Player:
     def __init__(self, name: str):
         self.name = name
-        self.type = SimpleNamespace(name="HUMAN")
+        self.control = SimpleNamespace(name="LOCAL")
+        self.has_control = lambda: True
         self.army = None
 
     def get_army(self):
@@ -78,7 +79,7 @@ class _Game:
 
 class TestPrioritisedEfficiency(unittest.TestCase):
     def _make_model(self, name: str, *, x: float, y: float):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         model = Model(
@@ -95,8 +96,8 @@ class TestPrioritisedEfficiency(unittest.TestCase):
         return model
 
     def test_yield_points_and_mode_switch(self):
-        from warhammer40k_ai.classes.map import ObjectivePoint
-        from warhammer40k_ai.classes.prioritised_efficiency import PrioritisedEfficiencyManager, FORTIFY_TAKEOVER, HOSTILE_ACQUISITION
+        from warhammer40k_ai.battlefield.map import ObjectivePoint
+        from warhammer40k_ai.rules.prioritised_efficiency import PrioritisedEfficiencyManager, FORTIFY_TAKEOVER, HOSTILE_ACQUISITION
 
         p1 = _Player("P1")
         p2 = _Player("P2")
@@ -148,10 +149,10 @@ class TestPrioritisedEfficiency(unittest.TestCase):
         self.assertEqual(mgr.mode.key, HOSTILE_ACQUISITION.key)
 
     def test_hostile_hit_bonus_and_rerolls(self):
-        from warhammer40k_ai.classes.map import ObjectivePoint
-        from warhammer40k_ai.classes.prioritised_efficiency import PrioritisedEfficiencyManager, HOSTILE_ACQUISITION
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.battlefield.map import ObjectivePoint
+        from warhammer40k_ai.rules.prioritised_efficiency import PrioritisedEfficiencyManager, HOSTILE_ACQUISITION
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units.unit import Unit
 
         p1 = _Player("P1")
         p2 = _Player("P2")
@@ -203,7 +204,7 @@ class TestPrioritisedEfficiency(unittest.TestCase):
             target_toughness_reasons=(),
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         old_get_roll = wargear_mod.get_roll
         wargear_mod.get_roll = lambda _s: 3
         try:
@@ -229,8 +230,8 @@ class TestPrioritisedEfficiency(unittest.TestCase):
         self.assertTrue(Unit.can_reroll_charge_roll(stub))
 
     def test_fortify_wound_penalty(self):
-        from warhammer40k_ai.classes.prioritised_efficiency import PrioritisedEfficiencyManager, FORTIFY_TAKEOVER
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.rules.prioritised_efficiency import PrioritisedEfficiencyManager, FORTIFY_TAKEOVER
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         p1 = _Player("P1")
         p2 = _Player("P2")
@@ -275,7 +276,7 @@ class TestPrioritisedEfficiency(unittest.TestCase):
             target_toughness_reasons=(),
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         old_get_roll = wargear_mod.get_roll
         wargear_mod.get_roll = lambda _s: 4
         try:

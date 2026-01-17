@@ -8,7 +8,7 @@ setup(
     version="0.1.0",
     author="Andrzej Gorski",
     author_email="nostrademous@hotmail.com",
-    description="Warhammer 40k AI agent for testing AI strategies in playing Warhammer 40k",
+    description="Warhammer 40,000 rules engine and interactive UI",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/SobolGaming/Warhammer40k_AI",

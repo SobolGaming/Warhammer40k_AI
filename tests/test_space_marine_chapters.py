@@ -1,6 +1,6 @@
 import unittest
 
-from warhammer40k_ai.classes.army import Army, ArmyValidationError
+from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
 
 class StubUnit:

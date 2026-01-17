@@ -1,12 +1,12 @@
-import unittest
+﻿import unittest
 
 
 class TestChargeRerollProvider(unittest.TestCase):
     def test_charge_reroll_is_applied_before_success_evaluation(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         class MockDatasheet:
             def __init__(self, name, model_count=1):
@@ -37,8 +37,8 @@ class TestChargeRerollProvider(unittest.TestCase):
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         g = Game(bf)
 
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=None)
-        p2 = Player("P2", player_type=PlayerType.AI, army=None)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=None)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=None)
         g.add_player(p1)
         g.add_player(p2)
         p1.game = g

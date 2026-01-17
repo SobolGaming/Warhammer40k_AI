@@ -1,6 +1,6 @@
 import pygame
 from typing import List
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 from ..ui_utils import draw_aspect_shrine_token_icon
 
 # Font sizes
@@ -75,6 +75,13 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         y_pos = y + 15 - self.scroll_offset
         x_left = x + 15
         x_right = x + self.width - 15
+        line_large = self.font_large.get_linesize()
+        line_medium = self.font_medium.get_linesize()
+        line_small = self.font_small.get_linesize()
+        line_tiny = self.font_tiny.get_linesize()
+        pad_sm = 4
+        pad_md = 6
+        pad_lg = 8
         
         # Unit name and cost
         unit_name = self.font_large.render(root.name, True, TEXT_PRIMARY)
@@ -95,7 +102,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         cost_rect = cost_text.get_rect()
         surface.blit(cost_text, (x_right - cost_rect.width, y_pos))
         
-        y_pos += 35
+        y_pos += line_large + pad_lg
         
         # Mission Action status
         try:
@@ -103,14 +110,14 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 action_name = unit.round_state.performing_action_name
                 status = self.font_small.render(f"Performing Action: {action_name}", True, TEXT_ACCENT)
                 surface.blit(status, (x_left, y_pos))
-                y_pos += 20
+                y_pos += line_small + pad_sm
         except Exception:
             pass
         
         # Faction and keywords
         faction_text = self.font_small.render(f"Faction: {root.faction}", True, TEXT_SECONDARY)
         surface.blit(faction_text, (x_left, y_pos))
-        y_pos += 20
+        y_pos += line_small + pad_sm
         
         # Keywords (single line, no wrapping)
         try:
@@ -121,7 +128,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             keywords_str = "Keywords: " + ", ".join(keywords)
             keyword_text = self.font_tiny.render(keywords_str, True, TEXT_SECONDARY)
             surface.blit(keyword_text, (x_left, y_pos))
-            y_pos += 14
+            y_pos += line_tiny + 2
 
         # Attached leaders summary
         try:
@@ -133,7 +140,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             line = "Leaders: " + ", ".join(names)
             leaders_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
             surface.blit(leaders_text, (x_left, y_pos))
-            y_pos += 14
+            y_pos += line_tiny + 2
 
         # Aspect Shrine tokens HUD (read-only indicators)
         try:
@@ -164,7 +171,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                     filled=(i < remaining_tokens),
                 )
                 ix += token_size + gap
-            y_pos = iy + token_size + 6
+            y_pos = iy + token_size + pad_md
 
         # Leader footer / attachment constraints (datasheet-provided text)
         # Some datasheets include important "Leader" exceptions/constraints in `leader_footer`.
@@ -196,7 +203,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 # WahaHelper wraps datasheets as SimpleNamespace, so leader_footer is an attribute there.
                 if ds is not None:
                     footer = getattr(ds, "leader_footer", None)
-                # Defensive fallback if someone stored it directly
+                # Defensive path if someone stored it directly.
                 if footer is None:
                     footer = getattr(u, "leader_footer", None)
                 footer = (footer or "").strip()
@@ -209,24 +216,24 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             y_pos += 6
             lf_header = self.font_medium.render("Leader constraints:", True, TEXT_PRIMARY)
             surface.blit(lf_header, (x_left, y_pos))
-            y_pos += 20
+            y_pos += line_medium + pad_sm
             for who, footer in footer_items:
-                who_line = self.font_small.render(f"• {who}", True, TEXT_ACCENT)
+                who_line = self.font_small.render(f"- {who}", True, TEXT_ACCENT)
                 surface.blit(who_line, (x_left + 5, y_pos))
-                y_pos += 16
+                y_pos += line_small + 2
                 wrapped = self.wrap_text(footer, self.font_tiny, self.width - 40)
                 for line in wrapped:
                     txt = self.font_tiny.render(line, True, TEXT_SECONDARY)
                     surface.blit(txt, (x_left + 10, y_pos))
-                    y_pos += 12
-                y_pos += 4
+                    y_pos += line_tiny + 2
+                y_pos += pad_sm
         
-        y_pos += 10
+        y_pos += pad_md
         
         # Unit composition header
         comp_header = self.font_medium.render("Unit Composition:", True, TEXT_PRIMARY)
         surface.blit(comp_header, (x_left, y_pos))
-        y_pos += 25
+        y_pos += line_medium + pad_md
         
         # Model details
         model_groups = {}
@@ -242,7 +249,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         
         for model_name, models in model_groups.items():
             count = len(models)
-            model_info = f"• {count}x {model_name}"
+            model_info = f"- {count}x {model_name}"
             
             # Add stats
             if models:
@@ -252,13 +259,13 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             
             model_text = self.font_small.render(model_info, True, TEXT_SECONDARY)
             surface.blit(model_text, (x_left + 5, y_pos))
-            y_pos += 18
+            y_pos += line_small + pad_sm
             
             # Show wargear for this model type - group by wargear type and show count
             if models and models[0].wargear:
                 wargear_header = self.font_tiny.render("  Wargear:", True, TEXT_ACCENT)
                 surface.blit(wargear_header, (x_left + 10, y_pos))
-                y_pos += 14
+                y_pos += line_tiny + 2
                 
                 # Group wargear by type across all models of this type
                 wargear_counts = {}
@@ -277,21 +284,21 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                     
                     # Wargear name with count
                     if count > 1:
-                        wargear_text = f"    • {wargear.name} (x{count})"
+                        wargear_text = f"    - {wargear.name} (x{count})"
                     else:
-                        wargear_text = f"    • {wargear.name}"
+                        wargear_text = f"    - {wargear.name}"
                     
                     wargear_surface = self.font_tiny.render(wargear_text, True, TEXT_SECONDARY)
                     surface.blit(wargear_surface, (x_left + 15, y_pos))
-                    y_pos += 12
+                    y_pos += line_tiny + 2
                     
                     # Show wargear profiles
                     if hasattr(wargear, 'profiles') and wargear.profiles:
                         for profile_name, profile in wargear.profiles.items():
                             y_pos = self.draw_wargear_profile(surface, profile, profile_name, x_left + 25, y_pos)
-                    y_pos += 5  # Extra spacing between wargear items
+                    y_pos += pad_sm  # Extra spacing between wargear items
         
-        y_pos += 15
+        y_pos += pad_md
         
         # Abilities (effective: union across attached unit)
         try:
@@ -314,7 +321,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         if abilities:
             abilities_header = self.font_medium.render("Abilities:", True, TEXT_PRIMARY)
             surface.blit(abilities_header, (x_left, y_pos))
-            y_pos += 25
+            y_pos += line_medium + pad_md
             
             for ability in abilities:  # Show all abilities
                 # Include parameter in ability name if available (e.g., "Feel No Pain 5+")
@@ -322,9 +329,9 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 if hasattr(ability, 'parameter') and ability.parameter:
                     ability_display_name = f"{ability.name} {ability.parameter}"
                 
-                ability_name = self.font_small.render(f"• {ability_display_name}", True, TEXT_ACCENT)
+                ability_name = self.font_small.render(f"- {ability_display_name}", True, TEXT_ACCENT)
                 surface.blit(ability_name, (x_left + 5, y_pos))
-                y_pos += 18
+                y_pos += line_small + pad_sm
                 
                 # Wrap ability description
                 if ability.description:
@@ -334,8 +341,8 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                     for line in desc_wrapped:  # Show all lines
                         desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
                         surface.blit(desc_text, (x_left + 10, y_pos))
-                    y_pos += 12
-                y_pos += 5  # Extra spacing after each ability
+                        y_pos += line_tiny + 2
+                y_pos += pad_sm  # Extra spacing after each ability
 
         # Derived effects (Disciple of Khorne)
         try:
@@ -343,18 +350,18 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         except Exception:
             active_leaders = []
         if active_leaders:
-            y_pos += 10
+            y_pos += pad_md
             effects_header = self.font_medium.render("Active Effects:", True, TEXT_PRIMARY)
             surface.blit(effects_header, (x_left, y_pos))
-            y_pos += 20
+            y_pos += line_medium + pad_sm
             leader_names = ", ".join(str(getattr(l, "name", "Leader")) for l in active_leaders if l is not None)
             if leader_names:
-                leader_line = self.font_small.render(f"• Disciple of Khorne ({leader_names})", True, TEXT_ACCENT)
+                leader_line = self.font_small.render(f"- Disciple of Khorne ({leader_names})", True, TEXT_ACCENT)
                 surface.blit(leader_line, (x_left + 5, y_pos))
-                y_pos += 18
+                y_pos += line_small + pad_sm
             lines = [
                 "Deep Strike (bearer only; while leading).",
-                "Faction keyword: WORLD EATERS → BLOOD LEGIONS (bearer only; while leading).",
+                "Faction keyword: WORLD EATERS -> BLOOD LEGIONS (bearer only; while leading).",
                 "Blessings of Khorne applies to the Attached unit (FAQ).",
             ]
             for line in lines:
@@ -362,19 +369,19 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 for part in wrapped:
                     text = self.font_tiny.render(part, True, TEXT_SECONDARY)
                     surface.blit(text, (x_left + 10, y_pos))
-                    y_pos += 12
-            y_pos += 5
+                    y_pos += line_tiny + 2
+            y_pos += pad_sm
         
         # Enhancement
         if root.enhancement:
-            y_pos += 10
+            y_pos += pad_md
             enh_header = self.font_medium.render("Enhancement:", True, TEXT_PRIMARY)
             surface.blit(enh_header, (x_left, y_pos))
-            y_pos += 20
+            y_pos += line_medium + pad_sm
             
-            enh_name = self.font_small.render(f"• {root.enhancement.name} ({root.enhancement.points}pts)", True, TEXT_ACCENT)
+            enh_name = self.font_small.render(f"- {root.enhancement.name} ({root.enhancement.points}pts)", True, TEXT_ACCENT)
             surface.blit(enh_name, (x_left + 5, y_pos))
-            y_pos += 18
+            y_pos += line_small + pad_sm
             
             # Enhancement description
             if hasattr(root.enhancement, 'description') and root.enhancement.description:
@@ -382,8 +389,8 @@ class UnitDetailPanel(pygame.sprite.Sprite):
                 for line in desc_wrapped:
                     desc_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
                     surface.blit(desc_text, (x_left + 10, y_pos))
-                    y_pos += 12
-                y_pos += 5  # Extra spacing after description
+                    y_pos += line_tiny + 2
+                y_pos += pad_sm  # Extra spacing after description
         
         # Calculate max scroll
         total_content_height = y_pos - (y + 15) + self.scroll_offset
@@ -416,11 +423,12 @@ class UnitDetailPanel(pygame.sprite.Sprite):
 
     def draw_wargear_profile(self, surface: pygame.Surface, profile, profile_name: str, x_pos: int, y_pos: int) -> int:
         """Draw detailed wargear profile information and return new y position"""
+        line_tiny = self.font_tiny.get_linesize()
         # Profile name (if not 'default')
         if profile_name != 'default':
             profile_header = self.font_tiny.render(f"      {profile_name}:", True, TEXT_ACCENT)
             surface.blit(profile_header, (x_pos, y_pos))
-            y_pos += 12
+            y_pos += line_tiny + 2
         
         # Determine if weapon is melee or ranged
         is_melee = False
@@ -479,46 +487,48 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         stats_text = " | ".join(stats_parts)
         stats_surface = self.font_tiny.render(f"      {stats_text}", True, TEXT_SECONDARY)
         surface.blit(stats_surface, (x_pos, y_pos))
-        y_pos += 12
+        y_pos += line_tiny + 2
         
         # Keywords
         if hasattr(profile, 'get_keywords') and profile.get_keywords():
             keywords_text = f"      Keywords: {', '.join(profile.get_keywords())}"
             keywords_surface = self.font_tiny.render(keywords_text, True, TEXT_ACCENT)
             surface.blit(keywords_surface, (x_pos, y_pos))
-            y_pos += 12
+            y_pos += line_tiny + 2
         
         # Special abilities
         if hasattr(profile, 'abilities') and profile.abilities:
             abilities_text = f"      {', '.join(profile.abilities)}"
             abilities_surface = self.font_tiny.render(abilities_text, True, TEXT_ACCENT)
             surface.blit(abilities_surface, (x_pos, y_pos))
-            y_pos += 12
+            y_pos += line_tiny + 2
         
         return y_pos + 3  # Small gap after profile
 
     def wrap_text(self, text: str, font: pygame.font.Font, max_width: int) -> List[str]:
         """Wrap text to fit within the specified width"""
-        words = text.split(' ')
         lines = []
-        current_line = ""
-        
-        for word in words:
-            test_line = current_line + word + " "
-            if font.size(test_line)[0] <= max_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line.strip())
-                    current_line = word + " "
+        for raw_line in text.splitlines():
+            line_text = raw_line.strip()
+            if not line_text:
+                lines.append("")
+                continue
+            words = line_text.split(" ")
+            current_line = ""
+            for word in words:
+                test_line = current_line + word + " "
+                if font.size(test_line)[0] <= max_width:
+                    current_line = test_line
                 else:
-                    # Word too long for the line
-                    lines.append(word)
-                    current_line = ""
-        
-        if current_line:
-            lines.append(current_line.strip())
-        
+                    if current_line:
+                        lines.append(current_line.strip())
+                        current_line = word + " "
+                    else:
+                        # Word too long for the line
+                        lines.append(word)
+                        current_line = ""
+            if current_line:
+                lines.append(current_line.strip())
         return lines
 
     def handle_event(self, event):

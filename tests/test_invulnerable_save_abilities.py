@@ -3,7 +3,7 @@ import unittest
 
 class TestInvulnerableSaveAbilities(unittest.TestCase):
     def _make_model(self, name: str, save: int):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         return Model(
@@ -18,8 +18,8 @@ class TestInvulnerableSaveAbilities(unittest.TestCase):
         )
 
     def test_parse_loadout_adds_optional_wargear_for_wargear_ability(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         u = Unit.__new__(Unit)
         u.possible_wargear = []
@@ -38,9 +38,9 @@ class TestInvulnerableSaveAbilities(unittest.TestCase):
         self.assertEqual(optional, ["Storm Shield"])
 
     def test_model_invulnerable_save_from_optional_wargear(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         unit = Unit.__new__(Unit)
         unit.possible_wargear = []

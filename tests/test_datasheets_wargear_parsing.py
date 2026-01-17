@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestDatasheetsWargearParsing(unittest.TestCase):
     def test_multprofile_weapon_rows_merge_into_one_wargear(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         ds = SimpleNamespace(
@@ -41,8 +41,8 @@ class TestDatasheetsWargearParsing(unittest.TestCase):
         self.assertIn("supercharge", wargear[0].profiles)
 
     def test_loadout_matching_ignores_apostrophes(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import Wargear
 
         u = Unit.__new__(Unit)
         u.possible_wargear = [Wargear({"name": "Khaine’s Blade", "type": "Melee", "range": "Melee", "A": "1", "BS_WS": "3+", "S": "4", "AP": "0", "D": "1", "description": ""})]
@@ -52,7 +52,7 @@ class TestDatasheetsWargearParsing(unittest.TestCase):
         self.assertEqual(found[0].name, "Khaine's Blade")
 
     def test_keywords_parse_defensively(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         w = Wargear(
             {
@@ -74,8 +74,8 @@ class TestDatasheetsWargearParsing(unittest.TestCase):
 
     def test_loadout_parses_an_model_prefix(self):
         # Ensure "An X is equipped with:" is parsed (not just "A X is equipped with:")
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.wargear import Wargear
 
         u = Unit.__new__(Unit)
         u.possible_wargear = [Wargear({"name": "onslaught gatling cannon", "type": "Ranged", "range": "24", "A": "1", "BS_WS": "3+", "S": "5", "AP": "0", "D": "1", "description": ""})]

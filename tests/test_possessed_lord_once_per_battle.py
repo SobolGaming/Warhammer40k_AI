@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestPossessedLordOncePerBattle(unittest.TestCase):
     def test_once_per_battle_activation_and_phase_expiry(self):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         m = Model(

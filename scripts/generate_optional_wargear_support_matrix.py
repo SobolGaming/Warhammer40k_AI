@@ -17,7 +17,7 @@ import json
 from dataclasses import dataclass
 from typing import Dict, List, Tuple
 
-from warhammer40k_ai.classes.wargear import parse_alternate_3
+from warhammer40k_ai.units.wargear import parse_alternate_3
 from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
 
 

@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -38,7 +38,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, keywords=None, faction_keywords=None, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -50,9 +50,9 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, abilities=None):
 
 
 def _build_game():
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
@@ -63,8 +63,8 @@ def _build_game():
     army_enemy = Army("Enemy", "Other")
     army_enemy.faction_id = "EN"
 
-    p1 = Player("P1", player_type=PlayerType.HUMAN, army=army_gk)
-    p2 = Player("P2", player_type=PlayerType.AI, army=army_enemy)
+    p1 = Player("P1", control=PlayerControl.LOCAL, army=army_gk)
+    p2 = Player("P2", control=PlayerControl.REMOTE, army=army_enemy)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -73,7 +73,7 @@ def _build_game():
 
 class TestGreyKnightsDetachments(unittest.TestCase):
     def test_duty_before_all_allows_fall_back_shoot_and_charge(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Grey Knights", "Hallowed Conclave")
         army.faction_id = "GK"
@@ -97,8 +97,8 @@ class TestGreyKnightsDetachments(unittest.TestCase):
         self.assertFalse(strike.can_charge_after_fall_back())
 
     def test_fury_of_titan_rerolls_after_deep_strike(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         game, army_gk, army_enemy, player = _build_game()
 

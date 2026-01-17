@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -39,7 +39,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, keywords=None, faction_keywords=None, save=3, wounds=3):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -58,7 +58,7 @@ class _MapStub:
 
 class _Game:
     def __init__(self, active_player):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self.map = _MapStub()
@@ -81,8 +81,8 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         target_save=3,
         target_wounds=3,
     ):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("Test Faction", detachment)
         army.faction_id = faction_id
@@ -100,8 +100,8 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         attacker = _make_unit("Attacker", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
         enemy_army.add_unit(attacker)
 
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
-        enemy_player = Player("P2", player_type=PlayerType.HUMAN, army=enemy_army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
+        enemy_player = Player("P2", control=PlayerControl.LOCAL, army=enemy_army)
         game = _Game(active_player=enemy_player)
         player.set_game(game)
         enemy_player.set_game(game)
@@ -122,7 +122,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         game.event_system.publish("phase_end", player=active_player, phase=phase)
 
     def test_generic_defensive_ap_worsen(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         player, enemy_player, target, attacker, game = self._build_env(
             faction_id="AM",
@@ -160,7 +160,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         self.assertEqual(profile.get_effective_ap(attacker_model, target), -2)
 
     def test_generic_defensive_hit_penalty_phase(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         player, enemy_player, target, attacker, game = self._build_env(
             faction_id="CD",
@@ -209,7 +209,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         self.assertEqual(hit_result.get("final_needed"), 3)
 
     def test_generic_defensive_damage_reduction(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         player, enemy_player, target, attacker, game = self._build_env(
             faction_id="DG",
@@ -253,7 +253,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         self.assertEqual(dmg.get("damage_applied"), 2)
 
     def test_generic_defensive_invulnerable_save(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         player, enemy_player, target, attacker, game = self._build_env(
             faction_id="DRU",
@@ -298,7 +298,7 @@ class TestDefensiveStratagemTemplate(unittest.TestCase):
         self.assertEqual(save_result.get("final_save"), 6)
 
     def test_generic_defensive_feel_no_pain(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         player, enemy_player, target, attacker, game = self._build_env(
             faction_id="AoI",

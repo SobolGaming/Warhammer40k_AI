@@ -9,7 +9,7 @@ class TestMortalWoundsOrdering(unittest.TestCase):
         Rule: if an attack sequence inflicts a mixture of mortal wounds and normal damage,
         resolve all normal damage first. Saving throws cannot be made against mortal wounds.
         """
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         # 2 attacks; Devastating Wounds => critical wound produces mortal wounds.
         w = Wargear(
@@ -77,7 +77,7 @@ class TestMortalWoundsOrdering(unittest.TestCase):
         # Hit rolls: 6, 6 (both hits)
         # Wound rolls: 6 (crit -> mortal), 4 (normal wound)
         # Save roll: handled by _save_stub; no get_roll needed for save.
-        with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[6, 6, 6, 4]):
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 6, 4]):
             prof.attack(target_unit, attacker, game_map=None)
 
         # Only the normal wound should roll a save.

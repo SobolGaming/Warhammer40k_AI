@@ -1,10 +1,10 @@
 import pytest
 from typing import List
 
-from warhammer40k_ai.classes.map import Map
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.wargear import Wargear
+from warhammer40k_ai.battlefield.map import Map
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.units.wargear import Wargear
 
 
 class MockDatasheet:
@@ -53,7 +53,7 @@ def attach_to_armies(game_map: Map, units_a: List[Unit], units_b: List[Unit]):
 
 def _install_deterministic_rolls(monkeypatch, rolls: List[int]):
     import warhammer40k_ai.utility.dice as dice_mod
-    import warhammer40k_ai.classes.wargear as wargear_mod
+    import warhammer40k_ai.units.wargear as wargear_mod
 
     it = iter(rolls)
 

@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class TestFirstPrinceOfChaos(unittest.TestCase):
@@ -21,7 +21,7 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
         return unit
 
     def test_khorne_shadow_legion_advances_and_charges(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"
@@ -31,7 +31,7 @@ class TestFirstPrinceOfChaos(unittest.TestCase):
         self.assertTrue(unit.has_advance_and_charge())
 
     def test_shadow_legion_deep_strike_requires_undivided(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Chaos Daemons", detachment_type="Shadow Legion")
         army.faction_id = "CD"

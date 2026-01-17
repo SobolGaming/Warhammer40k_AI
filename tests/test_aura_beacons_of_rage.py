@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 class TestBeaconsOfRageAura(unittest.TestCase):
     def _make_profile(self, *, melee: bool):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "range": "Melee" if melee else "24",
@@ -28,7 +28,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         target_is_vehicle: bool = False,
         target_below_half: bool = False,
     ):
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.ability import Ability
 
         aura = Ability(
             name="Beacons of Rage (Aura)",
@@ -104,7 +104,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
             # Roll 2: without aura (WS3+) would miss, with aura (+1) should hit (need 2+)
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertTrue(res["hit"])
@@ -115,7 +115,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         attacker_model, attacker_unit, aura_source, target, _game_map = self._mk_stack(in_range=False)
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=False):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertFalse(res["hit"])
@@ -126,7 +126,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         attacker_model, attacker_unit, aura_source, target, _game_map = self._mk_stack(in_range=True)
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertFalse(res["hit"])
@@ -137,7 +137,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         attacker_model, attacker_unit, aura_source, target, _game_map = self._mk_stack(in_range=True, target_is_monster=True)
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertFalse(res["hit"])
@@ -148,7 +148,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         attacker_model, attacker_unit, aura_source, target, _game_map = self._mk_stack(in_range=True, target_is_vehicle=True)
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertFalse(res["hit"])
@@ -159,7 +159,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         attacker_model, attacker_unit, aura_source, target, _game_map = self._mk_stack(in_range=True, attacker_is_world_eaters=False)
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=2):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertFalse(res["hit"])
@@ -172,7 +172,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
         attack_instance = {}
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
             # Ensure hit succeeds first; store aura cache on attack_instance
-            with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[2, 3]):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[2, 3]):
                 hit = profile._hit_target_with_tracking(target, attacker_model, attack_instance)
                 self.assertTrue(hit["hit"])
                 wound = profile._wound_target_with_tracking(target, attacker_model, attack_instance)

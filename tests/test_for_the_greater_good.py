@@ -1,12 +1,12 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
 class TestForTheGreaterGood(unittest.TestCase):
     def _make_unit(self, name: str, *, markerlight: bool = False):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         wargear_data = {
             "name": "Pulse Rifle",
@@ -101,7 +101,7 @@ class TestForTheGreaterGood(unittest.TestCase):
         return unit
 
     def test_spotted_once_per_phase(self):
-        from warhammer40k_ai.classes.for_the_greater_good import ForTheGreaterGoodManager
+        from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
 
         army = SimpleNamespace(faction_id="TAU", units=[])
         obs1 = self._make_unit("Observer 1", markerlight=True)
@@ -122,18 +122,18 @@ class TestForTheGreaterGood(unittest.TestCase):
         self.assertFalse(mgr.is_observer(obs2))
 
     def test_guided_bonus_and_ignores_cover(self):
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.for_the_greater_good import ForTheGreaterGoodManager
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.rules.for_the_greater_good import ForTheGreaterGoodManager
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         game = SimpleNamespace(
             event_system=EventSystem(),
             map=None,
             is_shooting_phase=lambda: True,
         )
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         game.get_current_player = lambda: player
 
         army = SimpleNamespace(player=player, faction_id="TAU", units=[])
@@ -201,7 +201,7 @@ class TestForTheGreaterGood(unittest.TestCase):
             target_toughness_reasons=(),
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         seq = iter([3, 4])
         old_get_roll = wargear_mod.get_roll
         wargear_mod.get_roll = lambda _s: next(seq)

@@ -2,7 +2,7 @@ import pytest
 
 
 def _spawn_only_unit(spawned=False):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     unit = Unit.__new__(Unit)
     unit.name = "Sir Hekhtur"
@@ -12,7 +12,7 @@ def _spawn_only_unit(spawned=False):
 
 
 def test_spawn_only_unit_blocked_in_muster():
-    from warhammer40k_ai.classes.army import Army, ArmyValidationError
+    from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
     army = Army("Imperial Knights", detachment_type="Some Detachment")
     army.units = [_spawn_only_unit(spawned=False)]
@@ -22,7 +22,7 @@ def test_spawn_only_unit_blocked_in_muster():
 
 
 def test_spawn_only_unit_allowed_when_spawned():
-    from warhammer40k_ai.classes.army import Army
+    from warhammer40k_ai.roster.army import Army
 
     army = Army("Imperial Knights", detachment_type="Some Detachment")
     army.units = [_spawn_only_unit(spawned=True)]

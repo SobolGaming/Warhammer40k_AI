@@ -1,11 +1,11 @@
-import pytest
+﻿import pytest
 
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.ability import Ability
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.wargear import Wargear
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.units.ability import Ability
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import Wargear
 
 
 class MockDatasheet:
@@ -29,7 +29,7 @@ class MockDatasheet:
 
 def _install_deterministic_rolls(monkeypatch, rolls):
     import warhammer40k_ai.utility.dice as dice_mod
-    import warhammer40k_ai.classes.wargear as wargear_mod
+    import warhammer40k_ai.units.wargear as wargear_mod
 
     it = iter(rolls)
 
@@ -50,8 +50,8 @@ def test_model_destroyed_event_carries_attacker_and_allows_cp_gain(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerType.AI, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -113,8 +113,8 @@ def test_unit_destroyed_character_model_without_enemy_keyword_grants_cp(monkeypa
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerType.AI, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -170,8 +170,8 @@ def test_the_great_wolf_gains_cp_on_destroying_enemy_unit(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerType.AI, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -224,8 +224,8 @@ def test_feared_interrogator_cp_requires_melee_kill(monkeypatch):
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerType.AI, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 
@@ -302,8 +302,8 @@ def test_champion_slayer_heals_on_destroying_character_or_monster_unit(monkeypat
     bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, Army("Army A", "Detachment A"))
-    p2 = Player("P2", PlayerType.AI, Army("Army B", "Detachment B"))
+    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
     game.add_player(p1)
     game.add_player(p2)
 

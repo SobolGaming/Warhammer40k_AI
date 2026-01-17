@@ -1,13 +1,13 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
 class TestPossessedLordPromptHook(unittest.TestCase):
     def test_prompt_hook_controls_activation_at_fight_phase_start(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.ability import Ability
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         possessed = Ability(
@@ -54,8 +54,8 @@ class TestPossessedLordPromptHook(unittest.TestCase):
 
         u = _Unit()
         army = _Army(u)
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=army)
-        p2 = Player("P2", player_type=PlayerType.HUMAN, army=_Army(_Unit()))
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", control=PlayerControl.LOCAL, army=_Army(_Unit()))
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         g = Game(bf, players=[p1, p2])

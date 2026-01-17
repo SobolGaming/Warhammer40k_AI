@@ -1,12 +1,12 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.ability import Ability
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
-from warhammer40k_ai.classes.model import Model
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.ability import Ability
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
+from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
@@ -40,8 +40,8 @@ class TestFrenzy(unittest.TestCase):
     def test_frenzy_prompt_published_on_enemy_shooting(self):
         army1 = Army("Army A", detachment_type="Detachment A")
         army2 = Army("Army B", detachment_type="Detachment B")
-        p1 = Player("P1", PlayerType.HUMAN, army=army1)
-        p2 = Player("P2", PlayerType.HUMAN, army=army2)
+        p1 = Player("P1", PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", PlayerControl.LOCAL, army=army2)
 
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         game.phase = BattleRoundPhases.SHOOTING_PHASE
@@ -82,8 +82,8 @@ class TestFrenzy(unittest.TestCase):
     def test_frenzy_fight_option_allows_pile_in_range(self):
         army1 = Army("Army A", detachment_type="Detachment A")
         army2 = Army("Army B", detachment_type="Detachment B")
-        p1 = Player("P1", PlayerType.HUMAN, army=army1)
-        p2 = Player("P2", PlayerType.HUMAN, army=army2)
+        p1 = Player("P1", PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", PlayerControl.LOCAL, army=army2)
 
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         game.phase = BattleRoundPhases.FIGHT_PHASE
@@ -131,8 +131,8 @@ class TestFrenzy(unittest.TestCase):
     def test_frenzy_shooting_uses_out_of_phase(self):
         army1 = Army("Army A", detachment_type="Detachment A")
         army2 = Army("Army B", detachment_type="Detachment B")
-        p1 = Player("P1", PlayerType.AI, army=army1)
-        p2 = Player("P2", PlayerType.AI, army=army2)
+        p1 = Player("P1", PlayerControl.REMOTE, army=army1)
+        p2 = Player("P2", PlayerControl.REMOTE, army=army2)
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
 
         attacker = self._make_unit("Enemy", army1)

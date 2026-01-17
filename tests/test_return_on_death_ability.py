@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 
 
@@ -37,10 +37,10 @@ class MockDatasheet:
 
 class TestReturnOnDeathAbility(unittest.TestCase):
     def test_return_on_death_sets_fixed_wounds(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
 
         ability_text = (
             "The first time this model is destroyed, at the end of the phase, roll one D6: on a 2+, "
@@ -52,7 +52,7 @@ class TestReturnOnDeathAbility(unittest.TestCase):
         game = Game(bf)
 
         army = Army("Test", "Test")
-        player = Player("P1", PlayerType.HUMAN, army)
+        player = Player("P1", PlayerControl.LOCAL, army)
         game.add_player(player)
 
         unit = Unit(MockDatasheet("Reborn", wounds="6", ability_text=ability_text))
@@ -67,7 +67,7 @@ class TestReturnOnDeathAbility(unittest.TestCase):
         self.assertEqual(len(unit.models), 0)
         self.assertTrue(game._phoenix_gem_pending)
 
-        with patch("warhammer40k_ai.classes.game.get_roll", return_value=2):
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=2):
             game._on_phase_end_cleanup(player=player, phase=game.phase)
 
         self.assertEqual(len(unit.models), 1)

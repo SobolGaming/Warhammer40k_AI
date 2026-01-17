@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -30,7 +30,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities)
     return Unit(datasheet)
@@ -38,10 +38,10 @@ def _make_unit(name, *, abilities=None):
 
 class TestStickyObjectiveAbility(unittest.TestCase):
     def _assert_sticky_from_description(self, description: str) -> None:
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game, BattleRoundPhases
-        from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game, BattleRoundPhases
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         ability = {
             "name": "Objective Scouted",
@@ -57,7 +57,7 @@ class TestStickyObjectiveAbility(unittest.TestCase):
         army = Army("Test Faction", "Detachment")
         army.faction_id = "TF"
         army.add_unit(unit)
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
 

@@ -4,13 +4,15 @@ from types import SimpleNamespace
 
 class TestBelowStartingStrength(unittest.TestCase):
     def _mk_unit(self, *, starting_models: int, current_models: int, starting_wounds: int, current_wounds: int):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.name = "U"
         u.status_effects = []
         u.special_rules = {}
         u.stats = {}
+        u.deployed = True
+        u.reserve_status = "deployed"
         u.starting_model_count = starting_models
         u.starting_total_wounds = starting_wounds
         if current_models <= 0:
@@ -38,7 +40,7 @@ class TestBelowStartingStrength(unittest.TestCase):
 
     def test_command_phase_prefers_below_starting_over_below_half(self):
         # If both are true, only one test should be required in the command phase step.
-        from warhammer40k_ai.classes.game import Game
+        from warhammer40k_ai.engine.game import Game
 
         unit = self._mk_unit(starting_models=4, current_models=1, starting_wounds=0, current_wounds=0)
         self.assertTrue(unit.is_below_starting_strength())
@@ -70,8 +72,17 @@ class TestBelowStartingStrength(unittest.TestCase):
             def gain_normal_command_phase_cp(self):
                 return None
 
+            def get_command_phase_bonus_cp_gain(self):
+                return 0
+
+            def gain_command_points(self, amount, **_kwargs):
+                self.command_points += int(amount or 0)
+                return int(amount or 0)
+
         g = Game.__new__(Game)
         p = _Player(_Army([unit]))
+        from warhammer40k_ai.engine.mission_cards import PrimaryMissionCard
+        p.primary_mission = PrimaryMissionCard(name="Test Primary")
         g.players = [p]
         g.current_player_index = 0
         g.turn = 1
@@ -79,6 +90,9 @@ class TestBelowStartingStrength(unittest.TestCase):
         g.map = SimpleNamespace(objectives=[])
 
         class _ES:
+            def __init__(self):
+                self.subscribers = {}
+
             def publish(self, *_args, **_kwargs):
                 return None
 
@@ -90,5 +104,3 @@ class TestBelowStartingStrength(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-

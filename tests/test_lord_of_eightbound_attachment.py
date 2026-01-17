@@ -42,7 +42,7 @@ class _MockDatasheet:
 
 
 def _make_unit(*, name, datasheet_id, keywords=None, faction_keywords=None, abilities=None, attached_to=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,

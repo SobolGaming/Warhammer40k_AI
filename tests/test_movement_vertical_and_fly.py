@@ -5,9 +5,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from warhammer40k_ai.classes.ability import Ability
-from warhammer40k_ai.classes.map import Map, TerrainFactory
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.ability import Ability
+from warhammer40k_ai.battlefield.map import Map, TerrainFactory
+from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.calcs import MovementType, clear_collision_caches, unified_pathfinding
 from warhammer40k_ai.utility.constants import RUINS_FLOOR_THICKNESS
 from warhammer40k_ai.utility.model_base import Base, BaseType

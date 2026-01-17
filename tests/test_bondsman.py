@@ -4,9 +4,9 @@ from types import SimpleNamespace
 
 class TestBondsman(unittest.TestCase):
     def test_defenders_duty_reduces_damage(self):
-        from warhammer40k_ai.classes.bondsman import BondsmanManager
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.rules.bondsman import BondsmanManager
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         source_unit = SimpleNamespace(

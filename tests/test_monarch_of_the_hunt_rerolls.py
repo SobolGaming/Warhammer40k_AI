@@ -1,17 +1,20 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
 class TestMonarchOfTheHuntRerolls(unittest.TestCase):
     def test_melee_hit_and_wound_are_rerolled_vs_quarry(self):
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         # Minimal game/player/army wiring for roll_made publish calls
-        game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        game = SimpleNamespace(
+            event_system=EventSystem(),
+            map=SimpleNamespace(roll_reroll_provider=lambda **k: not k.get("success")),
+        )
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player)
 
         class _Round:
@@ -94,7 +97,7 @@ class TestMonarchOfTheHuntRerolls(unittest.TestCase):
             target_toughness_reasons=(),
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         seq = iter([
             2, 5,  # hit roll fail then reroll success (4+)
             2, 6,  # wound roll fail then reroll success (S==T => 4+)

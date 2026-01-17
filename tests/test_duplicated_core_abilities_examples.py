@@ -6,7 +6,7 @@ from unittest.mock import patch
 class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
     def test_example_1_stealth_not_cumulative(self):
         # Stealth is checked as a boolean; duplicates should not stack.
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         w = Wargear(
             {
@@ -33,7 +33,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
         target = _Target()
 
         # With BS 4+, a roll of 4 hits normally. With Stealth (-1 to hit), it becomes 5+ and misses.
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             attack_instance = {}
             res = prof._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertFalse(res["hit"])
@@ -43,7 +43,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
 
     def test_example_2_devastating_wounds_not_cumulative(self):
         # Devastating Wounds is a boolean flag; duplicates should not stack to "double mortals".
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         # Weapon already has Devastating Wounds; "temporary" would just be another instance.
         w = Wargear(
@@ -66,7 +66,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
         target = SimpleNamespace(toughness=4, get_models_for_wound_allocation=lambda: [SimpleNamespace(is_alive=True)], has_keyword=lambda _k: False)
 
         # Force a critical wound roll of 6.
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             attack_instance = {"below_half_distance": False}
             res = prof._wound_target_with_tracking(target, attacker, attack_instance)
 
@@ -78,7 +78,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
     def test_example_3_sustained_hits_choose_one_instance(self):
         # If multiple Sustained Hits instances exist (1 and 2), they are not cumulative.
         # The controlling player chooses; engine defaults to the "best" (highest avg), so Sustained Hits 2.
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         w = Wargear(
             {
@@ -99,7 +99,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
         attacker = SimpleNamespace(name="A", parent_unit=attacker_unit)
         target = SimpleNamespace(has_stealth=lambda: False)
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             attack_instance = {}
             res = prof._hit_target_with_tracking(target, attacker, attack_instance)
 
@@ -107,7 +107,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 2)
 
     def test_anti_duplicates_choose_best_for_same_keyword(self):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         w = Wargear(
             {
@@ -133,7 +133,7 @@ class TestDuplicatedCoreAbilitiesExamples(unittest.TestCase):
         )
 
         # Roll a 3: should trigger Anti-Vehicle 3+ (best), even though there's also Anti-Vehicle 4+.
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             attack_instance = {"below_half_distance": False}
             res = prof._wound_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["wound"])

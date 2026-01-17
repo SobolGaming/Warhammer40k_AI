@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -32,7 +32,7 @@ class _LastModel:
 
 class _Game:
     def __init__(self, player, game_map):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self.map = game_map
@@ -46,15 +46,15 @@ class _Game:
 
 class TestBloodOffering(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.map import Objective, ObjectiveCategory, ObjectivePoint
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
         unit = _TestUnit()
         army.add_unit(unit)
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
         objective_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)
         objective = Objective(
             name="Objective",

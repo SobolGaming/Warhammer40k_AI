@@ -1,7 +1,7 @@
 """
-Fight Unit Selection Dialog for Warhammer 40k AI
+Fight Unit Selection Dialog for Warhammer 40k.
 
-This dialog allows human players to select which unit should fight next
+This dialog allows local players to select which unit should fight next
 during the Fight Phase, in both Fight First and Remaining Combatants stages.
 
 Refactored to inherit from BaseDialog for consistent styling (title bar, dragging,
@@ -10,8 +10,8 @@ button handling) and to present richer unit information (melee weapons, abilitie
 
 import pygame
 from typing import List, Optional, Callable
-from ...classes.unit import Unit
-from ...classes.player import Player
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.player import Player
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED, TEXT_PRIMARY, TEXT_SECONDARY
 
 # Accent colors
@@ -127,7 +127,7 @@ class FightUnitSelectionDialog(BaseDialog):
             return
         # Background + border
         self.draw_dialog_background(screen)
-        # Title bar without emoji for font compatibility
+        # Title bar without emoji to avoid font rendering issues.
         stage_title = f"{self.stage_name} Stage"
         self.draw_title_bar(screen, stage_title, subtitle=f"{len(self.eligible_units)} eligible units")
 

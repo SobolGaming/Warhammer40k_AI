@@ -1,13 +1,13 @@
-import unittest
+﻿import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
 
 
 class TestDirectTheSlaughter(unittest.TestCase):
     def _mk_player_with_dts(self, *, battle_round: int = 1):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.ability import Ability
 
         dts = Ability(
             name="Direct the Slaughter",
@@ -34,14 +34,14 @@ class TestDirectTheSlaughter(unittest.TestCase):
         army.faction_id = "WE"
         dts_unit = _Unit(has_dts=True)
         army.units = [dts_unit]
-        p = Player("P1", player_type=PlayerType.HUMAN, army=army)
+        p = Player("P1", control=PlayerControl.LOCAL, army=army)
         game = SimpleNamespace(turn=battle_round, map=SimpleNamespace())
         p.set_game(game)
         p.command_points = 1
         return p, _TargetUnit()
 
     def test_discount_allows_affording_stratagem(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         player, target_unit = self._mk_player_with_dts(battle_round=1)
         player.decision_hook = lambda _p, key, _ctx: key == "DIRECT_THE_SLAUGHTER"
@@ -58,7 +58,7 @@ class TestDirectTheSlaughter(unittest.TestCase):
         self.assertEqual(int(player.command_points), 0)
 
     def test_once_per_battle_round_only_one_discount(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         player, target_unit = self._mk_player_with_dts(battle_round=1)
         player.decision_hook = lambda _p, key, _ctx: key == "DIRECT_THE_SLAUGHTER"
@@ -77,7 +77,7 @@ class TestDirectTheSlaughter(unittest.TestCase):
         self.assertFalse(ok2)
 
     def test_no_auto_use_without_decision_hook(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         player, target_unit = self._mk_player_with_dts(battle_round=1)
         # No decision_hook set => should not auto-use discount, so cannot afford CP2 with only 1 CP.
@@ -87,7 +87,7 @@ class TestDirectTheSlaughter(unittest.TestCase):
         self.assertFalse(ok)
 
     def test_one_shot_override_allows_using_discount_without_hook(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         player, target_unit = self._mk_player_with_dts(battle_round=1)
         # Simulate UI dialog setting a one-shot decision override

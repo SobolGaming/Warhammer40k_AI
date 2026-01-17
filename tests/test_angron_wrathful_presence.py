@@ -24,7 +24,7 @@ class _DummyMap:
 
 
 def _make_stub_unit(name: str, army, *, keywords=()):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     u = Unit.__new__(Unit)
     u.name = name
@@ -44,8 +44,8 @@ def _make_stub_unit(name: str, army, *, keywords=()):
 
 
 def test_blood_gods_favour_grants_six_rerolls():
-    from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
-    from warhammer40k_ai.classes.wrathful_presence import KEY_BLOOD_GODS_FAVOUR, set_active_wrathful_presence
+    from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
+    from warhammer40k_ai.rules.wrathful_presence import KEY_BLOOD_GODS_FAVOUR, set_active_wrathful_presence
 
     player = SimpleNamespace(name="Player 1")
     game = SimpleNamespace(turn=2)
@@ -62,8 +62,8 @@ def test_blood_gods_favour_grants_six_rerolls():
 
 
 def test_overwhelming_wrath_blocks_fall_back_on_failed_leadership(monkeypatch):
-    from warhammer40k_ai.classes.unit import Unit
-    from warhammer40k_ai.classes.wrathful_presence import KEY_OVERWHELMING_WRATH, set_active_wrathful_presence
+    from warhammer40k_ai.units.unit import Unit
+    from warhammer40k_ai.rules.wrathful_presence import KEY_OVERWHELMING_WRATH, set_active_wrathful_presence
 
     player_a = SimpleNamespace(name="Player A")
     player_b = SimpleNamespace(name="Player B")
@@ -96,8 +96,8 @@ def test_overwhelming_wrath_blocks_fall_back_on_failed_leadership(monkeypatch):
 
 
 def test_driven_by_ultimate_rage_ignores_negative_hit_modifiers(monkeypatch):
-    from warhammer40k_ai.classes.wargear import WargearProfile
-    from warhammer40k_ai.classes.wrathful_presence import KEY_DRIVEN_BY_ULTIMATE_RAGE, set_active_wrathful_presence
+    from warhammer40k_ai.units.wargear import WargearProfile
+    from warhammer40k_ai.rules.wrathful_presence import KEY_DRIVEN_BY_ULTIMATE_RAGE, set_active_wrathful_presence
 
     player_a = SimpleNamespace(name="Player A")
     player_b = SimpleNamespace(name="Player B")
@@ -134,7 +134,7 @@ def test_driven_by_ultimate_rage_ignores_negative_hit_modifiers(monkeypatch):
     wp.is_lethal_hits = lambda: False
     wp.is_sustained_hits = lambda: False
 
-    monkeypatch.setattr("warhammer40k_ai.classes.wargear.get_roll", lambda _: 4)
+    monkeypatch.setattr("warhammer40k_ai.units.wargear.get_roll", lambda _: 4)
 
     hit = wp._hit_target_with_tracking(target, attacker_unit.models[0], {})
     assert hit["final_needed"] == 3

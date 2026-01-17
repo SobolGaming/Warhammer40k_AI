@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -41,7 +41,7 @@ class _MockDatasheet:
 
 
 def _make_unit(*, name, datasheet_id, model_count=1, abilities=None, attached_to=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -55,9 +55,9 @@ def _make_unit(*, name, datasheet_id, model_count=1, abilities=None, attached_to
 
 class TestCommandPhaseBodyguardReturn(unittest.TestCase):
     def test_command_phase_returns_bodyguard_model(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         ability = {
             "name": "Rage Eternal",
@@ -94,7 +94,7 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
         self.assertEqual(len(bodyguard.models), 1)
         self.assertEqual(len(bodyguard.models_lost), 1)
 
-        player = Player("P1", player_type=PlayerType.AI, army=army)
+        player = Player("P1", control=PlayerControl.REMOTE, army=army)
         player.decision_hook = lambda _p, key, _ctx: key == "RETURN_BODYGUARD_MODEL"
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
 
@@ -104,9 +104,9 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
         self.assertEqual(len(bodyguard.models_lost), 0)
 
     def test_bodyguard_return_requires_attached_bodyguards(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         ability = {
             "name": "Rage Eternal",
@@ -143,7 +143,7 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
         self.assertEqual(len(bodyguard.models), 0)
         self.assertEqual(len(bodyguard.models_lost), 1)
 
-        player = Player("P1", player_type=PlayerType.AI, army=army)
+        player = Player("P1", control=PlayerControl.REMOTE, army=army)
         player.decision_hook = lambda _p, key, _ctx: key == "RETURN_BODYGUARD_MODEL"
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
 

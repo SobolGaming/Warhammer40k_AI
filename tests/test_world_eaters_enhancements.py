@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -40,7 +40,7 @@ class TestWorldEatersEnhancements(unittest.TestCase):
             self.attached_to = []
 
     def _make_unit(self, name, *, faction_name="World Eaters", keywords=None, faction_keywords=None, cost=100):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         datasheet = self._MockDatasheet(
             name,
@@ -62,7 +62,7 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         }
 
     def _make_melee_profile(self, *, attacks: str = "1", damage: str = "1", keywords: str = ""):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "range": "Melee",
@@ -79,9 +79,9 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         return parent.profiles["default"]
 
     def test_berzerker_glaive_melee_attacks_and_damage(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         army = Army("World Eaters", "Berzerker Warband")
@@ -171,9 +171,9 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(target_model.wounds, before - 2)
 
     def test_berzerker_glaive_excludes_extra_attacks(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         army = Army("World Eaters", "Berzerker Warband")
@@ -263,11 +263,11 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(target_model.wounds, before - 1)
 
     def test_battle_lust_reroll_and_bonus(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
-        from warhammer40k_ai.classes.game import Game, Battlefield
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
+        from warhammer40k_ai.engine.game import Game, Battlefield
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
@@ -302,9 +302,9 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(int(modified), 7)
 
     def test_favoured_of_khorne_rerolls_available(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsOfKhorneManager
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
@@ -332,7 +332,7 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(int(mgr.favoured_of_khorne_rerolls_for_army(army)), 2)
 
     def test_helm_of_brazen_ire_reduces_damage(self):
-        from warhammer40k_ai.classes.enhancement import Enhancement
+        from warhammer40k_ai.rules.enhancement import Enhancement
 
         unit = SimpleNamespace(special_rules={}, models=[])
         Enhancement(
@@ -347,10 +347,10 @@ class TestWorldEatersEnhancements(unittest.TestCase):
         self.assertEqual(int(unit.special_rules.get("enhancement_reduce_damage_taken", 0) or 0), 1)
 
     def test_blood_forged_armour_save_and_btp_on_death(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -379,18 +379,18 @@ class TestWorldEatersEnhancements(unittest.TestCase):
 
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[
-            Player("P1", player_type=PlayerType.HUMAN, army=army),
-            Player("P2", player_type=PlayerType.AI, army=enemy_army),
+            Player("P1", control=PlayerControl.LOCAL, army=army),
+            Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
         ])
 
         game.event_system.publish("unit_destroyed", unit=unit, destroyed_by_unit=enemy)
         self.assertEqual(int(army.world_eaters_detachments.blood_tithe_points), 1)
 
     def test_blade_of_endless_bloodshed_auto_btp_on_melee_kill(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -421,8 +421,8 @@ class TestWorldEatersEnhancements(unittest.TestCase):
 
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf, players=[
-            Player("P1", player_type=PlayerType.HUMAN, army=army),
-            Player("P2", player_type=PlayerType.AI, army=enemy_army),
+            Player("P1", control=PlayerControl.LOCAL, army=army),
+            Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
         ])
 
         weapon_profile = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: True))

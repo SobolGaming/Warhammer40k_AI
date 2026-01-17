@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -24,7 +24,7 @@ class MockDatasheet:
 
 class TestAeldariWarhostEnhancements(unittest.TestCase):
     def _make_ranged_profile(self, *, damage: str = "1", keywords: str = ""):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "range": "24",
@@ -41,9 +41,9 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         return parent.profiles["default"]
 
     def test_psychic_destroyer_adds_damage(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         army = Army("Aeldari", "Warhost")
@@ -109,16 +109,16 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         self.assertEqual(target_model.wounds, before - 2)
 
     def test_gift_of_foresight_makes_command_reroll_free_once_per_round(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.game import Game, Battlefield
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.stratagems import Stratagem
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Game, Battlefield
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.stratagems import Stratagem
 
         game = Game(Battlefield(width=44, height=30))
         army = Army("Aeldari", "Warhost")
         army.faction_id = "AE"
-        player = Player("P1", PlayerType.HUMAN, army)
+        player = Player("P1", PlayerControl.LOCAL, army)
         game.add_player(player)
 
         unit = SimpleNamespace(
@@ -163,8 +163,8 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         self.assertEqual(int(preview_after["cost"]), 1)
 
     def test_timeless_strategist_adds_battle_focus_token(self):
-        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize
 
         unit = SimpleNamespace(
             special_rules={"enhancement_timeless_strategist_battle_focus_bonus": 1},
@@ -172,7 +172,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
             reserve_status="deployed",
         )
         unit.is_alive = lambda: True
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Aeldari", "Warhost")
         army.faction_id = "AE"
@@ -189,18 +189,18 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         self.assertEqual(int(mgr.tokens), 6)
 
     def test_phoenix_gem_returns_at_phase_end(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.enhancement import Enhancement
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
 
         bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
 
         army = Army("Aeldari", "Warhost")
         army.faction_id = "AE"
-        player = Player("P1", PlayerType.HUMAN, army)
+        player = Player("P1", PlayerControl.LOCAL, army)
         game.add_player(player)
 
         unit = Unit(MockDatasheet("Phoenix Bearer", model_count=1))
@@ -225,7 +225,7 @@ class TestAeldariWarhostEnhancements(unittest.TestCase):
         self.assertEqual(len(unit.models), 0)
         self.assertTrue(game._phoenix_gem_pending)
 
-        with patch("warhammer40k_ai.classes.game.get_roll", return_value=2):
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=2):
             game._on_phase_end_cleanup(player=player, phase=game.phase)
 
         self.assertEqual(len(unit.models), 1)

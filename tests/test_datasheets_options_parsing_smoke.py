@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestDatasheetsOptionsParsingSmoke(unittest.TestCase):
     def test_parse_alternate_3_handles_an_prefix_replacement(self):
-        from warhammer40k_ai.classes.wargear import parse_alternate_3
+        from warhammer40k_ai.units.wargear import parse_alternate_3
 
         unit = SimpleNamespace(models=[SimpleNamespace(name="Invader ATV")])
         opts = parse_alternate_3(["An Invader ATV's onslaught gatling cannon can be replaced with 1 multi-melta."], unit)
@@ -12,7 +12,7 @@ class TestDatasheetsOptionsParsingSmoke(unittest.TestCase):
         self.assertEqual(opts[0].model_name, "invader atv")
 
     def test_parse_alternate_3_handles_all_models_in_unit(self):
-        from warhammer40k_ai.classes.wargear import parse_alternate_3
+        from warhammer40k_ai.units.wargear import parse_alternate_3
 
         unit = SimpleNamespace(models=[SimpleNamespace(name="Model") for _ in range(3)])
         desc = (

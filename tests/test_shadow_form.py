@@ -1,12 +1,12 @@
-import pytest
+﻿import pytest
 
-from warhammer40k_ai.classes.army import Army
-from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
-from warhammer40k_ai.classes.player import Player, PlayerType
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.wargear import WargearProfile
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility.aura_effects import get_aura_attack_modifiers
-from warhammer40k_ai.classes.shadow_form import (
+from warhammer40k_ai.rules.shadow_form import (
     KEY_WREATHED,
     KEY_SHADOW_LORD,
     KEY_PALL,
@@ -44,8 +44,8 @@ def _setup_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
 
-    p1 = Player("P1", PlayerType.HUMAN, None)
-    p2 = Player("P2", PlayerType.AI, None)
+    p1 = Player("P1", PlayerControl.LOCAL, None)
+    p2 = Player("P2", PlayerControl.REMOTE, None)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -171,8 +171,8 @@ def test_pall_of_despair_heals_on_failed_battle_shock(monkeypatch):
 
     set_active_shadow_form(belakor, KEY_PALL, battle_round=1)
 
-    import warhammer40k_ai.classes.unit as unit_mod
-    import warhammer40k_ai.classes.shadow_form as shadow_form_mod
+    import warhammer40k_ai.units.unit as unit_mod
+    import warhammer40k_ai.rules.shadow_form as shadow_form_mod
 
     rolls = iter([12, 2])
 

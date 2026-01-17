@@ -2,12 +2,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from warhammer40k_ai.classes.army import Army
+from warhammer40k_ai.roster.army import Army
 
 class _DummyPlayer:
     def __init__(self, name="Player"):
         self.name = name
-        self.type = SimpleNamespace(name="HUMAN")
+        self.control = SimpleNamespace(name="LOCAL")
+        self.has_control = lambda: True
         self.game = None
 
 
@@ -42,8 +43,8 @@ class _DummyUnit:
 
 class TestBattleFocus(unittest.TestCase):
     def test_tokens_from_battlefield_size(self):
-        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize
 
         army = _DummyArmy([])
         mgr = BattleFocusManager(army)
@@ -57,8 +58,8 @@ class TestBattleFocus(unittest.TestCase):
         self.assertEqual(mgr.tokens, 4)
 
     def test_martial_grace_adds_battle_focus_token(self):
-        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize
 
         army = _DummyArmy([], detachment_type="Warhost")
         mgr = BattleFocusManager(army)
@@ -72,7 +73,7 @@ class TestBattleFocus(unittest.TestCase):
         self.assertEqual(mgr.tokens, 5)
 
     def test_martial_grace_swift_as_the_wind_bonus(self):
-        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
 
         unit = _DummyUnit()
         army = _DummyArmy([unit], detachment_type="Warhost")
@@ -91,7 +92,7 @@ class TestBattleFocus(unittest.TestCase):
         self.assertEqual(unit._mods[0][1].value, 3)
 
     def test_martial_grace_reactive_move_bonus(self):
-        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
 
         unit = _DummyUnit()
         army = _DummyArmy([unit], detachment_type="Warhost")
@@ -107,7 +108,7 @@ class TestBattleFocus(unittest.TestCase):
         self.assertEqual(int(unit.special_rules.get("battle_focus_reactive_move_max", 0)), 5)
 
     def test_swift_as_the_wind_expires_at_phase_end(self):
-        from warhammer40k_ai.classes.battle_focus import BattleFocusManager
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
 
         unit = _DummyUnit()
         army = _DummyArmy([unit])
@@ -132,7 +133,7 @@ class TestBattleFocus(unittest.TestCase):
         self.assertIn("battle_focus:swift_as_the_wind", unit._removed)
 
     def test_star_engines_allows_shooting_after_advance(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         unit = Unit.__new__(Unit)
         unit.special_rules = {"battle_focus_star_engines_active": True}
@@ -142,7 +143,7 @@ class TestBattleFocus(unittest.TestCase):
         self.assertTrue(unit.can_shoot_after_advance(profile))
 
     def test_sudden_strike_override(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         unit = Unit.__new__(Unit)
         unit.special_rules = {"battle_focus_sudden_strike_expires_phase": "FIGHT_PHASE"}
@@ -155,7 +156,7 @@ class TestBattleFocus(unittest.TestCase):
         self.assertEqual(unit.get_fight_phase_move_distance_override("pile_in"), 6.0)
 
     def test_flitting_shadows_suppresses_overwatch_queue(self):
-        from warhammer40k_ai.classes.stratagems import Stratagem, StratagemManager
+        from warhammer40k_ai.rules.stratagems import Stratagem, StratagemManager
 
         class _DummyPlayer:
             def __init__(self, name):

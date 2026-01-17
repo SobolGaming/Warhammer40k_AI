@@ -1,8 +1,8 @@
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.unit import Unit
-from warhammer40k_ai.classes.model import Model
-from warhammer40k_ai.classes.wargear import WargearProfile
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
 
@@ -88,7 +88,7 @@ def test_kill_team_majority_toughness_tie_uses_highest_and_attack_override():
         parent_wargear=parent_wargear,
     )
 
-    from warhammer40k_ai.classes import wargear as wargear_mod
+    from warhammer40k_ai.units import wargear as wargear_mod
     old_get_roll = wargear_mod.get_roll
     wargear_mod.get_roll = lambda _s: 6
     try:

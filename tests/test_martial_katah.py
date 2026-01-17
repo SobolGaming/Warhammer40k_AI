@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 class TestMartialKatahCombatInjection(unittest.TestCase):
     def _make_melee_profile(self, keywords: str = ""):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
         data = {
             "range": "Melee",
             "A": "1",
@@ -42,7 +42,7 @@ class TestMartialKatahCombatInjection(unittest.TestCase):
             has_keyword=lambda k: False,
         )
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertEqual(int(attack_instance.get("sustained_hit", 0)), 1)
@@ -56,7 +56,7 @@ class TestMartialKatahCombatInjection(unittest.TestCase):
             has_keyword=lambda k: False,
         )
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         self.assertTrue(res["hit"])
         self.assertTrue(attack_instance.get("lethal_hit", False))

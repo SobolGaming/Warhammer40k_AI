@@ -107,7 +107,7 @@ class _GameStub:
 
 class TestShadowOfChaos(unittest.TestCase):
     def test_battleline_returns_destroyed_models(self):
-        from warhammer40k_ai.classes.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
 
         alive = _ModelStub(wounds=3, base_wounds=3)
         lost1 = _ModelStub(wounds=0, base_wounds=3)
@@ -115,7 +115,7 @@ class TestShadowOfChaos(unittest.TestCase):
         unit = _UnitStub(models=[alive], lost=[lost1, lost2], battleline=True)
         ctx = ShadowBattleShockContext(manifestation_active=True)
 
-        with patch("warhammer40k_ai.classes.shadow_of_chaos.get_roll", return_value=3):
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.get_roll", return_value=3):
             ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=True, context=ctx, game=None)
 
         self.assertEqual(len(unit.models), 3)
@@ -123,30 +123,30 @@ class TestShadowOfChaos(unittest.TestCase):
         self.assertTrue(all(m.wounds == m._base_wounds for m in unit.models))
 
     def test_manifestation_heals_non_battleline(self):
-        from warhammer40k_ai.classes.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
 
         model = _ModelStub(wounds=1, base_wounds=3)
         unit = _UnitStub(models=[model], lost=[], battleline=False)
         ctx = ShadowBattleShockContext(manifestation_active=True)
 
-        with patch("warhammer40k_ai.classes.shadow_of_chaos.get_roll", return_value=2):
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.get_roll", return_value=2):
             ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=True, context=ctx, game=None)
 
         self.assertEqual(model.wounds, 3)
 
     def test_daemonic_terror_applies_mortals_on_fail(self):
-        from warhammer40k_ai.classes.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext, ShadowOfChaosManager
 
         unit = _UnitStub(models=[_ModelStub(wounds=3, base_wounds=3)], lost=[], battleline=False)
         ctx = ShadowBattleShockContext(terror_active=True)
 
-        with patch("warhammer40k_ai.classes.shadow_of_chaos.get_roll", return_value=2):
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.get_roll", return_value=2):
             ShadowOfChaosManager.apply_battle_shock_outcome(unit, passed=False, context=ctx, game=None)
 
         self.assertEqual(unit.mortal_applied, 2)
 
     def test_dark_master_aura_counts_as_shadow(self):
-        from warhammer40k_ai.classes.shadow_of_chaos import ShadowOfChaosManager
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowOfChaosManager
 
         belakor = _UnitStub(
             models=[_ModelStub(wounds=6, base_wounds=6)],

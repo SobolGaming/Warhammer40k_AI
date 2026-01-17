@@ -1,19 +1,19 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class TestDarkPacts(unittest.TestCase):
     def test_dark_pacts_sets_choice(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "LETHAL HITS"}
 
@@ -40,15 +40,15 @@ class TestDarkPacts(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("dark_pacts_expires_phase"), "SHOOTING_PHASE")
 
     def test_dark_pacts_trigger_out_of_phase(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
         army = Army("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "SUSTAINED HITS 1"}
 
@@ -80,15 +80,15 @@ class TestDarkPacts(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("dark_pacts_expires_phase"), "MOVEMENT_PHASE")
 
     def test_dark_pacts_ignored_without_targets(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
         army = Army("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "LETHAL HITS"}
 
@@ -114,15 +114,15 @@ class TestDarkPacts(unittest.TestCase):
         self.assertFalse(unit.special_rules.get("dark_pacts_active", False))
 
     def test_dark_pacts_ignore_fight_on_death_trigger(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.roster.army import Army
         from types import SimpleNamespace
 
         army = Army("Chaos Space Marines", detachment_type="Other")
         army.faction_id = "CSM"
-        p1 = Player("P1", PlayerType.HUMAN, army=army)
-        p2 = Player("P2", PlayerType.AI, army=Army("Other", "Other"))
+        p1 = Player("P1", PlayerControl.LOCAL, army=army)
+        p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
         p1._next_optional_decisions = {"DARK_PACTS": True}
         p1._next_optional_selections = {"DARK_PACTS_CHOICE": "LETHAL HITS"}
 

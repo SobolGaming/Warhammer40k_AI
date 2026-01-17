@@ -207,7 +207,7 @@ You’ll see:
 ### Programmatic use
 
 ```python
-from warhammer40k_ai.classes.map import TerrainFactory
+from warhammer40k_ai.battlefield.map import TerrainFactory
 
 ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
 # game_map.add_terrain_feature(ruin)

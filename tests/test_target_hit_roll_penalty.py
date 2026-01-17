@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -37,16 +37,16 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities)
     return Unit(datasheet)
 
 
 def _build_game():
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
@@ -56,8 +56,8 @@ def _build_game():
     army2 = Army("Enemy", "Other")
     army2.faction_id = "EN"
 
-    p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
-    p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+    p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+    p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -79,7 +79,7 @@ def _aura_stub():
 
 class TestTargetHitRollPenalty(unittest.TestCase):
     def test_unit_target_hit_penalty(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Shimmer Shield",
@@ -108,7 +108,7 @@ class TestTargetHitRollPenalty(unittest.TestCase):
             parent_wargear=parent,
         )
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             result = profile._hit_target_with_tracking(
                 target,
                 attacker.models[0],
@@ -119,7 +119,7 @@ class TestTargetHitRollPenalty(unittest.TestCase):
         self.assertIn("-1 to hit from Shimmer Shield", result.get("modifiers", []))
 
     def test_melee_only_target_hit_penalty(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
+        from warhammer40k_ai.units.wargear import WargearProfile
 
         ability = {
             "name": "Duelist's Guard",
@@ -148,7 +148,7 @@ class TestTargetHitRollPenalty(unittest.TestCase):
             parent_wargear=melee_parent,
         )
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             melee_result = melee_profile._hit_target_with_tracking(
                 target,
                 attacker.models[0],
@@ -173,7 +173,7 @@ class TestTargetHitRollPenalty(unittest.TestCase):
             parent_wargear=ranged_parent,
         )
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             ranged_result = ranged_profile._hit_target_with_tracking(
                 target,
                 attacker.models[0],
@@ -184,8 +184,8 @@ class TestTargetHitRollPenalty(unittest.TestCase):
         self.assertNotIn("-1 to hit from Duelist's Guard", ranged_result.get("modifiers", []))
 
     def test_model_target_hit_penalty_single_model(self):
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units.ability import Ability
 
         _game, army1, army2 = _build_game()
         attacker = _make_unit("Attacker")
@@ -218,7 +218,7 @@ class TestTargetHitRollPenalty(unittest.TestCase):
             parent_wargear=parent,
         )
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             result = profile._hit_target_with_tracking(
                 target,
                 attacker.models[0],

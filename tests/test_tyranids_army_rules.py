@@ -73,8 +73,8 @@ class _GameStub:
 
 class TestTyranidsArmyRules(unittest.TestCase):
     def _mk_unit(self, army, *, name, keywords=None, faction_keywords=None, loc=(0.0, 0.0)):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         u = Unit.__new__(Unit)
@@ -112,7 +112,7 @@ class TestTyranidsArmyRules(unittest.TestCase):
         return u
 
     def test_synapse_battleshock_uses_3d6(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
@@ -139,15 +139,15 @@ class TestTyranidsArmyRules(unittest.TestCase):
             rolls.append(expr)
             return 6
 
-        with patch("warhammer40k_ai.classes.unit.get_roll", side_effect=_fake_roll):
+        with patch("warhammer40k_ai.units.unit.get_roll", side_effect=_fake_roll):
             target_unit.take_battle_shock_test(current_turn=1)
 
         self.assertIn("3D6", rolls)
 
     def test_synapse_melee_strength_bonus(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.units import wargear as wargear_mod
 
         army = Army("Tyranids", detachment_type="Other")
         army.faction_id = "TYR"
@@ -213,10 +213,10 @@ class TestTyranidsArmyRules(unittest.TestCase):
         self.assertTrue(any("Synapse" in x for x in wound_res.get("modifiers", [])))
 
     def test_shadow_in_the_warp_once_per_battle_and_modifier(self):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
-        from warhammer40k_ai.classes.synapse import SynapseManager
-        from warhammer40k_ai.classes.shadow_in_the_warp import ShadowInTheWarpManager
+        from warhammer40k_ai.rules.synapse import SynapseManager
+        from warhammer40k_ai.rules.shadow_in_the_warp import ShadowInTheWarpManager
 
         synapse_model = Model(
             name="Synapse",
@@ -301,7 +301,7 @@ class TestTyranidsArmyRules(unittest.TestCase):
         self.assertEqual(len(close_unit.tests), 1)
 
     def test_shadow_in_the_warp_blocks_insane_bravery(self):
-        from warhammer40k_ai.classes.stratagems import StratagemManager
+        from warhammer40k_ai.rules.stratagems import StratagemManager
 
         player = SimpleNamespace()
         game = SimpleNamespace(get_current_player=lambda: player, battle_shock_step_active=False)

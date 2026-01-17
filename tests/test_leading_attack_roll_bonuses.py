@@ -31,7 +31,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, abilities=None, model_count=1):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(name, abilities=abilities, model_count=model_count)
     return Unit(datasheet)
@@ -78,7 +78,7 @@ class TestLeadingAttackRollBonuses(unittest.TestCase):
         self.assertEqual(int(mods.get("wound", 0)), 1)
 
     def test_leading_battleshocked_wound_bonus(self):
-        from warhammer40k_ai.classes.status_effects import BattleShockEffect
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
 
         ability = {
             "name": "Merciless Execution",

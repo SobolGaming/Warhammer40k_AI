@@ -195,7 +195,7 @@ class MissionSelectionDialog(BaseDialog):
         combination = self.APPROVED_COMBINATIONS[self.selected_combination]
         self.selected_layout = random.choice(combination["layouts"])
         
-        print(f"🎲 Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
+        print(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
     
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events. Return True if handled."""

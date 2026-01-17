@@ -5,7 +5,7 @@ class TestFightPhaseAttachedUnitSelection(unittest.TestCase):
     def test_eligible_units_collapses_attached_leader_into_root(self):
         from types import SimpleNamespace
 
-        from warhammer40k_ai.classes.fight_phase_manager import FightPhaseManager, FightStage
+        from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 
         class _Unit:
             def __init__(self, name: str):

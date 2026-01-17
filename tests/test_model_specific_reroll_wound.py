@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 
 
 class _MockDatasheet:
@@ -37,7 +37,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, keywords=None, abilities=None):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
         name,
@@ -48,9 +48,9 @@ def _make_unit(name, *, keywords=None, abilities=None):
 
 
 def _build_game():
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
-    from warhammer40k_ai.classes.army import Army
-    from warhammer40k_ai.classes.player import Player, PlayerType
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.roster.army import Army
+    from warhammer40k_ai.roster.player import Player, PlayerControl
 
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
@@ -60,8 +60,8 @@ def _build_game():
     army2 = Army("Enemy", "Other")
     army2.faction_id = "EN"
 
-    p1 = Player("P1", player_type=PlayerType.HUMAN, army=army1)
-    p2 = Player("P2", player_type=PlayerType.AI, army=army2)
+    p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+    p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
     game.add_player(p1)
     game.add_player(p2)
 
@@ -70,8 +70,8 @@ def _build_game():
 
 class TestModelSpecificRerollWound(unittest.TestCase):
     def test_model_reroll_wound_vs_character(self):
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes import wargear as wargear_module
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
 
         ability = {
             "name": "Storm of Silence",
@@ -127,8 +127,8 @@ class TestModelSpecificRerollWound(unittest.TestCase):
         self.assertIn("Storm of Silence", called.get("reason", ""))
 
     def test_model_reroll_wound_requires_character_target(self):
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes import wargear as wargear_module
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
 
         ability = {
             "name": "Storm of Silence",
@@ -177,8 +177,8 @@ class TestModelSpecificRerollWound(unittest.TestCase):
         self.assertEqual(result["roll"], 2)
 
     def test_model_reroll_wound_vs_character_melee_text(self):
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes import wargear as wargear_module
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
 
         ability = {
             "name": "Storm of Silence",
@@ -235,8 +235,8 @@ class TestModelSpecificRerollWound(unittest.TestCase):
 
 class TestModelSpecificRerollHit(unittest.TestCase):
     def test_model_reroll_hit_vs_character(self):
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes import wargear as wargear_module
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
 
         ability = {
             "name": "Skulls for Khorne",
@@ -291,8 +291,8 @@ class TestModelSpecificRerollHit(unittest.TestCase):
         self.assertIn("Skulls for Khorne", called.get("reason", ""))
 
     def test_model_reroll_hit_vs_character_melee_text(self):
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes import wargear as wargear_module
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
 
         ability = {
             "name": "Skulls for Khorne",
@@ -347,8 +347,8 @@ class TestModelSpecificRerollHit(unittest.TestCase):
         self.assertIn("Skulls for Khorne", called.get("reason", ""))
 
     def test_model_reroll_hit_requires_character_target(self):
-        from warhammer40k_ai.classes.wargear import Wargear
-        from warhammer40k_ai.classes import wargear as wargear_module
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
 
         ability = {
             "name": "Skulls for Khorne",

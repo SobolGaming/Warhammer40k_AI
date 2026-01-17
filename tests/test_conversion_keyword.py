@@ -12,7 +12,7 @@ class TestConversionKeyword(unittest.TestCase):
     
     def _make_ranged_profile(self, keywords: str = "", bs: str = "3+", weapon_range: str = "24"):
         """Helper to create a weapon profile with specified keywords."""
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "name": "Test Weapon",
@@ -140,7 +140,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {}
         
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         
         # Should hit (BS 3+, rolled 4), but NOT critical (distance not > 12")
@@ -154,7 +154,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}  # Simulate conversion being active
         
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         
         # Should hit AND be critical (Conversion active, unmodified 4+)
@@ -173,7 +173,7 @@ class TestConversionKeyword(unittest.TestCase):
         
         # Unmodified 4, but with -1 to hit modifier (final needed would be 5+)
         # This test simulates the scenario where modifiers cause a miss
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
         
         # With BS 4+ and -1 to hit, roll of 4 should miss and not become critical
@@ -187,7 +187,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should be critical from baseline rule (unmodified 6)
@@ -204,7 +204,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should be critical from Conversion, and Lethal Hits should apply
@@ -219,7 +219,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=5):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=5):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should be critical from Conversion, and Sustained Hits should apply
@@ -236,7 +236,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance_12 = {'conversion_active': False}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res_12 = profile._hit_target_with_tracking(target, attacker_at_12, attack_instance_12)
 
         self.assertTrue(res_12["hit"])
@@ -246,7 +246,7 @@ class TestConversionKeyword(unittest.TestCase):
         attacker_beyond = self._make_attacker(distance_to_target=12.1)
         attack_instance_beyond = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res_beyond = profile._hit_target_with_tracking(target, attacker_beyond, attack_instance_beyond)
 
         self.assertTrue(res_beyond["hit"])
@@ -259,7 +259,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=1):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=1):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should always miss on unmodified 1
@@ -273,7 +273,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should hit (BS 3+, rolled 3), but NOT critical (unmodified < 4)
@@ -287,7 +287,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should be critical from baseline (unmodified 6), not from Conversion
@@ -326,7 +326,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=4):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should be critical from Conversion, and Dark Pacts Lethal Hits should apply
@@ -364,7 +364,7 @@ class TestConversionKeyword(unittest.TestCase):
         target = self._make_target()
         attack_instance = {'conversion_active': True}
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=5):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=5):
             res = profile._hit_target_with_tracking(target, attacker, attack_instance)
 
         # Should be critical from Conversion, and Bondsman Sustained Hits should apply

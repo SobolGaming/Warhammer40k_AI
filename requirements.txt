@@ -8,8 +8,6 @@ openpyxl
 shapely
 simple-namespace
 pytest
-gym
 pygame
-torch
 shapely
 matplotlib

@@ -10,10 +10,10 @@ from shapely import STRtree
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from ..classes.map import TerrainFeature
-    from ..classes.unit import Unit, MovementAction
-    from ..classes.model import Model
-    from ..classes.map import Map
+    from warhammer40k_ai.battlefield.map import TerrainFeature
+    from warhammer40k_ai.units.unit import Unit, MovementAction
+    from warhammer40k_ai.units.model import Model
+    from warhammer40k_ai.battlefield.map import Map
 
 import logging
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
@@ -84,7 +84,6 @@ def clear_enemy_model_cache(game_map_id: int = None):
 # - Rotation cost tracking using existing get_pivot_cost() function
 # - MODEL-LEVEL PATHFINDING: Works with individual models for maximum flexibility
 # - COHERENCY: Movement actions must END in coherency; we validate coherency at the unit-action level
-# - Backward compatibility with existing pathfinding interfaces
 #
 # Main functions:
 # - get_individual_model_movement_path(): Human-friendly individual model movement
@@ -92,19 +91,17 @@ def clear_enemy_model_cache(game_map_id: int = None):
 # - a_star_optimized(): Core optimized A* algorithm (model-level)
 # - a_star_optimized_with_pivot_cost(): Optimized pathfinding with pivot cost integration
 # - get_optimized_paths_for_unit_models(): Multi-model pathfinding for units
-# - get_optimized_path_for_unit(): Unit-level compatibility wrapper
 # - validate_unit_coherency_after_movement(): Post-movement coherency validation
 # - process_unit_movement_with_coherency_check(): Complete human movement workflow
 # - a_star_enhanced(): Enhanced pathfinding with movement action support (uses optimized for basic cases)
-# - a_star(): Legacy compatibility wrapper (uses optimized when possible)
 #
 # ARCHITECTURAL CHANGE: Movement is now handled at the model level rather than unit level.
 # This allows for more flexible movement patterns and better human player control.
 # Coherency is NOT enforced inside the pathfinder (it plans for a single model),
 # but unit-level movement/deployment/charge/pile-in/consolidate must end in coherency.
 #
-# The optimized pathfinding provides 3-10x performance improvement over legacy methods
-# while maintaining full compatibility with existing Warhammer 40k movement rules.
+# The optimized pathfinding provides 3-10x performance improvement
+# while matching existing Warhammer 40k movement rules.
 
 # Convert mm (as in base size of models) to inches
 def convert_mm_to_inches(value: float) -> float:
@@ -121,7 +118,7 @@ def get_angle(x_delta: float, y_delta: float) -> float:
 def angle_difference(angle1: float, angle2: float) -> float:
     """
     Calculate the smallest difference between two angles in radians.
-    The result is in the range [-π, π].
+    The result is in the range [-pi, pi].
     """
     diff = (angle2 - angle1 + pi) % (2 * pi) - pi
     return diff
@@ -391,7 +388,7 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
     This function determines if terrain should be ignored for pathfinding purposes.
     """
     # Import at runtime to avoid circular import
-    from ..classes.map import TerrainType, RuinsTerrain
+    from warhammer40k_ai.battlefield.map import TerrainType, RuinsTerrain
 
     terrain_type = terrain_feature.terrain_type
 
@@ -424,7 +421,7 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature',
     This determines if terrain should be added to blocking collision trees.
     """
     # Import at runtime to avoid circular import
-    from ..classes.map import TerrainType, RuinsTerrain
+    from warhammer40k_ai.battlefield.map import TerrainType, RuinsTerrain
 
     terrain_type = terrain_feature.terrain_type
 
@@ -442,9 +439,8 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature',
                     z1 = float(wall.get("z_top", 0.0) or 0.0)
                     if (z1 - z0) > float(threshold):
                         return True
-                except Exception:
-                    # If wall metadata is missing, err on the side of blocking (legacy behavior)
-                    return True
+                except Exception as exc:
+                    raise RuntimeError("RUINS wall metadata missing") from exc
             return False
         return False
 
@@ -477,7 +473,7 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
         List of Polygon objects that block the unit's movement
     """
     # Import at runtime to avoid circular import
-    from ..classes.map import TerrainType, RuinsTerrain
+    from warhammer40k_ai.battlefield.map import TerrainType, RuinsTerrain
 
     blocking_polygons = []
     terrain_type = terrain_feature.terrain_type
@@ -498,12 +494,8 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
                     poly = wall.get("polygon", None)
                     if poly is not None:
                         blocking_polygons.append(poly)
-                except Exception:
-                    # If metadata missing, keep legacy behavior and block
-                    try:
-                        blocking_polygons.append(wall["polygon"])
-                    except Exception:
-                        continue
+                except Exception as exc:
+                    raise RuntimeError("RUINS wall polygon metadata missing") from exc
 
     # For other terrain types, check if they're impassable
     else:
@@ -1416,7 +1408,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     fly_move = _unit_is_fly_move(unit, movement_type)
 
     # Surface resolution helpers (2.5D pathing across floors/ground).
-    from ..classes.map import TerrainType
+    from warhammer40k_ai.battlefield.map import TerrainType
     from ..utility.constants import RUINS_FLOOR_THICKNESS
 
     def _poly_contains(poly, point: Point) -> bool:
@@ -2073,7 +2065,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             # No engagement buffer tree available. Given our spatial filtering builds the
             # buffer using a radius that already includes any enemy that could be within
             # engagement range of any valid destination, the absence of the tree implies
-            # no relevant enemies are in range. Skip slow O(n) fallback checks.
+            # no relevant enemies are in range. Skip slow O(n) checks.
             pass
 
     # Aircraft engagement range restriction (final position only, unless allowed by charge vs aircraft)
@@ -2091,7 +2083,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 except Exception:
                     pass
             elif game_map is not None:
-                # Fallback: check enemy aircraft models directly
+                # Check enemy aircraft models directly
                 from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
                 from ..utility.model_base import Base
                 temp_base = Base(model.model_base.base_type, model.model_base.radius)
@@ -2189,7 +2181,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
 
     # Check RUINS terrain placement rules only for final positions
     if is_final_position and game_map and hasattr(game_map, 'terrain_features'):
-        from ..classes.map import validate_ruins_placement
+        from warhammer40k_ai.battlefield.map import validate_ruins_placement
         ruins_validation = validate_ruins_placement(model.parent_unit, position, game_map.terrain_features, moving_model=model)
         if not ruins_validation['valid']:
             return {'valid': False, 'reason': f"RUINS placement invalid: {ruins_validation['reason']}"}
@@ -2699,6 +2691,8 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         except Exception:
             exclude_keywords = set()
         enemy_models = []
+        closest_enemy_model = None
+        closest_enemy_distance = None
         for unit in getattr(game_map, 'units', []) or []:
             if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
                 continue
@@ -2718,8 +2712,64 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 # Filter to models that matter for "engagement possible" check
                 from ..utility.aura_utils import distance_between_bases_3d
                 dist = float(distance_between_bases_3d(current_base, enemy_model.model_base))
+                if closest_enemy_distance is None or dist < closest_enemy_distance:
+                    closest_enemy_distance = dist
+                    closest_enemy_model = enemy_model
                 if dist <= max_relevant_distance:
                     enemy_models.append(enemy_model)
+
+        def _objective_fallback_ok() -> bool:
+            objs = list(getattr(game_map, "objectives", []) or [])
+            if not objs:
+                return False
+            best_obj = None
+            best_dist = None
+            for obj in objs:
+                if getattr(obj, "removed", False):
+                    continue
+                try:
+                    ox = float(getattr(obj, "x", 0.0))
+                    oy = float(getattr(obj, "y", 0.0))
+                except Exception:
+                    continue
+                dx = current_base.x - ox
+                dy = current_base.y - oy
+                d_cur = sqrt((dx * dx) + (dy * dy))
+                if best_dist is None or d_cur < best_dist:
+                    best_dist = d_cur
+                    best_obj = obj
+            if best_obj is None or best_dist is None:
+                return False
+            try:
+                ox = float(getattr(best_obj, "x", 0.0))
+                oy = float(getattr(best_obj, "y", 0.0))
+            except Exception:
+                return False
+            try:
+                radius = float(getattr(best_obj, "control_radius", 3.0) or 0.0)
+            except Exception:
+                radius = 3.0
+            dx = new_base.x - ox
+            dy = new_base.y - oy
+            d_new = sqrt((dx * dx) + (dy * dy))
+            try:
+                base_r = float(new_base.get_longest_radius())
+            except Exception:
+                try:
+                    base_r = float(new_base.get_radius())
+                except Exception:
+                    try:
+                        base_r = float(getattr(new_base, "radius", 0.0) or 0.0)
+                    except Exception:
+                        base_r = 0.0
+            within = d_new <= (radius + base_r + 1e-6)
+            closer = d_new < (best_dist - 1e-6)
+            return within and closer
+
+        if not enemy_models and not requires_engagement:
+            if closest_enemy_distance is not None and closest_enemy_distance > max_relevant_distance:
+                if _objective_fallback_ok():
+                    return {'valid': True, 'reason': 'Valid final position (objective fallback)'}
 
         use_unit = bool(validation_rules.get('closest_enemy_unit', False))
 
@@ -2767,6 +2817,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                             'valid': False,
                             'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
                         }
+                    if (not engagement_possible) and (not requires_engagement):
+                        if _objective_fallback_ok():
+                            return {'valid': True, 'reason': 'Valid final position (objective fallback)'}
 
                     from ..utility.aura_utils import distance_between_bases_3d
                     new_distance_to_unit = min(float(distance_between_bases_3d(new_base, em.model_base)) for em in closest_models)
@@ -2806,6 +2859,9 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                         'valid': False,
                         'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
                     }
+                if (not engagement_possible) and (not requires_engagement):
+                    if _objective_fallback_ok():
+                        return {'valid': True, 'reason': 'Valid final position (objective fallback)'}
 
                 # Must end closer to the closest enemy model (even if not reaching engagement)
                 from ..utility.aura_utils import distance_between_bases_3d
@@ -2828,73 +2884,10 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                 # If we got here, consolidate is valid via enemy interaction
                 return {'valid': True, 'reason': 'Valid final position'}
 
-        # Enemy engagement not achievable (or no relevant enemies) -> objective fallback
-        objectives = getattr(game_map, 'objectives', []) or []
-        if not objectives:
-            return {'valid': False, 'reason': 'Consolidate cannot end in engagement range and no objective markers are available'}
-
-        # Normalize objective representation (ObjectivePoint, Objective w/ location, or tuples)
-        def _objective_xy_radius(obj):
-            # ObjectivePoint
-            if hasattr(obj, 'x') and hasattr(obj, 'y'):
-                r = float(getattr(obj, 'control_radius', 3.0))
-                return float(obj.x), float(obj.y), r
-            # Objective with location
-            loc = getattr(obj, 'location', None)
-            if loc is not None and hasattr(loc, 'x') and hasattr(loc, 'y'):
-                r = float(getattr(obj, 'control_radius', 3.0))
-                return float(loc.x), float(loc.y), r
-            # Tuple/list
-            if isinstance(obj, (tuple, list)) and len(obj) >= 2:
-                r = float(getattr(obj, 'control_radius', 3.0))
-                return float(obj[0]), float(obj[1]), r
-            return None
-
-        closest_obj = None
-        closest_obj_center_dist = float('inf')
-        for obj in objectives:
-            parsed = _objective_xy_radius(obj)
-            if not parsed:
-                continue
-            ox, oy, orad = parsed
-            d = get_dist(ox - current_pos[0], oy - current_pos[1])
-            if d < closest_obj_center_dist:
-                closest_obj_center_dist = d
-                closest_obj = (obj, ox, oy, orad)
-
-        if closest_obj is None:
-            return {'valid': False, 'reason': 'No valid objective markers found for consolidate objective fallback'}
-
-        obj, ox, oy, orad = closest_obj
-        current_obj_dist = get_dist(ox - current_pos[0], oy - current_pos[1])
-        new_obj_dist = get_dist(ox - position[0], oy - position[1])
-
-        if new_obj_dist >= current_obj_dist:
-            return {
-                'valid': False,
-                'reason': f'Consolidate (objective fallback) must end closer to closest objective ({getattr(obj, "name", "objective")}): {new_obj_dist:.2f}" ≥ {current_obj_dist:.2f}"'
-            }
-
-        # Must end within range of objective marker (use objective control area intersection)
-        try:
-            objective_area = _ShPoint(ox, oy).buffer(orad)
-            new_shape = new_base.get_base_shape()
-            if not new_shape.intersects(objective_area):
-                return {
-                    'valid': False,
-                    'reason': f'Consolidate (objective fallback) must end within {orad:.1f}" of the objective marker'
-                }
-        except Exception:
-            # Fallback: center distance check using model base longest radius
-            try:
-                model_r = float(getattr(model.model_base, 'get_longest_radius', lambda: model.model_base.get_radius())())
-            except Exception:
-                model_r = 0.0
-            if get_dist(ox - position[0], oy - position[1]) > (orad + model_r):
-                return {
-                    'valid': False,
-                    'reason': f'Consolidate (objective fallback) must end within {orad:.1f}" of the objective marker'
-                }
+        return {
+            'valid': False,
+            'reason': 'Consolidate must end within engagement range of an enemy unit when possible'
+        }
 
     # Check scout rules
     if validation_rules.get('min_distance_from_enemies', 0) > 0:
@@ -2925,71 +2918,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
     return {'valid': True, 'reason': 'Valid final position'}
 
-# REMOVED: a_star_enhanced_legacy - forcing use of new pathfinding system
-
-# Keep the original a_star function for backwards compatibility
-def a_star(model: 'Model', obstacles, target, max_iterations=10000):
-    """
-    A* pathfinding algorithm with adaptive step size and iteration limit.
-    
-    This function now uses the optimized pathfinding algorithm by default,
-    with fallback to the legacy implementation if needed.
-    """
-    # Try to use the optimized pathfinding if we have a game_map
-    if hasattr(model, 'parent_unit') and hasattr(model.parent_unit, 'game_map'):
-        game_map = model.parent_unit.game_map
-        max_distance = model.parent_unit.movement * 12  # Convert to inches
-        
-        try:
-            path = a_star_optimized_with_pivot_cost(model, game_map, target, max_distance)
-            if path:
-                logger.debug(f"Optimized path found for {model.name}")
-                return path
-        except Exception as e:
-            logger.warning(f"Optimized pathfinding failed, falling back to legacy: {e}")
-    
-    # Legacy pathfinding implementation
-    return a_star_legacy(model, obstacles, target, max_iterations)
-
-def a_star_legacy(model: 'Model', obstacles, target, max_iterations=10000):
-    """Legacy A* pathfinding algorithm with adaptive step size and iteration limit."""
-    start = (model.model_base.x, model.model_base.y, model.model_base.z)
-    goal = target[:3]
-    ellipse = model.model_base.get_base_shape()
-    
-    open_set = []
-    heapq.heappush(open_set, (0, start))
-    came_from = {}
-    g_score = {start: 0}
-    f_score = {start: heuristic(start, goal)}
-    
-    iterations = 0
-    while open_set and iterations < max_iterations:
-        current = heapq.heappop(open_set)[1]
-        
-        current_ellipse = translate(ellipse, current[0] - ellipse.centroid.x, current[1] - ellipse.centroid.y)
-        if current_ellipse.intersects(Point(target[:2])) or heuristic(current, goal) < 0.1:  # Changed goal condition
-            path = []
-            while current in came_from:
-                path.append(current)
-                current = came_from[current]
-            path.append(start)
-            logging.debug(f"Legacy path found after {iterations} iterations")
-            return path[::-1] + [goal]  # Add the exact goal point to the end of the path
-        
-        for neighbor in get_neighbors(current, obstacles, current_ellipse, goal):
-            tentative_g_score = g_score[current] + heuristic(current, neighbor)
-            
-            if neighbor not in g_score or tentative_g_score < g_score[neighbor]:
-                came_from[neighbor] = current
-                g_score[neighbor] = tentative_g_score
-                f_score[neighbor] = g_score[neighbor] + heuristic(neighbor, goal)
-                heapq.heappush(open_set, (f_score[neighbor], neighbor))
-        
-        iterations += 1
-    
-    logger.debug(f"No legacy path found after {iterations} iterations")
-    return None  # No path found
+# a_star_enhanced removed; only the optimized pathfinding system is supported.
 
 def a_star_optimized_with_pivot_cost(model: 'Model', game_map: 'Map', target: Tuple[float, float, float], 
                                    max_distance: float, step_size: float = 0.4) -> Optional[List[Tuple[float, float, float]]]:
@@ -3076,36 +3005,8 @@ def create_optimized_pathfinding_environment(game_map: 'Map', moving_model: 'Mod
     """
     return OptimizedPathfindingEnvironment(game_map, moving_model)
 
-# UNIT-LEVEL WRAPPER FUNCTIONS FOR BACKWARD COMPATIBILITY
-# ========================================================
-
-def get_optimized_path_for_unit(unit: 'Unit', game_map: 'Map', target: Tuple[float, float, float], 
-                               max_distance: Optional[float] = None, model_index: int = 0) -> Optional[List[Tuple[float, float, float]]]:
-    """
-    Convenience function for getting an optimized path for a unit's model.
-    
-    This is a compatibility wrapper that works at the unit level but uses model-level pathfinding.
-    For new code, prefer get_optimized_path() with individual models.
-    
-    Args:
-        unit: The unit to pathfind for
-        game_map: The game map containing obstacles and units
-        target: Target position (x, y, z) in inches
-        max_distance: Maximum movement distance in inches (defaults to unit.movement * 12)
-        model_index: Index of the model in the unit to use for pathfinding (default: 0)
-        
-    Returns:
-        List of path points (x, y, z) in inches, or None if no path exists
-    """
-    if not unit.models or model_index >= len(unit.models):
-        logger.warning(f"Invalid model index {model_index} for unit {unit.name}")
-        return None
-    
-    model = unit.models[model_index]
-    if max_distance is None:
-        max_distance = unit.movement * 12  # Convert feet to inches
-    
-    return get_optimized_path(model, game_map, target, max_distance)
+# UNIT-LEVEL PATH HELPERS
+# =======================
 
 def get_optimized_paths_for_unit_models(unit: 'Unit', game_map: 'Map', targets: List[Tuple[float, float, float]], 
                                       max_distance: Optional[float] = None) -> List[Optional[List[Tuple[float, float, float]]]]:
@@ -3327,7 +3228,7 @@ def get_individual_model_movement_path(unit: 'Unit', model_index: int, target: T
     }
 
     if movement_action is not None:
-        from ..classes.unit import MovementAction
+        from warhammer40k_ai.units.unit import MovementAction
         movement_type_map.update({
             MovementAction.MOVE: MovementType.MOVE,
             MovementAction.ADVANCE: MovementType.ADVANCE,
@@ -3416,7 +3317,7 @@ def process_unit_movement_with_coherency_check(unit: 'Unit', model_movements: Li
 # 5. If coherency fails, human decides which models to remove from play
 #
 # MIGRATION GUIDE:
-# - Old: a_star(model, obstacles, target) -> Unit-level thinking with coherency
+# - Old: a_star(model, obstacles, target) -> Removed (use get_optimized_path instead)
 # - New: get_optimized_path(model, game_map, target) -> Model-level, no coherency
 # - For individual models: get_individual_model_movement_path(unit, model_index, target, game_map)
 # - For multi-model: get_optimized_paths_for_unit_models(unit, game_map, targets)
@@ -3425,9 +3326,8 @@ def process_unit_movement_with_coherency_check(unit: 'Unit', model_movements: Li
 #
 # RECOMMENDED USAGE:
 # - Use get_individual_model_movement_path() for human players moving single models
-# - Use get_optimized_path() for AI or programmatic model movement
+# - Use get_optimized_path() for programmatic model movement
 # - Use get_optimized_paths_for_unit_models() for simultaneous multi-model movement
-# - Use get_optimized_path_for_unit() for backward compatibility
 # - Always validate unit coherency after movement phase is complete
 # - Use process_unit_movement_with_coherency_check() for complete human workflow
 # ===========================================
@@ -3472,7 +3372,7 @@ def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -
     Returns:
         bool: True if the model can end its move on this terrain
     """
-    from ..classes.map import TerrainType
+    from warhammer40k_ai.battlefield.map import TerrainType
     terrain = terrain_feature.terrain_type
     base_overhang = base_overhangs_terrain(model, terrain_feature)
     unit = model.parent_unit
@@ -3608,32 +3508,16 @@ def build_spatial_index(obstacles, enemies):
     return STRtree(blocker_polys)
 
 def query_spatial_index(tree: STRtree, query_geom) -> List:
-    """Query spatial index and return geometry objects (not indices).
-    
-    In Shapely 2.0+, STRtree.query() returns indices instead of geometry objects.
-    This helper function handles both the old and new API for compatibility.
-    
-    Args:
-        tree: STRtree spatial index
-        query_geom: Geometry to query with
-        
-    Returns:
-        List of geometry objects that intersect with query_geom
-    """
+    """Query spatial index and return geometry objects (not indices)."""
     indices = tree.query(query_geom)
-    
-    # In Shapely 2.0+, query() returns indices (numpy arrays of integers)
-    # We need to use tree.geometries[index] to get the actual geometry objects
-    if hasattr(tree, 'geometries') and len(indices) > 0:
-        # Check if indices are actually indices (integers) rather than geometry objects
-        if hasattr(indices, '__iter__') and len(indices) > 0:
-            first_result = indices[0] if hasattr(indices, '__getitem__') else next(iter(indices))
-            # If it's an integer type, we need to convert indices to geometries
-            if isinstance(first_result, (int, np.integer)):
-                return [tree.geometries[i] for i in indices]
-    
-    # Fallback: if indices are actually geometry objects (old API), return as-is
-    return list(indices) if hasattr(indices, '__iter__') else [indices]
+    if indices is None:
+        return []
+    try:
+        if len(indices) == 0:
+            return []
+    except TypeError:
+        return [tree.geometries[int(indices)]]
+    return [tree.geometries[int(i)] for i in indices]
 
 
 class OptimizedPathfindingEnvironment:
@@ -3987,7 +3871,7 @@ def a_star_optimized_enhanced(model: 'Model', game_map: 'Map', target: Tuple[flo
         # Check if we've reached the goal (early exit)
         if heuristic(current + (0,), target + (0,)) < early_exit_threshold:
             # Reconstruct path
-            path = [(current[0], current[1], 0)]  # Add z=0 for 3D compatibility
+            path = [(current[0], current[1], 0)]  # Add z=0 for 3D support
             while parent:
                 path.append((parent[0], parent[1], 0))
                 parent = came_from.get(parent)

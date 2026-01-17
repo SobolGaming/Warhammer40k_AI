@@ -12,7 +12,8 @@ class _Ability:
 class _PlayerStub:
     def __init__(self, name="Player", *, is_human=True):
         self.name = name
-        self.type = SimpleNamespace(name="HUMAN" if is_human else "AI")
+        self.control = SimpleNamespace(name="LOCAL" if is_human else "REMOTE")
+        self.has_control = lambda: is_human
         self.game = None
 
     def get_army(self):
@@ -86,8 +87,8 @@ class _GameStub:
 
 class TestGateOfInfinity(unittest.TestCase):
     def test_max_units_by_battlefield_size(self):
-        from warhammer40k_ai.classes.gate_of_infinity import GateOfInfinityManager
-        from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize
+        from warhammer40k_ai.rules.gate_of_infinity import GateOfInfinityManager
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize
 
         mgr = GateOfInfinityManager()
 
@@ -96,7 +97,7 @@ class TestGateOfInfinity(unittest.TestCase):
         self.assertEqual(mgr.get_max_units_for_battlefield(_GameStub(Battlefield(BattlefieldSize.ONSLAUGHT))), 4)
 
     def test_attached_leader_without_gate_blocks_unit(self):
-        from warhammer40k_ai.classes.gate_of_infinity import GateOfInfinityManager
+        from warhammer40k_ai.rules.gate_of_infinity import GateOfInfinityManager
         from warhammer40k_ai.utility.ability_support import ABILITY_GATE_OF_INFINITY
 
         army = _ArmyStub()
@@ -115,7 +116,7 @@ class TestGateOfInfinity(unittest.TestCase):
         self.assertEqual(eligible, [])
 
     def test_engagement_range_blocks_unit(self):
-        from warhammer40k_ai.classes.gate_of_infinity import GateOfInfinityManager
+        from warhammer40k_ai.rules.gate_of_infinity import GateOfInfinityManager
         from warhammer40k_ai.utility.ability_support import ABILITY_GATE_OF_INFINITY
 
         army = _ArmyStub()
@@ -135,7 +136,7 @@ class TestGateOfInfinity(unittest.TestCase):
         self.assertEqual(eligible, [])
 
     def test_send_to_strategic_reserves_removes_units(self):
-        from warhammer40k_ai.classes.gate_of_infinity import GateOfInfinityManager
+        from warhammer40k_ai.rules.gate_of_infinity import GateOfInfinityManager
         from warhammer40k_ai.utility.ability_support import ABILITY_GATE_OF_INFINITY
 
         army = _ArmyStub()

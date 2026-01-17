@@ -42,7 +42,7 @@ class _DummyTargetUnit:
 
 class TestOneShot(unittest.TestCase):
     def test_one_shot_is_only_fired_once_per_model(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.name = "Shooter"

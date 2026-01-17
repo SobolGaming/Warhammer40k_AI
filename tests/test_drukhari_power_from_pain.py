@@ -47,7 +47,8 @@ class _PlayerStub:
     def __init__(self, name, army):
         self.name = name
         self.army = army
-        self.type = SimpleNamespace(name="HUMAN")
+        self.control = SimpleNamespace(name="LOCAL")
+        self.has_control = lambda: True
 
     def get_army(self):
         return self.army
@@ -65,7 +66,7 @@ class _GameStub:
 
 class TestDrukhariPowerFromPain(unittest.TestCase):
     def test_command_phase_tokens_and_pain_adept(self):
-        from warhammer40k_ai.classes.power_from_pain import PowerFromPainManager
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 
         army = _ArmyStub()
         player = _PlayerStub("Drukhari", army)
@@ -80,13 +81,13 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
 
         mgr = PowerFromPainManager(army)
 
-        with patch("warhammer40k_ai.classes.power_from_pain.get_roll", return_value=4):
+        with patch("warhammer40k_ai.rules.power_from_pain.get_roll", return_value=4):
             mgr.on_command_phase_start(game=_GameStub(phase_name="COMMAND_PHASE", current_player=player), player=player)
 
         self.assertEqual(mgr.tokens, 2)
 
     def test_token_gain_on_enemy_destroy_and_battleshock(self):
-        from warhammer40k_ai.classes.power_from_pain import PowerFromPainManager
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 
         army = _ArmyStub()
         player = _PlayerStub("Drukhari", army)
@@ -102,7 +103,7 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
         self.assertEqual(mgr.tokens, 2)
 
     def test_empower_hatred_eternal_shooting(self):
-        from warhammer40k_ai.classes.power_from_pain import PowerFromPainManager
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 
         army = _ArmyStub()
         player = _PlayerStub("Drukhari", army)
@@ -124,7 +125,7 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
         self.assertEqual(unit.special_rules.get("pain_empowered_expires_phase"), "SHOOTING_PHASE")
 
     def test_empower_attached_leader_applies_to_all_members(self):
-        from warhammer40k_ai.classes.power_from_pain import PowerFromPainManager
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 
         army = _ArmyStub()
         player = _PlayerStub("Drukhari", army)
@@ -149,7 +150,7 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
         self.assertTrue(leader.special_rules.get("pain_reroll_hit"))
 
     def test_empower_lithe_agility_flags_rerolls(self):
-        from warhammer40k_ai.classes.power_from_pain import PowerFromPainManager
+        from warhammer40k_ai.rules.power_from_pain import PowerFromPainManager
 
         army = _ArmyStub()
         player = _PlayerStub("Drukhari", army)
@@ -170,7 +171,7 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("pain_reroll_charge"))
 
     def test_matchless_swiftness_sets_fixed_advance_roll(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         class _RoundState:
             advance_roll = None
@@ -189,7 +190,7 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
                 return roll
 
         unit = _UnitStub()
-        with patch("warhammer40k_ai.classes.unit.get_roll") as roll_mock:
+        with patch("warhammer40k_ai.units.unit.get_roll") as roll_mock:
             advance = Unit.prepare_advance(unit)
 
         self.assertEqual(advance, 8)

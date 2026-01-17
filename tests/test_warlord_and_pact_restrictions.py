@@ -3,9 +3,9 @@ import unittest
 
 class TestWarlordAndPactRestrictions(unittest.TestCase):
     def test_supreme_commander_must_be_warlord(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         def _unit(name: str, *, supreme: bool, warlord: bool) -> Unit:
             u = Unit.__new__(Unit)
@@ -40,7 +40,7 @@ class TestWarlordAndPactRestrictions(unittest.TestCase):
         army.validate_warlord()
 
     def test_pact_of_blood_disallows_blood_legions_army_faction(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
         army = Army("Blood Legions", detachment_type="Some Detachment")
         army.faction_id = "WE"
@@ -48,7 +48,7 @@ class TestWarlordAndPactRestrictions(unittest.TestCase):
             army.validate_detachment_rules()
 
     def test_pact_of_sorcery_disallows_scintillating_legions_army_faction(self):
-        from warhammer40k_ai.classes.army import Army, ArmyValidationError
+        from warhammer40k_ai.roster.army import Army, ArmyValidationError
 
         army = Army("Scintillating Legions", detachment_type="Some Detachment")
         army.faction_id = "TS"

@@ -1,7 +1,7 @@
 from shapely.geometry import Polygon
 
-from warhammer40k_ai.classes.map import RuinsTerrain, validate_ruins_placement
-from warhammer40k_ai.classes.model import Model
+from warhammer40k_ai.battlefield.map import RuinsTerrain, validate_ruins_placement
+from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.utility.constants import RUINS_FLOOR_HEIGHT, RUINS_FLOOR_THICKNESS
 from warhammer40k_ai.utility.model_base import Base, BaseType
 

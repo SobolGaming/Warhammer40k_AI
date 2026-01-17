@@ -1,13 +1,13 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
 class TestWaaagh(unittest.TestCase):
     def test_waaagh_activation_and_expiry(self):
-        from warhammer40k_ai.classes.waaagh import WaaaghManager
+        from warhammer40k_ai.rules.waaagh import WaaaghManager
 
         game = SimpleNamespace(phase=SimpleNamespace(name="COMMAND_PHASE"), turn=1)
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="AI"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
         game.get_current_player = lambda: player
         army = SimpleNamespace(faction_id="ORK", units=[], player=player)
 
@@ -27,7 +27,7 @@ class TestWaaagh(unittest.TestCase):
         self.assertFalse(mgr.active)
 
     def _make_unit(self, name: str):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         round_state = SimpleNamespace(
@@ -98,12 +98,12 @@ class TestWaaagh(unittest.TestCase):
         return unit
 
     def test_waaagh_melee_bonus_and_invuln(self):
-        from warhammer40k_ai.classes.event_system import EventSystem
-        from warhammer40k_ai.classes.wargear import WargearProfile
-        from warhammer40k_ai.classes.waaagh import WaaaghManager
+        from warhammer40k_ai.engine.event.system import EventSystem
+        from warhammer40k_ai.units.wargear import WargearProfile
+        from warhammer40k_ai.rules.waaagh import WaaaghManager
 
         game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         game.get_current_player = lambda: player
         army = SimpleNamespace(player=player, faction_id="ORK", units=[])
 
@@ -135,7 +135,7 @@ class TestWaaagh(unittest.TestCase):
             parent_wargear=melee_parent,
         )
 
-        from warhammer40k_ai.classes import wargear as wargear_mod
+        from warhammer40k_ai.units import wargear as wargear_mod
         old_get_roll = wargear_mod.get_roll
         wargear_mod.get_roll = lambda _s: 6
         try:

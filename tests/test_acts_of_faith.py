@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -8,7 +8,7 @@ class TestActsOfFaith(unittest.TestCase):
         return army
 
     def _make_unit(self, name: str, army, *, acts: bool = True, litany: bool = False, enhancement=None):
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         abilities = []
@@ -62,10 +62,13 @@ class TestActsOfFaith(unittest.TestCase):
         return _Unit()
 
     def test_battle_round_gain(self):
-        from warhammer40k_ai.classes import acts_of_faith as aof
+        from warhammer40k_ai.rules import acts_of_faith as aof
 
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="AI"))
-        game = SimpleNamespace(map=None, phase=SimpleNamespace(name="COMMAND_PHASE"))
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        game = SimpleNamespace(
+            map=SimpleNamespace(roll_reroll_provider=lambda **_k: True),
+            phase=SimpleNamespace(name="COMMAND_PHASE"),
+        )
         player.game = game
         army = self._make_army("AS", player)
         mgr = aof.ActsOfFaithManager(army)
@@ -81,7 +84,7 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(mgr.miracle_dice, [5])
 
     def test_act_of_faith_once_per_phase(self):
-        from warhammer40k_ai.classes import acts_of_faith as aof
+        from warhammer40k_ai.rules import acts_of_faith as aof
 
         calls = {"count": 0}
 
@@ -93,7 +96,7 @@ class TestActsOfFaith(unittest.TestCase):
             map=SimpleNamespace(miracle_dice_provider=_provider),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN"), game=game)
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Sisters", army, acts=True)
         army.units.append(unit)
@@ -117,9 +120,9 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(calls["count"], 1)
 
     def test_litany_reroll_on_unit_destroyed(self):
-        from warhammer40k_ai.classes import acts_of_faith as aof
+        from warhammer40k_ai.rules import acts_of_faith as aof
 
-        player = SimpleNamespace(name="P1", type=SimpleNamespace(name="AI"))
+        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
         game = SimpleNamespace(map=None, phase=SimpleNamespace(name="COMMAND_PHASE"))
         player.game = game
         army = self._make_army("AS", player)
@@ -145,10 +148,10 @@ class TestActsOfFaith(unittest.TestCase):
         self.assertEqual(mgr.miracle_dice, [6])
 
     def test_charge_roll_uses_miracle(self):
-        from warhammer40k_ai.classes.game import Game, Battlefield, BattlefieldSize
-        from warhammer40k_ai.classes.player import Player, PlayerType
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes import acts_of_faith as aof
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.rules import acts_of_faith as aof
 
         class MockDatasheet:
             def __init__(self, name, model_count=1):
@@ -169,8 +172,8 @@ class TestActsOfFaith(unittest.TestCase):
 
         bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(bf)
-        p1 = Player("P1", player_type=PlayerType.HUMAN, army=None)
-        p2 = Player("P2", player_type=PlayerType.AI, army=None)
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=None)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=None)
         game.add_player(p1)
         game.add_player(p2)
         p1.game = game

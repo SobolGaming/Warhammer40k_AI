@@ -2,7 +2,7 @@ import pygame
 from typing import List, Callable, Optional, Dict
 
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, TEXT_PRIMARY, TEXT_SECONDARY
-from ...classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class FightTargetSelectionDialog(BaseDialog):

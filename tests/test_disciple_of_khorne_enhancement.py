@@ -35,7 +35,7 @@ class _DummyDatasheet:
         self._ability_texts = list(ability_texts or [])
 
 
-from warhammer40k_ai.classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 
 
 class _TestUnit(Unit):
@@ -86,7 +86,7 @@ class _TestUnit(Unit):
 
 class TestDiscipleOfKhorneEnhancement(unittest.TestCase):
     def _make_army(self):
-        from warhammer40k_ai.classes.army import Army
+        from warhammer40k_ai.roster.army import Army
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -94,7 +94,7 @@ class TestDiscipleOfKhorneEnhancement(unittest.TestCase):
         return army
 
     def _add_enhancement(self, unit):
-        from warhammer40k_ai.classes.enhancement import Enhancement
+        from warhammer40k_ai.rules.enhancement import Enhancement
 
         Enhancement(
             id="000010078004",

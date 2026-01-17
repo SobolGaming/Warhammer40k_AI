@@ -8,8 +8,8 @@ the player to choose which models to remove from play until coherency is restore
 import pygame
 from typing import List, Callable, Optional
 from .base_dialog import BaseDialog, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_WARNING, TEXT_ERROR, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED
-from ...classes.unit import Unit
-from ...classes.model import Model
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.units.model import Model
 
 
 class CoherencyViolationDialog(BaseDialog):

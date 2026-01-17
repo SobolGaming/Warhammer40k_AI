@@ -1,5 +1,5 @@
 """
-Melee Weapon Declaration Dialog for Warhammer 40k AI
+Melee Weapon Declaration Dialog for Warhammer 40k.
 
 Refactored to use BaseDialog for consistent UI (title bar, drag, buttons), fixed
 overlapping labels, and improved layout clarity.
@@ -7,7 +7,7 @@ overlapping labels, and improved layout clarity.
 
 import pygame
 from typing import List, Dict, Optional, Callable
-from ...classes.unit import Unit
+from warhammer40k_ai.units.unit import Unit
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED, TEXT_PRIMARY, TEXT_SECONDARY
 
 # Enhanced Colors

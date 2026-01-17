@@ -14,9 +14,9 @@ class _DummyTargetUnit:
 
 class TestDamagedProfiles(unittest.TestCase):
     def test_damaged_profile_applies_minus_one_to_hit(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
         from warhammer40k_ai.utility.range import Range
 
@@ -52,7 +52,7 @@ class TestDamagedProfiles(unittest.TestCase):
         prof = w.profiles["default"]
         target = _DummyTargetUnit()
 
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             res = prof._hit_target_with_tracking(target, m, attack_instance={})
         self.assertFalse(res["hit"])
 
@@ -60,13 +60,13 @@ class TestDamagedProfiles(unittest.TestCase):
         m.wounds = 6
         m._check_damaged_profile()
         self.assertNotIn("damaged_hit_roll_modifier", u.special_rules)
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
             res2 = prof._hit_target_with_tracking(target, m, attack_instance={})
         self.assertTrue(res2["hit"])
 
     def test_damaged_profile_applies_objective_control_penalty(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.model import Model
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType
         from warhammer40k_ai.utility.range import Range
 
@@ -101,9 +101,9 @@ class TestDamagedProfiles(unittest.TestCase):
         self.assertEqual(m.objective_control, 10)
 
     def test_damaged_profile_halves_attacks_rounding_up(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
         from warhammer40k_ai.utility.range import Range
 
@@ -155,9 +155,9 @@ class TestDamagedProfiles(unittest.TestCase):
 
     def test_damaged_profile_adds_melee_attacks(self):
         # Skarbrand style: add +2 to attacks of melee weapons while damaged.
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
         from warhammer40k_ai.utility.range import Range
 

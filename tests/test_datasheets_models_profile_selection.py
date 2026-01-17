@@ -5,7 +5,7 @@ from types import SimpleNamespace
 class TestDatasheetsModelsProfileSelection(unittest.TestCase):
     def test_selects_correct_profile_for_attack_bike(self):
         # Bike Squad: Space Marine Bike W=3, Attack Bike W=5
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.name = "Bike Squad"
@@ -56,7 +56,7 @@ class TestDatasheetsModelsProfileSelection(unittest.TestCase):
         self.assertTrue(all(getattr(m, "_base_wounds", None) == 3 for m in non_attack))
 
     def test_selects_exarch_profile_when_named(self):
-        from warhammer40k_ai.classes.unit import Unit
+        from warhammer40k_ai.units.unit import Unit
 
         u = Unit.__new__(Unit)
         u.name = "Shadow Spectres"

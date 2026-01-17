@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 class TestStratagemPhasePruning(unittest.TestCase):
     def test_pending_reactions_cleared_on_phase_change(self):
-        from warhammer40k_ai.classes.stratagems import StratagemManager
+        from warhammer40k_ai.rules.stratagems import StratagemManager
 
         manager = StratagemManager.__new__(StratagemManager)
         player = SimpleNamespace()

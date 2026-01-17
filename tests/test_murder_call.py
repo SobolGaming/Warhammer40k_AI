@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 
 
@@ -54,7 +54,7 @@ class _Map:
 
 class _Game:
     def __init__(self, active_player, game_map):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self._current_player = active_player
@@ -67,8 +67,8 @@ class _Game:
 
 class TestMurderCall(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Khorne Daemonkin")
         army.faction_id = "WE"
@@ -80,8 +80,8 @@ class TestMurderCall(unittest.TestCase):
         enemy_unit = _TestUnit("Enemy Unit")
         enemy_army.add_unit(enemy_unit)
 
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
-        enemy_player = Player("P2", player_type=PlayerType.HUMAN, army=enemy_army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
+        enemy_player = Player("P2", control=PlayerControl.LOCAL, army=enemy_army)
         game_map = _Map()
         game_map.units.append(unit)
         game = _Game(active_player=enemy_player, game_map=game_map)

@@ -5,9 +5,9 @@ ReservesArrivalPanel component for handling unit arrival from reserves.
 import pygame
 from typing import List, Optional, Tuple, Dict, Callable
 
-from ...classes.unit import Unit
-from ...classes.player import Player
-from ...classes.game import Game
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.player import Player
+from warhammer40k_ai.engine.game import Game
 
 # Font sizes
 FONT_LARGE = 20

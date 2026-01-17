@@ -1,4 +1,4 @@
-import types
+﻿import types
 from types import SimpleNamespace
 
 class _MockDatasheet:
@@ -31,7 +31,7 @@ class _MockDatasheet:
 
 
 def _make_unit(name, *, ability_desc=None, model_count=1):
-    from warhammer40k_ai.classes.unit import Unit
+    from warhammer40k_ai.units.unit import Unit
 
     abilities = []
     if ability_desc:
@@ -59,7 +59,7 @@ class _MapStub:
 
 
 def test_charge_end_mortal_wounds_per_model(monkeypatch):
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
     ability = (
         "Each time this unit ends a Charge move, select one enemy unit within Engagement Range of this unit and roll "
@@ -70,8 +70,8 @@ def test_charge_end_mortal_wounds_per_model(monkeypatch):
     unit.deployed = True
     enemy.deployed = True
 
-    army = SimpleNamespace(player=SimpleNamespace(name="P1", type=SimpleNamespace(name="AI")))
-    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", type=SimpleNamespace(name="AI")))
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
     unit.set_parent_army(army)
     enemy.set_parent_army(enemy_army)
 
@@ -103,7 +103,7 @@ def test_charge_end_mortal_wounds_per_model(monkeypatch):
 
 
 def test_charge_end_mortal_wounds_table(monkeypatch):
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
     ability = (
         "Each time this model's unit ends a Charge move, select one enemy unit within Engagement Range of this model, "
@@ -115,8 +115,8 @@ def test_charge_end_mortal_wounds_table(monkeypatch):
     unit.deployed = True
     enemy.deployed = True
 
-    army = SimpleNamespace(player=SimpleNamespace(name="P1", type=SimpleNamespace(name="AI")))
-    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", type=SimpleNamespace(name="AI")))
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
     unit.set_parent_army(army)
     enemy.set_parent_army(enemy_army)
 
@@ -148,7 +148,7 @@ def test_charge_end_mortal_wounds_table(monkeypatch):
 
 
 def test_charge_end_mortal_wounds_prompts_for_human(monkeypatch):
-    from warhammer40k_ai.classes.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
 
     ability = (
         "Each time this unit ends a Charge move, select one enemy unit within Engagement Range of this unit and roll "
@@ -161,8 +161,8 @@ def test_charge_end_mortal_wounds_prompts_for_human(monkeypatch):
     enemy1.deployed = True
     enemy2.deployed = True
 
-    army = SimpleNamespace(player=SimpleNamespace(name="P1", type=SimpleNamespace(name="HUMAN")))
-    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", type=SimpleNamespace(name="AI")))
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
     unit.set_parent_army(army)
     enemy1.set_parent_army(enemy_army)
     enemy2.set_parent_army(enemy_army)

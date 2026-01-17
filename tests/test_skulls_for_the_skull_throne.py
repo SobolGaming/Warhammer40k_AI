@@ -1,4 +1,4 @@
-import unittest
+﻿import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -41,7 +41,7 @@ class _TestUnit:
 
 class _Game:
     def __init__(self, active_player):
-        from warhammer40k_ai.classes.event_system import EventSystem
+        from warhammer40k_ai.engine.event.system import EventSystem
 
         self.event_system = EventSystem()
         self._current_player = active_player
@@ -54,8 +54,8 @@ class _Game:
 
 class TestSkullsForTheSkullThrone(unittest.TestCase):
     def _build_env(self):
-        from warhammer40k_ai.classes.army import Army
-        from warhammer40k_ai.classes.player import Player, PlayerType
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
 
         army = Army("World Eaters", "Berzerker Warband")
         army.faction_id = "WE"
@@ -69,8 +69,8 @@ class TestSkullsForTheSkullThrone(unittest.TestCase):
         enemy_unit = _TestUnit("Enemy Character", keywords=["Character"], faction_keywords=["Enemy"])
         enemy_army.add_unit(enemy_unit)
 
-        player = Player("P1", player_type=PlayerType.HUMAN, army=army)
-        enemy_player = Player("P2", player_type=PlayerType.HUMAN, army=enemy_army)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
+        enemy_player = Player("P2", control=PlayerControl.LOCAL, army=enemy_army)
         game = _Game(active_player=enemy_player)
         player.set_game(game)
         enemy_player.set_game(game)
@@ -104,9 +104,9 @@ class TestSkullsForTheSkullThrone(unittest.TestCase):
         self.assertTrue(any(r.get("stratagem") == "SKULLS FOR THE SKULL THRONE!" for r in pending))
 
     def test_unit_only_blessing_applies(self):
-        from warhammer40k_ai.classes.blessings_of_khorne import BlessingsRollContext, BlessingsTiming
-        from warhammer40k_ai.classes.model import Model
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.rules.blessings_of_khorne import BlessingsRollContext, BlessingsTiming
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         player, _enemy_player, we_unit, we_unit2, enemy_unit, game = self._build_env()
@@ -184,12 +184,12 @@ class TestSkullsForTheSkullThrone(unittest.TestCase):
         attacker2.parent_unit = we_unit2
 
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             profile._hit_target_with_tracking(target, attacker1, attack_instance)
         self.assertTrue(attack_instance.get("lethal_hit", False))
 
         attack_instance = {}
-        with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=6):
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
             profile._hit_target_with_tracking(target, attacker2, attack_instance)
         self.assertFalse(attack_instance.get("lethal_hit", False))
 

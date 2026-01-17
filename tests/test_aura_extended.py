@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 class TestAuraExtendedShapes(unittest.TestCase):
     def _make_profile(self, *, melee: bool, strength: int = 4):
-        from warhammer40k_ai.classes.wargear import Wargear
+        from warhammer40k_ai.units.wargear import Wargear
 
         data = {
             "range": "Melee" if melee else "24",
@@ -20,7 +20,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         return parent.profiles["default"]
 
     def test_reroll_hit_rolls_of_one_aura(self):
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.ability import Ability
 
         profile = self._make_profile(melee=True)
 
@@ -72,7 +72,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
 
         # Hit roll 1, then reroll into 4 => should resolve as a hit (need 3+)
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", side_effect=[1, 4]):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
                 res = profile._hit_target_with_tracking(target, attacker_model, {})
 
         self.assertTrue(res["hit"])
@@ -80,8 +80,8 @@ class TestAuraExtendedShapes(unittest.TestCase):
         self.assertIn("Aura: re-roll Hit rolls of 1", res["special_effects"])
 
     def test_objective_control_aura_bonus(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         aura = Ability(
             name="OC Aura (Aura)",
@@ -125,8 +125,8 @@ class TestAuraExtendedShapes(unittest.TestCase):
         self.assertEqual(int(oc), 3)
 
     def test_same_oc_aura_name_does_not_double_apply_from_two_sources(self):
-        from warhammer40k_ai.classes.unit import Unit
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
 
         aura = Ability(
             name="OC Aura (Aura)",
@@ -173,7 +173,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         self.assertEqual(int(oc), 3)
 
     def test_nurgles_gift_debuff_reduces_target_toughness_for_wound(self):
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.ability import Ability
 
         profile = self._make_profile(melee=True, strength=4)
 
@@ -229,7 +229,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         # With BR1 Contagion Range=3". Apply -1T => T3 so S4 > T3 => needs 3+.
         # Roll 3 should wound only if debuff is applied.
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
                 res = profile._wound_target_with_tracking(target, attacker_model, {})
 
         self.assertTrue(res["wound"])
@@ -237,7 +237,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         self.assertTrue(any("Nurgle" in m for m in (res.get("modifiers") or [])))
 
     def test_same_nurgles_gift_aura_name_does_not_stack_from_two_sources(self):
-        from warhammer40k_ai.classes.ability import Ability
+        from warhammer40k_ai.units.ability import Ability
 
         profile = self._make_profile(melee=True, strength=4)
 
@@ -293,7 +293,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
 
         with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
-            with patch("warhammer40k_ai.classes.wargear.get_roll", return_value=3):
+            with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
                 res = profile._wound_target_with_tracking(target, attacker_model, {})
 
         # Should be -1T once (4 -> 3), not 2 (4 -> 2)
