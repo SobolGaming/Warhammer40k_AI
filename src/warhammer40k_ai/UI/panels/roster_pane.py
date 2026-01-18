@@ -143,15 +143,15 @@ class RosterPane(pygame.sprite.Sprite):
 
     def on_mouse_press(self, x, y, button):
         """Handle mouse press events in the roster pane."""
-        #print(f"🔍 DEBUG: RosterPane.on_mouse_press called at ({x}, {y}) button={button} for {self.player_name}")
+        #print(f" DEBUG: RosterPane.on_mouse_press called at ({x}, {y}) button={button} for {self.player_name}")
 
         if button == 1:  # Left mouse button
             for button_rect, unit in self.buttons:
                 if button_rect.collidepoint(x, y):
-                    #print(f"🔍 DEBUG: Clicked on unit {unit.name}")
-                    #print(f"🔍 DEBUG: unit.deployed = {unit.deployed}")
-                    #print(f"🔍 DEBUG: game_view exists = {self.game_view is not None}")
-                    #print(f"🔍 DEBUG: ui_interface exists = {self.game_view.ui_interface is not None if self.game_view else False}")
+                    #print(f" DEBUG: Clicked on unit {unit.name}")
+                    #print(f" DEBUG: unit.deployed = {unit.deployed}")
+                    #print(f" DEBUG: game_view exists = {self.game_view is not None}")
+                    #print(f" DEBUG: ui_interface exists = {self.game_view.ui_interface is not None if self.game_view else False}")
 
                     # Check if this is during deployment phase and unit is not deployed
                     if not unit.deployed and self.game_view and self.game_view.ui_interface:
@@ -160,46 +160,46 @@ class RosterPane(pygame.sprite.Sprite):
                             if getattr(unit, "is_embarked", False) or getattr(unit, "embarked_in", None) is not None:
                                 t = getattr(unit, "embarked_in", None)
                                 tname = getattr(t, "name", "Transport") if t is not None else "a Transport"
-                                print(f"🚫 {self.get_unit_display_name(unit)} is embarked in {tname} and cannot be deployed separately.")
+                                print(f"ERROR: {self.get_unit_display_name(unit)} is embarked in {tname} and cannot be deployed separately.")
                                 return
                         except Exception:
                             pass
                         # Check if deployment zones are loaded (deployment has officially started)
                         has_deployment_zones = hasattr(self.game_view.game, 'deployment_zones')
                         zones_exist = self.game_view.game.deployment_zones if has_deployment_zones else None
-                        print(f"🔍 DEBUG: has_deployment_zones = {has_deployment_zones}")
-                        print(f"🔍 DEBUG: zones_exist = {zones_exist is not None if zones_exist else False}")
+                        print(f"DEBUG: has_deployment_zones = {has_deployment_zones}")
+                        print(f"DEBUG: zones_exist = {zones_exist is not None if zones_exist else False}")
 
                         if not has_deployment_zones or not zones_exist:
-                            print(f"📋 Press SPACE to begin deployment sequence first")
+                            print(f"INFO: Press SPACE to begin deployment sequence first")
                             return
                         
                         # Check if it's this player's turn to deploy
                         can_deploy = self.game_view.game.can_player_deploy_unit(self.player)
-                        print(f"🔍 DEBUG: can_player_deploy_unit = {can_deploy}")
+                        print(f"DEBUG: can_player_deploy_unit = {can_deploy}")
 
                         if not can_deploy:
                             # Not this player's turn - show message
-                            print(f"❌ Not {self.player_name}'s turn to deploy")
+                            print(f"ERROR: Not {self.player_name}'s turn to deploy")
                             return
                         
                         # Deployment: only units not in reserves can be placed.
                         try:
                             if getattr(unit, "reserve_status", "deployed") in ("reserves", "strategic_reserves"):
-                                print(f"🚫 {self.get_unit_display_name(unit)} is in reserves and cannot be deployed during Deployment.")
+                                print(f"ERROR: {self.get_unit_display_name(unit)} is in reserves and cannot be deployed during Deployment.")
                                 return
                         except Exception:
                             pass
                         # Attached leaders deploy with their bodyguard
                         try:
                             if bool(getattr(unit, "is_attached_leader", False)):
-                                print(f"🚫 {self.get_unit_display_name(unit)} is an attached Leader and deploys with its Bodyguard.")
+                                print(f"INFO: {self.get_unit_display_name(unit)} is an attached Leader and deploys with its Bodyguard.")
                                 return
                         except Exception:
                             pass
 
                         # Directly open per-model deployment dialog (no deploy/reserves choice here)
-                        print(f"🟢 Deploying {unit.name} - enabling per-model deployment mode")
+                        print(f"INFO: Deploying {unit.name} - enabling per-model deployment mode")
                         unit.set_reserve_status('deployed')
                         unit.deployed = False  # Ready for deployment but not yet placed
                         self.selected_unit = unit
@@ -224,7 +224,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 except Exception:
                                     pass
                                 if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
-                                    print("❌ Deployment failed: game map unavailable to register unit")
+                                    print("ERROR: Deployment failed: game map unavailable to register unit")
                                     return
                                 if unit not in self.game_view.game_map.units:
                                     self.game_view.game_map.units.append(unit)
@@ -243,7 +243,7 @@ class RosterPane(pygame.sprite.Sprite):
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None
                             else:
-                                print(f"⏭️  {unit.name} deployment cancelled")
+                                print(f"INFO: {unit.name} deployment cancelled")
 
                             try:
                                 if hasattr(self.game_view, 'deployment_mode_for_selected_unit'):
@@ -251,7 +251,7 @@ class RosterPane(pygame.sprite.Sprite):
                             except Exception:
                                 pass
 
-                        print(f"📣 Opening per-model deployment dialog for {unit.name}")
+                        print(f"INFO: Opening per-model deployment dialog for {unit.name}")
                         self.game_view.individual_model_movement_dialog.show(unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0)
                         return
                     else:
@@ -442,12 +442,12 @@ class RosterPane(pygame.sprite.Sprite):
                 remaining = len(counts) - len(parts)
                 if remaining > 0:
                     parts.append(f"+{remaining} types")
-                return " • ".join(parts)
+                return " | ".join(parts)
             except Exception:
                 try:
                     return f"{len(u.models)} models"
                 except Exception:
-                    return "models: ?"
+                    return "models: ERROR:"
 
         def _tags_text(u: Unit) -> str:
             tags: List[str] = []
@@ -543,7 +543,7 @@ class RosterPane(pygame.sprite.Sprite):
 
         parts = [p for p in [status, tags, hp] if p]
         if parts:
-            line2 = " • ".join(parts)
+            line2 = " | ".join(parts)
             # Trim if it gets too long
             if len(line2) > 40:
                 line2 = line2[:37] + "..."

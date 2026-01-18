@@ -80,7 +80,7 @@ class Base:
         self.model_height = min(self.radius) * 2.0 if height is None else height
 
     def set_facing(self, facing: float) -> None:
-        # Normalize facing to be between 0 and 2π radians
+        # Normalize facing to be between 0 and 2*pi radians
         self.facing = facing % RADIANS_IN_CIRCLE
 
     def set_x(self, x: float) -> None:
@@ -278,7 +278,7 @@ class Base:
     def __str__(self) -> str:
         base_type_str = self.base_type.name.capitalize()
         radius_str = f"{self.radius[0]}" if self.radius[0] == self.radius[1] else f"{self.radius[0]}x{self.radius[1]}"
-        return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}, {self.z:.2f}), facing {math.degrees(self.facing):.1f}°, radius: {radius_str}"
+        return f"{base_type_str} base at ({self.x:.2f}, {self.y:.2f}, {self.z:.2f}), facing {math.degrees(self.facing):.1f}deg, radius: {radius_str}"
 
 
 if __name__ == "__main__":

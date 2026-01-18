@@ -209,7 +209,8 @@ def run_game_loop(player_configs: dict) -> None:
         player_configs["player2_army_file"],
     )
 
-    from warhammer40k_ai.UI.game_ui import GameView, HumanUIInterface
+    from warhammer40k_ai.UI.game_ui import GameView
+    from warhammer40k_ai.UI.human_interface import HumanUIInterface
 
     screen_width, screen_height = screen.get_size()
     ui_interface = HumanUIInterface(screen_width, screen_height)

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
@@ -78,7 +78,7 @@ QUALITY_BY_KEY = {q.key: q for q in CODE_CHIVALRIC_QUALITIES}
 
 
 def _norm(text: str) -> str:
-    return (text or "").replace("â€™", "'").strip().lower()
+    return (text or "").replace("\u2019", "'").replace("\u00e2\u20ac\u2122", "'").strip().lower()
 
 
 class CodeChivalricManager:

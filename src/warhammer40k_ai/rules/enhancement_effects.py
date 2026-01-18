@@ -7,7 +7,7 @@ from typing import List, Optional, Tuple
 
 
 def _normalize(text: str) -> str:
-    t = (text or "").replace("’", "'").replace("“", '"').replace("”", '"')
+    t = (text or "").replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')
     t = re.sub(r"\s+", " ", t).strip()
     return t
 

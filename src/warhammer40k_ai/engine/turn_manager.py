@@ -47,7 +47,7 @@ def next_phase(game: "Game") -> None:
 
         # Clear enemy model cache when switching players since enemy positions may have changed
         clear_enemy_model_cache(id(game.map))
-        print(f"🔄 Player switched to {game.get_current_player().name} - cleared enemy model cache")
+        print(f"INFO: Player switched to {game.get_current_player().name} - cleared enemy model cache")
 
         # Track who started this battle round if not already set
         if game.battle_round_starting_player_index is None:

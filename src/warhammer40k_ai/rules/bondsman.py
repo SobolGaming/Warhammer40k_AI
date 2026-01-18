@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 
 from ..utility.ability_support import ABILITY_BONDSMAN, army_has_ability_id
@@ -22,7 +22,7 @@ _BONDSMAN_EFFECTS = {
 
 
 def _norm(text: str) -> str:
-    return (text or "").replace("â€™", "'").strip().lower()
+    return (text or "").replace("\u2019", "'").replace("\u00e2\u20ac\u2122", "'").strip().lower()
 
 
 class BondsmanManager:

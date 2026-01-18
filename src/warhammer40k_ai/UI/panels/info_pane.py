@@ -1,4 +1,4 @@
-﻿"""
+"""
 InfoPane component for displaying game status and phase information.
 """
 
@@ -69,7 +69,7 @@ class InfoPane(pygame.sprite.Sprite):
         try:
             if font.size(text)[0] <= max_width:
                 return text
-            ell = "â€¦"
+            ell = "..."
             # Fast path: progressively shrink
             lo, hi = 0, len(text)
             best = ell
@@ -115,11 +115,11 @@ class InfoPane(pygame.sprite.Sprite):
                 # Show whose turn it is to deploy with enhanced visibility
                 deployment_player = game.get_current_deployment_player()
                 deployable_units = game.get_deployable_units(deployment_player)
-                game_status = f"ðŸš¢ DEPLOYMENT - {deployment_player.name}'s Turn ({len(deployable_units)} units left)"
+                game_status = f"DEPLOYMENT - {deployment_player.name}'s Turn ({len(deployable_units)} units left)"
                 text_color = TEXT_ACCENT  # Use accent color to highlight deployment phase
             else:
                 # Show battlefield creation phase before deployment zones are loaded
-                game_status = "ðŸ—ºï¸ CREATING BATTLEFIELD"
+                game_status = "CREATING BATTLEFIELD"
                 text_color = TEXT_SECONDARY  # Different color to indicate pre-deployment state
         else:
             # Show battle round with current player
@@ -201,7 +201,7 @@ class InfoPane(pygame.sprite.Sprite):
                 deployable_units = game.get_deployable_units(deployment_player)
                 
                 # Show player role and deployment status
-                player_role = "âš”ï¸ Attacker" if deployment_player == game.get_attacker() else "ðŸ›¡ï¸ Defender"
+                player_role = "Attacker" if deployment_player == game.get_attacker() else "Defender"
                 role_text = f"{deployment_player.name} ({player_role}) - {len(deployable_units)} units to deploy"
                 role_surface = self.font_small.render(role_text, True, TEXT_ACCENT)
                 role_rect = role_surface.get_rect(center=(x_center, y_offset))
@@ -218,11 +218,11 @@ class InfoPane(pygame.sprite.Sprite):
                             for vx, vy in getattr(mz, 'vertices', []):
                                 xs.append(float(vx)); ys.append(float(vy))
                         if xs and ys:
-                            zone_text = f"ðŸ“ Zone: X({min(xs):.0f}\"-{max(xs):.0f}\") Y({min(ys):.0f}\"-{max(ys):.0f}\")"
+                            zone_text = f"Zone: X({min(xs):.0f}\"-{max(xs):.0f}\") Y({min(ys):.0f}\"-{max(ys):.0f}\")"
                         else:
-                            zone_text = "ðŸ“ Zone: (mission polygons)"
+                            zone_text = "Zone: (mission polygons)"
                     except Exception:
-                        zone_text = "ðŸ“ Zone: (mission polygons)"
+                        zone_text = "Zone: (mission polygons)"
                     zone_surface = self.font_small.render(zone_text, True, TEXT_SECONDARY)
                     zone_rect = zone_surface.get_rect(center=(x_center, y_offset))
                     surface.blit(zone_surface, zone_rect)
@@ -230,12 +230,12 @@ class InfoPane(pygame.sprite.Sprite):
                 
                 # Show deployment instructions
                 if deployment_player.has_control():
-                    instruction_text = "ðŸ‘† Click units in roster to select, then click battlefield to deploy"
+                    instruction_text = "Click units in roster to select, then click battlefield to deploy"
                     instruction_surface = self.font_tiny.render(instruction_text, True, TEXT_SECONDARY)
                     instruction_rect = instruction_surface.get_rect(center=(x_center, y_offset))
                     surface.blit(instruction_surface, instruction_rect)
                 else:
-                    instruction_text = "ðŸ¤– Waiting for remote player to deploy..."
+                    instruction_text = "Waiting for remote player to deploy..."
                     instruction_surface = self.font_tiny.render(instruction_text, True, TEXT_SECONDARY)
                     instruction_rect = instruction_surface.get_rect(center=(x_center, y_offset))
                     surface.blit(instruction_surface, instruction_rect)
@@ -251,12 +251,12 @@ class InfoPane(pygame.sprite.Sprite):
                     surface.blit(notice_surface, notice_rect)
             else:
                 # Show battlefield creation status
-                setup_text = "ðŸ—ºï¸ Preparing battlefield for deployment..."
+                setup_text = "Preparing battlefield for deployment..."
                 setup_surface = self.font_small.render(setup_text, True, TEXT_ACCENT)
                 setup_rect = setup_surface.get_rect(center=(x_center, y_offset))
                 surface.blit(setup_surface, setup_rect)
         elif game_view and hasattr(game_view, 'selected_unit') and game_view.selected_unit and not game_view.selected_unit.deployed:
-            deployment_text = f"ðŸ“ Click battlefield to deploy: {game_view.selected_unit.name}"
+            deployment_text = f"Click battlefield to deploy: {game_view.selected_unit.name}"
             deployment_surface = self.font_small.render(deployment_text, True, DEPLOY_BUTTON_BG)
             deployment_rect = deployment_surface.get_rect(center=(x_center, y_offset))
             surface.blit(deployment_surface, deployment_rect)
@@ -287,7 +287,7 @@ class InfoPane(pygame.sprite.Sprite):
             fight_status = game_view.get_fight_phase_status()
             if fight_status:
                 # Display current fight stage
-                stage_text = f"âš”ï¸ Stage: {fight_status['current_stage']}"
+                stage_text = f"Stage: {fight_status['current_stage']}"
                 stage_surface = self.font_small.render(stage_text, True, TEXT_ACCENT)
                 stage_rect = stage_surface.get_rect(center=(x_center, y_offset))
                 surface.blit(stage_surface, stage_rect)
@@ -305,14 +305,14 @@ class InfoPane(pygame.sprite.Sprite):
                     
                     # Display unit counts
                     if current_fight_first > 0 or opponent_fight_first > 0:
-                        fight_first_text = f"âš¡ Fight First: {current_fight_first} vs {opponent_fight_first}"
+                        fight_first_text = f"Fight First: {current_fight_first} vs {opponent_fight_first}"
                         fight_first_surface = self.font_tiny.render(fight_first_text, True, TEXT_SECONDARY)
                         fight_first_rect = fight_first_surface.get_rect(center=(x_center, y_offset))
                         surface.blit(fight_first_surface, fight_first_rect)
                         y_offset += 15
                     
                     if current_remaining > 0 or opponent_remaining > 0:
-                        remaining_text = f"ðŸ‘Š Remaining: {current_remaining} vs {opponent_remaining}"
+                        remaining_text = f"Remaining: {current_remaining} vs {opponent_remaining}"
                         remaining_surface = self.font_tiny.render(remaining_text, True, TEXT_SECONDARY)
                         remaining_rect = remaining_surface.get_rect(center=(x_center, y_offset))
                         surface.blit(remaining_surface, remaining_rect)
@@ -375,19 +375,19 @@ class InfoPane(pygame.sprite.Sprite):
         for action in allowed_actions:
             # Format action text with emoji indicators
             if action == 'MOVE':
-                action_text = "ðŸš¶ Move unit"
+                action_text = "Move unit"
             elif action == 'ADVANCE':
-                action_text = "ðŸƒ Advance unit"
+                action_text = "Advance unit"
             elif action == 'SHOOT':
-                action_text = "ðŸŽ¯ Shoot weapons"
+                action_text = "Shoot weapons"
             elif action == 'CHARGE':
-                action_text = "âš”ï¸ Charge enemy"
+                action_text = "Charge enemy"
             elif action == 'FIGHT':
-                action_text = "âš”ï¸ Fight in melee"
+                action_text = "Fight in melee"
             elif action == 'FALL_BACK':
-                action_text = "â†©ï¸ Fall back"
+                action_text = "Fall back"
             else:
-                action_text = f"â“ {action.title()}"
+                action_text = f"{action.title()}"
             
             # Draw action text
             action_surface = self.font_small.render(action_text, True, TEXT_SECONDARY)

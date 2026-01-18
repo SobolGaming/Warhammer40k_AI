@@ -91,5 +91,51 @@ class TestWahaHelper(unittest.TestCase):
         self.assertEqual(len(bloodletters_unit.models), 9, "Unit should still have 9 models")
         self.assertEqual(bloodletters_unit.models[0].wounds, 1, "Model should still have 1 wound")
 
+    def test_servitor_battleclade_base_sizes(self):
+        datasheet_name = "Servitor Battleclade"
+        datasheet = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
+        self.assertIsNotNone(datasheet, f"Datasheet for {datasheet_name} not found")
+
+        unit = Unit(datasheet)
+
+        underseer = [m for m in unit.models if m.name == "Servitor Underseer"]
+        gun_servitors = [m for m in unit.models if m.name == "Gun Servitor"]
+        combat_servitors = [m for m in unit.models if m.name == "Combat Servitor"]
+
+        self.assertEqual(len(underseer), 1)
+        self.assertEqual(len(gun_servitors), 2)
+        self.assertEqual(len(combat_servitors), 6)
+
+        expected_32 = convert_mm_to_inches(32 / 2)
+        expected_25 = convert_mm_to_inches(25 / 2)
+
+        self.assertEqual(underseer[0].model_base.get_radius(), expected_32)
+        for model in gun_servitors:
+            self.assertEqual(model.model_base.get_radius(), expected_32)
+        for model in combat_servitors:
+            self.assertEqual(model.model_base.get_radius(), expected_25)
+
+        datasheet_name = "Jakhals"
+        datasheet = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
+        self.assertIsNotNone(datasheet, f"Datasheet for {datasheet_name} not found")
+
+        unit = Unit(datasheet)
+
+        pack_leader = [m for m in unit.models if m.name == "Jakhal Pack Leader"]
+        dishonoured = [m for m in unit.models if m.name == "Dishonoured"]
+        jakhals = [m for m in unit.models if m.name == "Jakhal"]
+
+        self.assertEqual(len(pack_leader), 1)
+        self.assertEqual(len(dishonoured), 1)
+        self.assertEqual(len(jakhals), 8)
+
+        expected_jakhal = convert_mm_to_inches(28.5 / 2)
+        expected_dishonoured = convert_mm_to_inches(40 / 2)
+
+        self.assertEqual(pack_leader[0].model_base.get_radius(), expected_jakhal)
+        self.assertEqual(dishonoured[0].model_base.get_radius(), expected_dishonoured)
+        for model in jakhals:
+            self.assertEqual(model.model_base.get_radius(), expected_jakhal)
+
 if __name__ == '__main__':
     unittest.main()

@@ -73,7 +73,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         # Initialize weapon selection
         self._initialize_weapon_selection()
         
-        print(f"⚔️ MeleeWeaponDeclarationDialog shown for {unit.name}")
+        print(f"INFO: MeleeWeaponDeclarationDialog shown for {unit.name}")
     
     def hide(self):
         """Hide the dialog."""
@@ -99,8 +99,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         if not self.unit:
             return
         
-        print(f"🔍 DEBUG: Initializing weapon selection for {self.unit.name}")
-        print(f"🔍 DEBUG: Unit has {len(self.unit.models)} models")
+        print(f"DEBUG: Initializing weapon selection for {self.unit.name}")
+        print(f"DEBUG: Unit has {len(self.unit.models)} models")
         
         if (
             self.target_unit is not None
@@ -297,7 +297,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                     model_index = button['model_index']
                     if model_index != self.selected_model_index:
                         self.selected_model_index = model_index
-                        print(f"🎯 Selected Model #{model_index + 1}: {button['model'].name}")
+                        print(f"INFO: Selected Model #{model_index + 1}: {button['model'].name}")
                         self._create_model_and_weapon_buttons()  # Refresh UI
                     return True
                     
@@ -384,11 +384,11 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
             models_with_weapons = len(self.model_weapon_selections)
             
             if models_with_weapons < total_models:
-                print(f"⚠️ Warning: Only {models_with_weapons}/{total_models} models have weapon selections")
-                print(f"⚠️ Some models may not be able to attack")
+                print(f"WARN: Warning: Only {models_with_weapons}/{total_models} models have weapon selections")
+                print(f"ERROR: Some models may not be able to attack")
             
-            print(f"⚔️ Weapon selection completed with {len(weapon_declarations)} weapon declarations")
-            print(f"⚔️ Covering {models_with_weapons}/{total_models} models")
+            print(f"INFO: Weapon selection completed with {len(weapon_declarations)} weapon declarations")
+            print(f"INFO: Covering {models_with_weapons}/{total_models} models")
             self.callback(weapon_declarations)
         self.hide()
     
@@ -528,7 +528,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                 
                 # Selection indicator
                 if is_selected:
-                    check_surface = self.font_medium.render("✓", True, TEXT_PRIMARY)
+                    check_surface = self.font_medium.render("x", True, TEXT_PRIMARY)
                     surface.blit(check_surface, (button_rect.right - 30, button_rect.y + 10))
                     
         # Draw section labels

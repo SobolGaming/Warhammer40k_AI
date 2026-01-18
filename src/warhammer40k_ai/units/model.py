@@ -40,7 +40,7 @@ class Model:
         objective_control_raw: Optional[str] = None,
         inv_save_raw: Optional[str] = None,
     ):
-        self.name = name.split(' – ')[0]
+        self.name = name.split(' \u2013 ')[0]
         # Model attributes have a base value, but can be modified by wargear, strategems, etc
         # We need to track base value and current value separately
         self._base_movement = movement
@@ -755,7 +755,7 @@ class Model:
         
         # If we can't parse the condition, default to applying the save
         # This is safer than blocking legitimate saves due to parsing issues
-        print(f"⚠️  Unknown invulnerable save condition format: '{condition}' - applying save")
+        print(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
         return True
 
     def failed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:

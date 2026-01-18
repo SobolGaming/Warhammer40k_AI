@@ -26,7 +26,7 @@ class ScoutChoiceDialog(BaseDialog):
             self.scout_distance = scout_distance
         else:
             self.scout_distance = 0.0
-        # print(f"🔍 DEBUG: ScoutChoiceDialog.show completed for {unit.name}")
+        # print(f"DEBUG: ScoutChoiceDialog.show completed for {unit.name}")
     
     def hide(self):
         """Hide the dialog"""
@@ -39,26 +39,26 @@ class ScoutChoiceDialog(BaseDialog):
     def can_scout(self) -> bool:
         """Check if the unit can make a scout move"""
         if not self.unit:
-            print("🔍 can_scout: No unit")
+            print("DEBUG: can_scout: No unit")
             return False
         
         # Check if unit has scout ability
         has_scout, _ = self.unit.has_scout()
         if not has_scout:
-            print(f"🔍 can_scout: {self.unit.name} has no scout ability")
+            print(f"DEBUG: can_scout: {self.unit.name} has no scout ability")
             return False
         
         # Check if unit is deployed (not in reserves)
         if not self.unit.deployed or self.unit.reserve_status != 'deployed':
-            print(f"🔍 can_scout: {self.unit.name} not deployed (deployed={self.unit.deployed}, reserve_status={self.unit.reserve_status})")
+            print(f"DEBUG: can_scout: {self.unit.name} not deployed (deployed={self.unit.deployed}, reserve_status={self.unit.reserve_status})")
             return False
         
         # Check if unit hasn't already made a scout move
         if hasattr(self.unit, 'scout_move_made') and self.unit.scout_move_made:
-            print(f"🔍 can_scout: {self.unit.name} already made scout move")
+            print(f"DEBUG: can_scout: {self.unit.name} already made scout move")
             return False
         
-        #print(f"🔍 can_scout: {self.unit.name} can scout")
+        #print(f"DEBUG: can_scout: {self.unit.name} can scout")
         return True
     
     def handle_event(self, event):
@@ -108,7 +108,7 @@ class ScoutChoiceDialog(BaseDialog):
         # Click outside dialog - defer decision (same as ESC)
         dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
         if not dialog_rect.collidepoint(mouse_pos):
-            # print(f"🔍 DEBUG: Click outside dialog, deferring decision")
+            # print(f"DEBUG: Click outside dialog, deferring decision")
             cb = self.callback
             self.hide()
             if cb:
@@ -128,7 +128,7 @@ class ScoutChoiceDialog(BaseDialog):
     def draw(self, screen):
         """Draw the dialog"""
         if not self.visible or not self.unit:
-            # print(f"🔍 DEBUG: ScoutChoiceDialog.draw called but not visible or no unit")
+            # print(f"DEBUG: ScoutChoiceDialog.draw called but not visible or no unit")
             return
         
         # Dialog background & title

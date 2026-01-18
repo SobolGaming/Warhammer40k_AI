@@ -147,8 +147,8 @@ class Map:
         Check if any model in the source unit is within engagement range of any model in the target unit.
 
         Engagement Range in 10th Edition:
-        - Within 1″ horizontally (measured base-to-base)
-        - Within 5″ vertically
+        - Within 1" horizontally (measured base-to-base)
+        - Within 5" vertically
 
         Args:
             source_unit: The source unit to check from
@@ -179,11 +179,11 @@ class Map:
                     vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
                     source_pos = source_model.get_location()
                     target_pos = target_model.get_location()
-                    print(f"🔍 DEBUG: ENGAGEMENT DETECTED!")
-                    print(f"🔍 DEBUG: {source_unit.name} model at {source_pos}")
-                    print(f"🔍 DEBUG: {target_unit.name} model at {target_pos}")
-                    print(f"🔍 DEBUG: Horizontal distance: {horizontal_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_HORIZONTAL}\")")
-                    print(f"🔍 DEBUG: Vertical distance: {vertical_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_VERTICAL}\")")
+                    print(f"DEBUG: ENGAGEMENT DETECTED!")
+                    print(f"DEBUG: {source_unit.name} model at {source_pos}")
+                    print(f"DEBUG: {target_unit.name} model at {target_pos}")
+                    print(f"DEBUG: Horizontal distance: {horizontal_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_HORIZONTAL}\")")
+                    print(f"DEBUG: Vertical distance: {vertical_distance:.2f}\" (limit: {ENGAGEMENT_RANGE_VERTICAL}\")")
                     return True
         return False
 
@@ -1078,13 +1078,13 @@ class TerrainFactory:
         - Footprint: 12" x 6" rectangle
         - Wall thickness: 0.5"
         - Walls flush to the bottom long edge (y=0) with adjusted spans:
-          • Long wall: inset 2" from each side (x=2..10) along y=0, on all levels
-          • Short walls: moved in to meet the long wall ends, at x=2 and x=10; 4" long (y=0..4) on all levels
+          - Long wall: inset 2" from each side (x=2..10) along y=0, on all levels
+          - Short walls: moved in to meet the long wall ends, at x=2 and x=10; 4" long (y=0..4) on all levels
         - Ground floor (level 0): 4" wall height, no windows
         - First floor (level 1): 4" wall height, windows
-          • Long wall: two 2" windows (shorter wall span), at x=[3-5], [7-9]
-          • Short walls: one 2" window each, spanning y=[2-4]
-          • All windows 1"-3" above that floor (allows LOS only)
+          - Long wall: two 2" windows (shorter wall span), at x=[3-5], [7-9]
+          - Short walls: one 2" window each, spanning y=[2-4]
+          - All windows 1"-3" above that floor (allows LOS only)
         - Second floor (level 2): 1" parapets, no windows
         - No doors
         """
@@ -1142,7 +1142,7 @@ class TerrainFactory:
         # Long wall: two 2" windows within the shortened span x=2..10
         for x_start, x_end in [(3.0, 5.0), (7.0, 9.0)]:
             openings.append({
-                # Align with long wall thickness at y = 0.25 ± 0.25
+                # Align with long wall thickness at y = 0.25 +/- 0.25
                 "polygon": box(x_start, 0.25 - half_t, x_end, 0.25 + half_t),
                 "z_bottom": z1_bottom,
                 "z_top": z1_top,
@@ -1198,13 +1198,13 @@ class TerrainFactory:
 
         Connecting corner: top-right (12,6)
         - Top long-edge wall (y=6), measured leftwards from the connecting corner:
-          • Ground: 8" span (x=4..12)
-          • 1st:    8" span (x=4..12)
-          • 2nd:    6" span (x=6..12)  (parapet, 1" tall)
+          - Ground: 8" span (x=4..12)
+          - 1st:    8" span (x=4..12)
+          - 2nd:    6" span (x=6..12)  (parapet, 1" tall)
         - Right short-edge wall (x=12), measured downwards from the connecting corner:
-          • Ground: 4" span (y=2..6)
-          • 1st:    3" span (y=3..6)
-          • 2nd:    2" span (y=4..6)  (parapet, 1" tall)
+          - Ground: 4" span (y=2..6)
+          - 1st:    3" span (y=3..6)
+          - 2nd:    2" span (y=4..6)  (parapet, 1" tall)
 
         Windows/doors:
         - Ground floor: none
@@ -1316,13 +1316,13 @@ class TerrainFactory:
 
         Connecting corner: top-left (0,6)
         - Top long-edge wall (y=6):
-          • Ground: 8" span from the connecting corner (x=0..8)
-          • 1st:    8" span from the connecting corner (x=0..8)
-          • 2nd:    6" span from the connecting corner (x=0..6)  (parapet)
+          - Ground: 8" span from the connecting corner (x=0..8)
+          - 1st:    8" span from the connecting corner (x=0..8)
+          - 2nd:    6" span from the connecting corner (x=0..6)  (parapet)
         - Left short-edge wall (x=0), measured down from the connecting corner:
-          • Ground: 4" span (y=2..6)
-          • 1st:    3" span (y=3..6)
-          • 2nd:    2" span (y=4..6)  (parapet)
+          - Ground: 4" span (y=2..6)
+          - 1st:    3" span (y=3..6)
+          - 2nd:    2" span (y=4..6)  (parapet)
 
         Windows/doors:
         - Ground floor: none
@@ -1430,7 +1430,7 @@ class TerrainFactory:
         - No upper floors
         - A handful of small, irregular-ish obstacles inside the footprint to represent
           broken columns / rocks. These are modeled as RUINS walls (solid, no movement through)
-          at z ∈ [0, 2].
+          at z in [0, 2].
         """
         # Footprint polygon (authored at origin)
         footprint = Polygon([(0.0, 0.0), (6.0, 0.0), (6.0, 4.0), (0.0, 4.0)])
@@ -1477,8 +1477,8 @@ class TerrainFactory:
 
         - Footprint: 6x4 rectangle
         - Ground walls: full-height (4") along:
-          • Left short edge (x=0, y=0..4)
-          • Bottom long edge (y=0, x=0..6)
+          - Left short edge (x=0, y=0..4)
+          - Bottom long edge (y=0, x=0..6)
         - Floors: ground + one upper floor (full footprint)
         - Upper level: 1" parapet along the same two edges (left + bottom)
         - No doors, no windows
@@ -1538,11 +1538,11 @@ class TerrainFactory:
         - Overall footprint: 12x6 rectangle
         - Left section (x=0..4, y=0..6): low rubble (<=2" height)
         - Right section (x=4..12, y=0..6): a solid 8x6 structure with:
-          • Ground floor (level 0): present
-          • First floor (level 1): platform 8x4 on the TOP edge (y=2..6)
-          • No doors, no windows (openings list is empty)
-          • Walls only exist on the TOP long edge of the 8" section (y=6, x=4..12)
-          • First floor has a short parapet wall (~2" height) on that same top edge
+          - Ground floor (level 0): present
+          - First floor (level 1): platform 8x4 on the TOP edge (y=2..6)
+          - No doors, no windows (openings list is empty)
+          - Walls only exist on the TOP long edge of the 8" section (y=6, x=4..12)
+          - First floor has a short parapet wall (~2" height) on that same top edge
         """
         footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
 
@@ -1672,12 +1672,12 @@ class TerrainFactory:
         - Overall footprint: 12x6
         - Section 1 (x=0..2): 2x6 low rubble (<=2")
         - Section 2 (x=2..10): 8x6 ruins with:
-          • Walls (no doors):
+          - Walls (no doors):
             - Short-edge wall on the LEFT side of the ruins section: 5" tall span (y=0..5) at x=2
             - Long-edge wall on the BOTTOM of the ruins section: 7" span (x=2..9) at y=0
-          • Floors: ground, floor 1, floor 2 (platforms on the 8x6 section only for floors 1/2)
-          • Floor 1: windows (LOS-only): 2 on the long-edge wall, 1 on the short-edge wall
-          • Floor 2: parapets (1") along the same two wall edges, no windows
+          - Floors: ground, floor 1, floor 2 (platforms on the 8x6 section only for floors 1/2)
+          - Floor 1: windows (LOS-only): 2 on the long-edge wall, 1 on the short-edge wall
+          - Floor 2: parapets (1") along the same two wall edges, no windows
         - Section 3 (x=10..12): 2x6 low rubble (<=2")
         """
         footprint = Polygon([(0.0, 0.0), (12.0, 0.0), (12.0, 6.0), (0.0, 6.0)])
@@ -1802,12 +1802,12 @@ class TerrainFactory:
         - Overall footprint: 10x5 rectangle
         - Left section (x=0..3.5, y=0..5): low rubble (<=2" height)
         - Right section (x=3.5..10, y=0..5): a 6.5x5 two-level ruins section with:
-          • Ground + first floor platform (full 6.5x5)
-          • No doors, no windows
-          • Walls only on:
+          - Ground + first floor platform (full 6.5x5)
+          - No doors, no windows
+          - Walls only on:
             - The joining edge between the two sections (x=3.5, y=0..5)
             - The top edge of the 6.5" section (y=5, x=3.5..10)
-          • First-floor parapet (1" tall) along those same edges
+          - First-floor parapet (1" tall) along those same edges
         """
         footprint = Polygon([(0.0, 0.0), (10.0, 0.0), (10.0, 5.0), (0.0, 5.0)])
 
@@ -2446,14 +2446,14 @@ class ObjectivePoint:
                         model_base_shape = model.model_base.get_base_shape()
                         if model_base_shape.intersects(objective_area):
                             player_oc[player] += model.objective_control
-                            print(f"🎯 {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
+                            print(f"INFO: {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
                     except Exception as e:
                         # Fallback to distance check if base shape fails
                         distance = get_dist(self.x - model.model_base.x, self.y - model.model_base.y)
                         model_base_radius = getattr(model.model_base, 'get_radius', lambda: 1.0)()
                         if distance <= (self.control_radius + model_base_radius):
                             player_oc[player] += model.objective_control
-                            print(f"🎯 {model.name} (OC: {model.objective_control}) near objective (manual calculation)")
+                            print(f"INFO: {model.name} (OC: {model.objective_control}) near objective (manual calculation)")
 
         # Determine controlling player based on OC values
         if any(oc > 0 for oc in player_oc.values()):

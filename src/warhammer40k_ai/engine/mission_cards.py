@@ -335,15 +335,15 @@ class ScorchedEarthPrimary(PrimaryMissionCard):
                 "BURN OBJECTIVE (ACTION)\n"
                 "WHEN: Your Shooting phase, from the second battle round onwards.\n"
                 "UNITS: One unit from your army within range of an objective marker that is not within your deployment zone.\n"
-                "COMPLETES: End of your opponent’s next turn or the end of the battle (whichever comes first), if your unit is still within range of the same objective marker and you control that objective marker.\n"
+                "COMPLETES: End of your opponent's next turn or the end of the battle (whichever comes first), if your unit is still within range of the same objective marker and you control that objective marker.\n"
                 "IF COMPLETED: That objective marker is burned and removed from the battlefield."
             ),
             scoring_text=(
                 "SECOND BATTLE ROUND ONWARDS\n"
                 "WHEN: Any time.\n"
                 "Each time a player burns an objective marker:\n"
-                "- Objective marker was in No Man’s Land: 5VP.\n"
-                "- Objective marker was in their opponent’s deployment zone: 10VP.\n\n"
+                "- Objective marker was in No Man's Land: 5VP.\n"
+                "- Objective marker was in their opponent's deployment zone: 10VP.\n\n"
                 "SECOND BATTLE ROUND ONWARDS\n"
                 "WHEN: End of the Command phase (or the end of your turn if it is the fifth battle round and you are going second).\n"
                 "For each objective marker that the player controls: 5VP (MAX 10VP)."
@@ -372,9 +372,9 @@ class HiddenSuppliesPrimary(PrimaryMissionCard):
             name="Hidden Supplies",
             setup_text=(
                 "PLACE OBJECTIVE MARKERS\n"
-                "Players must set up one additional objective marker in No Man’s Land.\n"
+                "Players must set up one additional objective marker in No Man's Land.\n"
                 "Before setting up this new objective marker, players must first move the objective marker in the centre of the battlefield 6\" directly towards one of the corners of the battlefield "
-                "(if No Man’s Land touches any of the corners of the battlefield, you must move the objective marker towards one of those corners). Otherwise, the players roll-off, and the winner selects which corner the objective marker is moved towards.\n"
+                "(if No Man's Land touches any of the corners of the battlefield, you must move the objective marker towards one of those corners). Otherwise, the players roll-off, and the winner selects which corner the objective marker is moved towards.\n"
                 "Players then set up the new objective marker 6\" from the centre of the battlefield towards the diagonally opposite corner of the battlefield to the previously moved objective marker."
             ),
             scoring_text=(
@@ -430,7 +430,7 @@ class SupplyDropPrimary(PrimaryMissionCard):
         super().__init__(
             name="Supply Drop",
             setup_text=(
-                "Start of the Battle: Players randomly select two different objective markers in No Man’s Land that are not in the centre of the battlefield: "
+                "Start of the Battle: Players randomly select two different objective markers in No Man's Land that are not in the centre of the battlefield: "
                 "the first selected is the Alpha objective, the second selected is the Omega objective.\n"
                 "Start of the Fourth Battle Round: The Alpha objective is removed from the battlefield.\n"
                 "Start of the Fifth Battle Round: The Omega objective is removed from the battlefield."
@@ -438,7 +438,7 @@ class SupplyDropPrimary(PrimaryMissionCard):
             scoring_text=(
                 "SECOND BATTLE ROUND ONWARDS\n"
                 "WHEN: End of the Command phase (or the end of your turn if it is the fifth battle round and you are going second).\n"
-                "The player whose turn it is scores the following VP for each objective marker within No Man’s Land that they control depending on the current battle round:\n"
+                "The player whose turn it is scores the following VP for each objective marker within No Man's Land that they control depending on the current battle round:\n"
                 "- The second and third battle rounds: 5VP.\n"
                 "- The fourth battle round: 8VP.\n"
                 "- The fifth battle round: 15VP."
@@ -498,7 +498,7 @@ class SupplyDropPrimary(PrimaryMissionCard):
                 loc = getattr(obj, 'location', None)
                 if loc and not getattr(loc, 'removed', False):
                     loc.removed = True
-                    print("🔥 Supply Drop removed objective at ({:.1f}, {:.1f})".format(loc.x, loc.y))
+                    print("INFO: Supply Drop removed objective at ({:.1f}, {:.1f})".format(loc.x, loc.y))
             except Exception:
                 pass
         if br == 4 and self.alpha and not self._alpha_removed:
@@ -544,7 +544,7 @@ class BurdenOfTrustPrimary(PrimaryMissionCard):
                 "The player whose turn it is scores:\n"
                 "For each objective marker they control that is not within their deployment zone: 4VP.\n\n"
                 "SECOND BATTLE ROUND ONWARDS\n"
-                "WHEN: End of each player’s turn.\n"
+                "WHEN: End of each player's turn.\n"
                 "The opponent of the player whose turn it is:\n"
                 "For each of their units (excluding Battle-shocked units) that are within range of and guarding an objective marker they control: 2VP."
             ),
@@ -600,12 +600,12 @@ class TheRitualPrimary(PrimaryMissionCard):
                 "STARTS: Your Shooting phase.\n"
                 "UNITS: One unit from your army.\n"
                 "COMPLETES: End of your turn.\n"
-                "IF COMPLETED: Set up one objective marker anywhere on the battlefield wholly within No Man’s Land and within 1\" of your unit, provided it can be set up exactly 12\" from one other objective marker within No Man’s Land and not within 6\" of any other objective marker."
+                "IF COMPLETED: Set up one objective marker anywhere on the battlefield wholly within No Man's Land and within 1\" of your unit, provided it can be set up exactly 12\" from one other objective marker within No Man's Land and not within 6\" of any other objective marker."
             ),
             scoring_text=(
                 "SECOND BATTLE ROUND ONWARDS\n"
                 "WHEN: End of the Command phase (or the end of your turn if it is the fifth battle round and you are going second).\n"
-                "For each objective marker that the player controls in No Man’s Land: 5VP (MAX 15VP)."
+                "For each objective marker that the player controls in No Man's Land: 5VP (MAX 15VP)."
             ),
             score_cap_per_turn=15,
         )
@@ -650,7 +650,7 @@ class UnexplodedOrdnancePrimary(PrimaryMissionCard):
         super().__init__(
             name="Unexploded Ordnance",
             setup_text=(
-                "START OF THE BATTLE: The objective markers within No Man’s Land become a Hazard objective marker."
+                "START OF THE BATTLE: The objective markers within No Man's Land become a Hazard objective marker."
             ),
             action_text=(
                 "MOVE HAZARD (ACTION)\n"
@@ -661,11 +661,11 @@ class UnexplodedOrdnancePrimary(PrimaryMissionCard):
             ),
             scoring_text=(
                 "SECOND BATTLE ROUND ONWARDS\n"
-                "WHEN: End of each player’s turn.\n"
+                "WHEN: End of each player's turn.\n"
                 "The player whose turn it is scores for each Hazard objective marker that is:\n"
-                "- Wholly within their opponent’s deployment zone: 8VP.\n"
-                "- Wholly within 6\" of their opponent’s deployment zone: 5VP.\n"
-                "- Wholly within 12\" of their opponent’s deployment zone: 2VP."
+                "- Wholly within their opponent's deployment zone: 8VP.\n"
+                "- Wholly within 6\" of their opponent's deployment zone: 5VP.\n"
+                "- Wholly within 12\" of their opponent's deployment zone: 2VP."
             ),
         )
 
@@ -745,7 +745,7 @@ class BringItDownSecondary(SecondaryMissionCard):
             ),
             tactical_text=(
                 "ANY BATTLE ROUND - TACTICAL\n"
-                "WHEN: End of either player’s turn.\n"
+                "WHEN: End of either player's turn.\n"
                 "One or more enemy MONSTER or VEHICLE units were destroyed this turn: 4VP."
             ),
         )
@@ -830,15 +830,15 @@ class SabotageSecondary(SecondaryMissionCard):
                 "SABOTAGE (ACTION)\n"
                 "STARTS: Your Shooting phase.\n"
                 "UNITS: One unit from your army that is within a terrain feature and not within your deployment zone.\n"
-                "COMPLETES: End of your opponent’s next turn or the end of the battle (whichever comes first), if your unit is on the battlefield.\n"
+                "COMPLETES: End of your opponent's next turn or the end of the battle (whichever comes first), if your unit is on the battlefield.\n"
                 "IF COMPLETED: Your unit commits sabotage."
             ),
             scoring_text=(
                 "ANY BATTLE ROUND\n"
-                "WHEN: End of your opponent’s turn or the end of the battle (whichever comes first).\n"
-                "Your unit committed sabotage this turn and is not within your opponent’s deployment zone: 3VP.\n"
+                "WHEN: End of your opponent's turn or the end of the battle (whichever comes first).\n"
+                "Your unit committed sabotage this turn and is not within your opponent's deployment zone: 3VP.\n"
                 "OR\n"
-                "Your unit committed sabotage this turn and is within your opponent’s deployment zone: 6VP."
+                "Your unit committed sabotage this turn and is within your opponent's deployment zone: 6VP."
             ),
         )
         self.scoring_window = SecondaryScoringWindow.END_OF_OPPONENT_TURN
@@ -880,9 +880,9 @@ class BehindEnemyLinesSecondary(SecondaryMissionCard):
             scoring_text=(
                 "ANY BATTLE ROUND\n"
                 "WHEN: End of your turn.\n"
-                "One unit from your army (excluding AIRCRAFT and Battle-shocked units) is wholly within your opponent’s deployment zone: 3VP.\n"
+                "One unit from your army (excluding AIRCRAFT and Battle-shocked units) is wholly within your opponent's deployment zone: 3VP.\n"
                 "OR\n"
-                "Two or more units from your army (excluding AIRCRAFT and Battle-shocked units) are wholly within your opponent’s deployment zone: 4VP."
+                "Two or more units from your army (excluding AIRCRAFT and Battle-shocked units) are wholly within your opponent's deployment zone: 4VP."
             ),
         )
         self.shuffle_back_on_ineligible_draw = True
@@ -1081,7 +1081,7 @@ class DefendStrongholdSecondary(SecondaryMissionCard):
             ),
             scoring_text=(
                 "SECOND BATTLE ROUND ONWARDS\n"
-                "WHEN: End of your opponent’s turn or the end of the battle (whichever comes first).\n"
+                "WHEN: End of your opponent's turn or the end of the battle (whichever comes first).\n"
                 "You control one or more objective markers in your deployment zone: 3VP."
             ),
         )
@@ -1120,11 +1120,11 @@ class MarkedForDeathSecondary(SecondaryMissionCard):
             name="Marked For Death",
             when_drawn_text=(
                 "WHEN DRAWN: Your opponent must select three units from their army on the battlefield. If there are only one or two units from their army on the battlefield, they must select those units. The selected units are your Alpha Target units.\n"
-                "You can then select one unit from your opponent’s army on the battlefield to be your Gamma Target unit. If there are no units from their army on the battlefield, discard this card and draw a new Secondary Mission card."
+                "You can then select one unit from your opponent's army on the battlefield to be your Gamma Target unit. If there are no units from their army on the battlefield, discard this card and draw a new Secondary Mission card."
             ),
             scoring_text=(
                 "ANY BATTLE ROUND\n"
-                "WHEN: End of either player’s turn.\n"
+                "WHEN: End of either player's turn.\n"
                 "One or more of your Alpha Target units were destroyed (or removed from the battlefield for any other reason) this turn: 5VP.\n"
                 "OR\n"
                 "None of your Alpha Target units were destroyed (or removed from the battlefield for any other reason) this turn, but your Gamma Target unit was destroyed (or removed from the battlefield for any other reason) this turn: 2VP."
@@ -1170,7 +1170,7 @@ class EstablishLocusSecondary(SecondaryMissionCard):
                 "ESTABLISH LOCUS (ACTION)\n"
                 "STARTS: Your Shooting phase.\n"
                 "UNITS: One unit from your army.\n"
-                "COMPLETES: End of your turn, if that unit is within your opponent’s deployment zone or within 6\" of the centre of the battlefield.\n"
+                "COMPLETES: End of your turn, if that unit is within your opponent's deployment zone or within 6\" of the centre of the battlefield.\n"
                 "IF COMPLETED: Your unit establishes a locus."
             ),
             scoring_text=(
@@ -1178,7 +1178,7 @@ class EstablishLocusSecondary(SecondaryMissionCard):
                 "WHEN: End of your turn.\n"
                 "Your unit established a locus this turn and is within 6\" of the centre of the battlefield: 2VP.\n"
                 "OR\n"
-                "Your unit established a locus this turn and is within your opponent’s deployment zone: 4VP."
+                "Your unit established a locus this turn and is within your opponent's deployment zone: 4VP."
             ),
         )
 
@@ -1262,7 +1262,7 @@ class AssassinationSecondary(SecondaryMissionCard):
             ),
             tactical_text=(
                 "ANY BATTLEROUND - TACTICAL\n"
-                "WHEN: End of either player’s turn.\n"
+                "WHEN: End of either player's turn.\n"
                 "One or more enemy CHARACTER models were destroyed this turn: 5VP.\n"
                 "OR\n"
                 "All enemy CHARACTER models have been destroyed during the battle: 5VP."
@@ -1362,7 +1362,7 @@ class CullTheHordeSecondary(SecondaryMissionCard):
             ),
             tactical_text=(
                 "ANY BATTLEROUND - TACTICAL\n"
-                "WHEN: End of either player’s turn.\n"
+                "WHEN: End of either player's turn.\n"
                 "One or more enemy INFANTRY units with a Starting Strength of 13+ (including Attached units) were destroyed this turn: 5VP."
             ),
         )
@@ -1455,7 +1455,7 @@ class DisplayOfMightSecondary(SecondaryMissionCard):
             scoring_text=(
                 "SECOND BATTLE ROUND ONWARDS\n"
                 "WHEN: End of your turn.\n"
-                "There are more units from your army than from your opponent’s army wholly within No Man’s Land: 4VP."
+                "There are more units from your army than from your opponent's army wholly within No Man's Land: 4VP."
             ),
         )
         self.shuffle_back_on_ineligible_draw = True
@@ -1521,9 +1521,9 @@ class ExtendBattleLinesSecondary(SecondaryMissionCard):
             scoring_text=(
                 "ANY BATTLE ROUND\n"
                 "WHEN: End of your turn.\n"
-                "You control one or more objective markers within your deployment zone and one or more objective markers within No Man’s Land: 4VP.\n"
+                "You control one or more objective markers within your deployment zone and one or more objective markers within No Man's Land: 4VP.\n"
                 "OR\n"
-                "You control one or more objective markers within No Man’s Land: 2VP."
+                "You control one or more objective markers within No Man's Land: 2VP."
             ),
         )
 
@@ -1567,11 +1567,11 @@ class ATemptingTargetSecondary(SecondaryMissionCard):
         super().__init__(
             name="A Tempting Target",
             when_drawn_text=(
-                "WHEN DRAWN: Your opponent must select one objective in No Man’s Land to be your Tempting Target objective marker."
+                "WHEN DRAWN: Your opponent must select one objective in No Man's Land to be your Tempting Target objective marker."
             ),
             scoring_text=(
                 "ANY BATTLE ROUND\n"
-                "WHEN: End of either player’s turn.\n"
+                "WHEN: End of either player's turn.\n"
                 "You control your Tempting Target objective marker: 5VP."
             ),
         )
@@ -1620,7 +1620,7 @@ class RecoverAssetsSecondary(SecondaryMissionCard):
             action_text=(
                 "RECOVER ASSETS (ACTION)\n"
                 "WHEN: Your Shooting phase.\n"
-                "UNITS: Two or more units from your army, if each of those units is wholly within a different one of the following areas: your deployment zone; No Man’s Land; your opponent’s deployment zone.\n"
+                "UNITS: Two or more units from your army, if each of those units is wholly within a different one of the following areas: your deployment zone; No Man's Land; your opponent's deployment zone.\n"
                 "COMPLETES: End of your turn, if either two or three of those units are on the battlefield.\n"
                 "IF COMPLETED: Those units recover assets."
             ),
@@ -1696,13 +1696,13 @@ class AreaDenialSecondary(SecondaryMissionCard):
 class SecureNoMansLandSecondary(SecondaryMissionCard):
     def __init__(self):
         super().__init__(
-            name="Secure No Man’s Land",
+            name="Secure No Man's Land",
             scoring_text=(
                 "ANY BATTLE ROUND\n"
                 "WHEN: End of your turn.\n"
-                "You control one objective marker in No Man’s Land: 2VP.\n"
+                "You control one objective marker in No Man's Land: 2VP.\n"
                 "OR\n"
-                "You control two or more objective markers in No Man’s Land: 5VP."
+                "You control two or more objective markers in No Man's Land: 5VP."
             ),
         )
 

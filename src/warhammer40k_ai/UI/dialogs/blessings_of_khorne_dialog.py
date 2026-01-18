@@ -193,7 +193,7 @@ class BlessingsOfKhorneDialog(BaseDialog):
             return
         self.draw_dialog_background(screen)
         title = "Blessings of Khorne"
-        subtitle = f"{getattr(self.player, 'name', 'Player')} — Battle Round {getattr(getattr(self.game, 'turn', None), '__str__', lambda: '?')()}"
+        subtitle = f"{getattr(self.player, 'name', 'Player')} - Battle Round {getattr(getattr(self.game, 'turn', None), '__str__', lambda: '?')()}"
         self.draw_title_bar(screen, title, subtitle)
 
         if not self.ctx or not self.manager:
@@ -265,7 +265,7 @@ class BlessingsOfKhorneDialog(BaseDialog):
                 bg = (40, 40, 40)
             pygame.draw.rect(screen, bg, r)
             pygame.draw.rect(screen, (75, 75, 82), r, 1)
-            name = f"{d.name} — {d.short_effect}"
+            name = f"{d.name} - {d.short_effect}"
             color = TEXT_SECONDARY if disabled else TEXT_PRIMARY
             screen.blit(self.font_small.render(name, True, color), (r.x + 8, r.y + 6))
 
@@ -284,7 +284,7 @@ class BlessingsOfKhorneDialog(BaseDialog):
             spent = preview.get("spent_indices", [])
             msg = "Valid selection"
             if spent:
-                msg = f"Valid — spends dice: {', '.join(str(i+1) for i in spent)}"
+                msg = f"Valid - spends dice: {', '.join(str(i+1) for i in spent)}"
             screen.blit(self.font_small.render(msg, True, TEXT_SECONDARY), (self.x + 20, preview_y))
 
             # Per-blessing spend breakdown (UX)

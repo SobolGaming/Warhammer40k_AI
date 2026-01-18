@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
@@ -49,7 +49,7 @@ _ACTIVE_ROUND = "shadow_form_round"
 
 
 def _norm_name(text: str) -> str:
-    return (text or "").replace("Æ’?T", "'").strip().lower()
+    return (text or "").replace("\u2019", "'").replace("\u00e2\u20ac\u2122", "'").strip().lower()
 
 
 def _unit_has_shadow_form(unit) -> bool:

@@ -554,6 +554,6 @@ def instantiate_layout(layout_id: int) -> List[TerrainFeature]:
             features.append(feature)
         except Exception as e:
             # Log and continue with other features instead of aborting layout
-            print(f"⚠️ Terrain placement failed for preset {spec.preset}: {e}")
+            print(f"WARNING: Terrain placement failed for preset {spec.preset}: {e}")
     return features
 

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
@@ -49,7 +49,7 @@ _ACTIVE_ROUND = "wrathful_presence_round"
 
 
 def _norm_name(text: str) -> str:
-    return (text or "").replace("â€™", "'").strip().lower()
+    return (text or "").replace("\u00e2\u20ac\u2122", "'").strip().lower()
 
 
 def _unit_has_wrathful_presence(unit) -> bool:

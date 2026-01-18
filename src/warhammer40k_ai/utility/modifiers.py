@@ -48,11 +48,11 @@ def is_unmodifiable_raw_characteristic(raw: Optional[str]) -> bool:
     """
     if raw is None:
         return False
-    t = str(raw).strip().replace("’", "'")
+    t = str(raw).strip().replace("\u2019", "'")
     if not t:
         return False
     tl = t.lower()
-    if tl in ("-", "–", "*", "n/a"):
+    if tl in ("-", "\u2013", "*", "n/a"):
         return True
     # Exact "20+\"" forms commonly show up as 20+" (sometimes without the quote)
     if tl in ('20+"', "20+", '20"+'):
@@ -150,5 +150,4 @@ def apply_characteristic_caps(
         return max(1, v)
 
     return v
-
 

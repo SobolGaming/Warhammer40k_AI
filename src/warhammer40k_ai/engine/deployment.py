@@ -43,7 +43,7 @@ class DeploymentManager:
         self.attacker = None
         self.defender = None
         self.deployment_zones = []
-        logger.info(f"🚀 DeploymentManager initialized with mission: {self.mission.name}")
+        logger.info(f"DeploymentManager initialized with mission: {self.mission.name}")
         
     def execute_deployment_sequence(self, decision_makers: Dict[str, DeploymentDecisionMaker]) -> dict:
         """Execute the complete deployment sequence according to Warhammer 40k rules.
@@ -60,18 +60,18 @@ class DeploymentManager:
             'deployment_positions': {}
         }
         
-        logger.info("🚀 Starting Official Warhammer 40k Deployment Sequence")
+        logger.info("Starting Official Warhammer 40k Deployment Sequence")
         
         # Step 1: Determine Attacker and Defender
         self.attacker, self.defender = self.determine_attacker_and_defender()
         deployment_results['attacker'] = self.attacker.name
         deployment_results['defender'] = self.defender.name
-        logger.info(f"📋 Attacker: {self.attacker.name}, Defender: {self.defender.name}")
+        logger.info(f"Attacker: {self.attacker.name}, Defender: {self.defender.name}")
         
         # Step 2: Use pre-configured deployment zones (ensures consistency)
         if hasattr(self.game, 'deployment_zones') and self.game.deployment_zones:
             # Use zones already set up in the game (ensures consistency across all game types)
-            logger.info("📍 Using pre-configured deployment zones for consistency")
+            logger.info("Using pre-configured deployment zones for consistency")
             
             # Convert the game's deployment zones to the format expected by the deployment system
             available_zones = []
@@ -110,7 +110,7 @@ class DeploymentManager:
                 self.attacker.name: attacker_zone
             }
         
-        logger.info(f"🎯 {self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
+        logger.info(f"{self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
         
         # Step 3: Declare Reserves & Strategic Reserves (simultaneously)
         defender_reserves = defender_decision_maker.declare_reserves(self.defender)
@@ -120,7 +120,7 @@ class DeploymentManager:
         deployment_results['reserves'][self.defender.name] = defender_reserves
         deployment_results['reserves'][self.attacker.name] = attacker_reserves
         
-        logger.info(f"📦 Reserves declared - {self.defender.name}: {sum(1 for d in defender_reserves.values() if d != 'deploy')} units, "
+        logger.info(f"Reserves declared - {self.defender.name}: {sum(1 for d in defender_reserves.values() if d != 'deploy')} units, "
                    f"{self.attacker.name}: {sum(1 for d in attacker_reserves.values() if d != 'deploy')} units")
         
         # Step 4: Alternating Deployment (Defender first)
@@ -136,8 +136,8 @@ class DeploymentManager:
         else:
             self.game.current_player_index = 1
         
-        logger.info(f"🎲 {first_turn_player.name} will take the first turn")
-        logger.info("✅ Deployment sequence complete!")
+        logger.info(f"{first_turn_player.name} will take the first turn")
+        logger.info("Deployment sequence complete!")
         
         self.set_reserves_status(deployment_results)
         
@@ -148,13 +148,18 @@ class DeploymentManager:
         player1_roll = get_dice_roll(6)
         player2_roll = get_dice_roll(6)
         
-        logger.info(f"🎲 Attacker/Defender roll-off: {self.game.players[0].name}={player1_roll}, {self.game.players[1].name}=${player2_roll}")
+        logger.info(
+            f"Attacker/Defender roll-off: {self.game.players[0].name}={player1_roll}, "
+            f"{self.game.players[1].name}={player2_roll}"
+        )
         
         # Re-roll ties
         while player1_roll == player2_roll:
             player1_roll = get_dice_roll(6)
             player2_roll = get_dice_roll(6)
-            logger.info(f"🎲 Tie! Re-rolling: {self.game.players[0].name}={player1_roll}, {self.game.players[1].name}={player2_roll}")
+            logger.info(
+                f"Tie! Re-rolling: {self.game.players[0].name}={player1_roll}, {self.game.players[1].name}={player2_roll}"
+            )
         
         if player1_roll > player2_roll:
             return self.game.players[0], self.game.players[1]  # Player 1 is attacker
@@ -201,10 +206,10 @@ class DeploymentManager:
         self.game.objectives = objectives
         self.game.map.add_objectives(objectives)
         
-        logger.info(f"✅ Added {len(objectives)} objectives from mission: {self.mission.name}")
+        logger.info(f"Added {len(objectives)} objectives from mission: {self.mission.name}")
         for obj in objectives:
             if hasattr(obj.location, 'x'):
-                logger.info(f"   📍 {obj.name} at ({obj.location.x:.1f}, {obj.location.y:.1f})")
+                logger.info(f"  - {obj.name} at ({obj.location.x:.1f}, {obj.location.y:.1f})")
     
     def execute_alternating_deployment(self, deployment_results: dict, 
                                      decision_makers: Dict[str, DeploymentDecisionMaker]) -> None:
@@ -232,7 +237,7 @@ class DeploymentManager:
             and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]
         
-        logger.info(f"📍 Alternating deployment: {len(defender_units)} vs {len(attacker_units)} units")
+        logger.info(f"Alternating deployment: {len(defender_units)} vs {len(attacker_units)} units")
         
         # Track deployment order and positions
         deployment_order = []
@@ -262,7 +267,7 @@ class DeploymentManager:
                 current_deployed.append(unit)
                 deployment_order.append((current_player.name, unit.name, position))
                 
-                logger.info(f"🚢 {current_player.name} deploys {unit.name} at ({position[0]:.1f}, {position[1]:.1f})")
+                logger.info(f"{current_player.name} deploys {unit.name} at ({position[0]:.1f}, {position[1]:.1f})")
 
                 if unit.is_titanic:
                     deployment_skip_turns[current_player] = int(deployment_skip_turns.get(current_player, 0)) + 1
@@ -340,13 +345,13 @@ class DeploymentManager:
         """Determine who goes first according to Warhammer 40k rules."""
         # Attacker rolls D6: 1-3 = Defender goes first, 4-6 = Attacker goes first
         roll = get_dice_roll(6)
-        logger.info(f"🎲 First turn roll: {roll}")
+        logger.info(f"First turn roll: {roll}")
         
         if roll <= 3:
-            logger.info(f"🥇 {self.defender.name} (Defender) takes first turn")
+            logger.info(f"{self.defender.name} (Defender) takes first turn")
             return self.defender
         else:
-            logger.info(f"🥇 {self.attacker.name} (Attacker) takes first turn")
+            logger.info(f"{self.attacker.name} (Attacker) takes first turn")
             return self.attacker
 
     def set_reserves_status(self, deployment_results: dict) -> None:
@@ -366,7 +371,7 @@ class DeploymentManager:
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
                         if reserve_decision != "reserves":
-                            logger.info(f"✈️ {unit.name} forced into Reserves (AIRCRAFT)")
+                            logger.info(f"{unit.name} forced into Reserves (AIRCRAFT)")
                         reserve_decision = "reserves"
                 except Exception:
                     pass
@@ -376,10 +381,10 @@ class DeploymentManager:
                     unit.set_reserve_status('deployed')
                 elif reserve_decision == 'reserves':
                     unit.set_reserve_status('reserves')
-                    logger.info(f"🏗️ {unit.name} placed in standard reserves")
+                    logger.info(f"{unit.name} placed in standard reserves")
                 elif reserve_decision == 'strategic_reserves':
                     unit.set_reserve_status('strategic_reserves')
-                    logger.info(f"🏗️ {unit.name} placed in strategic reserves")
+                    logger.info(f"{unit.name} placed in strategic reserves")
                 else:
                     # Default to deployed for any unknown status
                     unit.set_reserve_status('deployed')
@@ -503,24 +508,24 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
         else:
             # Interactive console-based reserves selection
             army = player.get_army()
-            logger.info(f"🪂 {player.name}: Choose reserves for your units")
+            logger.info(f"{player.name}: Choose reserves for your units")
             reserves_decisions = {}
             current_reserve_units = 0
             current_reserve_points = 0
             
             # Show reserve limits
             limits = army.get_reserve_limits()
-            print(f"\n📊 Reserve Limits: {limits['max_units']}/{limits['total_units']} units, {limits['max_points']}/{limits['total_points']} points")
+            print(f"\nReserve Limits: {limits['max_units']}/{limits['total_units']} units, {limits['max_points']}/{limits['total_points']} points")
             
             for unit in army.units:
-                print(f"\n📋 {unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
+                print(f"\n{unit.name} ({len(unit.models)} models, {unit.get_unit_cost()} pts)")
 
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
                         reserves_decisions[unit.name] = 'reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
-                        print(f"ℹ️ {unit.name} forced into Reserves (AIRCRAFT)")
+                        print(f"{unit.name} forced into Reserves (AIRCRAFT)")
                         continue
                 except Exception:
                     pass
@@ -539,20 +544,20 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                         reserves_decisions[unit.name] = 'reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
-                        print(f"✅ {unit.name} placed in Standard Reserves")
+                        print(f"{unit.name} placed in Standard Reserves")
                     elif choice == '3':
                         reserves_decisions[unit.name] = 'strategic_reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
-                        print(f"✅ {unit.name} placed in Strategic Reserves")
+                        print(f"{unit.name} placed in Strategic Reserves")
                     else:
                         reserves_decisions[unit.name] = 'deploy'
-                        print(f"✅ {unit.name} will deploy normally")
+                        print(f"{unit.name} will deploy normally")
                 elif can_use_reserves and not can_add_to_reserves:
-                    print("⚠️  Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
+                    print("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
                     choice = input(f"Choice for {unit.name} [1]: ").strip()
                     reserves_decisions[unit.name] = 'deploy'
-                    print(f"✅ {unit.name} will deploy normally")
+                    print(f"{unit.name} will deploy normally")
                 else:
                     if can_add_to_reserves:
                         print("Options: (1) Deploy normally, (3) Strategic Reserves")
@@ -562,26 +567,26 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                             reserves_decisions[unit.name] = 'strategic_reserves'
                             current_reserve_units += 1
                             current_reserve_points += unit.get_unit_cost()
-                            print(f"✅ {unit.name} placed in Strategic Reserves")
+                            print(f"{unit.name} placed in Strategic Reserves")
                         else:
                             reserves_decisions[unit.name] = 'deploy'
-                            print(f"✅ {unit.name} will deploy normally")
+                            print(f"{unit.name} will deploy normally")
                     else:
-                        print("⚠️  Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
+                        print("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
                         choice = input(f"Choice for {unit.name} [1]: ").strip()
                         reserves_decisions[unit.name] = 'deploy'
-                        print(f"✅ {unit.name} will deploy normally")
+                        print(f"{unit.name} will deploy normally")
                 
                 # Show current reserve status
-                print(f"📊 Current reserves: {current_reserve_units}/{limits['max_units']} units, {current_reserve_points}/{limits['max_points']} points")
+                print(f"Current reserves: {current_reserve_units}/{limits['max_units']} units, {current_reserve_points}/{limits['max_points']} points")
             
             # Final validation
             validation_result = army.validate_reserves_decisions(reserves_decisions)
             if not validation_result['valid']:
-                print(f"⚠️  Reserve validation failed: {validation_result['errors']}")
+                print(f"Reserve validation failed: {validation_result['errors']}")
                 # Enforce limits
                 reserves_decisions = army.enforce_reserves_limits(reserves_decisions)
-                print("✅ Reserve limits enforced automatically")
+                print("Reserve limits enforced automatically")
             
             return reserves_decisions
     
@@ -592,9 +597,9 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
             return self.ui_interface.choose_unit_deployment_position(unit, deployment_zone, already_deployed)
         else:
             # Interactive console-based position selection
-            print(f"\n🎯 Place {unit.name} in deployment zone:")
-            print(f"   X range: {deployment_zone['x_range'][0]:.1f}\" to {deployment_zone['x_range'][1]:.1f}\"")
-            print(f"   Y range: {deployment_zone['y_range'][0]:.1f}\" to {deployment_zone['y_range'][1]:.1f}\"")
+            print(f"\nPlace {unit.name} in deployment zone:")
+            print(f"  X range: {deployment_zone['x_range'][0]:.1f}\" to {deployment_zone['x_range'][1]:.1f}\"")
+            print(f"  Y range: {deployment_zone['y_range'][0]:.1f}\" to {deployment_zone['y_range'][1]:.1f}\"")
             
             x_center = (deployment_zone['x_range'][0] + deployment_zone['x_range'][1]) / 2
             y_center = (deployment_zone['y_range'][0] + deployment_zone['y_range'][1]) / 2
@@ -610,7 +615,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                 x = max(deployment_zone['x_range'][0], min(deployment_zone['x_range'][1], x))
                 y = max(deployment_zone['y_range'][0], min(deployment_zone['y_range'][1], y))
                 
-                print(f"✅ {unit.name} positioned at ({x:.1f}, {y:.1f})")
+                print(f"{unit.name} positioned at ({x:.1f}, {y:.1f})")
                 return x, y
                 
             except ValueError:

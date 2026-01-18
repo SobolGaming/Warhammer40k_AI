@@ -21,7 +21,7 @@ class TestPileInVisualization(unittest.TestCase):
         sys.modules['pygame'] = MagicMock()
         
         # Import after mocking pygame
-        from warhammer40k_ai.UI.game_ui import draw_pile_in_range, draw_pile_in_intersection
+        from warhammer40k_ai.UI.rendering.range_renderer import draw_pile_in_range, draw_pile_in_intersection
         
         self.draw_pile_in_range = draw_pile_in_range
         self.draw_pile_in_intersection = draw_pile_in_intersection

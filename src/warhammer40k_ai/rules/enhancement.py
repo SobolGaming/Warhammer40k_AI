@@ -77,7 +77,7 @@ class Enhancement:
             return
 
         try:
-            name = str(getattr(self, "name", "") or "").replace("ƒ?T", "'").strip().lower()
+            name = str(getattr(self, "name", "") or "").replace("\u0192?T", "'").strip().lower()
         except Exception:
             name = ""
         try:

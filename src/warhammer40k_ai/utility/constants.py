@@ -11,7 +11,7 @@ FREELY_CLIMBABLE_RANGE = 2.0  # inches
 # =============================================================================
 # While official specs vary, common tournament convention is:
 # - 3" between floors (base-to-base vertical separation)
-# - ~0.12" (≈ 1/8") thick floors/walls
+# - ~0.12" (approx 1/8") thick floors/walls
 RUINS_FLOOR_HEIGHT = 3.0      # inches between successive floor base Zs
 RUINS_FLOOR_THICKNESS = 0.12  # inches
 RUINS_WALL_THICKNESS = 0.12   # inches

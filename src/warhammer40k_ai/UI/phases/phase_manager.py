@@ -1,0 +1,3099 @@
+from __future__ import annotations
+
+import pygame
+from abc import ABC, abstractmethod
+from typing import Protocol, List, Dict, Tuple
+
+from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
+from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
+from warhammer40k_ai.utility.dice import get_roll
+
+from ..ui_constants import TILE_SIZE
+
+
+class PhaseEventHandler(Protocol):
+    """Protocol for phase-specific event handlers"""
+    def handle_event(self, event: pygame.event.Event, game_view: 'GameView') -> bool:
+        """Handle pygame event for this phase. Returns True if event was consumed."""
+        ...
+    
+    def get_allowed_actions(self) -> List[str]:
+        """Get list of allowed actions for this phase"""
+        ...
+
+class BasePhaseHandler(ABC):
+    """Base class for phase-specific event handlers"""
+    
+    def __init__(self, game_view: 'GameView'):
+        self.game_view = game_view
+        self.game = game_view.game
+    
+    @abstractmethod
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Handle pygame event for this phase. Returns True if event was consumed."""
+        pass
+    
+    @abstractmethod
+    def get_allowed_actions(self) -> List[str]:
+        """Get list of allowed actions for this phase"""
+        pass
+    
+    def is_valid_action(self, action: str) -> bool:
+        """Check if an action is valid for this phase"""
+        return action in self.get_allowed_actions()
+
+class SetupPhaseHandler(BasePhaseHandler):
+    """Handles events during setup phases"""
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                # Handle setup phase advancement
+                current_phase = self.game.get_current_setup_phase()
+                
+                # Check if we're in deployment phase and waiting for deployment input
+                if (current_phase.name == 'DEPLOY_ARMIES' and 
+                    hasattr(self.game, 'waiting_for_deployment_input') and 
+                    self.game.waiting_for_deployment_input):
+                    # Continue deployment
+                    self.game.waiting_for_deployment_input = False
+                    return True
+                
+                # Execute the current setup phase
+                setup_kwargs = {
+                    'player1_army_file': None,  # These would come from game config
+                    'player2_army_file': None,
+                    'manual_phases': True
+                }
+                
+                # For DEPLOY_ARMIES phase, handle based on local control
+                if current_phase.name == 'DEPLOY_ARMIES':
+                    has_local_players = any(getattr(player, "has_control", lambda: False)() for player in self.game.players)
+                    if has_local_players:
+                        setup_kwargs['manual_phases'] = True
+                
+                # Store which phase we're executing to know when to refresh UI
+                current_phase_before = self.game.get_current_setup_phase()
+                
+                # Handle special phase-specific UI interactions
+                if current_phase_before.name == 'SELECT_MISSION_OBJECTIVES':
+                    # Show mission selection dialog
+                    self._show_mission_selection_dialog()
+                    return True  # Don't advance phase yet, wait for dialog
+
+                if current_phase_before.name == 'DECLARE_BATTLE_FORMATIONS':
+                    # Declare Battle Formations is a 3-step interactive flow:
+                    # 1) Attach Leaders (both players confirm)
+                    # 2) Embark in Transports (both players confirm)
+                    # 3) Allocate Reserves (both players confirm)
+                    self._start_declare_battle_formations_flow()
+                    return True  # Don't advance phase yet, wait for dialog
+                
+                self.game.execute_current_setup_phase(**setup_kwargs)
+                setup_complete = self.game.advance_setup_phase()
+                
+                # Update UI after specific phases that change game state
+                if current_phase_before.name == 'MUSTER_ARMIES':
+                    # Armies were just loaded - refresh roster panes
+                    self.game_view.refresh_roster_panes()
+                    print("UI updated after armies loaded")
+                elif current_phase_before.name == 'DETERMINE_ATTACKER_AND_DEFENDER':
+                    # Attacker/Defender roles determined - update titles
+                    self.game_view.update_roster_pane_titles()
+                    print("UI updated after attacker/defender determined")
+                
+                if setup_complete:
+                    # Final update after all setup phases complete
+                    self.game_view.refresh_roster_panes()
+                    self.game_view.update_roster_pane_titles()
+                    print("UI updated after setup completion")
+                
+                return True
+        
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:  # Right click - show unit details
+            hovered_unit, _ = self.game_view.get_hovered_unit(event.pos[0], event.pos[1])
+            if hovered_unit:
+                self.game_view.detailed_unit = hovered_unit
+                self.game_view.detail_panel_pos = event.pos
+                return True
+        
+        return False
+    
+    def _show_mission_selection_dialog(self):
+        """Show the mission selection dialog for SELECT_MISSION_OBJECTIVES phase."""
+        from ..dialogs import MissionSelectionDialog, MissionSelectionModal
+        
+        # Create mission selection dialog
+        inner = MissionSelectionDialog(
+            self.game_view.screen.get_width(),
+            self.game_view.screen.get_height()
+        )
+
+        modal = MissionSelectionModal(inner)
+        self.game_view.mission_selection_dialog = modal  # keep reference for debugging
+
+        def _apply_result(result: dict) -> None:
+            combination = result["combination"]
+            layout = result["layout"]
+            self.game.selected_mission_info = {
+                "combination_id": combination["id"],
+                "primary": combination["primary"],
+                "deployment": combination["deployment"],
+                "layout": layout
+            }
+            print(f"Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
+
+            # Assign Primary Mission card to both players
+            try:
+                from warhammer40k_ai.engine.mission_cards import (
+                    TakeAndHoldPrimary,
+                    TerraformPrimary,
+                    LinchpinPrimary,
+                    PurgeTheFoePrimary,
+                    ScorchedEarthPrimary,
+                    HiddenSuppliesPrimary,
+                    SupplyDropPrimary,
+                    BurdenOfTrustPrimary,
+                    TheRitualPrimary,
+                    UnexplodedOrdnancePrimary,
+                    PrimaryMissionCard,
+                )
+                primary_name = (combination.get('primary') or '').strip().lower()
+                card = None
+                if primary_name == 'take and hold':
+                    card = TakeAndHoldPrimary()
+                elif primary_name == 'terraform':
+                    card = TerraformPrimary()
+                elif primary_name == 'linchpin':
+                    card = LinchpinPrimary()
+                elif primary_name == 'purge the foe':
+                    card = PurgeTheFoePrimary()
+                elif primary_name == 'scorched earth':
+                    card = ScorchedEarthPrimary()
+                elif primary_name == 'hidden supplies':
+                    card = HiddenSuppliesPrimary()
+                elif primary_name == 'supply drop':
+                    card = SupplyDropPrimary()
+                elif primary_name == 'burden of trust':
+                    card = BurdenOfTrustPrimary()
+                elif primary_name == 'the ritual':
+                    card = TheRitualPrimary()
+                elif primary_name == 'unexploded ordnance':
+                    card = UnexplodedOrdnancePrimary()
+                else:
+                    class _StubPrimary(PrimaryMissionCard):
+                        def __init__(self, name):
+                            super().__init__(name=name, summary=f"Stub for {name}", scoring_text=f"Stub for {name}")
+                        def score_at_command_phase(self, game, player) -> int:
+                            return 0
+                        def score_at_end_of_turn(self, game, player) -> int:
+                            return 0
+                    card = _StubPrimary(combination.get('primary', 'Primary'))
+                for p in self.game.players:
+                    p.set_primary_mission(card)
+            except Exception as e:
+                print(f"Warning: Failed to assign primary mission card: {e}")
+
+            # Execute the phase and advance
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        def _cancel() -> None:
+            print("Mission selection cancelled - using default")
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        modal.show(on_confirm=_apply_result, on_cancel=_cancel)
+        # Push to modal stack
+        try:
+            self.game_view.dialog_manager.open(modal, modal=True)
+        except Exception:
+            pass
+
+        print("Mission Selection Dialog opened - choose from approved combinations A-T")
+
+    def _show_leader_attachment_dialog(self):
+        """Show the leader attachment dialog for DECLARE_BATTLE_FORMATIONS phase."""
+        from ..dialogs import LeaderAttachmentDialog
+
+        dialog = LeaderAttachmentDialog(
+            self.game_view.screen.get_width(),
+            self.game_view.screen.get_height()
+        )
+
+        # Store dialog in game view for event handling
+        self.game_view.leader_attachment_dialog = dialog
+
+        def _on_done():
+            # Apply/validate leader attachments, then proceed to transport assignments (then execute/advance)
+            try:
+                for p in self.game.players:
+                    army = p.get_army()
+                    if army:
+                        army.validate_leaders()
+            except Exception as e:
+                print(f"  Leader attachment validation failed: {e}")
+                return
+
+            # Refresh roster panes so attached leaders collapse (once implemented)
+            try:
+                self.game_view.refresh_roster_panes()
+            except Exception:
+                pass
+
+            # Next: declare which units start embarked within transports
+            self._show_transport_assignment_dialog()
+
+        def _on_cancel():
+            # Stay in this phase; do nothing else
+            return
+
+        # Use player1's and player2's combined units for attachments (each leader can only attach within its army)
+        all_units = []
+        try:
+            if self.game_view.player1 and self.game_view.player1.get_army():
+                all_units.extend(self.game_view.player1.get_army().units)
+            if self.game_view.player2 and self.game_view.player2.get_army():
+                all_units.extend(self.game_view.player2.get_army().units)
+        except Exception:
+            pass
+
+        dialog.show(all_units, on_confirm=_on_done, on_cancel=_on_cancel)
+        dialog.visible = True
+        try:
+            self.game_view.dialog_manager.open(dialog, modal=True)
+        except Exception:
+            pass
+
+        print("Leader Attachment Dialog opened - select leaders and attach to eligible units")
+
+    def _show_transport_assignment_dialog(self):
+        """Show the transport assignment dialog for DECLARE_BATTLE_FORMATIONS phase."""
+        from ..dialogs import TransportAssignmentDialog
+
+        dialog = TransportAssignmentDialog(
+            self.game_view.screen.get_width(),
+            self.game_view.screen.get_height()
+        )
+        self.game_view.transport_assignment_dialog = dialog
+
+        # Use both armies' units; the dialog filters passengers by transport.can_transport()
+        all_units = []
+        try:
+            if self.game_view.player1 and self.game_view.player1.get_army():
+                all_units.extend(self.game_view.player1.get_army().units)
+            if self.game_view.player2 and self.game_view.player2.get_army():
+                all_units.extend(self.game_view.player2.get_army().units)
+        except Exception:
+            pass
+
+        def _apply(assignments):
+            # assignments: {transport_unit: [passenger_units]}
+            # Clear any previous start-embarked assignments
+            for u in list(all_units):
+                if getattr(u, "is_transport", False):
+                    continue
+                if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
+                    try:
+                        t = u.embarked_in
+                        if t is not None:
+                            t.remove_passenger(u)
+                    except Exception:
+                        pass
+            # Apply new
+            for transport, passengers in (assignments or {}).items():
+                for pu in list(passengers or []):
+                    pu.embark(transport, game_map=self.game.map)
+
+            # Execute the phase and advance
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        def _skip():
+            # Execute the phase and advance without changing transport assignments
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+
+        dialog.show(all_units, on_confirm=_apply, on_cancel=_skip)
+        dialog.visible = True
+        try:
+            self.game_view.dialog_manager.open(dialog, modal=True)
+        except Exception:
+            pass
+
+        print("Transport Assignment Dialog opened - select transports and units to start embarked")
+
+    def _start_hover_mode_selection_flow(self, players, on_done) -> None:
+        """Prompt local players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
+        queue = []
+        for player in list(players or []):
+            try:
+                if player is None or not getattr(player, "has_control", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if bool(getattr(unit, "hover_declared", False)):
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not bool(getattr(unit, "has_hover", lambda: False)()):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(getattr(unit, "has_keyword", lambda *_a, **_k: False)("Aircraft")):
+                        continue
+                except Exception:
+                    continue
+                queue.append((player, unit))
+
+        self._pending_hover_mode_queue = queue
+        self._hover_mode_on_done = on_done
+
+        if not queue:
+            self._finish_hover_mode_selection()
+            return
+
+        self._open_next_hover_mode_prompt()
+
+    def _finish_hover_mode_selection(self) -> None:
+        """Finalize Hover mode selection and apply queued declarations."""
+        try:
+            if hasattr(self.game, "_apply_hover_declarations"):
+                self.game._apply_hover_declarations()
+        except Exception:
+            pass
+
+        cb = getattr(self, "_hover_mode_on_done", None)
+        self._hover_mode_on_done = None
+        if callable(cb):
+            try:
+                cb()
+            except Exception:
+                pass
+
+    def _open_next_hover_mode_prompt(self) -> None:
+        q = list(getattr(self, "_pending_hover_mode_queue", []) or [])
+        if not q:
+            self._pending_hover_mode_queue = []
+            self._finish_hover_mode_selection()
+            return
+
+        player, unit = q.pop(0)
+        self._pending_hover_mode_queue = q
+
+        title = "Hover Mode"
+        pname = getattr(player, "name", "Player")
+        uname = getattr(unit, "name", "Unit")
+        msg = (
+            f"Enable Hover mode for {uname} ({pname})?\n\n"
+            "Hover removes the AIRCRAFT keyword and sets Move to 20\"."
+        )
+
+        def _done(chosen: bool):
+            try:
+                unit.set_hover_mode(bool(chosen))
+            except Exception:
+                pass
+            try:
+                unit.hover_declared = True
+            except Exception:
+                pass
+            self._open_next_hover_mode_prompt()
+
+        if callable(getattr(self, "_request_yes_no", None)):
+            self._request_yes_no(title, msg, "Hover", "Aircraft", _done)
+        else:
+            try:
+                self.yes_no_dialog.show(title, msg, _done, yes_label="Hover", no_label="Aircraft")
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                _done(False)
+
+    def _start_declare_battle_formations_flow(self) -> None:
+        """
+        Run Declare Battle Formations as simultaneous per-player dialogs:
+        - Leaders (P1 + P2 at once) -> Transports (P1 + P2 at once) -> Reserves (P1 + P2 at once)
+        Only after BOTH players click Done do we proceed to the next step.
+        """
+        players = list(getattr(self.game, "players", []) or [])
+        if not players:
+            # Fallback: execute and advance (no UI)
+            self.game.execute_current_setup_phase()
+            self.game.advance_setup_phase()
+            return
+
+        def _after_hover():
+            def _army_units(p):
+                try:
+                    a = p.get_army()
+                    return list(getattr(a, "units", []) or [])
+                except Exception:
+                    return []
+
+            if len(players) != 2:
+                print("  Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
+                # Keep existing behavior by running as two sequential dialogs (old implementation).
+                # (We intentionally do not duplicate the old nested functions here.)
+                try:
+                    self._show_leader_attachment_dialog()
+                    return
+                except Exception:
+                    self.game.execute_current_setup_phase()
+                    self.game.advance_setup_phase()
+                    return
+
+            p_left, p_right = players[0], players[1]
+            a_left, a_right = p_left.get_army(), p_right.get_army()
+            if a_left is None or a_right is None:
+                self.game.execute_current_setup_phase()
+                self.game.advance_setup_phase()
+                return
+
+            from ..dialogs.side_by_side_modal import SideBySideModal
+
+            def _position_two(left_dlg, right_dlg) -> None:
+                # Place near left/right edges; allow overlap if screen is narrow (dialogs are draggable)
+                margin = 12
+                left_dlg.x = margin
+                left_dlg.y = 60
+                try:
+                    left_dlg._update_title_bar()
+                    left_dlg._update_buttons()
+                except Exception:
+                    pass
+                right_dlg.x = max(margin, self.game_view.screen.get_width() - right_dlg.width - margin)
+                right_dlg.y = 60
+                try:
+                    right_dlg._update_title_bar()
+                    right_dlg._update_buttons()
+                except Exception:
+                    pass
+
+            # Shared helpers
+            def _mark_attached_leaders_handled(army) -> None:
+                try:
+                    for u in list(getattr(army, "units", []) or []):
+                        if bool(getattr(u, "is_attached_leader", False)):
+                            u.deployed = True
+                except Exception:
+                    pass
+
+            def _apply_transport_assignments(army, units, assignments) -> bool:
+                # Clear any previous start-embarked assignments for this army
+                for u in list(units):
+                    if getattr(u, "is_transport", False):
+                        continue
+                    if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
+                        try:
+                            t = u.embarked_in
+                            if t is not None:
+                                t.remove_passenger(u)
+                        except Exception:
+                            pass
+
+                for transport, passengers in (assignments or {}).items():
+                    for pu in list(passengers or []):
+                        pu.embark(transport, game_map=self.game.map)
+                        pu.deployed = True
+                        for l in list(getattr(pu, "attached_leaders", []) or []):
+                            try:
+                                l.deployed = True
+                            except Exception:
+                                pass
+                return True
+
+            def _apply_reserves(army, decisions: Dict[str, str]) -> bool:
+                try:
+                    roots = []
+                    try:
+                        roots = list(getattr(army, "_reserve_group_roots")() or [])
+                    except Exception:
+                        roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
+
+                    for root in roots:
+                        rid = str(getattr(root, "_id", None) or "")
+                        decision = decisions.get(rid, "deploy")
+                        try:
+                            if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
+                                if decision != "reserves":
+                                    print(f"{root.name} must start in Reserves (AIRCRAFT)")
+                                decision = "reserves"
+                        except Exception:
+                            pass
+                        started = decision in ("reserves", "strategic_reserves")
+                        if decision == "deploy":
+                            root.set_reserve_status("deployed")
+                            root.deployed = False
+                        elif decision == "reserves":
+                            root.set_reserve_status("reserves")
+                            root.deployed = True
+                        elif decision == "strategic_reserves":
+                            root.set_reserve_status("strategic_reserves")
+                            root.deployed = True
+                        else:
+                            root.set_reserve_status("deployed")
+                            root.deployed = False
+
+                        # AIRCRAFT TRANSPORT rule: passengers must also start in Reserves
+                        try:
+                            is_transport = bool(getattr(root, "is_transport", False))
+                            must_reserves = bool(getattr(root, "must_start_in_reserves", lambda: False)())
+                        except Exception:
+                            is_transport = False
+                            must_reserves = False
+                        if is_transport and must_reserves and decision in ("reserves", "strategic_reserves"):
+                            try:
+                                passengers = list(getattr(root, "transport_passengers", []) or [])
+                            except Exception:
+                                passengers = []
+                            for p in passengers:
+                                try:
+                                    p.set_reserve_status("reserves")
+                                except Exception:
+                                    try:
+                                        p.reserve_status = "reserves"
+                                    except Exception:
+                                        pass
+                                try:
+                                    p.deployed = True
+                                except Exception:
+                                    pass
+                                try:
+                                    setattr(p, "_started_in_reserves", True)
+                                except Exception:
+                                    pass
+                                try:
+                                    for l in list(getattr(p, "attached_leaders", []) or []):
+                                        setattr(l, "_started_in_reserves", True)
+                                except Exception:
+                                    pass
+
+                        try:
+                            members = list(getattr(army, "_reserve_group_members")(root) or [])
+                        except Exception:
+                            members = [root]
+                        # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
+                        for m in members:
+                            try:
+                                setattr(m, "_started_in_reserves", bool(started))
+                            except Exception:
+                                pass
+                        for m in members:
+                            if m is root:
+                                continue
+                            try:
+                                m.set_reserve_status(getattr(root, "reserve_status", "deployed"))
+                            except Exception:
+                                try:
+                                    m.reserve_status = getattr(root, "reserve_status", "deployed")
+                                except Exception:
+                                    pass
+                            try:
+                                m.deployed = True
+                            except Exception:
+                                pass
+                except Exception:
+                    return False
+                return True
+
+            def _show_leaders():
+                # Step 1: Leaders (both at once)
+                from ..dialogs import LeaderAttachmentDialog
+                left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                left_leaders.title = f"Attach Leaders - {p_left.name}"
+                right_leaders.title = f"Attach Leaders - {p_right.name}"
+
+                modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_leaders, right_leaders)
+                _position_two(left_leaders, right_leaders)
+
+                def _maybe_advance_from_leaders():
+                    if modal.left_done and modal.right_done:
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
+                        modal.hide()
+                        _show_transports()
+
+                def _left_done():
+                    try:
+                        a_left.validate_leaders()
+                    except Exception as e:
+                        print(f"  {p_left.name} leader attachment validation failed: {e}")
+                        return
+                    _mark_attached_leaders_handled(a_left)
+                    modal.left_done = True
+                    _maybe_advance_from_leaders()
+
+                def _right_done():
+                    try:
+                        a_right.validate_leaders()
+                    except Exception as e:
+                        print(f"  {p_right.name} leader attachment validation failed: {e}")
+                        return
+                    _mark_attached_leaders_handled(a_right)
+                    modal.right_done = True
+                    _maybe_advance_from_leaders()
+
+                left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
+                right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
+
+                modal.show()
+                try:
+                    self.game_view.dialog_manager.open(modal, modal=True)
+                except Exception:
+                    pass
+
+            def _show_transports():
+                from ..dialogs import TransportAssignmentDialog
+                ldlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                rdlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                ldlg.title = f"Transports - {p_left.name}"
+                rdlg.title = f"Transports - {p_right.name}"
+
+                m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+                _position_two(ldlg, rdlg)
+
+                units_l = _army_units(p_left)
+                units_r = _army_units(p_right)
+
+                def _maybe_advance():
+                    if m.left_done and m.right_done:
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
+                        m.hide()
+                        _show_reserves()
+
+                def _l_done(assignments):
+                    if not _apply_transport_assignments(a_left, units_l, assignments):
+                        print(f"  {p_left.name} transport assignment failed")
+                        return
+                    m.left_done = True
+                    _maybe_advance()
+
+                def _r_done(assignments):
+                    if not _apply_transport_assignments(a_right, units_r, assignments):
+                        print(f"  {p_right.name} transport assignment failed")
+                        return
+                    m.right_done = True
+                    _maybe_advance()
+
+                ldlg.show(units_l, on_confirm=_l_done, on_cancel=lambda: None)
+                rdlg.show(units_r, on_confirm=_r_done, on_cancel=lambda: None)
+                m.show()
+                try:
+                    self.game_view.dialog_manager.open(m, modal=True)
+                except Exception:
+                    pass
+
+            def _show_reserves():
+                from ..dialogs import ReservesAllocationDialog
+                ldlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                rdlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                ldlg.title = f"Allocate Reserves - {p_left.name}"
+                rdlg.title = f"Allocate Reserves - {p_right.name}"
+
+                m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+                _position_two(ldlg, rdlg)
+
+                def _maybe_advance():
+                    if m.left_done and m.right_done:
+                        m.hide()
+                        # Execute phase logic (validations) and advance setup phase.
+                        self.game.execute_current_setup_phase()
+                        self.game.advance_setup_phase()
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
+
+                def _l_done(decisions):
+                    if not _apply_reserves(a_left, decisions):
+                        print(f"  {p_left.name} reserves allocation failed")
+                        return
+                    m.left_done = True
+                    _maybe_advance()
+
+                def _r_done(decisions):
+                    if not _apply_reserves(a_right, decisions):
+                        print(f"  {p_right.name} reserves allocation failed")
+                        return
+                    m.right_done = True
+                    _maybe_advance()
+
+                ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None)
+                rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None)
+                m.show()
+                try:
+                    self.game_view.dialog_manager.open(m, modal=True)
+                except Exception:
+                    pass
+
+            def _refresh_army_rule_panel(player_obj) -> None:
+                try:
+                    if self.game_view.rule_detail_panel and self.game_view.rule_detail_panel.visible and isinstance(self.game_view._rule_panel_state, dict):
+                        state = self.game_view._rule_panel_state
+                        if state.get("player") is player_obj and state.get("rule_type") == "army":
+                            self.game_view._toggle_rule_panel(player_obj, "army", force_refresh=True)
+                except Exception:
+                    pass
+
+            def _needs_plague_selection(player_obj) -> bool:
+                try:
+                    army = player_obj.get_army()
+                except Exception:
+                    army = None
+                if army is None:
+                    return False
+                try:
+                    mgr = getattr(army, "nurgles_gift", None)
+                except Exception:
+                    mgr = None
+                if mgr is None:
+                    return False
+                if not getattr(mgr, "_army_has_gift", lambda: False)():
+                    return False
+                if getattr(mgr, "active_plague_key", None):
+                    return False
+                return True
+
+            def _show_plague_selection():
+                needs_left = _needs_plague_selection(p_left)
+                needs_right = _needs_plague_selection(p_right)
+                if not (needs_left or needs_right):
+                    _show_leaders()
+                    return
+
+                from ..dialogs import NurglesGiftPlagueDialog
+                try:
+                    from ...rules.nurgles_gift import DEFAULT_PLAGUES
+                    options = list(DEFAULT_PLAGUES)
+                except Exception:
+                    options = []
+
+                def _apply_choice(army, plague):
+                    if army is None:
+                        return
+                    try:
+                        mgr = getattr(army, "nurgles_gift", None)
+                    except Exception:
+                        mgr = None
+                    if mgr is None or getattr(mgr, "active_plague_key", None):
+                        return
+                    mgr.active_plague_key = getattr(plague, "key", None)
+
+                if needs_left and needs_right:
+                    ldlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                    rdlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                    ldlg.title = f"Nurgle's Gift - {p_left.name}"
+                    rdlg.title = f"Nurgle's Gift - {p_right.name}"
+
+                    m = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), ldlg, rdlg)
+                    _position_two(ldlg, rdlg)
+
+                    def _maybe_advance():
+                        if m.left_done and m.right_done:
+                            m.hide()
+                            _show_leaders()
+
+                    def _l_done(plague):
+                        _apply_choice(a_left, plague)
+                        _refresh_army_rule_panel(p_left)
+                        m.left_done = True
+                        _maybe_advance()
+
+                    def _r_done(plague):
+                        _apply_choice(a_right, plague)
+                        _refresh_army_rule_panel(p_right)
+                        m.right_done = True
+                        _maybe_advance()
+
+                    def _l_cancel():
+                        if options:
+                            _apply_choice(a_left, options[0])
+                            _refresh_army_rule_panel(p_left)
+                        m.left_done = True
+                        _maybe_advance()
+
+                    def _r_cancel():
+                        if options:
+                            _apply_choice(a_right, options[0])
+                            _refresh_army_rule_panel(p_right)
+                        m.right_done = True
+                        _maybe_advance()
+
+                    ldlg.show(options=options, on_confirm=_l_done, on_cancel=_l_cancel)
+                    rdlg.show(options=options, on_confirm=_r_done, on_cancel=_r_cancel)
+                    m.show()
+                    try:
+                        self.game_view.dialog_manager.open(m, modal=True)
+                    except Exception:
+                        pass
+                    return
+
+                dlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                if needs_left:
+                    dlg.title = f"Nurgle's Gift - {p_left.name}"
+                    target_player = p_left
+                    target_army = a_left
+                else:
+                    dlg.title = f"Nurgle's Gift - {p_right.name}"
+                    target_player = p_right
+                    target_army = a_right
+
+                def _done(plague):
+                    _apply_choice(target_army, plague)
+                    _refresh_army_rule_panel(target_player)
+                    _show_leaders()
+
+                def _cancel():
+                    if options:
+                        _apply_choice(target_army, options[0])
+                        _refresh_army_rule_panel(target_player)
+                    _show_leaders()
+
+                dlg.show(options=options, on_confirm=_done, on_cancel=_cancel)
+                try:
+                    self.game_view.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+
+            _show_plague_selection()
+
+    
+
+        self._start_hover_mode_selection_flow(players, _after_hover)
+        return
+    def get_allowed_actions(self) -> List[str]:
+        return ["advance_setup_phase", "view_unit_details"]
+
+class DeploymentPhaseHandler(BasePhaseHandler):
+    """Handles events during deployment phase"""
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        # Per-model deployment: handle hover + facing rotation BEFORE any UI-interface consumes the event.
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog and
+            self.game_view.individual_model_movement_dialog.visible and
+            getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy' and
+            self.game_view.individual_model_movement_dialog.selected_model_index is not None):
+
+            # Track hover position for silhouette preview
+            if event.type == pygame.MOUSEMOTION:
+                x, y = event.pos
+                if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
+                    battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+                    self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
+                    return True
+                else:
+                    self.game_view.individual_model_preview_target = None
+
+            # Mouse wheel rotates facing in 5 deg increments (consume to prevent zoom)
+            if event.type == pygame.MOUSEWHEEL:
+                mx, my = pygame.mouse.get_pos()
+                if self.game_view.battlefield_left < mx < self.game_view.battlefield_right:
+                    try:
+                        self.game_view.individual_model_movement_dialog.rotate_deploy_facing_degrees(float(event.y) * 5.0)
+                    except Exception:
+                        pass
+                    return True
+
+            # Some environments emit wheel as MOUSEBUTTONDOWN with button 4/5.
+            if event.type == pygame.MOUSEBUTTONDOWN and event.button in (4, 5):
+                mx, my = pygame.mouse.get_pos()
+                if self.game_view.battlefield_left < mx < self.game_view.battlefield_right:
+                    try:
+                        delta = 5.0 if event.button == 4 else -5.0
+                        self.game_view.individual_model_movement_dialog.rotate_deploy_facing_degrees(delta)
+                    except Exception:
+                        pass
+                    return True
+
+        # Handle UI interface events
+        if self.game_view.ui_interface and self.game_view.ui_interface.handle_event(event):
+            return True
+        
+        # Handle deployment-specific mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            return self._handle_deployment_click(event.pos)
+        
+        # Handle deployment-specific keyboard events
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
+                # Force complete deployment phase
+                self.game_view.force_complete_deployment()
+                return True
+            elif event.key == pygame.K_ESCAPE:
+                # Cancel current unit selection
+                self.game_view.selected_unit = None
+                self.game_view.left_roster_pane.selected_unit = None
+                self.game_view.right_roster_pane.selected_unit = None
+                return True
+        
+        # Handle right-click for unit details (works in all phases)
+        elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:  # Right click - show unit details
+            hovered_unit, _ = self.game_view.get_hovered_unit(event.pos[0], event.pos[1])
+            if hovered_unit:
+                self.game_view.detailed_unit = hovered_unit
+                self.game_view.detail_panel_pos = event.pos
+                return True
+        
+        return False
+    
+    def _handle_deployment_click(self, mouse_pos) -> bool:
+        """Handle mouse clicks during deployment phase"""
+        x, y = mouse_pos
+
+        print(f"DEBUG: _handle_deployment_click at ({x}, {y})")
+        print(f"DEBUG: Left roster rect: {self.game_view.left_roster_pane.rect}")
+        print(f"DEBUG: Right roster rect: {self.game_view.right_roster_pane.rect}")
+
+        # Check roster pane clicks first
+        if self.game_view.left_roster_pane.rect.collidepoint(x, y):
+            print(f"DEBUG: Click is in LEFT roster pane")
+            self.game_view.left_roster_pane.on_mouse_press(x, y, 1)
+            self.game_view.selected_unit = self.game_view.left_roster_pane.selected_unit
+            return True
+        elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
+            print(f"DEBUG: Click is in RIGHT roster pane")
+            self.game_view.right_roster_pane.on_mouse_press(x, y, 1)
+            self.game_view.selected_unit = self.game_view.right_roster_pane.selected_unit
+            return True
+        else:
+            print(f"DEBUG: Click is NOT in any roster pane")
+
+        # Handle battlefield deployment clicks
+        if (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and
+            self.game_view.battlefield_left < x < self.game_view.battlefield_right):
+            # Always route to per-model deployment dialog for human deployments
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
+
+            # If dialog is already visible in deploy mode, forward the click to it
+            if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+                self.game_view.individual_model_movement_dialog and
+                self.game_view.individual_model_movement_dialog.visible and
+                getattr(self.game_view.individual_model_movement_dialog, 'movement_type', '') == 'deploy'):
+                return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                    battlefield_x, battlefield_y, battlefield_z
+                )
+
+            # Ensure per-model deployment dialog is opened
+            def on_deploy_complete(completed: bool):
+                # Mark unit deployed and advance turn when completed
+                unit = self.game_view.selected_unit
+                if completed and unit:
+                    unit.deployed = True
+                    # Ensure unit is registered on the map for downstream phases
+                    if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
+                        print("ERROR: Deployment failed: game map unavailable to register unit")
+                        return
+                    if unit not in self.game_view.game_map.units:
+                        self.game_view.game_map.units.append(unit)
+                    current_deployment_player = self.game.get_current_deployment_player()
+                    if current_deployment_player:
+                        try:
+                            locs = [m.get_location() for m in unit.models]
+                            ux = sum(loc[0] for loc in locs) / len(locs)
+                            uy = sum(loc[1] for loc in locs) / len(locs)
+                            uz = sum(loc[2] for loc in locs) / len(locs)
+                            unit.position = (ux, uy, uz)
+                        except Exception:
+                            pass
+                        self.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
+                    self.game.advance_deployment_turn(unit)
+                    # Clear selection
+                    self.game_view.selected_unit = None
+                    self.game_view.left_roster_pane.selected_unit = None
+                    self.game_view.right_roster_pane.selected_unit = None
+                # Clear flag
+                try:
+                    self.game_view.deployment_mode_for_selected_unit = None
+                except Exception:
+                    pass
+
+            try:
+                self.game_view.deployment_mode_for_selected_unit = 'per_model'
+            except Exception:
+                pass
+
+            # Ensure dialog instance exists
+            if not (hasattr(self.game_view, 'individual_model_movement_dialog') and self.game_view.individual_model_movement_dialog):
+                try:
+                    from ..dialogs.individual_model_movement_dialog import IndividualModelMovementDialog
+                    self.game_view.individual_model_movement_dialog = IndividualModelMovementDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                except Exception:
+                    pass
+
+            print(f"[DeploymentPhaseHandler] Opening per-model deployment dialog for {self.game_view.selected_unit.name}")
+            self.game_view.individual_model_movement_dialog.show(
+                self.game_view.selected_unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0
+            )
+
+            # Immediately forward this battlefield click to place the first model
+            return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                battlefield_x, battlefield_y, battlefield_z
+            )
+        
+        return False
+    
+    def _handle_battlefield_deployment(self, x: int, y: int) -> bool:
+        """Handle unit deployment on battlefield"""
+        # Check if deployment zones are loaded
+        if not hasattr(self.game, 'deployment_zones') or not self.game.deployment_zones:
+            print(f"Press SPACE to begin deployment sequence first")
+            return True
+        
+        # Convert screen coordinates to game coordinates using helper method
+        battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+        
+        # Attempt to deploy the unit
+        # Store original model positions for potential rollback
+        original_model_positions = [model.get_location() for model in self.game_view.selected_unit.models]
+        
+        # During deployment, use relaxed friendly unit avoidance to allow tighter formations
+        # Use deployment boundary repulsors to keep formation inside mission zones/cutouts
+        deployment_repulsors = self.game_view.game.get_boundary_repulsors(self.game_view.selected_unit, context='deployment')
+        model_positions = self.game_view.selected_unit.calculate_model_positions(
+            battlefield_x, battlefield_y, self.game_view.game_map,
+            avoid_friendly_units=False, boundary_repulsors=deployment_repulsors) # TODO - add zoom back -- , 0.0, self.game_view.zoom_level)
+        
+        if model_positions:
+            # Set model positions
+            for model, position in zip(self.game_view.selected_unit.models, model_positions):
+                model_x, model_y, model_z, model_facing = position
+                model.set_location(model_x, model_y, model_z, model_facing)
+            
+            unit_x = sum(pos[0] for pos in model_positions) / len(model_positions)
+            unit_y = sum(pos[1] for pos in model_positions) / len(model_positions)
+            
+            # Validate deployment position
+            current_deployment_player = self.game.get_current_deployment_player()
+            player_name = current_deployment_player.name if current_deployment_player else None
+            
+            if player_name and not self.game.is_valid_deployment_position(
+                self.game_view.selected_unit, unit_x, unit_y, player_name):
+                # Invalid position - reset and show error
+                if self.game_view.selected_unit.has_infiltrate():
+                    print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")
+                else:
+                    print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name}")
+                self.game_view.reset_unit_position(self.game_view.selected_unit,
+                                                 None, original_model_positions)
+                return True
+            
+            # Valid deployment - unit position is now determined by model positions
+            
+            if self.game_view.game_map.place_unit(self.game_view.selected_unit):
+                # Print per-model positions; include z only if non-zero
+                try:
+                    parts = []
+                    for m in self.game_view.selected_unit.models:
+                        pos = m.get_location()
+                        if not pos:
+                            continue
+                        mx, my = pos[0], pos[1]
+                        mz = pos[2] if len(pos) > 2 else 0.0
+                        if abs(mz) < 1e-6:
+                            parts.append(f"({mx:.1f}, {my:.1f})")
+                        else:
+                            parts.append(f"({mx:.1f}, {my:.1f}, {mz:.1f})")
+                    positions_str = ", ".join(parts)
+                    print(f"Unit {self.game_view.selected_unit.name} deployed at: {positions_str}")
+                except Exception:
+                    print(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
+                self.game_view.selected_unit.deployed = True
+                
+                # Record deployment action
+                if current_deployment_player and self.game_view.selected_unit.position:
+                    self.game.record_deployment_action(current_deployment_player, 
+                                                     self.game_view.selected_unit, 'deployed', 
+                                                     self.game_view.selected_unit.position)
+                
+                # Advance to next player's deployment turn
+                self.game.advance_deployment_turn(self.game_view.selected_unit)
+                
+                # Clear selection
+                self.game_view.selected_unit = None
+                self.game_view.left_roster_pane.selected_unit = None
+                self.game_view.right_roster_pane.selected_unit = None
+            else:
+                print("Failed to place unit")
+                self.game_view.reset_unit_position(self.game_view.selected_unit,
+                                                 None, original_model_positions)
+        
+        return True
+    
+    def get_allowed_actions(self) -> List[str]:
+        return ["select_unit", "deploy_unit", "view_unit_details", "complete_deployment"]
+
+class BattlePhaseHandler(BasePhaseHandler):
+    """Handles events during battle phases (movement, shooting, etc.)"""
+    
+    def __init__(self, game_view: 'GameView'):
+        super().__init__(game_view)
+        self.fight_phase_manager = None
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Handle pygame events during battle phases"""
+        if event.type == pygame.MOUSEMOTION:
+            # print(f"DEBUG: BattlePhaseHandler.handle_event - MOUSEMOTION at {event.pos}")
+            pass
+        
+        # Handle keyboard events
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_SPACE:
+                return self._handle_space_key()
+
+        # Handle mouse events
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            return self._handle_battle_click(event.pos, event.button)
+        elif event.type == pygame.MOUSEMOTION:
+            return self._handle_battle_motion(event.pos)
+        elif event.type == pygame.MOUSEBUTTONUP:
+            return self._handle_battle_release(event.pos, event.button)
+
+        return False
+
+    def _handle_space_key(self) -> bool:
+        """Handle SPACE key for manual phase advancement"""
+        current_phase = self.game.phase
+
+        # Fight phase - check if we can skip/complete it
+        if current_phase.name == 'FIGHT_PHASE':
+            if self.fight_phase_manager and not self.fight_phase_manager.is_complete():
+                # Force complete the fight phase
+                print("INFO: Manually completing fight phase...")
+                self.fight_phase_manager._complete_fight_phase()
+                return True
+            else:
+                # Fight phase already complete, advance to next phase
+                print("INFO: Fight phase complete, advancing to next phase...")
+                return False  # Let main loop advance phase
+
+        # For other phases, let main loop handle advancement
+        else:
+            print(f"INFO: Manually advancing {current_phase.name}...")
+            return False  # Let main loop advance phase
+
+    def _handle_battle_click(self, mouse_pos, button) -> bool:
+        """Handle battlefield clicks during battle phases"""
+        x, y = mouse_pos
+
+        # Check if shooting declaration dialog is in targeting mode
+        if (hasattr(self.game_view, 'shooting_declaration_dialog') and
+            self.game_view.shooting_declaration_dialog.is_targeting_mode):
+            # Only handle left clicks for targeting
+            if button != 1:  # Not a left click
+                return True  # Still consume the event in targeting mode
+
+            # Only handle clicks on the battlefield area
+            if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
+                # Convert screen coordinates to game coordinates for targeting using helper method
+                battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+
+                # Handle battlefield targeting for shooting declaration
+                handled = self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(battlefield_x, battlefield_y)
+            return True  # Consume all clicks in targeting mode, but only after trying to handle them
+        
+        # Handle unit selection and actions based on current phase
+        if button == 1:  # Left click
+            # Check roster pane clicks
+            if self.game_view.left_roster_pane.rect.collidepoint(x, y):
+                self.game_view.left_roster_pane.on_mouse_press(x, y, button)
+                selected_unit = self.game_view.left_roster_pane.selected_unit
+                if selected_unit:
+                    self._handle_unit_selection(selected_unit)
+                return True
+            elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
+                self.game_view.right_roster_pane.on_mouse_press(x, y, button)
+                selected_unit = self.game_view.right_roster_pane.selected_unit
+                if selected_unit:
+                    self._handle_unit_selection(selected_unit)
+                return True
+            
+            # Handle battlefield clicks based on current phase
+            elif self.game_view.battlefield_left < x < self.game_view.battlefield_right:
+                return self._handle_battlefield_action(x, y)
+        
+        elif button == 3:  # Right click - show unit details
+            hovered_unit, _ = self.game_view.get_hovered_unit(x, y)
+            if hovered_unit:
+                self.game_view.detailed_unit = hovered_unit
+                self.game_view.detail_panel_pos = (x, y)
+                return True
+
+        return False
+    
+    def _synchronize_unit_selection(self, unit) -> None:
+        """Synchronize unit selection between RosterPane and battlefield"""
+        # Update the main selected unit
+        self.game_view.selected_unit = unit
+        
+        # Update roster pane selections to match
+        # Find which roster pane this unit belongs to and update its selection
+        if unit.parent_army:
+            if unit.parent_army.player == self.game_view.player1:
+                self.game_view.left_roster_pane.selected_unit = unit
+                self.game_view.right_roster_pane.selected_unit = None
+            elif unit.parent_army.player == self.game_view.player2:
+                self.game_view.right_roster_pane.selected_unit = unit
+                self.game_view.left_roster_pane.selected_unit = None
+    
+    def _handle_unit_selection(self, unit) -> None:
+        """Handle unit selection based on current phase"""
+        current_phase = self.game.phase
+        current_player = self.game.get_current_player()
+        
+        # Check if this unit belongs to the current player
+        if not (unit.parent_army and unit.parent_army.player == current_player):
+            print(f"ERROR: {unit.name} does not belong to current player {current_player.name}")
+            return
+        
+        # Only allow local control to interact with units during their turn
+        if not current_player.has_control():
+            print(f"ERROR: Current player {current_player.name} has no local control")
+            return
+        
+        # Synchronize selection across UI components
+        self._synchronize_unit_selection(unit)
+        
+        # Handle phase-specific unit selection
+        if current_phase.name == 'MOVEMENT_PHASE':
+            self._handle_movement_phase_selection(unit)
+        elif current_phase.name == 'SHOOTING_PHASE':
+            self._handle_shooting_phase_selection(unit)
+        elif current_phase.name == 'CHARGE_PHASE':
+            self._handle_charge_phase_selection(unit)
+        elif current_phase.name == 'FIGHT_PHASE':
+            self._handle_fight_phase_selection(unit)
+        else:
+            print(f"ERROR: Unit selection not available in {current_phase.name}")
+    
+    def _handle_movement_phase_selection(self, unit) -> None:
+        """Handle unit selection during movement phase"""
+        # Movement validation is handled by the game logic
+        
+        def on_movement_choice(choice):
+            self._handle_movement_choice(unit, choice)
+        
+        self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map)
+    
+    def _handle_shooting_phase_selection(self, unit) -> None:
+        """Handle unit selection during shooting phase"""
+        if not unit or not unit.is_alive():
+            return
+        
+        # Check if unit can shoot
+        if unit.round_state.shot_this_round:
+            print(f"ERROR: {unit.name} has already shot this round")
+            return
+        
+        if unit.round_state.fell_back_this_round:
+            print(f"ERROR: {unit.name} cannot shoot after falling back")
+            return
+        
+        # Check if unit is engaged and can't shoot with detailed debugging
+        enemy_units = self.game.map.get_enemy_units(unit)
+        engaged_enemies = []
+
+        for enemy in enemy_units:
+            if enemy.is_alive() and self.game.map.is_within_engagement_range(unit, enemy):
+                engaged_enemies.append(enemy.name)
+
+        is_engaged = len(engaged_enemies) > 0
+
+        if is_engaged:
+            print(f"DEBUG: {unit.name} is in engagement range of: {', '.join(engaged_enemies)}")
+
+            # Show detailed position information
+            if unit.models:
+                unit_pos = unit.models[0].get_location() if unit.models[0].is_alive else None
+                print(f"DEBUG: {unit.name} position: {unit_pos}")
+
+                for enemy_name in engaged_enemies:
+                    enemy_unit = next((e for e in enemy_units if e.name == enemy_name), None)
+                    if enemy_unit and enemy_unit.models:
+                        enemy_pos = enemy_unit.models[0].get_location() if enemy_unit.models[0].is_alive else None
+                        if unit_pos and enemy_pos:
+                            distance = ((unit_pos[0] - enemy_pos[0])**2 + (unit_pos[1] - enemy_pos[1])**2)**0.5
+                            print(f"DEBUG: Distance to {enemy_name}: {distance:.1f}\"")
+
+        if is_engaged:
+            # Check if unit has any weapons that can shoot while engaged
+            has_eligible_weapons = False
+            for model in unit.models:
+                if not model.is_alive:
+                    continue
+                for wargear in model.wargear:
+                    if wargear.is_ranged():
+                        for profile in wargear.profiles.values():
+                            if unit.can_shoot_in_engagement_range(self.game.map, profile):
+                                has_eligible_weapons = True
+                                break
+                        if has_eligible_weapons:
+                            break
+                if has_eligible_weapons:
+                    break
+            
+            if not has_eligible_weapons:
+                print(f"ERROR: {unit.name} is engaged and has no weapons that can shoot in engagement range")
+                return
+        
+        def _show_shooting_dialog():
+            # Show shooting declaration dialog
+            def on_shooting_complete(_declarations):
+                self._clear_shooting_selection()
+            self.game_view.shooting_declaration_dialog.show(unit, on_shooting_complete, self.game.map, self.game_view)
+
+        # Firing Deck X (Transport): allow selecting embarked weapons to be treated as the transport's weapons.
+        try:
+            has_fd, fd_x = unit.has_firing_deck()
+        except Exception:
+            has_fd, fd_x = (False, 0)
+
+        if has_fd and int(fd_x or 0) > 0 and list(getattr(unit, "transport_passengers", []) or []):
+            entries = []
+            per_weapon_count = {}
+
+            try:
+                passengers = list(getattr(unit, "transport_passengers", []) or [])
+            except Exception:
+                passengers = []
+
+            for punit in passengers:
+                # Include attached leaders' models as well
+                try:
+                    models = punit.get_attached_unit_models()
+                except Exception:
+                    models = list(getattr(punit, "models", []) or [])
+
+                for m in models:
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    for w in list(getattr(m, "wargear", []) or []):
+                        try:
+                            if not w.is_ranged():
+                                continue
+                        except Exception:
+                            continue
+
+                        for profile_name, profile in (getattr(w, "profiles", {}) or {}).items():
+                            # Explicit requirement: do not list ONE SHOT weapons for firing deck selection
+                            if profile.is_one_shot():
+                                continue
+                            key = (str(getattr(w, "name", "Weapon")), str(profile_name))
+                            c = int(per_weapon_count.get(key, 0))
+                            if c >= int(fd_x or 0):
+                                continue
+                            per_weapon_count[key] = c + 1
+                            entries.append({
+                                "model": m,
+                                "wargear": w,
+                                "profile": profile,
+                                "profile_name": profile_name,
+                                "passenger_unit": punit,
+                            })
+
+            if entries:
+                if not hasattr(self.game_view, "firing_deck_dialog") or self.game_view.firing_deck_dialog is None:
+                    from ..dialogs import FiringDeckDialog
+                    self.game_view.firing_deck_dialog = FiringDeckDialog(
+                        self.game_view.screen.get_width(),
+                        self.game_view.screen.get_height(),
+                    )
+
+                def _on_confirm(chosen_entries):
+                    try:
+                        unit.apply_firing_deck_virtual_wargear(chosen_entries)
+                    except Exception:
+                        pass
+                    _show_shooting_dialog()
+
+                def _on_cancel():
+                    try:
+                        unit.clear_firing_deck_virtual_wargear()
+                    except Exception:
+                        pass
+                    _show_shooting_dialog()
+
+                self.game_view.firing_deck_dialog.show(unit, fd_x, entries, _on_confirm, _on_cancel)
+                return
+
+        _show_shooting_dialog()
+    
+    def _handle_charge_phase_selection(self, unit) -> None:
+        """Handle unit selection during charge phase"""
+        # Check if unit has already charged this round
+        if hasattr(unit.round_state, 'attempted_charge_this_round') and unit.round_state.attempted_charge_this_round:
+            print(f"ERROR: {unit.name} has already attempted a charge this round")
+            return
+        
+        # Check if unit can charge (not advanced unless allowed, not fell back, etc.)
+        if unit.round_state.fell_back_this_round:
+            print(f"ERROR: {unit.name} fell back and cannot charge")
+            return
+        
+        # Show charge declaration dialog
+        def on_charge_declaration(charging_unit, target_unit):
+            def _after_battle_focus():
+                # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
+                declared = None
+                try:
+                    declared = self.game.declare_charge(charging_unit, target_unit)
+                except Exception:
+                    declared = None
+                if not declared:
+                    return
+
+                max_charge_distance = int(declared.get("base_roll", 0) or 0)
+
+                # Open individual model movement dialog for charge movement
+                def on_charge_movement_complete(completed: bool):
+                    if completed:
+                        # Check if the charge actually achieved engagement range
+                        enemy_units = self.game.map.get_enemy_units(charging_unit)
+                        in_engagement_range = any(
+                            self.game.map.is_within_engagement_range(charging_unit, enemy_unit)
+                            for enemy_unit in enemy_units if enemy_unit.is_alive()
+                        )
+
+                        if in_engagement_range:
+                            print(f"{charging_unit.name} charge successful - achieved engagement range")
+                            charging_unit.round_state.charged_this_round = True
+                        else:
+                            print(f"{charging_unit.name} charge failed - did not achieve engagement range")
+                            # Do not set charged_this_round = True for failed charges
+                    else:
+                        print(f"{charging_unit.name} charge movement failed or skipped")
+                        # Do not set charged_this_round = True for failed charges
+
+                self.game_view.individual_model_movement_dialog.show(
+                    charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance, target_unit
+                )
+
+            self.game_view._maybe_prompt_battle_focus_charge(charging_unit, target_unit, _after_battle_focus)
+            return True  # Charge declaration selection complete
+
+        self.game_view.charge_declaration_dialog.show(unit, on_charge_declaration, self.game.map, self.game_view)
+    
+    def _handle_fight_phase_selection(self, unit) -> None:
+        """Handle unit selection during fight phase"""
+        current_player = self.game.get_current_player()
+        opponent_player = self.game.get_opponent()
+        
+        # Initialize fight phase manager if not already done
+        if not self.fight_phase_manager:
+            self._initialize_fight_phase_manager(current_player, opponent_player)
+        
+        # Check if it's this player's turn to select a unit
+        active_player = self.fight_phase_manager.get_active_player()
+        unit_owner = unit.get_parent_army().player if unit.get_parent_army() else None
+        
+        if not unit_owner:
+            print(f"ERROR: {unit.name} has no owner")
+            return
+        
+        if active_player != unit_owner:
+            print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+            return
+        
+        # Check if unit is eligible to fight in current stage
+        eligible_units = self.fight_phase_manager._get_eligible_units_for_player(unit_owner)
+        if unit not in eligible_units:
+            print(f"ERROR: {unit.name} is not eligible to fight in the current stage")
+            return
+        
+        # Unit is valid - process the selection
+        print(f"OK: {unit_owner.name} selected {unit.name} to fight")
+        def _after_battle_focus():
+            self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
+        self.game_view._maybe_prompt_battle_focus_sudden_strike(unit, _after_battle_focus)
+    
+    def _initialize_fight_phase_manager(self, current_player: Player, opponent_player: Player) -> None:
+        """Initialize the fight phase manager with proper callbacks."""
+        print("INFO: Initializing Fight Phase Manager")
+        self.fight_phase_manager = FightPhaseManager(self.game)
+        try:
+            self.game.fight_phase_manager = self.fight_phase_manager
+        except Exception:
+            pass
+        
+        # Set up callbacks for local player interaction
+        def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
+            print(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.control.name})")
+            print(f"DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
+
+            if active_player.has_control():
+                print(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
+                print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
+                # Show fight unit selection dialog
+                if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
+                    def on_unit_selected(selected_unit):
+                        print(f"DEBUG: Unit selected callback called for {selected_unit.name}")
+                        def _after_battle_focus():
+                            self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
+                        self.game_view._maybe_prompt_battle_focus_sudden_strike(selected_unit, _after_battle_focus)
+
+                    def on_cancel():
+                        print("Fight unit selection cancelled")
+
+                    self.game_view.ui_interface.show_fight_unit_selection_dialog(
+                        stage.value, eligible_units, on_unit_selected, on_cancel
+                    )
+            else:
+                print(f"Waiting for remote unit selection: {active_player.name}")
+                return
+
+        def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
+            if active_player.has_control():
+                print(f"INFO: {active_player.name} must select targets for {fighting_unit.name}")
+                print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
+
+                if len(eligible_targets) == 1:
+                    # Single target - auto-select
+                    target_unit = eligible_targets[0]
+                    print(f"INFO: Auto-selecting single target: {target_unit.name}")
+                    self._start_comprehensive_fight_sequence(fighting_unit, [target_unit], current_player, opponent_player)
+                else:
+                    # Multiple targets - show target selection dialog
+                    print(f"INFO: Multiple targets available - showing target selection dialog")
+
+                    def on_target_selected(selected_target: Unit):
+                        print(f"INFO: Player selected target: {selected_target.name}")
+                        self._start_comprehensive_fight_sequence(fighting_unit, [selected_target], current_player, opponent_player)
+
+                    def on_target_selection_cancelled():
+                        print("INFO: Target selection cancelled")
+                        # Return to unit selection or skip this unit's turn
+                        self.fight_phase_manager._switch_active_player(current_player, opponent_player)
+
+                    # Show the target selection dialog
+                    self.game_view.fight_target_selection_dialog.show(
+                        fighting_unit, eligible_targets, on_target_selected, on_target_selection_cancelled
+                    )
+            else:
+                print(f"Waiting for remote target selection: {active_player.name}")
+                return
+        
+        def on_stage_complete():
+            print("OK: Fight Phase complete")
+            self.fight_phase_manager = None
+            try:
+                self.game.fight_phase_manager = None
+            except Exception:
+                pass
+            # Advance to next phase
+            self.game.next_phase()
+
+        def on_movement_required(movement_type: str, unit: Unit, callback):
+            """Handle pile-in and consolidate movements using Individual Model Movement Dialog"""
+            print(f"{unit.name} needs to perform {movement_type} movement")
+
+            # Determine max distance based on movement type
+            max_distance = 3.0  # Default is 3"
+            try:
+                override = unit.get_fight_phase_move_distance_override(movement_type)
+                if override is not None:
+                    max_distance = float(override)
+            except Exception:
+                max_distance = 3.0
+
+            self.game_view.individual_model_movement_dialog.show(
+                unit, movement_type, callback, self.game.map, max_distance
+            )
+
+        def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
+            """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
+            print(f"{unit.name} needs to select melee weapons against {target_unit.name}")
+            def _show_weapons():
+                self.game_view.melee_weapon_declaration_dialog.show(
+                    unit, callback, self.game.map, target_unit=target_unit
+                )
+            if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
+                self.game_view._maybe_prompt_fight_within_3(unit, target_unit, _show_weapons)
+            else:
+                _show_weapons()
+
+        self.fight_phase_manager.on_unit_selection_required = on_unit_selection_required
+        self.fight_phase_manager.on_target_selection_required = on_target_selection_required
+        self.fight_phase_manager.on_stage_complete = on_stage_complete
+        self.fight_phase_manager.on_movement_required = on_movement_required
+        self.fight_phase_manager.on_weapon_selection_required = on_weapon_selection_required
+        
+        # Start the fight phase
+        self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
+    
+    def _start_comprehensive_fight_sequence(self, fighting_unit: Unit, target_units: List[Unit], current_player: Player, opponent_player: Player):
+        """Start the comprehensive fight sequence following proper Warhammer 40k rules."""
+        print(f"Starting comprehensive fight sequence: {fighting_unit.name} vs {[t.name for t in target_units]}")
+        
+        # Step 1: Pile-in movement
+        def on_pile_in_complete(completed: bool):
+            print(f"{fighting_unit.name} pile-in completed: {completed}")
+            
+            if len(target_units) == 1:
+                # Single target - proceed directly to weapon allocation
+                self._start_weapon_allocation_phase(fighting_unit, target_units[0], current_player, opponent_player)
+            else:
+                # Multiple targets - implement weapon/attack allocation dialog
+                # TODO: Implement multi-target weapon allocation
+                print("  Multi-target weapon allocation not yet implemented - using first target")
+                self._start_weapon_allocation_phase(fighting_unit, target_units[0], current_player, opponent_player)
+        
+        # Start pile-in movement
+        print(f"{fighting_unit.name} needs to perform pile_in movement")
+        max_distance = 3.0
+        try:
+            override = fighting_unit.get_fight_phase_move_distance_override("pile_in")
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = 3.0
+        self.game_view.individual_model_movement_dialog.show(
+            fighting_unit, 'pile_in', on_pile_in_complete, self.game.map, max_distance
+        )
+    
+    def _start_weapon_allocation_phase(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player):
+        """Handle weapon allocation phase - each model selects one weapon (except EXTRA ATTACKS)."""
+        print(f"Starting weapon allocation: {fighting_unit.name} vs {target_unit.name}")
+        
+        def on_weapon_allocation_complete(weapon_declarations):
+            print(f"Weapon allocation completed with {len(weapon_declarations)} declarations")
+            self._start_target_model_selection_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+        
+        # Show melee weapon declaration dialog for weapon allocation
+        def _show_weapons():
+            self.game_view.melee_weapon_declaration_dialog.show(
+                fighting_unit, on_weapon_allocation_complete, self.game.map, target_unit=target_unit
+            )
+        if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
+            self.game_view._maybe_prompt_fight_within_3(fighting_unit, target_unit, _show_weapons)
+        else:
+            _show_weapons()
+    
+    def _start_target_model_selection_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
+        """Handle target model selection phase."""
+        print(f"INFO: Starting target model selection phase")
+        
+        # NOTE: PRECISION (10e) is *not* "pick a target model up-front".
+        # It is an allocation override that happens after a successful wound is allocated.
+        # We handle this during attack resolution (see _resolve_single_attack) via the
+        # engine-level precision_allocation_provider + PrecisionAllocationDialog.
+
+        # Check if target unit has mixed attributes.
+        has_mixed_attributes = self._unit_has_mixed_attributes(target_unit)
+        
+        if has_mixed_attributes:
+            print(f"INFO: Mixed attributes detected - defender selects wound allocation")
+            
+            def on_wound_model_selected(selected_model):
+                print(f"INFO: Wound allocation: {selected_model.name} selected to receive wounds")
+                # Store the wound allocation target
+                for decl in weapon_declarations:
+                    decl['wound_target'] = selected_model
+                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+            
+            def on_wound_cancelled():
+                print("INFO: Wound allocation cancelled - using automatic allocation")
+                self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+            
+            self.game_view.target_model_selection_dialog.show(
+                fighting_unit, target_unit, weapon_declarations, "wound_allocation",
+                on_wound_model_selected, on_wound_cancelled
+            )
+            
+        else:
+            print(f"INFO: No special targeting required - proceeding to attack resolution")
+            self._start_attack_resolution_phase(fighting_unit, target_unit, weapon_declarations, current_player, opponent_player)
+    
+    def _unit_has_mixed_attributes(self, unit: Unit) -> bool:
+        """Check if a unit has models with different toughness, save, or wounds."""
+        if len(unit.models) <= 1:
+            return False
+        
+        first_model = unit.models[0]
+        for model in unit.models[1:]:
+            if (model.toughness != first_model.toughness or 
+                model.save != first_model.save or 
+                model.wounds != first_model.wounds):
+                return True
+        return False
+    
+    def _start_attack_resolution_phase(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List, current_player: Player, opponent_player: Player):
+        """Handle sequential attack resolution."""
+        print(f"Starting attack resolution phase")
+        
+        # Resolve attacks sequentially
+        self._resolve_sequential_attacks(fighting_unit, target_unit, weapon_declarations)
+        
+        # Step 4: Consolidate movement
+        def on_consolidate_complete(completed: bool):
+            print(f"INFO: {fighting_unit.name} consolidate completed: {completed}")
+            
+            self.fight_phase_manager.finalize_unit_fight(fighting_unit, current_player, opponent_player)
+        
+        # Start consolidate movement
+        print(f"INFO: {fighting_unit.name} needs to perform consolidate movement")
+        max_distance = 3.0
+        try:
+            override = fighting_unit.get_fight_phase_move_distance_override("consolidate")
+            if override is not None:
+                max_distance = float(override)
+        except Exception:
+            max_distance = 3.0
+        self.game_view.individual_model_movement_dialog.show(
+            fighting_unit, 'consolidate', on_consolidate_complete, self.game.map, max_distance
+        )
+    
+    def _resolve_sequential_attacks(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List):
+        """Resolve attacks one at a time with proper wound allocation."""
+        print(f"Resolving {len(weapon_declarations)} weapon attacks sequentially")
+        
+        for i, weapon_decl in enumerate(weapon_declarations):
+            model = weapon_decl.get('model')
+            weapon_profile = weapon_decl.get('weapon_profile')
+            wound_target = weapon_decl.get('wound_target')
+            
+            if not model or not weapon_profile:
+                continue
+            
+            print(f"Attack {i+1}/{len(weapon_declarations)}: {model.name} with {weapon_profile.name}")
+            
+            # Get number of attacks for this weapon
+            attacks = self._get_weapon_attacks(weapon_profile)
+            print(f"ROLL: Rolling {attacks} attacks")
+
+            # Cache PRECISION allocation choice once per weapon profile for this sequence
+            precision_choice_model = None
+            try:
+                if callable(getattr(weapon_profile, "is_precision", None)) and weapon_profile.is_precision():
+                    precision_choice_model = self._choose_precision_allocation_target(
+                        attacking_model=model,
+                        target_unit=target_unit,
+                        weapon_profile=weapon_profile,
+                    )
+            except Exception:
+                precision_choice_model = None
+            
+            # Resolve each attack individually
+            for attack_num in range(attacks):
+                if not target_unit.is_alive():
+                    print("' Target unit destroyed - remaining attacks cancelled")
+                    break
+                
+                print(f"  Attack {attack_num + 1}/{attacks}")
+                
+                # Determine target model for this attack
+                target_model = None
+                if wound_target and wound_target.is_alive:
+                    target_model = wound_target
+                    print(f"  INFO: Wound allocation: {target_model.name}")
+                else:
+                    # Standard wound allocation - wounded models first, then closest
+                    target_model = self._select_wound_target(target_unit)
+                    if target_model:
+                        print(f"  INFO: Auto-allocation: {target_model.name}")
+                
+                if not target_model:
+                    print("  ERROR: No valid target model - attack wasted")
+                    continue
+                
+                # Resolve single attack
+                # Note: take_damage() method automatically handles model death, FNP saves, etc.
+                success = self._resolve_single_attack(
+                    model,
+                    weapon_profile,
+                    target_model,
+                    target_unit,
+                    precision_choice_model=precision_choice_model,
+                )
+                
+                # The take_damage() method has already handled model death if applicable
+                # No need for manual death checking since take_damage() calls die() automatically
+        
+        print(f"All attacks resolved")
+    
+    def _get_weapon_attacks(self, weapon_profile) -> int:
+        """Get the number of attacks for a weapon profile."""
+        attacks = getattr(weapon_profile, 'attacks', 1)
+        if hasattr(attacks, 'resolve'):
+            # Handle dice-based attacks like "D6" or "2D3"
+            return attacks.resolve()
+        elif isinstance(attacks, str):
+            # Handle string-based attacks
+            from ...utility.dice import get_roll
+            return get_roll(attacks)
+        else:
+            return int(attacks) if attacks else 1
+    
+    def _select_wound_target(self, target_unit: Unit):
+        """Select the target model for wound allocation following 40k rules."""
+        if not target_unit.is_alive():
+            return None
+
+        # Use engine wound-allocation candidates (handles attached units: bodyguard -> leaders)
+        try:
+            candidates = target_unit.get_models_for_wound_allocation()
+        except Exception:
+            candidates = [model for model in getattr(target_unit, "models", []) if getattr(model, "is_alive", True)]
+        if not candidates:
+            return None
+
+        # Human defender may choose only when rules allow; otherwise wounded models are forced.
+        from ...utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
+        try:
+            defender_player = target_unit.get_parent_army().player
+            is_human = bool(getattr(defender_player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        provider = getattr(self.game.map, "damage_allocation_provider", None) if getattr(self, "game", None) is not None else None
+        return choose_damage_allocation_model(
+            target_unit,
+            candidates,
+            is_human=is_human,
+            provider=provider,
+            ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="melee"),
+        )
+    
+    def _choose_precision_allocation_target(self, attacking_model, target_unit: Unit, weapon_profile):
+        """
+        If this is a PRECISION weapon attacking an Attached Unit with visible CHARACTER models,
+        prompt the attacker (human) once to choose allocation target for the rest of this weapon profile.
+        Returns: chosen CHARACTER model, or None to allocate normally (bodyguards).
+        """
+        # Attached unit root
+        try:
+            root = target_unit.get_attached_unit_root()
+        except Exception:
+            root = target_unit
+
+        try:
+            has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            has_attached_leaders = False
+        if not has_attached_leaders:
+            return None
+
+        # Collect visible CHARACTER models in the attached unit group
+        try:
+            all_models = root.get_models_for_collision()
+        except Exception:
+            all_models = list(getattr(root, "models", []) or [])
+
+        char_models = []
+        for m in all_models:
+            if not getattr(m, "is_alive", True):
+                continue
+            if not bool(getattr(m, "is_character", False)):
+                continue
+            # Visibility requirement (only if map supports it)
+            gm = getattr(self, "game", None)
+            game_map = getattr(gm, "map", None) if gm is not None else None
+            can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+            if callable(can_see):
+                if not can_see(attacking_model, m):
+                    continue
+            char_models.append(m)
+
+        if not char_models:
+            return None
+
+        gm = getattr(self, "game", None)
+        game_map = getattr(gm, "map", None) if gm is not None else None
+        provider = getattr(game_map, "precision_allocation_provider", None) if game_map is not None else None
+
+        # Local modal prompt; remote/default falls back to first available CHARACTER.
+        try:
+            attacker_player = attacking_model.parent_unit.get_parent_army().player
+            is_human = bool(getattr(attacker_player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+
+        if callable(provider) and is_human:
+            try:
+                return provider(attacking_model, root, char_models, weapon_profile)
+            except Exception:
+                return None
+        return char_models[0]
+
+    def _resolve_single_attack(self, attacking_model, weapon_profile, target_model, target_unit, *, precision_choice_model=None) -> bool:
+        """Resolve a single attack and return True if it caused damage."""
+        try:
+            # Get attack stats
+            weapon_skill = getattr(weapon_profile, 'skill', 4)
+            strength = getattr(weapon_profile, 'strength', attacking_model.strength if hasattr(attacking_model, 'strength') else 4)
+            ap = getattr(weapon_profile, 'ap', 0)
+            damage = getattr(weapon_profile, 'damage', 1)
+            
+            # Roll to hit
+            from ...utility.dice import get_roll
+            hit_roll = get_roll("1D6")
+            hit_needed = weapon_skill
+            
+            print(f"    INFO: Hit: {hit_roll} vs {hit_needed}+ = {'HIT' if hit_roll >= hit_needed else 'MISS'}")
+            
+            if hit_roll < hit_needed:
+                return False
+            
+            # Roll to wound
+            wound_roll = get_roll("1D6")
+            wound_needed = self._calculate_wound_target(strength, target_model.toughness)
+            
+            print(f"    WOUND: Wound: {wound_roll} vs {wound_needed}+ = {'WOUND' if wound_roll >= wound_needed else 'NO WOUND'}")
+            
+            if wound_roll < wound_needed:
+                return False
+
+            # PRECISION allocation override: after a successful wound, the attacker may allocate
+            # that wound to a visible CHARACTER model in the Attached unit.
+            if precision_choice_model is not None:
+                try:
+                    gm = getattr(self, "game", None)
+                    game_map = getattr(gm, "map", None) if gm is not None else None
+                    can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+                    if getattr(precision_choice_model, "is_alive", True) and (not callable(can_see) or can_see(attacking_model, precision_choice_model)):
+                        target_model = precision_choice_model
+                        print(f"    INFO: PRECISION allocation: {getattr(target_model, 'name', 'CHARACTER')}")
+                except Exception:
+                    pass
+            
+            # Roll save with proper AP and invulnerable consideration
+            save_roll = get_roll("1D6")
+            # Normalize AP (e.g., -2)
+            try:
+                ap_value = int(ap)
+            except Exception:
+                ap_value = 0
+            base_save = getattr(target_model, 'save', 7)
+            normal_needed = max(base_save - ap_value, 2)
+
+            # Check invulnerable save and whether its condition applies
+            effective_needed = normal_needed
+            detail_text = f"{base_save}+ with AP {ap_value}"
+            if hasattr(target_model, 'inv_save'):
+                inv_value, inv_condition = target_model.inv_save
+                if inv_value:
+                    # Build a minimal attack_instance for condition checks
+                    attack_instance = {'weapon_profile': weapon_profile, 'is_mortal': False}
+                    cond_ok = True
+                    if inv_condition and hasattr(target_model, '_check_invulnerable_save_condition'):
+                        try:
+                            cond_ok = target_model._check_invulnerable_save_condition(inv_condition, attack_instance)
+                        except Exception:
+                            cond_ok = True
+                    if cond_ok and inv_value < effective_needed:
+                        effective_needed = inv_value
+                        detail_text = f"{inv_value}+ Invuln"
+
+            # Check invulnerable save from wargear abilities (model-specific).
+            try:
+                t_unit = getattr(target_model, "parent_unit", None)
+                if t_unit is not None and hasattr(t_unit, "get_model_invulnerable_save_override"):
+                    inv_override, inv_reason = t_unit.get_model_invulnerable_save_override(target_model)
+                    if inv_override and int(inv_override) < effective_needed:
+                        effective_needed = int(inv_override)
+                        if inv_reason:
+                            detail_text = f"{inv_override}+ Invuln ({inv_reason})"
+                        else:
+                            detail_text = f"{inv_override}+ Invuln"
+            except Exception:
+                pass
+
+            print(f"     Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
+            
+            if save_roll >= effective_needed:
+                return False
+            
+            # Apply damage using the proper take_damage method
+            if isinstance(damage, str):
+                damage_dealt = get_roll(damage)
+            else:
+                damage_dealt = int(damage) if damage else 1
+            
+            print(f"    ' Damage: {damage_dealt}")
+            
+            # Use the model's take_damage method which handles FNP, death, etc.
+            wounds_before = target_model.wounds
+            excess_damage = target_model.take_damage(damage_dealt, is_mortal=False, weapon_profile=weapon_profile)
+            actual_damage = wounds_before - target_model.wounds
+            
+            return actual_damage > 0
+            
+        except Exception as e:
+            print(f"    ERROR: Attack resolution error: {e}")
+            return False
+    
+    def _calculate_wound_target(self, strength: int, toughness: int) -> int:
+        """Calculate the target number needed to wound."""
+        if strength >= toughness * 2:
+            return 2
+        elif strength > toughness:
+            return 3
+        elif strength == toughness:
+            return 4
+        elif strength * 2 <= toughness:
+            return 6
+        else:
+            return 5
+    
+    def get_fight_phase_status(self) -> dict:
+        """Get the current fight phase status for UI display"""
+        current_player = self.game.get_current_player()
+        opponent = self.game.get_opponent()
+        
+        if self.fight_phase_manager:
+            # Use fight phase manager for accurate status
+            return self.fight_phase_manager.get_stage_info(current_player, opponent)
+        else:
+            # Fallback to old logic if manager not initialized
+            current_fight_first = self.game.get_fight_first_units(current_player)
+            current_remaining = self.game.get_remaining_combatant_units(current_player)
+            opponent_fight_first = self.game.get_fight_first_units(opponent)
+            opponent_remaining = self.game.get_remaining_combatant_units(opponent)
+            
+            if current_fight_first or opponent_fight_first:
+                current_stage = "Fight First"
+            elif current_remaining or opponent_remaining:
+                current_stage = "Remaining Combatants"
+            else:
+                current_stage = "Complete"
+            
+            return {
+                "current_stage": current_stage,
+                "active_player": None,
+                "current_player_fight_first": len(current_fight_first),
+                "current_player_remaining": len(current_remaining),
+                "opponent_fight_first": len(opponent_fight_first),
+                "opponent_remaining": len(opponent_remaining),
+                "fought_units": 0,
+                "is_complete": current_stage == "Complete"
+            }
+    
+    def _handle_movement_choice(self, unit, choice: str) -> None:
+        """Handle movement choice selection using Unit's movement system"""
+        from warhammer40k_ai.units.unit import MovementAction
+        
+        # Map UI choices to Unit's MovementAction enum
+        choice_mapping = {
+            'move': MovementAction.MOVE,
+            'advance': MovementAction.ADVANCE,
+            'fall_back': MovementAction.FALL_BACK,
+            'stationary': MovementAction.REMAIN_STATIONARY
+        }
+        
+        if choice not in choice_mapping:
+            # Transport actions (not MovementAction enum)
+            if choice == 'embark' and getattr(unit, "is_transport", False):
+                return self._show_transport_embark_dialog(unit)
+            if choice == 'disembark' and getattr(unit, "is_transport", False):
+                return self._show_transport_disembark_dialog(unit)
+            print(f"ERROR: Invalid movement choice: {choice}")
+            return
+        
+        # Get the unit's current engagement state
+        engagement_state = unit.get_engagement_state(self.game.map)
+        available_actions = unit.get_available_move_actions(engagement_state.value)
+        
+        # Check if the chosen action is available
+        chosen_action = choice_mapping[choice]
+        if chosen_action.value not in available_actions:
+            print(f"ERROR: {choice.title()} action not available for {unit.name}")
+            return
+
+        def _begin_movement():
+            # Store the chosen action for battlefield click handling
+            self.game_view.selected_unit_for_movement = unit
+            self.game_view.movement_action = chosen_action
+            # Keep the selected model if one was previously selected
+            if not hasattr(self.game_view, 'selected_model_for_movement'):
+                self.game_view.selected_model_for_movement = None
+
+            # Roll advance dice immediately if advancing
+            if choice == 'advance':
+                advance_roll = unit.prepare_advance()
+                max_distance = unit.movement + advance_roll
+            else:
+                max_distance = unit.movement
+
+            if choice == 'stationary':
+                # Execute stationary action immediately (no destination needed)
+                success = unit._execute_action(chosen_action.value, (0, 0, 0), self.game.map)
+                if success:
+                    print(f"INFO: {unit.name} remains stationary")
+                # Clear selection since action is complete
+                self.game_view.selected_unit_for_movement = None
+                self.game_view.movement_action = None
+                self.game_view.selected_model_for_movement = None
+            else:
+                # Open individual model movement dialog
+                def on_movement_complete(completed: bool):
+                    if completed:
+                        print(f"{unit.name} {choice} movement completed")
+                    else:
+                        print(f"{unit.name} {choice} movement skipped")
+                    # Clear selection after movement
+                    self.game_view.selected_unit_for_movement = None
+                    self.game_view.movement_action = None
+                    self.game_view.selected_model_for_movement = None
+
+                self.game_view.individual_model_movement_dialog.show(
+                    unit, choice, on_movement_complete, self.game.map, max_distance
+                )
+
+        if choice in ("move", "advance", "fall_back"):
+            self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement)
+        else:
+            _begin_movement()
+
+    def _show_transport_embark_dialog(self, transport_unit) -> None:
+        """Show a dialog listing only valid units that can embark into the selected transport."""
+        from ..dialogs import TransportEmbarkDialog
+
+        # Compute candidates using the same checks as the dialog (but here so it stays correct even if dialog not refreshed)
+        candidates = []
+        if transport_unit.models and transport_unit.models[0].is_alive:
+            from ...utility.aura_utils import distance_between_models_bases_3d
+            t_model = transport_unit.models[0]
+            for u in list(getattr(self.game.map, "units", []) or []):
+                if u is None or u == transport_unit:
+                    continue
+                if not u.is_alive():
+                    continue
+                if u.get_parent_army() != transport_unit.get_parent_army():
+                    continue
+                if not transport_unit.can_transport(u):
+                    continue
+                if getattr(u.round_state, "remained_stationary_this_round", False):
+                    continue
+                if getattr(u.round_state, "disembarked_this_round", False):
+                    continue
+                ok = True
+                for m in u.models:
+                    if not m.is_alive:
+                        continue
+                    if float(distance_between_models_bases_3d(m, t_model)) > 3.0 + 1e-6:
+                        ok = False
+                        break
+                if not ok:
+                    continue
+                candidates.append(u)
+
+        if not hasattr(self.game_view, "transport_embark_dialog"):
+            self.game_view.transport_embark_dialog = TransportEmbarkDialog(
+                self.game_view.screen.get_width(),
+                self.game_view.screen.get_height(),
+            )
+
+        def _confirm(selected_units):
+            if not selected_units:
+                return
+            for u in selected_units:
+                u.embark(transport_unit, game_map=self.game.map)
+
+        self.game_view.transport_embark_dialog.show(transport_unit, candidates, _confirm)
+
+    def _show_transport_disembark_dialog(self, transport_unit) -> None:
+        """Show a dialog to pick which embarked unit(s) to disembark from this transport."""
+        from ..dialogs import TransportDisembarkDialog
+
+        passengers = list(getattr(transport_unit, "transport_passengers", []) or [])
+        if not passengers:
+            print(f"ERROR: {transport_unit.name} has no embarked units")
+            return
+
+        if not hasattr(self.game_view, "transport_disembark_dialog"):
+            self.game_view.transport_disembark_dialog = TransportDisembarkDialog(
+                self.game_view.screen.get_width(),
+                self.game_view.screen.get_height(),
+            )
+
+        def _confirm(selected_units):
+            if not selected_units:
+                return
+            # Disembark sequentially to respect space/collisions
+            for u in selected_units:
+                try:
+                    u.disembark(game_map=self.game.map, transport_unit=transport_unit, destroyed_transport=False, emergency=False, current_turn=self.game.turn)
+                except Exception as e:
+                    print(f"ERROR: Disembark failed: {e}")
+
+        self.game_view.transport_disembark_dialog.show(transport_unit, passengers, _confirm)
+    
+    def _handle_battlefield_action(self, x: int, y: int) -> bool:
+        """Handle battlefield actions based on current battle phase"""
+        current_phase = self.game.phase
+        
+        # Phase-specific actions
+        if current_phase.name == 'MOVEMENT_PHASE':
+            return self._handle_movement_action(x, y)
+        elif current_phase.name == 'SHOOTING_PHASE':
+            return self._handle_shooting_action(x, y)
+        elif current_phase.name == 'CHARGE_PHASE':
+            return self._handle_charge_action(x, y)
+        elif current_phase.name == 'FIGHT_PHASE':
+            return self._handle_fight_action(x, y)
+        
+        return False
+    
+    def _handle_movement_action(self, x: int, y: int) -> bool:
+        """Handle movement phase actions using Unit's movement system"""
+        # Check if individual model movement dialog is active
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible):
+            # Handle battlefield click for individual model movement using helper method
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
+            
+            return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                battlefield_x, battlefield_y, battlefield_z
+            )
+        
+        # Check if we clicked on a model first for selection
+        clicked_model = self.game_view.get_model_at_position(x, y)
+        if clicked_model:
+            # Try to select this unit for movement and track the specific model
+            clicked_unit = clicked_model.parent_unit
+            self.game_view.selected_unit = clicked_unit
+            self.game_view.selected_model_for_movement = clicked_model  # Track the specific model
+            self._handle_unit_selection(clicked_unit)
+            return True
+        
+        # Old unit-level movement handling removed - now using Individual Model Movement Dialog for all movement
+        
+        return False
+    
+    # Old movement validation method removed - now using Individual Model Movement Dialog for all movement
+    
+    def _handle_shooting_action(self, x: int, y: int) -> bool:
+        """Handle shooting phase actions - allow clicking on units to select them for shooting"""
+        # Check if we're in targeting mode from the shooting declaration dialog
+        if (hasattr(self.game_view, 'shooting_declaration_dialog') and 
+            self.game_view.shooting_declaration_dialog.is_targeting_mode):
+            # Let the dialog handle the targeting (expects game coords)
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+            return self.game_view.shooting_declaration_dialog.handle_battlefield_targeting(battlefield_x, battlefield_y)
+        
+        # If not in targeting mode, handle unit selection
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        if clicked_unit:
+            # Try to select this unit for shooting
+            self.game_view.selected_unit = clicked_unit
+            self._handle_unit_selection(clicked_unit)
+            return True
+        
+        return False
+    
+    def _show_weapon_choice_dialog(self, unit):
+        """Show weapon selection dialog for the unit"""
+        if not hasattr(self.game_view, 'weapon_choice_dialog'):
+            from ..dialogs import WeaponChoiceDialog
+        self.game_view.weapon_choice_dialog = WeaponChoiceDialog(
+                self.game_view.screen.get_width(), 
+                self.game_view.screen.get_height()
+            )
+        
+        def on_weapon_choice(weapon_profile):
+            self.game_view.selected_weapon_profile = weapon_profile
+            # Clear any previous shooting selection state
+            if hasattr(self.game_view, 'selected_shooting_models'):
+                self.game_view.selected_shooting_models = []
+        
+        self.game_view.weapon_choice_dialog.show(unit, on_weapon_choice, self.game.map)
+    
+    def _clear_shooting_selection(self):
+        """Clear shooting selection state"""
+        if hasattr(self.game_view, 'selected_weapon_profile'):
+            self.game_view.selected_weapon_profile = None
+        if hasattr(self.game_view, 'selected_shooting_models'):
+            self.game_view.selected_shooting_models = []
+    
+    def _validate_shooting_target(self, shooting_unit, target_unit, weapon_profile) -> dict:
+        """Validate if shooting unit can target the enemy unit with the selected weapon"""
+        # Check if target is an enemy unit
+        if target_unit.get_parent_army() == shooting_unit.get_parent_army():
+            return {"valid": False, "reason": "Cannot target friendly units"}
+        
+        # Check if target is alive
+        if not target_unit.is_alive():
+            return {"valid": False, "reason": "Target unit is destroyed"}
+        
+        # Check if unit can shoot (not advanced unless allowed, not fell back, etc.)
+        if shooting_unit.round_state.advanced_this_round:
+            # Unit method already checks both weapon-specific and unit-specific abilities
+            if not shooting_unit.can_shoot_after_advance(weapon_profile):
+                return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
+        
+        if shooting_unit.round_state.fell_back_this_round:
+            if not shooting_unit.can_shoot_after_fall_back(weapon_profile):
+                return {"valid": False, "reason": "Unit fell back and cannot shoot with this weapon"}
+        
+        # Check if any models in the unit can shoot this weapon at the target
+        models_in_range = []
+        for model in shooting_unit.models:
+            if not model.is_alive:
+                continue
+                
+            # Check if this model has the weapon
+            has_weapon = False
+            for wargear in model.wargear:
+                if weapon_profile.parent_wargear == wargear:
+                    has_weapon = True
+                    break
+            
+            if not has_weapon:
+                continue
+            
+            # Check range to target
+            closest_target_model, distance = model.return_closest_model_in_unit(target_unit)
+            if distance <= weapon_profile.range.max:
+                # Check line of sight (placeholder)
+                if self._has_line_of_sight(model, closest_target_model):
+                    models_in_range.append(model)
+        
+        if not models_in_range:
+            return {"valid": False, "reason": "No models in range with line of sight"}
+        
+        # Check engagement range restrictions
+        is_engaged = any(self.game.map.is_within_engagement_range(shooting_unit, enemy)
+                        for enemy in self.game.map.get_enemy_units(shooting_unit) if enemy.is_alive())
+        
+        if is_engaged and not shooting_unit.can_shoot_in_engagement_range(weapon_profile):
+            return {"valid": False, "reason": "Unit is engaged and weapon cannot shoot in engagement range"}
+        
+        # Check Lone Operative restriction
+        if target_unit.has_lone_operative():
+            # Check if any shooting model is within 12 inches of the Lone Operative unit
+            any_model_in_range = False
+            for model in models_in_range:
+                closest_target_model, distance = model.return_closest_model_in_unit(target_unit)
+                if distance <= 12.0:
+                    any_model_in_range = True
+                    break
+            
+            if not any_model_in_range:
+                return {"valid": False, "reason": "Lone Operative unit can only be targeted within 12 inches"}
+        
+        return {"valid": True, "reason": f"{len(models_in_range)} models can shoot"}
+    
+    def _has_line_of_sight(self, shooting_model, target_model) -> bool:
+        """Placeholder line of sight check - always returns True for now"""
+        # TODO: Implement proper line of sight calculations considering:
+        # - Terrain blocking
+        # - Other units blocking  
+        # - Model height and visibility
+        # - Special rules (e.g., Indirect Fire)
+        return True
+    
+    def _handle_charge_action(self, x: int, y: int) -> bool:
+        """Handle charge phase actions"""
+        # Check if individual model movement dialog is active (for charge movement)
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible):
+            # Handle battlefield click for individual model movement during charge using helper method
+            battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+            battlefield_z = self.game.map.get_height_at_point(battlefield_x, battlefield_y)
+
+            return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                battlefield_x, battlefield_y, battlefield_z
+            )
+
+        # Always check if a unit was clicked on the battlefield first
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        current_player = self.game.get_current_player()
+        if clicked_unit and clicked_unit.get_parent_army() and clicked_unit.get_parent_army().player == current_player:
+            self.game_view.selected_unit = clicked_unit
+            self._synchronize_unit_selection(clicked_unit)
+            self._handle_charge_phase_selection(clicked_unit)
+            return True
+        # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
+        if self.game_view.selected_unit:
+            if self.game_view.selected_unit.get_parent_army() and self.game_view.selected_unit.get_parent_army().player == current_player:
+                self._handle_charge_phase_selection(self.game_view.selected_unit)
+                return True
+        return False
+    
+    def _handle_fight_action(self, x: int, y: int) -> bool:
+        """Handle fight phase actions"""
+        current_player = self.game.get_current_player()
+        opponent_player = self.game.get_opponent()
+        
+        # Initialize fight phase manager if not already done
+        if not self.fight_phase_manager:
+            self._initialize_fight_phase_manager(current_player, opponent_player)
+        
+        # If fight phase manager is still None after initialization, fight phase is complete
+        if not self.fight_phase_manager:
+            print("OK: Fight phase is complete - no actions available")
+            return False
+        
+        # Always check if a unit was clicked on the battlefield first
+        clicked_unit = self.game_view.get_unit_at_position(x, y)
+        
+        # If a unit was clicked, check if it's a friendly unit to select for fighting
+        if clicked_unit and clicked_unit.get_parent_army():
+            unit_owner = clicked_unit.get_parent_army().player
+            active_player = self.fight_phase_manager.get_active_player()
+            
+            # Check if this is the active player's unit
+            if unit_owner == active_player:
+                self.game_view.selected_unit = clicked_unit
+                self._synchronize_unit_selection(clicked_unit)
+                self._handle_fight_phase_selection(clicked_unit)
+                return True
+            else:
+                print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                return False
+        
+        # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
+        if self.game_view.selected_unit:
+            unit_owner = self.game_view.selected_unit.get_parent_army().player if self.game_view.selected_unit.get_parent_army() else None
+            active_player = self.fight_phase_manager.get_active_player()
+            
+            if unit_owner == active_player:
+                self._handle_fight_phase_selection(self.game_view.selected_unit)
+                return True
+            else:
+                print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                return False
+        
+        return False
+    
+    def get_allowed_actions(self) -> List[str]:
+        current_phase = self.game.phase
+        current_player = self.game.get_current_player()
+        
+        # Base actions available in all phases
+        base_actions = ["view_unit_details", "advance_phase"]
+        
+        # Only allow unit selection for local control
+        if current_player.has_control():
+            base_actions.append("select_unit")
+        
+        # Phase-specific actions
+        if current_phase.name == 'MOVEMENT_PHASE':
+            if current_player.has_control():
+                return base_actions + ["move_unit", "advance_unit", "remain_stationary", "fall_back"]
+            else:
+                return base_actions
+        elif current_phase.name == 'SHOOTING_PHASE':
+            if current_player.has_control():
+                return base_actions + ["select_weapon", "target_unit", "cancel_shooting"]
+            else:
+                return base_actions
+        elif current_phase.name == 'CHARGE_PHASE':
+            if current_player.has_control():
+                return base_actions + ["declare_charge", "charge_move"]
+            else:
+                return base_actions
+        elif current_phase.name == 'FIGHT_PHASE':
+            if current_player.has_control():
+                return base_actions + ["pile_in", "fight", "consolidate"]
+            else:
+                return base_actions
+        else:
+            return base_actions
+    
+    def _handle_battle_motion(self, mouse_pos) -> bool:
+        """Handle mouse motion during battle phases"""
+        x, y = mouse_pos
+        # print(f"DEBUG: _handle_battle_motion called with ({x}, {y})")
+
+        # Individual model movement tracking now has priority over old systems
+
+        # Update hover states for UI components
+        if hasattr(self.game_view, 'shooting_declaration_dialog') and self.game_view.shooting_declaration_dialog.visible:
+            self.game_view.shooting_declaration_dialog.update_hover((x, y))
+            return True
+
+        if hasattr(self.game_view, 'movement_choice_dialog') and self.game_view.movement_choice_dialog.visible:
+            self.game_view.movement_choice_dialog.update_hover((x, y))
+            return True
+
+        # Old unit-level movement tracking removed - now using Individual Model Movement Dialog for all movement
+
+        # Track mouse position for individual model movement preview
+
+
+        if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+            self.game_view.individual_model_movement_dialog.visible and
+            self.game_view.individual_model_movement_dialog.selected_model_index is not None):
+
+            print(f"DEBUG: Individual model movement tracking active at ({x}, {y})")
+
+            # Check if mouse is over battlefield area
+            if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
+                # Convert to game coordinates using helper method
+                battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+
+                # Store mouse position for individual model movement preview
+                self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
+                print(f"DEBUG: Set preview target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                return True
+            else:
+                # Clear preview when mouse leaves battlefield
+                self.game_view.individual_model_preview_target = None
+                # print(f"DEBUG: Cleared preview target (mouse outside battlefield)")
+        else:
+            # Debug why tracking isn't active
+            if hasattr(self.game_view, 'individual_model_movement_dialog'):
+                dialog = self.game_view.individual_model_movement_dialog
+                # print(f"DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
+            else:
+                print(f"DEBUG: No individual_model_movement_dialog found")
+
+        # Update roster pane hovers
+        if self.game_view.left_roster_pane.rect.collidepoint(x, y):
+            return True
+        elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
+            return True
+
+        return False
+    
+    def _handle_battle_release(self, mouse_pos, button) -> bool:
+        """Handle mouse button release during battle phases"""
+        # Currently no specific handling needed for mouse release
+        return False
+
+class PhaseManager:
+    """Manages phase-specific event handling"""
+    
+    def __init__(self, game_view: 'GameView'):
+        self.game_view = game_view
+        self.game = game_view.game
+        # Initialize phase handlers
+        self.setup_handler = SetupPhaseHandler(game_view)
+        self.deployment_handler = DeploymentPhaseHandler(game_view)
+        self.prebattle_handler = PreBattlePhaseHandler(game_view)
+        self.battle_handler = BattlePhaseHandler(game_view)
+        
+        # Movement system state
+        from ..dialogs import MovementChoiceDialog, IndividualModelMovementDialog
+        from ..dialogs.coherency_violation_dialog import CoherencyViolationDialog
+        self.game_view.movement_choice_dialog = MovementChoiceDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        self.game_view.individual_model_movement_dialog = IndividualModelMovementDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        self.game_view.coherency_violation_dialog = CoherencyViolationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        self.game_view.selected_unit_for_movement = None
+        self.game_view.movement_action = None  # MovementAction enum value
+        self.game_view.movement_preview_target = None  # For real-time movement preview
+        
+        # Shooting system state
+        from ..dialogs import ShootingDeclarationDialog
+        self.game_view.shooting_declaration_dialog = ShootingDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Charge system state
+        from ..dialogs import ChargeDeclarationDialog
+        self.game_view.charge_declaration_dialog = ChargeDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Melee weapon declaration system state
+        from ..dialogs import MeleeWeaponDeclarationDialog
+        self.game_view.melee_weapon_declaration_dialog = MeleeWeaponDeclarationDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Fight target selection dialog
+        from ..dialogs.fight_target_selection_dialog import FightTargetSelectionDialog
+        self.game_view.fight_target_selection_dialog = FightTargetSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
+        
+        # Target model selection dialog
+        from ..dialogs.target_model_selection_dialog import TargetModelSelectionDialog
+        self.game_view.target_model_selection_dialog = TargetModelSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
+    
+    def get_current_handler(self) -> BasePhaseHandler:
+        """Get the appropriate handler for the current game phase"""
+        if self.game.is_in_setup_phase():
+            current_setup_phase = self.game.get_current_setup_phase()
+            if current_setup_phase.name == 'DEPLOY_ARMIES':
+                return self.deployment_handler
+            elif current_setup_phase.name == 'RESOLVE_PREBATTLE_RULES':
+                # Start the scout phase if not already started for this phase
+                if not hasattr(self.prebattle_handler, 'scout_phase_started') or not self.prebattle_handler.scout_phase_started:
+                    print("Starting scout phase...")
+                    self.prebattle_handler.start_scout_phase()
+                    self.prebattle_handler.scout_phase_started = True
+                return self.prebattle_handler
+            else:
+                return self.setup_handler
+        elif self.game.is_deployment_phase():
+            return self.deployment_handler
+        else:
+            # Battle phases
+            # Auto-start fight phase if we're in fight phase and it hasn't been started
+            if self.game.is_fight_phase():
+                if not hasattr(self.battle_handler, 'fight_phase_started') or not self.battle_handler.fight_phase_started:
+                    print("Auto-starting fight phase...")
+                    current_player = self.game.get_current_player()
+                    opponent_player = self.game.get_opponent()
+                    self.battle_handler._initialize_fight_phase_manager(current_player, opponent_player)
+                    self.battle_handler.fight_phase_started = True
+            else:
+                # Reset fight phase flag when not in fight phase
+                if hasattr(self.battle_handler, 'fight_phase_started'):
+                    self.battle_handler.fight_phase_started = False
+            return self.battle_handler
+    
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """Route event to appropriate phase handler"""
+        # Global dialog routing (modal stack) always goes first.
+        try:
+            if hasattr(self.game_view, "dialog_manager") and self.game_view.dialog_manager:
+                if self.game_view.dialog_manager.handle_event(event):
+                    return True
+        except Exception:
+            pass
+
+        handler = self.get_current_handler()
+        handler_name = handler.__class__.__name__
+
+        # Debug: Log which handler is being used
+        # TODO: Uncomment for event debugging
+        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+        #     event_name = {
+        #         pygame.KEYDOWN: "KEYDOWN",
+        #         pygame.MOUSEBUTTONDOWN: "MOUSEBUTTONDOWN",
+        #         pygame.MOUSEBUTTONUP: "MOUSEBUTTONUP",
+        #         pygame.MOUSEMOTION: "MOUSEMOTION"
+        #     }.get(event.type, f"TYPE_{event.type}")
+        #     print(f"DEBUG: PhaseManager - Routing {event_name} to {handler_name}")
+
+        result = handler.handle_event(event)
+
+        # TODO: Uncomment for event debugging
+        # if event.type in [pygame.KEYDOWN, pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION]:
+        #     print(f"DEBUG: PhaseManager - {handler_name} returned {result}")
+
+        return result
+    
+    def get_current_allowed_actions(self) -> List[str]:
+        """Get allowed actions for current phase"""
+        handler = self.get_current_handler()
+        return handler.get_allowed_actions()
+    
+    def is_action_allowed(self, action: str) -> bool:
+        """Check if an action is allowed in the current phase"""
+        return action in self.get_current_allowed_actions()
+
+    def check_unit_coherency_after_movement(self, unit: 'Unit'):
+        """
+        Check unit coherency after movement completion and handle violations.
+
+        This should be called after a unit completes its movement to ensure
+        coherency is maintained according to Warhammer 40k rules.
+        """
+        from warhammer40k_ai.utility.calcs import validate_unit_coherency_after_movement
+
+        # Get final positions of all models
+        final_positions = []
+        for model in unit.models:
+            if model.is_alive:
+                final_positions.append(model.get_location())
+
+        # Validate coherency
+        is_coherent, non_coherent_models = validate_unit_coherency_after_movement(unit, final_positions)
+
+        if not is_coherent:
+            # Movement must END in coherency. Do not remove models for movement-caused incoherency.
+            print(f"ERROR: {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
+                  f"Movement ending out of coherency is not allowed.")
+        else:
+            print(f"OK: {unit.name} maintains coherency after movement")
+
+    def _on_coherency_resolution(self, models_removed: bool):
+        """Called when coherency violation dialog is complete"""
+        if models_removed:
+            print("OK: Coherency violations resolved")
+        else:
+            print("ERROR: Coherency resolution cancelled")
+
+
+class PreBattlePhaseHandler(BasePhaseHandler):
+    """Handles events during the RESOLVE_PREBATTLE_RULES phase (e.g., Scout moves)"""
+    def __init__(self, game_view: 'GameView'):
+        super().__init__(game_view)
+        self.scout_units_queue = []  # List of (unit, player) tuples
+        self.current_scout_unit = None
+        self.current_scout_player = None  # Track current player for cache clearing
+        self.awaiting_battlefield_click = False
+        self.scout_callback = None
+        self.scout_distance = 0
+        self.mouse_pos = None  # Track mouse position for visual feedback
+
+    def start_scout_phase(self):
+        """Initialize the queue of eligible human scout units."""
+        print("Initializing scout phase...")
+        self.scout_units_queue = []
+        self.current_scout_unit = None
+        self.current_scout_player = None  # Reset player tracking
+        self.awaiting_battlefield_click = False
+        self.scout_callback = None
+        self.scout_distance = 0
+        self.mouse_pos = None
+        # Get all eligible human scout units in correct order
+        game = self.game_view.game
+        
+        # During setup phase, use first_turn_player_index instead of current_player_index
+        if game.first_turn_player_index is not None:
+            first_turn_player = game.players[game.first_turn_player_index]
+        else:
+            # Fallback to attacker if first turn not determined yet
+            first_turn_player = game.get_attacker() if game.attacker_index is not None else game.players[0]
+        
+        players_in_order = [first_turn_player] + [p for p in game.players if p != first_turn_player]
+        print(f"DEBUG: Scout phase players in order: {[p.name for p in players_in_order]}")
+        
+        for player in players_in_order:
+            if player.has_control() and player.get_army():
+                print(f"DEBUG: Checking {player.name}'s units for scout ability")
+                for unit in player.get_army().units:
+                    has_scout, scout_distance = unit.has_scout()
+                    print(f"DEBUG: {unit.name} - has_scout={has_scout}, deployed={unit.deployed}, reserve_status={unit.reserve_status}, scout_move_made={getattr(unit, 'scout_move_made', False)}")
+                    if has_scout and unit.deployed and unit.reserve_status == 'deployed' and not getattr(unit, 'scout_move_made', False):
+                        self.scout_units_queue.append((unit, player, scout_distance))
+                        print(f"DEBUG: Added {unit.name} to scout queue")
+        
+        print(f"DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
+        self._next_scout_unit()
+
+    def _next_scout_unit(self):
+        print(f"DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")
+        if self.scout_units_queue:
+            unit, player, scout_distance = self.scout_units_queue.pop(0)
+            print(f"DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
+
+            # Check if player has changed and clear enemy model cache if so
+            if self.current_scout_player != player:
+                if self.current_scout_player is not None:  # Not the first unit
+
+                    clear_enemy_model_cache(id(self.game_view.game.map))
+                    print(f"Scout phase player switched to {player.name} - cleared enemy model cache")
+                self.current_scout_player = player
+
+            self.current_scout_unit = unit
+            self.scout_distance = scout_distance
+            self.awaiting_battlefield_click = False
+            self._show_scout_dialog(unit)
+        else:
+            # print(f"DEBUG: Scout queue is empty, scout phase complete")
+            self.current_scout_unit = None
+            self.current_scout_player = None  # Reset player tracking
+            self.awaiting_battlefield_click = False
+            self.scout_callback = None
+            self.scout_distance = 0
+            self.mouse_pos = None
+            print("OK: All human SCOUT moves complete. Press SPACE to continue.")
+
+    def _show_scout_dialog(self, unit):
+        # print(f"DEBUG: _show_scout_dialog called for {unit.name}")
+        def on_scout_choice(choice):
+            # print(f"DEBUG: Scout choice for {unit.name}: {choice}")
+            if choice == 'scout':
+                # Open individual model movement dialog for scout movement
+                def on_scout_movement_complete(completed: bool):
+                    # print(f"DEBUG: Scout movement complete for {unit.name}: completed={completed}")
+                    # print(f"DEBUG: Setting scout_move_made=True for {unit.name}")
+                    if completed:
+                        print(f"OK: {unit.name} scout movement completed")
+                        unit.scout_move_made = True
+                    else:
+                        print(f"INFO:  {unit.name} scout movement skipped")
+                        unit.scout_move_made = True
+                    # print(f"DEBUG: Calling _next_scout_unit() to proceed to next unit")
+                    self._next_scout_unit()
+
+                self.game_view.individual_model_movement_dialog.show(
+                    unit, 'scout', on_scout_movement_complete, self.game_view.game.map, self.scout_distance
+                )
+            elif choice == 'skip':
+                unit.scout_move_made = True
+                print(f"OK: {unit.name} scout move skipped")
+                self._next_scout_unit()
+            elif choice == 'defer':
+                print(f"INFO:  {unit.name} scout decision deferred - moving to end of current player's queue")
+                # Move this unit to the end of the current player's units in the queue
+                player = None
+                for p in self.game_view.game.players:
+                    if unit in p.army.units:
+                        player = p
+                        break
+
+                if player:
+                    # Find where to insert: after the last unit of the same player
+                    insert_position = 0
+                    last_same_player_position = -1
+
+                    for i in range(len(self.scout_units_queue)):
+                        _, queue_player, _ = self.scout_units_queue[i]
+                        if queue_player == player:
+                            last_same_player_position = i
+
+                    # Insert after the last unit of the same player
+                    insert_position = last_same_player_position + 1
+
+                    self.scout_units_queue.insert(insert_position, (unit, player, self.scout_distance))
+                    # print(f"DEBUG: {unit.name} added back to position {insert_position} (after last {player.name} unit). Queue now has {len(self.scout_units_queue)} units")
+
+                    # Debug: show current queue
+                    # queue_debug = [(u.name, p.name) for u, p, _ in self.scout_units_queue]
+                    # print(f"DEBUG: Current queue: {queue_debug}")
+
+                self._next_scout_unit()
+        # print(f"DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
+        self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
+        # print(f"DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
+        # print(f"DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
+
+    def _validate_scout_destination(self, unit, destination: Tuple[float, float]) -> dict:
+        """Validate if a destination is valid for a scout move using pathfinding."""
+        game_x, game_y = destination
+
+        # Check if destination is within battlefield bounds
+        battlefield_width, battlefield_height = self.game_view.game.get_battlefield_size()
+        if game_x < 0 or game_x >= battlefield_width or game_y < 0 or game_y >= battlefield_height:
+            return {'valid': False, 'reason': 'Outside battlefield bounds'}
+
+        # Use pathfinding to validate the destination
+
+        path_result = get_unit_movement_path_preview(
+            unit,
+            (game_x, game_y),
+            self.scout_distance,
+            self.game_view.game.map
+        )
+
+        # If pathfinding fails, fall back to basic validation
+        if not path_result['valid']:
+            return path_result
+
+        # Additional SCOUT-specific validation: 9" restriction from enemy units
+        # Use the unit's prospective formation at this destination and measure base-to-base closest-point distance.
+        snapshot = [m.get_location() for m in unit.models]
+        try:
+            prospective = unit.calculate_model_positions(game_x, game_y, self.game_view.game.map, avoid_friendly_units=True)
+        finally:
+            for m, loc in zip(unit.models, snapshot):
+                if loc:
+                    m.set_location(*loc)
+
+        if not prospective:
+            return {'valid': False, 'reason': 'No valid formation at destination'}
+
+        from ...utility.aura_utils import distance_between_bases_3d
+        enemy_units = self.game_view.game.get_enemy_units(unit.get_parent_army().player)
+        enemy_models = [em for eu in enemy_units if eu.is_alive() and eu.deployed for em in eu.models if em.is_alive]
+        for idx, (x, y, z, facing) in enumerate(prospective):
+            if idx >= len(unit.models):
+                break
+            mb = unit._create_potential_base(x, y, z, facing, model=unit.models[idx])
+            for em in enemy_models:
+                d = float(distance_between_bases_3d(mb, em.model_base))
+                if d < 9.0:
+                    return {'valid': False, 'reason': f'Too close to {em.parent_unit.name} ({d:.1f}\")'}
+
+        return path_result
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame.MOUSEMOTION:
+            # print(f"DEBUG: PreBattlePhaseHandler received MOUSEMOTION event at {event.pos}")
+            pass
+
+        # Track mouse position for visual feedback
+        if event.type == pygame.MOUSEMOTION and self.awaiting_battlefield_click:
+            self.mouse_pos = event.pos
+        
+        # Handle mouse motion for path preview during individual model movement
+        if event.type == pygame.MOUSEMOTION:
+            # print(f"DEBUG: PreBattlePhaseHandler mouse motion event received")
+
+            # Debug: Check individual model movement dialog visibility
+            has_dialog = hasattr(self.game_view, 'individual_model_movement_dialog')
+            # print(f"DEBUG: has_dialog={has_dialog}")
+
+            if has_dialog:
+                dialog_obj = self.game_view.individual_model_movement_dialog
+                dialog_visible = dialog_obj.visible
+                dialog_unit = getattr(dialog_obj, 'unit', None)
+                unit_name = dialog_unit.name if dialog_unit else None
+                # print(f"DEBUG: Mouse motion - has_dialog={has_dialog}, dialog_visible={dialog_visible}, dialog_unit={unit_name}")
+
+                if dialog_visible:
+                    x, y = event.pos
+                    # print(f"DEBUG: PreBattlePhaseHandler individual model mouse motion at ({x}, {y})")
+
+                    # Check if mouse is over battlefield area
+                    if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
+                        # Convert to game coordinates using helper method
+                        battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+
+                        # Store mouse position for individual model movement preview
+                        self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
+                        # print(f"DEBUG: PreBattlePhaseHandler set individual_model_preview_target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                        return True
+                    else:
+                        # Clear preview when mouse leaves battlefield
+                        self.game_view.individual_model_preview_target = None
+                        # print(f"DEBUG: PreBattlePhaseHandler cleared individual_model_preview_target (mouse outside battlefield)")
+                        return True
+            else:
+                pass
+                # print(f"DEBUG: Mouse motion - has_dialog={has_dialog}")
+
+        # Handle battlefield clicks for individual model movement during scout phase
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
+            x, y = event.pos
+            
+            # Check if clicking on battlefield area
+            if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
+                # Check if individual model movement dialog is active
+                if (hasattr(self.game_view, 'individual_model_movement_dialog') and
+                    self.game_view.individual_model_movement_dialog.visible):
+                    # Convert screen coordinates to game coordinates using helper method
+                    battlefield_x, battlefield_y = self.game_view.screen_to_game_coords(x, y)
+                    battlefield_z = self.game_view.game.map.get_height_at_point(battlefield_x, battlefield_y)
+                    
+                    # Handle battlefield click for individual model movement
+                    return self.game_view.individual_model_movement_dialog.handle_battlefield_click(
+                        battlefield_x, battlefield_y, battlefield_z
+                    )
+        
+        # Allow SPACE to skip to next phase if all done
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            if not self.scout_units_queue and not self.awaiting_battlefield_click:
+                print("Proceeding to next phase...")
+                return False  # Let the main loop advance the phase
+        return False
+
+    def draw_scout_visual_feedback(self, battlefield_surface: pygame.Surface):
+        """Draw visual feedback for scout moves on the battlefield surface with pathfinding."""
+        if not self.awaiting_battlefield_click or not self.current_scout_unit or not self.mouse_pos:
+            return
+
+        # Get unit position from first model
+        first_model = None
+        for model in self.current_scout_unit.models:
+            if model.is_alive:
+                first_model = model
+                break
+
+        if not first_model:
+            return
+
+        unit_pos = first_model.get_location()
+        if not unit_pos:
+            return
+
+        # Convert unit position to battlefield surface coordinates (no roster pane offset)
+        unit_surface_x = int(unit_pos[0] * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_x)
+        unit_surface_y = int(unit_pos[1] * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_y)
+
+        # Get mouse position in game coordinates for validation using helper method
+        mouse_x, mouse_y = self.mouse_pos
+        mouse_game_x, mouse_game_y = self.game_view.screen_to_game_coords(mouse_x, mouse_y)
+
+        # Convert mouse position to battlefield surface coordinates
+        mouse_surface_x = int(mouse_game_x * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_x)
+        mouse_surface_y = int(mouse_game_y * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_y)
+
+        # Use pathfinding to get movement preview
+        from warhammer40k_ai.utility.calcs import get_movement_path_preview
+
+        path_result = get_movement_path_preview(
+            self.current_scout_unit,
+            (mouse_game_x, mouse_game_y),
+            self.scout_distance,
+            self.game_view.game.map
+        )
+
+        # Choose color based on pathfinding result
+        if path_result['valid']:
+            color = (0, 255, 255)  # Cyan for valid path
+            alpha = 100
+        else:
+            color = (255, 165, 0)  # Orange for invalid path
+            alpha = 150
+
+        # Draw scout range circle around unit (only if unit is visible on battlefield surface)
+        if (0 <= unit_surface_x <= battlefield_surface.get_width() and 0 <= unit_surface_y <= battlefield_surface.get_height()):
+            circle_radius = int(self.scout_distance * TILE_SIZE * self.game_view.zoom_level)
+            pygame.draw.circle(battlefield_surface, (*color, 50), (unit_surface_x, unit_surface_y), circle_radius, 2)
+
+        # Draw pathfinding path if available
+        if path_result['path'] and len(path_result['path']) > 1:
+            # Convert path points to screen coordinates
+            path_points = []
+            for point in path_result['path']:
+                screen_x = int(point[0] * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_x)
+                screen_y = int(point[1] * TILE_SIZE * self.game_view.zoom_level + self.game_view.offset_y)
+                path_points.append((screen_x, screen_y))
+
+            # Draw the path as connected lines
+            if len(path_points) > 1:
+                pygame.draw.lines(battlefield_surface, (*color, alpha), False, path_points, 3)
+
+                # Draw small circles at path waypoints
+                for point in path_points[1:-1]:  # Skip start and end points
+                    pygame.draw.circle(battlefield_surface, (*color, alpha//2), point, 3)
+        else:
+            # Fallback to straight line if no path available
+            distance = ((mouse_game_x - unit_pos[0]) ** 2 + (mouse_game_y - unit_pos[1]) ** 2) ** 0.5
+            if distance <= self.scout_distance:
+                pygame.draw.line(battlefield_surface, (*color, alpha),
+                               (unit_surface_x, unit_surface_y), (mouse_surface_x, mouse_surface_y), 3)
+
+        # Draw destination indicator with actual model base footprint at mouse position
+        # Get the first alive model to determine base size
+        first_model = None
+        for model in self.current_scout_unit.models:
+            if model.is_alive:
+                first_model = model
+                break
+
+        if first_model:
+            self.game_view._draw_model_base_preview(battlefield_surface, first_model,
+                                                  mouse_game_x, mouse_game_y, color)
+        
+        # Draw distance text using pathfinding results
+        try:
+            font = pygame.font.Font(None, 24)
+            if path_result['path']:
+                distance_text = f"{path_result['distance']:.1f}\""
+            else:
+                # Fallback to straight-line distance
+                distance = ((mouse_game_x - unit_pos[0]) ** 2 + (mouse_game_y - unit_pos[1]) ** 2) ** 0.5
+                distance_text = f"{distance:.1f}\" (direct)"
+
+            text_surface = font.render(distance_text, True, color)
+            text_rect = text_surface.get_rect(center=(mouse_surface_x, mouse_surface_y - 20))
+            battlefield_surface.blit(text_surface, text_rect)
+        except:
+            pass  # Skip text rendering if font fails
+
+        # Draw validation message using pathfinding results
+        if not path_result['valid']:
+            try:
+                error_font = pygame.font.Font(None, 20)
+                error_text = path_result['reason']
+                # Wrap text if too long
+                if len(error_text) > 40:
+                    error_text = error_text[:37] + "..."
+                error_surface = error_font.render(error_text, True, (255, 255, 255))
+                error_rect = error_surface.get_rect(center=(mouse_surface_x, mouse_surface_y + 20))
+                # Draw background for error text
+                bg_rect = error_rect.inflate(10, 5)
+                pygame.draw.rect(battlefield_surface, (0, 0, 0, 180), bg_rect)
+                battlefield_surface.blit(error_surface, error_rect)
+            except:
+                pass  # Skip error text rendering if font fails
+
+    def get_allowed_actions(self) -> List[str]:
+        return ["scout_move", "skip_scout", "advance_setup_phase"]

@@ -94,13 +94,13 @@ class ChargeDeclarationDialog(BaseDialog):
         visible_height = self.height - 240  # Account for header, unit info, and buttons (160 + 240 = 400)
         self.max_scroll = max(0, total_height - visible_height)
         
-        print(f"⚔️ ChargeDeclarationDialog shown for {unit.name}")
-        print(f"⚔️ Found {len(self.valid_targets)} valid targets")
-        print(f"⚔️ Found {len(self.invalid_targets)} invalid targets")
+        print(f"INFO: ChargeDeclarationDialog shown for {unit.name}")
+        print(f"INFO: Found {len(self.valid_targets)} valid targets")
+        print(f"ERROR: Found {len(self.invalid_targets)} invalid targets")
         
         # Check if unit is eligible to charge
         if not self._is_unit_eligible_to_charge():
-            print(f"❌ {unit.name} is not eligible to charge")
+            print(f"ERROR: {unit.name} is not eligible to charge")
             self.hide()
             return
     
@@ -152,25 +152,25 @@ class ChargeDeclarationDialog(BaseDialog):
     def _is_unit_eligible_to_charge(self) -> bool:
         """Check if the unit is eligible to declare a charge."""
         if not self.unit:
-            print(f"❌ Charge eligibility check failed: No unit selected")
+            print(f"ERROR: Charge eligibility check failed: No unit selected")
             return False
 
         # Check if unit has already charged this round
         if self.unit.round_state.attempted_charge_this_round:
-            print(f"❌ {self.unit.name} charge eligibility: Already attempted charge this round")
+            print(f"ERROR: {self.unit.name} charge eligibility: Already attempted charge this round")
             return False
 
         # Check if unit advanced this round (unless special abilities allow charging after advance)
         if self.unit.round_state.advanced_this_round:
             can_charge_after_advance = self.unit.can_charge_after_advance()
-            print(f"🔍 {self.unit.name} advanced this round. Can charge after advance: {can_charge_after_advance}")
+            print(f"INFO: {self.unit.name} advanced this round. Can charge after advance: {can_charge_after_advance}")
             if not can_charge_after_advance:
-                print(f"❌ {self.unit.name} charge eligibility: Advanced this round and cannot charge after advancing")
+                print(f"ERROR: {self.unit.name} charge eligibility: Advanced this round and cannot charge after advancing")
                 return False
 
         # Check if unit fell back this round (unless special abilities allow charging after fall back)
         if self.unit.round_state.fell_back_this_round:
-            print(f"❌ {self.unit.name} charge eligibility: Fell back this round and cannot charge")
+            print(f"ERROR: {self.unit.name} charge eligibility: Fell back this round and cannot charge")
             # TODO: Check for special abilities that allow charging after fall back
             return False
 
@@ -182,10 +182,10 @@ class ChargeDeclarationDialog(BaseDialog):
             if is_engaged:
                 engaged_enemies = [enemy.name for enemy in enemy_units
                                  if enemy.is_alive() and self.game_map.is_within_engagement_range(self.unit, enemy)]
-                print(f"❌ {self.unit.name} charge eligibility: Already in engagement range of {', '.join(engaged_enemies)}")
+                print(f"ERROR: {self.unit.name} charge eligibility: Already in engagement range of {', '.join(engaged_enemies)}")
                 return False
 
-        print(f"✅ {self.unit.name} is eligible to charge")
+        print(f"INFO: {self.unit.name} is eligible to charge")
         return True
     
     def _get_target_validation_info(self, target):
@@ -272,9 +272,9 @@ class ChargeDeclarationDialog(BaseDialog):
                 # Only allow selection of valid targets
                 if target in self.valid_targets:
                     self.selected_target = target
-                    print(f"⚔️ Selected charge target: {target.name}")
+                    print(f"INFO: Selected charge target: {target.name}")
                 else:
-                    print(f"❌ Cannot charge {target.name} - invalid target")
+                    print(f"ERROR: Cannot charge {target.name} - invalid target")
                 return True
         
         return False
@@ -288,9 +288,9 @@ class ChargeDeclarationDialog(BaseDialog):
         success = self.callback(self.unit, self.selected_target)
         
         if success:
-            print(f"⚔️ Charge declared: {self.unit.name} charges {self.selected_target.name}")
+            print(f"INFO: Charge declared: {self.unit.name} charges {self.selected_target.name}")
         else:
-            print(f"❌ Charge failed: {self.unit.name} could not charge {self.selected_target.name}")
+            print(f"ERROR: Charge failed: {self.unit.name} could not charge {self.selected_target.name}")
         
         self.hide()
     
@@ -496,11 +496,11 @@ class ChargeDeclarationDialog(BaseDialog):
         """Satisfy BaseDialog requirement; map to local buttons if needed."""
         if button_name == 'declare':
             if self.selected_target:
-                print(f"🔍 DEBUG: Declare pressed with selected target: {self.selected_target.name}")
+                print(f"DEBUG: Declare pressed with selected target: {self.selected_target.name}")
                 self._execute_charge()
                 return True
             else:
-                print("🔍 DEBUG: Declare pressed but no target selected")
+                print("DEBUG: Declare pressed but no target selected")
                 return False
         if button_name == 'cancel':
             self.hide()

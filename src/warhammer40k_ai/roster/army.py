@@ -1997,11 +1997,11 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
             # Some files omit detachment; keep a safe placeholder.
             detachment_type = "Unknown Detachment"
     else:
-        # Legacy/simple text format: "Army Name â€“ Faction" then "Strike Force (...)" then detachment line.
+        # Legacy/simple text format: "Army Name - Faction" then "Strike Force (...)" then detachment line.
         faction_header = (stripped[0] or "").strip()
         if not faction_header:
             raise ValueError(f"Army list header is missing faction info: {file_path!r}")
-        faction_keyword = (re.split(r"\s*[-?]\s*", faction_header) or [faction_header])[-1].strip() or faction_header
+        faction_keyword = (re.split(r"\s*[-\u2013]\s*", faction_header) or [faction_header])[-1].strip() or faction_header
         detachment_type = (stripped[2] or "").strip() if len(stripped) > 2 else "Unknown Detachment"
 
     # Start parsing units at the first section header we recognize (more robust than fixed offsets).
@@ -2116,14 +2116,23 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     return army
 
 def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dict[str, Set[Tuple[str, int]]], enhancement: Enhancement, waha_helper: WahaHelper, is_warlord: bool):
+    def _normalize_gear_name(text: str) -> str:
+        return (
+            str(text or "")
+            .replace("\u2019", "'")
+            .replace("\u2018", "'")
+            .replace("\u00e2\u0080\u0099", "'")
+            .lower()
+        )
+
     # Configure the unit with the correct number of models
     unit.configure_models(model_count, [])
 
     # Add wargear to the unit
     for model_name, wargear_list in wargear_dict.items():
         for wargear_name, quantity in wargear_list:
-            gear_name = wargear_name.lower().replace("â€™","'")
-            matching_gear = next((gear for gear in unit.possible_wargear if gear.name.lower().replace("â€™","'") == gear_name), None)
+            gear_name = _normalize_gear_name(wargear_name)
+            matching_gear = next((gear for gear in unit.possible_wargear if _normalize_gear_name(gear.name) == gear_name), None)
             if matching_gear:
                 # Add the wargear multiple times based on quantity
                 # Distribute wargear among models instead of adding multiple to each
@@ -2152,15 +2161,16 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                             if i < remainder:
                                 model.wargear.append(matching_gear)
                 else:
-                    # Fallback to old behavior if no target models found
-                    for _ in range(quantity):
-                        unit.add_wargear([matching_gear if gear.name.lower().replace("â€™","'") == gear_name else None for gear in unit.possible_wargear], model_name)
+                    raise ValueError(
+                        f"Invalid wargear assignment for '{unit.name}': no models named '{model_name}' "
+                        f"to receive '{gear_name}'."
+                    )
             else:
                 matching_gear = None
                 for gear in unit.wargear_options:
                     for choice in (gear.wargear_to or []):
                         for _qty, nm in (choice or []):
-                            if nm and nm.lower().replace("â€™", "'") == gear_name:
+                            if nm and _normalize_gear_name(nm) == gear_name:
                                 matching_gear = gear
                                 break
                         if matching_gear:
@@ -2171,7 +2181,7 @@ def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dic
                     # Army lists must be deterministic: if an option can't be resolved uniquely, that's an error.
                     unit.apply_wargear_options_strict(gear_name)
                 else:
-                    matching_ability = next((ability for ability in unit.possible_abilities if ability.name.lower().replace("â€™","'") == gear_name and ability.type == 'Wargear'), None)
+                    matching_ability = next((ability for ability in unit.possible_abilities if _normalize_gear_name(ability.name) == gear_name and ability.type == 'Wargear'), None)
                     if matching_ability:
                         unit.add_ability(matching_ability, model_name)
                     else:

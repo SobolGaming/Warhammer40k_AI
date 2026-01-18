@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from typing import Optional
 
@@ -173,7 +173,7 @@ class BattleFocusManager:
         if bonus:
             self.tokens += int(bonus)
             try:
-                print(f"âœ¨ Timeless Strategist: +{bonus} Battle Focus token(s)")
+                print(f"INFO: Timeless Strategist: +{bonus} Battle Focus token(s)")
             except Exception:
                 pass
         self._battle_round = int(battle_round or 0)

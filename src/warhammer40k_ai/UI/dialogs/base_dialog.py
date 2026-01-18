@@ -193,19 +193,19 @@ class BaseDialog(ABC):
         # Debug: Log all events handled by this dialog
         dialog_name = self.__class__.__name__
         # if event.type == pygame.KEYDOWN:
-        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
+        #     print(f"DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
         # elif event.type == pygame.MOUSEBUTTONDOWN:
-        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
+        #     print(f"DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
         # elif event.type == pygame.MOUSEBUTTONUP:
-        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
+        #     print(f"DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
         # elif event.type == pygame.MOUSEMOTION:
-        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
+        #     print(f"DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
         # else:
-        #     print(f"🔍 DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
+        #     print(f"DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
 
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            print(f"🔍 DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
+            print(f"DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
             self.hide()
             return True
         
@@ -213,14 +213,14 @@ class BaseDialog(ABC):
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
             mouse_pos = event.pos
             dialog_name = self.__class__.__name__
-            print(f"🔍 DEBUG: {dialog_name} - Left click at {mouse_pos}")
+            print(f"DEBUG: {dialog_name} - Left click at {mouse_pos}")
 
             # Ensure button positions are up-to-date
             self._update_buttons()
 
             # Check if clicking on title bar to start dragging
             if self.draggable and self.title_bar_rect and self.title_bar_rect.collidepoint(mouse_pos):
-                print(f"🔍 DEBUG: {dialog_name} - Starting drag from title bar")
+                print(f"DEBUG: {dialog_name} - Starting drag from title bar")
                 self.dragging = True
                 self.drag_offset_x = mouse_pos[0] - self.x
                 self.drag_offset_y = mouse_pos[1] - self.y
@@ -229,19 +229,19 @@ class BaseDialog(ABC):
             # Check button clicks
             for button_name, button_rect in self.buttons.items():
                 if button_rect.collidepoint(mouse_pos):
-                    print(f"🔍 DEBUG: {dialog_name} - Button '{button_name}' clicked")
+                    print(f"DEBUG: {dialog_name} - Button '{button_name}' clicked")
                     if self._handle_button_click(button_name):
                         return True
 
             # Check if click is within dialog bounds
             dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
             if dialog_rect.collidepoint(mouse_pos):
-                print(f"🔍 DEBUG: {dialog_name} - Click inside dialog, delegating to subclass")
+                print(f"DEBUG: {dialog_name} - Click inside dialog, delegating to subclass")
                 # Let subclass handle the click
                 if self._handle_dialog_click(mouse_pos):
                     return True
             else:
-                print(f"🔍 DEBUG: {dialog_name} - Click outside dialog, hiding")
+                print(f"DEBUG: {dialog_name} - Click outside dialog, hiding")
                 # Click outside dialog - close it
                 self.hide()
                 return True
@@ -249,14 +249,14 @@ class BaseDialog(ABC):
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:  # Left click release
             dialog_name = self.__class__.__name__
             if self.dragging:
-                print(f"🔍 DEBUG: {dialog_name} - Ending drag")
+                print(f"DEBUG: {dialog_name} - Ending drag")
                 self.dragging = False
                 return True
 
         elif event.type == pygame.MOUSEMOTION:
             dialog_name = self.__class__.__name__
             if self.dragging:
-                print(f"🔍 DEBUG: {dialog_name} - Dragging to {event.pos}")
+                print(f"DEBUG: {dialog_name} - Dragging to {event.pos}")
                 # Update dialog position
                 self.x = event.pos[0] - self.drag_offset_x
                 self.y = event.pos[1] - self.drag_offset_y
@@ -291,12 +291,12 @@ class BaseDialog(ABC):
         preferred_x = (self.screen_width - self.width) // 2
         preferred_y = (self.screen_height - self.height) // 2
 
-        print(f"🔍 DEBUG: Dialog positioning - preferred position: ({preferred_x}, {preferred_y})")
-        print(f"🔍 DEBUG: Dialog positioning - {len(existing_dialogs)} existing dialogs to avoid")
+        print(f"DEBUG: Dialog positioning - preferred position: ({preferred_x}, {preferred_y})")
+        print(f"DEBUG: Dialog positioning - {len(existing_dialogs)} existing dialogs to avoid")
 
         # If no existing dialogs, use preferred position
         if not existing_dialogs:
-            print(f"🔍 DEBUG: Dialog positioning - no existing dialogs, using preferred position")
+            print(f"DEBUG: Dialog positioning - no existing dialogs, using preferred position")
             return preferred_x, preferred_y
 
         # Get rectangles of all visible dialogs

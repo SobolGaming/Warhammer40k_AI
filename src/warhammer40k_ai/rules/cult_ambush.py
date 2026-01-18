@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import math
 import random
@@ -11,7 +11,7 @@ from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d
 from ..utility.model_base import Base, BaseType
 
 
-MARKER_RADIUS_INCHES = 0.63  # 32mm diameter marker â‰ˆ 1.26" across
+MARKER_RADIUS_INCHES = 0.63  # 32mm diameter marker approx 1.26" across
 
 
 @dataclass

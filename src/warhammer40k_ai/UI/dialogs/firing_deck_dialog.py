@@ -8,7 +8,7 @@ class FiringDeckDialog(BaseDialog):
     """
     Dialog for selecting up to X embarked models' ranged weapons to fire via a transport's Firing Deck X.
 
-    - Lists non–ONE SHOT ranged weapons carried by embarked models.
+    - Lists non-ONE SHOT ranged weapons carried by embarked models.
     - To save space, shows at most X entries per (wargear name, profile name) across embarked models.
     - Enforces: at most X total selections AND at most 1 selected weapon per embarked model.
     """
@@ -134,14 +134,14 @@ class FiringDeckDialog(BaseDialog):
 
             # Enforce total cap
             if len(self.selected_indices) >= int(self.firing_deck_x or 0):
-                print(f"❌ Firing Deck: you can select at most {self.firing_deck_x} embarked models.")
+                print(f"INFO: Firing Deck: you can select at most {self.firing_deck_x} embarked models.")
                 return True
 
             # Enforce: one weapon per embarked model
             entry = self.entries[idx]
             m = entry.get("model")
             if m is not None and id(m) in self._selected_model_ids():
-                print("❌ Firing Deck: that embarked model is already selected (one weapon per model).")
+                print("ERROR: Firing Deck: that embarked model is already selected (one weapon per model).")
                 return True
 
             self.selected_indices.add(idx)
@@ -159,7 +159,7 @@ class FiringDeckDialog(BaseDialog):
         self.draw_title_bar(screen, f"Firing Deck - {tname}", subtitle=subtitle)
 
         # Instructions
-        inst = "Pick up to X non–ONE SHOT ranged weapons from embarked models (max 1 per model)."
+        inst = "Pick up to X non-ONE SHOT ranged weapons from embarked models (max 1 per model)."
         inst_surface = self.font_small.render(inst, True, TEXT_SECONDARY)
         screen.blit(inst_surface, (self.x + 20, self.y + self.title_bar_height + 10))
 

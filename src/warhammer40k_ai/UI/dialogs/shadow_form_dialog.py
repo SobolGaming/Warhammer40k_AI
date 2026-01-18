@@ -117,7 +117,7 @@ class ShadowFormDialog(BaseDialog):
             subtitle = self.unit_name
         if self.battle_round is not None:
             br = f"Battle Round {self.battle_round}"
-            subtitle = f"{subtitle} · {br}" if subtitle else br
+            subtitle = f"{subtitle} - {br}" if subtitle else br
         self.draw_title_bar(screen, self.title, subtitle)
 
         header = self.font_small.render("Select one Shadow Form for this battle round:", True, TEXT_SECONDARY)

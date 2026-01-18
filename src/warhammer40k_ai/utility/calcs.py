@@ -406,7 +406,7 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
         pass
 
     # For other terrain types, check height-based traversal rules
-    # Most terrain ≤2" height can be traversed freely (Super-heavy Walker extends to 4")
+    # Most terrain <=2" height can be traversed freely (Super-heavy Walker extends to 4")
     max_height = getattr(terrain_feature, 'height', 0.0)
     if max_height <= get_freely_climbable_range(unit):
         return True
@@ -430,7 +430,7 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature',
         can_traverse_walls = _ruins_wall_traversal_allowed(unit, movement_type)
 
         if not can_traverse_walls:
-            # Core movement rule: terrain features ≤ 2" tall can be moved over "as if not there".
+            # Core movement rule: terrain features <= 2" tall can be moved over "as if not there".
             # Apply this to RUINS wall segments as well (e.g., rubble/low walls).
             threshold = get_freely_climbable_range(unit, movement_type)
             for wall in list(getattr(terrain_feature, "walls", []) or []):
@@ -2452,7 +2452,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
 
             new_distance_to_unit = min(float(distance_between_bases_3d(new_base, em.model_base)) for em in closest_models)
             if new_distance_to_unit >= closest_distance:
-                return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" ≥ {closest_distance:.2f}"'}
+                return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" >= {closest_distance:.2f}"'}
 
             logger.debug(
                 "Pile-in validation - %s moved closer to %s: %.2f -> %.2f",
@@ -2538,7 +2538,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
             new_distance_to_closest = float(distance_between_bases_3d(new_base, closest_enemy.model_base))
 
             if new_distance_to_closest >= closest_distance:
-                return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" ≥ {closest_distance:.2f}"'}
+                return {'valid': False, 'reason': f'Pile-in must end closer to closest enemy ({closest_enemy.name}): {new_distance_to_closest:.2f}" >= {closest_distance:.2f}"'}
 
             logger.debug(
                 "Pile-in validation - %s moved closer to %s: %.2f -> %.2f",
@@ -2827,7 +2827,7 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
                     if new_distance_to_unit >= closest_distance:
                         return {
                             'valid': False,
-                            'reason': f'Consolidate must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" ≥ {closest_distance:.2f}"'
+                            'reason': f'Consolidate must end closer to closest enemy unit ({closest_unit.name}): {new_distance_to_unit:.2f}" >= {closest_distance:.2f}"'
                         }
 
                     if validation_rules.get('prefer_base_contact', False):

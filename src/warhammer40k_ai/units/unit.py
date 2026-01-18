@@ -365,7 +365,7 @@ class Unit:
             for leader in leaders:
                 try:
                     for ab in (getattr(leader, "possible_abilities", []) or []):
-                        desc = str(getattr(ab, "description", "") or "").replace("’", "'")
+                        desc = str(getattr(ab, "description", "") or "").replace("\u2019", "'")
                         if desc and ("leading a unit" in desc.lower()) and ("objective control characteristic" in desc.lower()):
                             import re
                             if re.search(r"add\s+1\s+to\s+the\s+objective\s+control\s+characteristic", desc, flags=re.IGNORECASE):
@@ -389,7 +389,7 @@ class Unit:
                 except Exception:
                     pass
 
-            # Friendly OC auras (ADD) – applied as an ADD modifier so DIV happens first.
+            # Friendly OC auras (ADD) \u2013 applied as an ADD modifier so DIV happens first.
             try:
                 from ..utility.aura_effects import get_aura_objective_control_bonus
                 bonus = int(get_aura_objective_control_bonus(self, game_map=game_map) or 0)
@@ -596,7 +596,7 @@ class Unit:
         # Start from a clean slate to avoid double-stacking across multiple checks.
         self._clear_damaged_profile_effects()
 
-        t = (profile_text or "").replace("’", "'")
+        t = (profile_text or "").replace("\u2019", "'")
         t = re.sub(r"\s+", " ", t).strip()
         tl = t.lower()
 
@@ -2656,32 +2656,115 @@ class Unit:
     def _parse_range(self, range_string: str) -> Range:
         return Range.from_string(range_string)
 
-    def _parse_base_size(self, base_size: str) -> Base:
-        base_size = base_size.replace("mm", "")
-        if 'flying base' in base_size:
-            # TODO - need to implement vertical offset for flying bases
-            #print(f"{self.name} has flying base")
-            base_size = base_size.replace("flying base", "").strip()
-        # Parse the base size from the datasheet
-        if 'x' in base_size:
-            # This handles the elliptical example: "32 x 16mm"
-            major, minor = base_size.split("x")
+    def _is_unknown_base_size(self, base_size: str) -> bool:
+        raw = str(base_size or "").strip().lower()
+        return raw in ("", "use model", "no official base size")
+
+    def _warn_unknown_base_size(self, model_name: str, fallback_desc: str) -> None:
+        if not hasattr(self, "_unknown_base_size_warnings"):
+            self._unknown_base_size_warnings = set()
+        key = (str(model_name or "").strip().lower(), str(fallback_desc or "").strip().lower())
+        if key in self._unknown_base_size_warnings:
+            return
+        self._unknown_base_size_warnings.add(key)
+        print(
+            f"WARNING: {self.name}: base size for '{model_name or 'model'}' is unspecified; "
+            f"using {fallback_desc}."
+        )
+
+    def _parse_base_size(
+        self,
+        base_size: str,
+        *,
+        fallback_base_size: Optional[str] = None,
+        model_name: str = "",
+    ) -> Base:
+        def _strip_flying(raw: str) -> tuple[str, bool]:
+            cleaned = str(raw or "")
+            is_flying = "flying base" in cleaned.lower()
+            if is_flying:
+                cleaned = re.sub(r"flying base", "", cleaned, flags=re.IGNORECASE).strip()
+            return cleaned, is_flying
+
+        cleaned, is_flying = _strip_flying(base_size)
+        if self._is_unknown_base_size(cleaned):
+            if fallback_base_size and not self._is_unknown_base_size(fallback_base_size):
+                cleaned, fallback_flying = _strip_flying(fallback_base_size)
+                is_flying = is_flying or fallback_flying
+            else:
+                # No reliable base size provided; use a conservative default and warn once.
+                if bool(getattr(self, "is_vehicle", False)) or bool(getattr(self, "is_monster", False)) or bool(getattr(self, "is_transport", False)):
+                    base = Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
+                    self._warn_unknown_base_size(model_name, "80x40mm hull")
+                else:
+                    base = Base(BaseType.CIRCULAR, convert_mm_to_inches(32 / 2.0))
+                    self._warn_unknown_base_size(model_name, "32mm base")
+                if is_flying:
+                    setattr(base, "is_flying_base", True)
+                return base
+
+        cleaned = cleaned.replace("mm", "").strip()
+        if "x" in cleaned:
+            major, minor = cleaned.split("x")
             major = convert_mm_to_inches(float(major.strip()) / 2.0)
             minor = convert_mm_to_inches(float(minor.strip()) / 2.0)
-            return Base(BaseType.ELLIPTICAL, (major, minor))
-        elif 'Use model' in base_size:
-            #print(f"{self.name} has guessed HULL base size")
-            # TODO - not sure how to handle this; assume hull with 80mm radius and 40mm width
-            return Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
-        elif 'No official base size' == base_size.strip():
-            #print(f"{self.name} has NO officialbase size")
-            return Base(BaseType.HULL, (convert_mm_to_inches(80 / 2), convert_mm_to_inches(40 / 2)))
-        elif '' == base_size.strip():
-            #print(f"{self.name} has NO base size - guessing 32mm")
-            return Base(BaseType.CIRCULAR, convert_mm_to_inches(32 / 2.0))
+            base = Base(BaseType.ELLIPTICAL, (major, minor))
         else:
-            # This handles the standard example: "32mm"
-            return Base(BaseType.CIRCULAR, convert_mm_to_inches(float(base_size.strip()) / 2.0))
+            base = Base(BaseType.CIRCULAR, convert_mm_to_inches(float(cleaned.strip()) / 2.0))
+
+        if is_flying:
+            setattr(base, "is_flying_base", True)
+        return base
+
+    def _normalize_base_size_name(self, text: str) -> str:
+        text = (text or "").lower()
+        text = re.sub(r"\([^)]*\)", " ", text)
+        text = re.sub(r"[^a-z0-9\s]", " ", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _parse_base_size_descr_overrides(self, base_size_descr: str) -> dict:
+        if not base_size_descr:
+            return {}
+        base_size_descr = (
+            base_size_descr.replace("\u2019", "'")
+            .replace("\u2013", "-")
+            .replace("\u2014", "-")
+        )
+        overrides: dict[str, str] = {}
+        patterns = [
+            r"(?P<name>[A-Za-z0-9 '\-]+?)\s+model\s+(?P<size>\d+(?:\.\d+)?\s*mm|\d+\s*x\s*\d+\s*mm)",
+            r"(?P<name>[A-Za-z0-9 '\-]+?)\s+on\s+(?P<size>\d+(?:\.\d+)?\s*mm|\d+\s*x\s*\d+\s*mm)",
+            r"(?P<name>[A-Za-z0-9 '\-]+?)\s+(?P<size>\d+(?:\.\d+)?\s*mm|\d+\s*x\s*\d+\s*mm)",
+        ]
+        for pattern in patterns:
+            for match in re.finditer(pattern, base_size_descr, flags=re.IGNORECASE):
+                name = match.group("name").strip()
+                size = match.group("size").strip()
+                if not re.search(r"[A-Za-z]", name):
+                    continue
+                overrides[self._normalize_base_size_name(name)] = size
+        return overrides
+
+    def _select_base_size_override(self, base_size_descr: str, model_name: str) -> Optional[str]:
+        if not base_size_descr or not model_name:
+            return None
+        overrides = self._parse_base_size_descr_overrides(base_size_descr)
+        if not overrides:
+            return None
+        model_norm = self._normalize_base_size_name(model_name)
+        if not model_norm:
+            return None
+        best = None
+        best_len = -1
+        for name_norm, size in overrides.items():
+            if not name_norm:
+                continue
+            if name_norm == model_norm or name_norm in model_norm or model_norm in name_norm:
+                if len(name_norm) > best_len:
+                    best = size
+                    best_len = len(name_norm)
+        return best
 
     def _parse_unit_composition(self, unit_composition):
         """
@@ -2788,8 +2871,8 @@ class Unit:
             if dlow.startswith("one of the following:"):
                 continue
 
-            # Remove trailing keyword annotation after an en-dash (" – EPIC HERO", etc.)
-            main = desc.split(" – ", 1)[0].strip().rstrip(".")
+            # Remove trailing keyword annotation after an en-dash (" \u2013 EPIC HERO", etc.)
+            main = desc.split(" \u2013 ", 1)[0].strip().rstrip(".")
 
             # Split into segments at top level: commas, then "and" separators.
             segments: list[str] = []
@@ -2864,7 +2947,7 @@ class Unit:
             self.unit_composition = chosen
 
         def _normalize_name(s: str) -> str:
-            s = (s or "").replace("’", "'").strip().lower()
+            s = (s or "").replace("\u2019", "'").strip().lower()
             s = re.sub(r"<[^>]+>", " ", s)
             s = re.sub(r"[^a-z0-9\s]", " ", s)
             s = re.sub(r"\s+", " ", s).strip()
@@ -2920,6 +3003,22 @@ class Unit:
 
             return best
 
+        def _select_fallback_base_size() -> Optional[str]:
+            try:
+                profiles = list(getattr(datasheet, "datasheets_models", []) or [])
+            except Exception:
+                profiles = []
+            for prof in profiles:
+                try:
+                    raw = str(prof.get("base_size", "") or "").strip()
+                except Exception:
+                    raw = ""
+                if raw and not self._is_unknown_base_size(raw):
+                    return raw
+            return None
+
+        fallback_base_size = _select_fallback_base_size()
+
         if quantity is None:
             # If no quantity is specified, use the minimum number of models
             quantity = sum(min_size for _, (min_size, _) in self.unit_composition.items())
@@ -2928,7 +3027,7 @@ class Unit:
         try:
             max_cap = getattr(self, "unit_models_maximum", None)
             if isinstance(max_cap, int) and max_cap > 0 and quantity > max_cap:
-                print(f"⚠️  {self.name} requested size {quantity} exceeds maximum {max_cap}; clamping to {max_cap}.")
+                print(f" {self.name} requested size {quantity} exceeds maximum {max_cap}; clamping to {max_cap}.")
                 quantity = max_cap
         except Exception:
             pass
@@ -2954,7 +3053,15 @@ class Unit:
                     wounds=self._parse_attribute(profile.get("W", datasheet.datasheets_models[0]["W"])),
                     leadership=self._parse_attribute(profile.get("Ld", datasheet.datasheets_models[0]["Ld"])),
                     objective_control=self._parse_attribute(profile.get("OC", datasheet.datasheets_models[0]["OC"])),
-                    model_base=self._parse_base_size(profile.get("base_size", datasheet.datasheets_models[0]["base_size"])),
+                    model_base=self._parse_base_size(
+                        self._select_base_size_override(
+                            str(profile.get("base_size_descr", datasheet.datasheets_models[0].get("base_size_descr", "")) or ""),
+                            model_name,
+                        )
+                        or profile.get("base_size", datasheet.datasheets_models[0]["base_size"]),
+                        fallback_base_size=fallback_base_size,
+                        model_name=model_name,
+                    ),
                     inv_save=self._parse_attribute(profile.get("inv_sv", datasheet.datasheets_models[0]["inv_sv"])),
                     inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower(),
                     movement_raw=str(profile.get("M", datasheet.datasheets_models[0].get("M", "")) or ""),
@@ -2974,7 +3081,7 @@ class Unit:
 
     def _parse_loadout(self, loadout: str, model_name: str = "", return_optional: bool = False) -> List[Wargear] | Tuple[List[Wargear], List[str]]:
         def _norm_item(s: str) -> str:
-            s = (s or "").replace("’", "'").lower().strip()
+            s = (s or "").replace("\u2019", "'").lower().strip()
             s = re.sub(r"<[^>]+>", " ", s)
             # remove punctuation but keep hyphens (for items like "grav-gun")
             s = re.sub(r"[^\w\s\-']", " ", s)
@@ -2982,7 +3089,7 @@ class Unit:
             s = re.sub(r"\s+", " ", s).strip()
             return s
 
-        entries = (loadout or "").replace('’', "'").lower().split('.')
+        entries = (loadout or "").replace('\u2019', "'").lower().split('.')
 
         def _parse_loadout_quantity(item_name: str) -> Tuple[int, str]:
             if quantity_match := re.match(r"^(\d+) (.*)s$", item_name.strip()):
@@ -3076,8 +3183,8 @@ class Unit:
         if hasattr(datasheet, 'datasheets_wargear'):
             for wargear_data in datasheet.datasheets_wargear:
                 #print(f"Parsing wargear {wargear_data['name']}")
-                if ' – ' in wargear_data['name']:
-                    name, profile = wargear_data['name'].split(' – ')
+                if ' \u2013 ' in wargear_data['name']:
+                    name, profile = wargear_data['name'].split(' \u2013 ')
                     if name not in [wargear.name for wargear in possible_wargear]:
                         #print(f"Adding wargear {name} with profile {profile}")
                         possible_wargear.append(Wargear(wargear_data))
@@ -3128,7 +3235,7 @@ class Unit:
         import re
 
         def _norm(s: str) -> str:
-            s = (s or "").replace("’", "'").lower().strip()
+            s = (s or "").replace("\u2019", "'").lower().strip()
             s = re.sub(r"<[^>]+>", " ", s)
             s = re.sub(r"[^\w\s\-']", " ", s)
             s = s.replace("'", "")
@@ -3214,7 +3321,7 @@ class Unit:
         from warhammer40k_ai.units.wargear import WargearOptionType
 
         def _norm(s: str) -> str:
-            s = (s or "").replace("’", "'").lower().strip()
+            s = (s or "").replace("\u2019", "'").lower().strip()
             s = re.sub(r"<[^>]+>", " ", s)
             s = re.sub(r"[^\w\s\-']", " ", s)
             s = s.replace("'", "")
@@ -3346,7 +3453,7 @@ class Unit:
         def _max_per_models_limit() -> tuple[int, int] | None:
             # Parse "to a maximum of X per Y models in this unit"
             for cond in list(getattr(wargear_option, "conditionals", []) or []):
-                cl = (cond or "").lower().strip().replace("’", "'")
+                cl = (cond or "").lower().strip().replace("\u2019", "'")
                 m = re.match(r"to a maximum of (\d+) per (\d+) models in this unit", cl)
                 if m:
                     return int(m.group(1)), int(m.group(2))
@@ -3712,7 +3819,7 @@ class Unit:
         import re
 
         def _norm(s: str) -> str:
-            s = (s or "").replace("’", "'").lower().strip()
+            s = (s or "").replace("\u2019", "'").lower().strip()
             s = re.sub(r"[^\w\s\-']", " ", s)
             s = s.replace("'", "")
             s = re.sub(r"\s+", " ", s).strip()
@@ -3874,7 +3981,7 @@ class Unit:
     @staticmethod
     def _norm_wargear_name(s: str) -> str:
         import re
-        s = (s or "").replace("’", "'").lower().strip()
+        s = (s or "").replace("\u2019", "'").lower().strip()
         s = re.sub(r"<[^>]+>", " ", s)
         s = re.sub(r"[^\w\s\-']", " ", s)
         s = s.replace("'", "")
@@ -3995,7 +4102,6 @@ class Unit:
                 else:
                     wargear_to_add = parsed
             else:
-                # TODO - validate wargear against options and their limits and exchanges
                 wargear_to_add.extend(wargear)
             for wargear_instance in wargear_to_add:
                 if model_name:
@@ -4011,6 +4117,8 @@ class Unit:
                         model_instance.optional_wargear.append(str(ow))
                     except Exception:
                         continue
+        if wargear:
+            self.validate_wargear_selection()
 
     def set_parent_army(self, army_ptr) -> None:
         """Set the parent army of the unit."""
@@ -4221,7 +4329,7 @@ class Unit:
                     )
                     try:
                         label = str(spec.get("name") or "Return on Death")
-                        print(f"✨ {label}: {model.name} will attempt to return at end of phase.")
+                        print(f"{label}: {model.name} will attempt to return at end of phase.")
                     except Exception:
                         pass
                 try:
@@ -4348,12 +4456,12 @@ class Unit:
         except Exception:
             pass
 
-        print(f"⚡ {model.name} fights on death into {target_unit.name}")
+        print(f"{model.name} fights on death into {target_unit.name}")
         for profile in melee_profiles:
             try:
                 profile.attack(target_unit, model, game_map=game_map)
             except Exception as e:
-                print(f"❌ Fight on Death attack error: {e}")
+                print(f"Fight on Death attack error: {e}")
 
         return True
 
@@ -4413,13 +4521,13 @@ class Unit:
         except Exception:
             pass
 
-        print(f"⚡ {model.name} shoots on death into {best_target.name}")
+        print(f"{model.name} shoots on death into {best_target.name}")
         shots_executed = 0
         for profile in ranged_profiles:
             try:
                 shots_executed += self._execute_weapon_attacks(profile, best_target, [model], game_map)
             except Exception as e:
-                print(f"❌ Shoot on Death attack error: {e}")
+                print(f"Shoot on Death attack error: {e}")
 
         return shots_executed > 0
 
@@ -4435,7 +4543,7 @@ class Unit:
         if not has_deadly_demise:
             return
         
-        print(f"💥 {self.name} has Deadly Demise {damage_dice} - checking for explosion!")
+        print(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
         
         # Roll D6 to see if Deadly Demise triggers
         trigger_roll = get_roll("D6")
@@ -4446,22 +4554,22 @@ class Unit:
         except Exception:
             pass
         if trigger_roll != 6:
-            print(f"🎲 Deadly Demise trigger roll: {trigger_roll} (needed 6) - No explosion!")
+            print(f"Deadly Demise trigger roll: {trigger_roll} (needed 6) - No explosion!")
             return
         
-        print(f"🎲 Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! 💥")
+        print(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
         
         # Get the dying model's position
         model_position = dying_model.get_location()
         if not model_position:
-            print(f"❌ Cannot determine position of dying model for Deadly Demise")
+            print(f"Cannot determine position of dying model for Deadly Demise")
             return
         
         # Find all units within 6 inches of the dying model
         nearby_units = self._get_units_within_range(model_position, 6.0, game_map)
         
         if not nearby_units:
-            print(f"💥 Deadly Demise triggered but no units within 6\" - no damage dealt")
+            print(f"Deadly Demise triggered but no units within 6\" - no damage dealt")
             return
         
         # Apply damage to each nearby unit
@@ -4473,16 +4581,16 @@ class Unit:
             else:  # It's a fixed number
                 damage_amount = damage_dice.modifier
             
-            print(f"💥 {target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
+            print(f"{target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
             
             # Apply mortal wounds to the target unit
             models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount, game_map=game_map)
             total_damage_dealt += damage_amount
             
             if models_destroyed > 0:
-                print(f"💀 Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
+                print(f"Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
         
-        print(f"💥 Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
+        print(f"Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
 
     def trigger_deadly_demise_manually(self, dying_model: Model, game_map: 'Map') -> None:
         """Manually trigger Deadly Demise for testing or when game context is available.
@@ -4868,9 +4976,9 @@ class Unit:
         except Exception:
             dice_note = ""
         if passed:
-            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ✅")
+            print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
         else:
-            print(f"🎲 {self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ❌")
+            print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
         
         return passed
 
@@ -4911,9 +5019,9 @@ class Unit:
             dice_note = ""
         model_name = getattr(model, "name", "Model")
         if passed:
-            print(f"🎲 {model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ✅")
+            print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
         else:
-            print(f"🎲 {model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ❌")
+            print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
 
         return passed
 
@@ -4978,13 +5086,6 @@ class Unit:
                         candidates.append(n.strip())
         except Exception:
             candidates = []
-
-        # Also include parsed Ability objects (already cleaned) as a fallback
-        try:
-            for a in getattr(self, "possible_abilities", []) or []:
-                candidates.append(f"{getattr(a, 'name', '')} {getattr(a, 'description', '')}".strip())
-        except Exception:
-            pass
 
         text = " \n ".join([c for c in candidates if c])
         if not text:
@@ -5163,8 +5264,10 @@ class Unit:
             return False
         return (self.transport_slots_used + needed) <= self.transport_capacity
 
-    def add_passenger(self, passenger_unit: 'Unit', game_map: Optional['Map'] = None) -> bool:
-        """Embark bookkeeping. Removes passenger from map if provided."""
+    def add_passenger(self, passenger_unit: 'Unit', game_map: 'Map') -> bool:
+        """Embark bookkeeping. Removes passenger from the map."""
+        if game_map is None:
+            raise RuntimeError("Embark requires an active game map.")
         if not self.can_transport(passenger_unit):
             return False
         if passenger_unit in self.transport_passengers:
@@ -5173,36 +5276,21 @@ class Unit:
         passenger_unit.embarked_in = self
         passenger_unit.round_state.embarked_this_round = True
         # If passenger is an attached-unit root, mark attached leaders as embarked too.
-        try:
-            for l in list(getattr(passenger_unit, "attached_leaders", []) or []):
-                if l is None:
-                    continue
-                l.embarked_in = self
-                try:
-                    l.round_state.embarked_this_round = True
-                except Exception:
-                    pass
-                try:
-                    if game_map is not None and hasattr(game_map, "units") and l in game_map.units:
-                        game_map.units.remove(l)
-                except Exception:
-                    pass
-                try:
-                    l.position = None
-                except Exception:
-                    pass
-                publish_fn = getattr(l, "_publish_unit_event", None)
-                if callable(publish_fn):
-                    publish_fn("unit_embarked", unit=l, transport_unit=self)
-                    publish_fn("unit_state_changed", unit=l, reason="embarked", transport_unit=self)
-        except Exception:
-            pass
+        for leader in list(getattr(passenger_unit, "attached_leaders", []) or []):
+            if leader is None:
+                continue
+            leader.embarked_in = self
+            leader.round_state.embarked_this_round = True
+            if leader in game_map.units:
+                game_map.units.remove(leader)
+            leader.position = None
+            publish_fn = getattr(leader, "_publish_unit_event", None)
+            if callable(publish_fn):
+                publish_fn("unit_embarked", unit=leader, transport_unit=self)
+                publish_fn("unit_state_changed", unit=leader, reason="embarked", transport_unit=self)
         # Remove from battlefield representation
-        try:
-            if game_map is not None and hasattr(game_map, "units") and passenger_unit in game_map.units:
-                game_map.units.remove(passenger_unit)
-        except Exception:
-            pass
+        if passenger_unit in game_map.units:
+            game_map.units.remove(passenger_unit)
         # Clear a concrete battlefield position while embarked
         passenger_unit.position = None
         passenger_unit._publish_unit_event("unit_embarked", unit=passenger_unit, transport_unit=self)
@@ -5210,29 +5298,20 @@ class Unit:
         return True
 
     def remove_passenger(self, passenger_unit: 'Unit') -> None:
-        try:
-            if passenger_unit in self.transport_passengers:
-                self.transport_passengers.remove(passenger_unit)
-        except Exception:
-            pass
-        try:
-            if passenger_unit.embarked_in == self:
-                passenger_unit.embarked_in = None
-        except Exception:
-            pass
+        if passenger_unit in self.transport_passengers:
+            self.transport_passengers.remove(passenger_unit)
+        if getattr(passenger_unit, "embarked_in", None) == self:
+            passenger_unit.embarked_in = None
         # Clear embarked state for attached leaders as well.
-        try:
-            for l in list(getattr(passenger_unit, "attached_leaders", []) or []):
-                if l is None:
-                    continue
-                if getattr(l, "embarked_in", None) == self:
-                    l.embarked_in = None
-                publish_fn = getattr(l, "_publish_unit_event", None)
-                if callable(publish_fn):
-                    publish_fn("unit_disembarked", unit=l, transport_unit=self)
-                    publish_fn("unit_state_changed", unit=l, reason="disembarked", transport_unit=self)
-        except Exception:
-            pass
+        for leader in list(getattr(passenger_unit, "attached_leaders", []) or []):
+            if leader is None:
+                continue
+            if getattr(leader, "embarked_in", None) == self:
+                leader.embarked_in = None
+            publish_fn = getattr(leader, "_publish_unit_event", None)
+            if callable(publish_fn):
+                publish_fn("unit_disembarked", unit=leader, transport_unit=self)
+                publish_fn("unit_state_changed", unit=leader, reason="disembarked", transport_unit=self)
         passenger_unit._publish_unit_event("unit_disembarked", unit=passenger_unit, transport_unit=self)
         passenger_unit._publish_unit_event("unit_state_changed", unit=passenger_unit, reason="disembarked", transport_unit=self)
 
@@ -6265,7 +6344,7 @@ class Unit:
         return base
 
     def calculate_points(self, num_models):
-        # Only consider numeric thresholds (some datasheets may have parsing fallbacks).
+        # Only consider numeric thresholds.
         numeric = [(k, v) for k, v in (self.models_cost or {}).items() if isinstance(k, int)]
         for threshold, cost in sorted(numeric, reverse=True):
             if num_models >= threshold:
@@ -6422,12 +6501,8 @@ class Unit:
         """
         self.initialize_round()
         # Battle-shock expires at the start of *your* next Command phase.
-        # If this command action is being used as the command-phase entrypoint (e.g. in gym env),
-        # clear Battle-shock before running the step's Battle-shock tests.
-        try:
-            self.clear_battle_shock()
-        except Exception:
-            pass
+        # Clear Battle-shock before running the step's Battle-shock tests.
+        self.clear_battle_shock()
 
         # Do Battle Shock Test for appropriate units
         if (not self.is_alive()):
@@ -6435,10 +6510,10 @@ class Unit:
         # If forced to test for being Below Starting Strength, do not also test for being Below Half-strength
         # unless explicitly stated.
         if self.is_below_starting_strength():
-            print(f"⚠️  {self.name} is below starting strength - taking Battle-Shock test")
+            print(f"{self.name} is below starting strength - taking Battle-Shock test")
             self.take_battle_shock_test(current_turn)
         elif self.is_below_half_strength():
-            print(f"⚠️  {self.name} is below half strength - taking Battle-Shock test")
+            print(f"{self.name} is below half strength - taking Battle-Shock test")
             self.take_battle_shock_test(current_turn)
 
         return True
@@ -6461,18 +6536,11 @@ class Unit:
                 continue
             if game_map.is_within_engagement_range(self, enemy_unit):
                 engaged = True
-                try:
-                    if not bool(getattr(enemy_unit, "is_aircraft", False)):
-                        engaged_non_aircraft = True
-                        break
-                except Exception:
+                if not bool(getattr(enemy_unit, "is_aircraft", False)):
                     engaged_non_aircraft = True
                     break
 
-        try:
-            self._engaged_only_by_aircraft = bool(engaged and not engaged_non_aircraft)
-        except Exception:
-            pass
+        self._engaged_only_by_aircraft = bool(engaged and not engaged_non_aircraft)
 
         return MovementState.IN_ENGAGEMENT_RANGE if engaged else MovementState.OUT_OF_ENGAGEMENT_RANGE
 
@@ -6505,19 +6573,19 @@ class Unit:
         # you count as having made a Normal move and cannot move further this turn.
         if getattr(self.round_state, "disembarked_from_moved_transport", False) or getattr(self.round_state, "disembarked_from_destroyed_transport", False):
             if action in (MovementAction.MOVE.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
-                print(f"❌ {self.name} cannot move further after disembarking this turn")
+                print(f"{self.name} cannot move further after disembarking this turn")
                 return False
 
         # AIRCRAFT: only Normal moves allowed.
         if bool(getattr(self, "is_aircraft", False)):
             if action in (MovementAction.REMAIN_STATIONARY.value, MovementAction.ADVANCE.value, MovementAction.FALL_BACK.value):
-                print(f"❌ {self.name} cannot {('remain stationary' if action == MovementAction.REMAIN_STATIONARY.value else 'advance' if action == MovementAction.ADVANCE.value else 'fall back')} (AIRCRAFT)")
+                print(f"{self.name} cannot {('remain stationary' if action == MovementAction.REMAIN_STATIONARY.value else 'advance' if action == MovementAction.ADVANCE.value else 'fall back')} (AIRCRAFT)")
                 return False
 
         # If the unit is currently performing a mission Action and moves (excluding pile-in/consolidation handled elsewhere), cancel the Action
         def _cancel_action_due_to_move():
             if getattr(self.round_state, 'performing_action_name', None):
-                print(f"❌ {self.name} moved; cancelling Action '{self.round_state.performing_action_name}'")
+                print(f"{self.name} moved; cancelling Action '{self.round_state.performing_action_name}'")
                 self.round_state.performing_action_name = None
                 self.round_state.action_completes_turn = None
                 self.round_state.action_locked_until_turn_end = False
@@ -6584,7 +6652,7 @@ class Unit:
 
     def remain_stationary(self) -> bool:
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"❌ {self.name} cannot Remain Stationary (AIRCRAFT)")
+            print(f"{self.name} cannot Remain Stationary (AIRCRAFT)")
             return False
         # Unit explicitly chose to remain stationary, so mark it as such
         self.round_state.remained_stationary_this_round = True
@@ -6861,7 +6929,7 @@ class Unit:
         normalized = self._normalize_rules_text(text)
         if not normalized:
             return None
-        normalized = normalized.replace("’", "'")
+        normalized = normalized.replace("\u2019", "'")
         normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
         m = self._BEARER_INVULNERABLE_SAVE_RE.match(normalized)
         if not m:
@@ -7037,40 +7105,11 @@ class Unit:
                 continue
 
     def _iter_reroll_scan_texts(self):
-        """Yield ability texts for reroll detection, with a stub-safe fallback."""
+        """Yield ability texts for reroll detection."""
         iter_active = getattr(self, "_iter_active_ability_texts", None)
         if callable(iter_active):
             for t in iter_active():
                 yield t
-        else:
-            for ab in (getattr(self, "possible_abilities", []) or []):
-                try:
-                    if isinstance(ab, str):
-                        if ab:
-                            yield ab
-                        continue
-                    nm = str(getattr(ab, "name", "") or "")
-                    ds = str(getattr(ab, "description", "") or "")
-                    if nm:
-                        yield nm
-                    if ds:
-                        yield ds
-                except Exception:
-                    continue
-            for ab in (getattr(self, "abilities", []) or []):
-                try:
-                    if isinstance(ab, str):
-                        if ab:
-                            yield ab
-                        continue
-                    nm = str(getattr(ab, "name", "") or "")
-                    ds = str(getattr(ab, "description", "") or "")
-                    if nm:
-                        yield nm
-                    if ds:
-                        yield ds
-                except Exception:
-                    continue
         iter_leader = getattr(self, "_iter_attached_leader_ability_texts", None)
         if callable(iter_leader):
             for t in iter_leader():
@@ -7173,7 +7212,7 @@ class Unit:
         for member in members:
             for name, desc in member._iter_ability_entries_for_rules():
                 try:
-                    ability_name = str(name or "").replace("’", "'").strip()
+                    ability_name = str(name or "").replace("\u2019", "'").strip()
                 except Exception:
                     ability_name = ""
                 name_key = ability_name.lower().strip()
@@ -7333,7 +7372,7 @@ class Unit:
             seen_names: set[str] = set()
             for ab, _leader in root._iter_attached_leader_leading_abilities():
                 try:
-                    name = str(getattr(ab, "name", "") or "Leading ability").replace("’", "'")
+                    name = str(getattr(ab, "name", "") or "Leading ability").replace("\u2019", "'")
                     desc = str(getattr(ab, "description", "") or "")
                 except Exception:
                     name = "Leading ability"
@@ -8085,9 +8124,9 @@ class Unit:
             roll += int(val)
             try:
                 if val > 0:
-                    print(f"⚔️ {self.name} advance bonus: +{val}\" ({source})")
+                    print(f"{self.name} advance bonus: +{val}\" ({source})")
                 else:
-                    print(f"⚔️ {self.name} advance penalty: {val}\" ({source})")
+                    print(f"{self.name} advance penalty: {val}\" ({source})")
             except Exception:
                 pass
         return int(roll)
@@ -8461,7 +8500,7 @@ class Unit:
         return self._first_prince_of_chaos_active() and self._first_prince_has_god_keyword("SLAANESH")
 
     def _is_belakor(self) -> bool:
-        name = str(getattr(self, "name", "") or "").lower().replace("’", "'")
+        name = str(getattr(self, "name", "") or "").lower().replace("\u2019", "'")
         return "belakor" in name or "be'lakor" in name
 
     def _is_chaos_undivided(self) -> bool:
@@ -8503,7 +8542,7 @@ class Unit:
             return bool(self._ability_cache["martial_katah"])
 
         def _norm(text: str) -> str:
-            return str(text or "").replace("’", "'").replace("ƒ?T", "'").lower()
+            return str(text or "").replace("\u2019", "'").replace("\u0192?T", "'").lower()
 
         patterns = ("martial ka'tah", "martial katah")
         found = False
@@ -8656,7 +8695,7 @@ class Unit:
                             _append(_player.name, f"Advance re-roll: {new_roll} for {self.name}")
                         except Exception:
                             pass
-                        print(f"🎲 {self.name} advance re-roll: {new_roll}")
+                        print(f"{self.name} advance re-roll: {new_roll}")
                         return new_roll
                     # If this unit has a rule-based reroll (e.g., "re-roll Advance rolls"),
                     # offer it via a blocking provider BEFORE publishing roll_made for Command Re-roll.
@@ -8674,7 +8713,7 @@ class Unit:
 
                     # Store final value
                     self.round_state.advance_roll = advance_roll
-                    print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
+                    print(f"{self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
 
                     # Publish roll event (reroll may be locked if already used)
                     from ..utility.reroll_tracker import prepare_reroll_event
@@ -8699,7 +8738,7 @@ class Unit:
                 pass
             # Ensure stored even if no game/event_system
             self.round_state.advance_roll = advance_roll
-            print(f"🎲 {self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
+            print(f"{self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
             return advance_roll
         return self.round_state.advance_roll
 
@@ -8815,11 +8854,11 @@ class Unit:
                 self.apply_status_effect(BattleShockEffect(current_turn))
         except Exception:
             pass
-        print(f"⚠️ {self.name} is battle-shocked after moving through tall terrain (Super-heavy Walker).")
+        print(f"{self.name} is battle-shocked after moving through tall terrain (Super-heavy Walker).")
 
     def advance(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"❌ {self.name} cannot Advance (AIRCRAFT)")
+            print(f"{self.name} cannot Advance (AIRCRAFT)")
             return False
         # Check if unit can advance after arriving from reserves
         if self.arrived_from_reserves_this_turn and not self.can_advance_after_arriving_from_reserves():
@@ -8872,10 +8911,10 @@ class Unit:
 
         # Straight-line requirement
         if forward_dist <= 1e-6:
-            print(f"❌ {self.name} must move forward (AIRCRAFT)")
+            print(f"{self.name} must move forward (AIRCRAFT)")
             return False
         if abs(side_dist) > 0.25:
-            print(f"❌ {self.name} must move straight forward (AIRCRAFT)")
+            print(f"{self.name} must move straight forward (AIRCRAFT)")
             return False
 
         min_move = 20.0
@@ -8971,16 +9010,16 @@ class Unit:
             except Exception:
                 pass
             if reason:
-                print(f"✈️ {self.name} placed into Strategic Reserves ({reason})")
+                print(f"{self.name} placed into Strategic Reserves ({reason})")
             else:
-                print(f"✈️ {self.name} placed into Strategic Reserves")
+                print(f"{self.name} placed into Strategic Reserves")
             return True
 
         # Minimum Move enforcement
         if forward_dist + 1e-6 < required_forward:
             if not _forward_move_within_boundary(required_forward):
                 return _send_to_strategic_reserves("minimum move impossible")
-            print(f"❌ {self.name} must move at least {min_move}\" (AIRCRAFT)")
+            print(f"{self.name} must move at least {min_move}\" (AIRCRAFT)")
             return False
 
         # Leaving the battlefield -> Strategic Reserves
@@ -9004,10 +9043,10 @@ class Unit:
         if game_map is not None:
             for m, nx, ny, _nz in proposed:
                 if game_map.check_collision_with_other_friendly_units(m, (nx, ny)):
-                    print(f"❌ {self.name} cannot move - {m.name} would overlap a friendly model")
+                    print(f"{self.name} cannot move - {m.name} would overlap a friendly model")
                     return False
                 if game_map.check_collision_with_other_enemy_units(m, (nx, ny)):
-                    print(f"❌ {self.name} cannot move - {m.name} would overlap an enemy model")
+                    print(f"{self.name} cannot move - {m.name} would overlap an enemy model")
                     return False
 
             from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
@@ -9023,7 +9062,7 @@ class Unit:
                         horiz = float(horizontal_distance_between_bases_2d(test_base, em.model_base))
                         vert = float(vertical_distance_between_bases(test_base, em.model_base))
                         if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
-                            print(f"❌ {self.name} cannot end within Engagement Range (AIRCRAFT)")
+                            print(f"{self.name} cannot end within Engagement Range (AIRCRAFT)")
                             return False
 
         # Apply movement (pivot after move is optional; keep facing by default)
@@ -9035,7 +9074,7 @@ class Unit:
                 pass
             m.set_location(nx, ny, nz, m.model_base.facing)
 
-        print(f"✈️ {self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({start_x + move_dx:.1f}, {start_y + move_dy:.1f}) - distance: {forward_dist:.1f}\"")
+        print(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({start_x + move_dx:.1f}, {start_y + move_dy:.1f}) - distance: {forward_dist:.1f}\"")
         return True
 
     def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
@@ -9208,7 +9247,7 @@ class Unit:
 
         # Check if destination is within movement range
         if distance_to_destination > movement_range:
-            print(f"❌ {self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
+            print(f"{self.name} cannot reach destination {distance_to_destination:.1f}\" away (max {'advance' if advance else 'move'}: {movement_range}\")")
             return False
 
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
@@ -9217,7 +9256,7 @@ class Unit:
         
         # Check if formation finding failed
         if potential_positions is None:
-            print(f"❌ {self.name} cannot move - no valid formation found at destination")
+            print(f"{self.name} cannot move - no valid formation found at destination")
             return False
 
         # Use the new individual model pathfinding system
@@ -9303,14 +9342,14 @@ class Unit:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"❌ {self.name} could not move - no models could reach any valid positions")
+            print(f"{self.name} could not move - no models could reach any valid positions")
             return False
 
         # NEW: Validate unit coherency after all models have moved
         is_coherent, non_coherent_models = process_unit_movement_with_coherency_check(self, model_movements)
         
         if not is_coherent:
-            print(f"❌ {self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+            print(f"{self.name} move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
             for i, original_pos in enumerate(original_model_positions):
                 if i < len(self.models):
@@ -9340,7 +9379,7 @@ class Unit:
                         continue
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
-                        print(f"❌ {self.name} cannot move - {model.name} would overlap with {enemy_model.name} from {enemy_unit.name}")
+                        print(f"{self.name} cannot move - {model.name} would overlap with {enemy_model.name} from {enemy_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
@@ -9358,10 +9397,10 @@ class Unit:
         
         # Provide detailed feedback
         action_name = 'advanced' if advance else 'moved'
-        print(f"✅ {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        print(f"{self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if successful_moves < len(self.models):
-            print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+            print(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
 
         logger.info(f"Unit {self.name} {action_name} from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.advanced_this_round = advance
@@ -9383,11 +9422,11 @@ class Unit:
         3. Prioritizes achieving engagement range over perfect formations
         """
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"❌ {self.name} cannot declare charges (AIRCRAFT)")
+            print(f"{self.name} cannot declare charges (AIRCRAFT)")
             return False
         # Mission Actions: a unit performing an Action is not eligible to declare a charge
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
-            print(f"❌ {self.name} is performing an Action and cannot declare a charge this turn")
+            print(f"{self.name} is performing an Action and cannot declare a charge this turn")
             return False
         if not self.models:
             logger.error(f"Cannot charge move unit {self.name}: no models in unit")
@@ -9446,9 +9485,9 @@ class Unit:
         if target_unit and target_unit.is_alive():
             # Charge toward specific target unit
             all_enemy_models = [model for model in target_unit.models if model.is_alive]
-            print(f"🎯 {self.name} charging specifically toward {target_unit.name} ({len(all_enemy_models)} models)")
+            print(f"{self.name} charging specifically toward {target_unit.name} ({len(all_enemy_models)} models)")
             if not all_enemy_models:
-                print(f"❌ {self.name} cannot charge - no alive models in target unit {target_unit.name}")
+                print(f"{self.name} cannot charge - no alive models in target unit {target_unit.name}")
                 return False
         else:
             print(f"ERROR: {self.name} cannot charge without a target unit.")
@@ -9458,7 +9497,7 @@ class Unit:
         
         # FAST PATH FOR SINGLE MODEL UNITS - use pathfinding but skip formation complexity
         if len(self.models) == 1:
-            print(f"🏃 {self.name} using single-model charge path")
+            print(f"{self.name} using single-model charge path")
             model = self.models[0]
             model_start = model.get_location()
             
@@ -9473,7 +9512,7 @@ class Unit:
             
             # Check if within charge distance
             if model_distance > max_charge_distance:
-                print(f"❌ {self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
+                print(f"{self.name} cannot reach charge destination {model_distance:.1f}\" away (max: {max_charge_distance}\")")
                 return False
             
             # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
@@ -9482,7 +9521,7 @@ class Unit:
             pathfinding_result = get_charge_movement_path(model, destination, max_charge_distance, game_map, target_unit)
             
             if not pathfinding_result or not pathfinding_result.get('valid'):
-                print(f"❌ {self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
+                print(f"{self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
                 return False
 
             shortest_path = pathfinding_result['path']
@@ -9492,7 +9531,7 @@ class Unit:
             
             # Check if path is within charge distance
             if path_distance > max_charge_distance:
-                print(f"❌ {self.name} path distance {path_distance:.1f}\" exceeds charge distance {max_charge_distance}\"")
+                print(f"{self.name} path distance {path_distance:.1f}\" exceeds charge distance {max_charge_distance}\"")
                 return False
             
             # Move the model to destination
@@ -9501,11 +9540,11 @@ class Unit:
             model.set_location(destination[0], destination[1], new_z, new_facing)
             successful_moves = 1
             
-            print(f"✅ {self.name} (single model) charged via pathfinding - distance: {path_distance:.1f}\"")
+            print(f"{self.name} (single model) charged via pathfinding - distance: {path_distance:.1f}\"")
         
         else:
             # COMPLEX PATH FOR MULTI-MODEL UNITS - use formation positioning
-            print(f"🏃 {self.name} using multi-model charge path")
+            print(f"{self.name} using multi-model charge path")
             
             # Generate potential positions for models with enhanced pathfinding for charges
             boundary_repulsors = self._get_reduced_boundary_repulsors(game_map)
@@ -9552,7 +9591,7 @@ class Unit:
                     else:
                         logger.debug(f"Model {model._id} cannot charge to formation position - pathfinding failed")
             else:
-                print(f"❌ {self.name} charge failed - no valid formation found, trying individual positioning")
+                print(f"{self.name} charge failed - no valid formation found, trying individual positioning")
             
             # If formation failed or had limited success, try individual model positioning
             if successful_moves < len(self.models) // 2:  # If less than half succeeded
@@ -9655,7 +9694,7 @@ class Unit:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"❌ {self.name} could not charge - no models could reach any valid positions")
+            print(f"{self.name} could not charge - no models could reach any valid positions")
             return False
         
         # CRITICAL VALIDATION: Final check for any overlaps after all models positioned
@@ -9672,7 +9711,7 @@ class Unit:
                         continue
                     # Check if this model's base overlaps with the friendly model's base
                     if model.model_base.collides_with(friendly_model.model_base):
-                        print(f"❌ {self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
+                        print(f"{self.name} charge failed - {model.name} would overlap with {friendly_model.name} from {friendly_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
@@ -9685,7 +9724,7 @@ class Unit:
             final_positions = [m.get_location() for m in self.models]
             is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
             if not is_coherent:
-                print(f"❌ {self.name} charge move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+                print(f"{self.name} charge move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
                 for i, original_pos in enumerate(original_model_positions):
                     if i < len(self.models):
                         self.models[i].set_location(*original_pos)
@@ -9713,10 +9752,10 @@ class Unit:
         )
         
         # Provide detailed feedback
-        print(f"✅ {self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        print(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if successful_moves < len(self.models):
-            print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
+            print(f" Note: Only {successful_moves}/{len(self.models)} models could move to valid positions")
         
         # Mark unit as having moved this round
         self.round_state.moved_this_round = True
@@ -9807,9 +9846,9 @@ class Unit:
         but cannot end within engagement range of any enemy models.
         """
         if bool(getattr(self, "is_aircraft", False)):
-            print(f"❌ {self.name} cannot Fall Back (AIRCRAFT)")
+            print(f"{self.name} cannot Fall Back (AIRCRAFT)")
             return False
-        print(f"🏃 {self.name} falls back from combat")
+        print(f"{self.name} falls back from combat")
 
         try:
             from ..rules.wrathful_presence import overwhelming_wrath_sources_for_unit
@@ -9883,7 +9922,7 @@ class Unit:
             )
             # Check if unit was wiped out during Desperate Escape Test
             if not self.is_alive():
-                print(f"dY'? {self.name} was completely destroyed during Desperate Escape Test!")
+                print(f"INFO: {self.name} was completely destroyed during Desperate Escape Test!")
                 return False
 
         # Execute Fall Back movement for each model
@@ -9928,7 +9967,7 @@ class Unit:
         
         # Check if destination is within movement range
         if distance_to_destination > movement_range:
-            print(f"❌ {self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
+            print(f"{self.name} cannot reach fall back destination {distance_to_destination:.1f}\" away (max move: {movement_range}\")")
             return False
 
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
@@ -9937,7 +9976,7 @@ class Unit:
         
         # Check if formation finding failed
         if potential_positions is None:
-            print(f"❌ {self.name} cannot fall back - no valid formation found at destination")
+            print(f"{self.name} cannot fall back - no valid formation found at destination")
             return False
             
         successful_moves = 0
@@ -9982,20 +10021,20 @@ class Unit:
             # Calculate path distance
             path_distance = measure_path_distance(shortest_path, self, MovementType.FALL_BACK, game_map)
             
-            # Check for Desperate Escape Tests (models that move over enemy models)
-            # Note: New pathfinding doesn't track enemy models moved over, so skip this for now
-            enemy_models_moved_over = []  # TODO: Implement enemy model tracking in new pathfinding
+            # Check for Desperate Escape Tests (models that move over enemy models).
+            # New pathfinding does not track enemy models moved over, so this stays empty.
+            enemy_models_moved_over = []
             if enemy_models_moved_over and not self.is_titanic and not self.is_flying:
-                print(f"⚠️  Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
+                print(f" Model {model._id} must take Desperate Escape Test for moving over {len(enemy_models_moved_over)} enemy model(s)")
                 
                 # Take Desperate Escape Test for this model
                 roll = get_roll("D6")
                 if roll <= 2:
-                    print(f"🎲 Model {model._id}: Rolled {roll} on Desperate Escape Test - DESTROYED! 💀")
+                    print(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - DESTROYED! ")
                     self.remove_model(model, fleed=True, game_map=game_map)
                     continue  # Model is destroyed, don't move it
                 else:
-                    print(f"🎲 Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ✅")
+                    print(f"Model {model._id}: Rolled {roll} on Desperate Escape Test - Survives ")
                     total_models_moved_over_enemies += 1
             
             if path_distance > movement_range:
@@ -10044,12 +10083,12 @@ class Unit:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"❌ {self.name} could not fall back - no models could reach valid positions")
+            print(f"{self.name} could not fall back - no models could reach valid positions")
             return False
         
         # Check if unit was wiped out during Desperate Escape Tests
         if not self.is_alive():
-            print(f"💀 {self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
+            print(f"{self.name} was completely destroyed during Fall Back Desperate Escape Tests!")
             return False
         
         # CRITICAL VALIDATION: Check for illegal overlaps after fall back
@@ -10066,7 +10105,7 @@ class Unit:
                         continue
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
-                        print(f"❌ {self.name} cannot fall back - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
+                        print(f"{self.name} cannot fall back - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
                         # For fall back, we don't have original positions stored, so this is a critical error
                         # The fall back move should have been validated during pathfinding
                         return False
@@ -10090,14 +10129,14 @@ class Unit:
         )
         
         # Provide detailed feedback
-        print(f"✅ {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        print(f"{self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if total_models_moved_over_enemies > 0:
-            print(f"⚔️  {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
+            print(f" {total_models_moved_over_enemies} model(s) moved over enemy models and survived Desperate Escape Tests")
         
         if successful_moves < len(self.models):
             remaining_models = len(self.models)
-            print(f"⚠️  Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
+            print(f" Note: Only {successful_moves} models could fall back to valid positions, {remaining_models} models remain")
         
         logger.info(f"Unit {self.name} fell back from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         self.round_state.fell_back_this_round = True
@@ -10208,10 +10247,10 @@ class Unit:
         # Use cached result if available
         if 'advance_and_charge' in getattr(self, '_ability_cache', {}):
             cached_result = self._ability_cache['advance_and_charge']
-            #print(f"🔍 {self.name} has_advance_and_charge (cached): {cached_result}")
+            #print(f"{self.name} has_advance_and_charge (cached): {cached_result}")
             return cached_result
 
-        print(f"🔍 {self.name} checking for advance and charge abilities...")
+        print(f"{self.name} checking for advance and charge abilities...")
 
         found = False
         if self.has_thrill_seekers():
@@ -10384,7 +10423,7 @@ class Unit:
         except Exception:
             pass
         has_ability = self.has_advance_and_charge()
-        #print(f"🔍 {self.name} can_charge_after_advance check: {has_ability}")
+        #print(f"{self.name} can_charge_after_advance check: {has_ability}")
         return has_ability
 
     def can_charge_after_fall_back(self) -> bool:
@@ -10574,7 +10613,7 @@ class Unit:
         
         # Check if destination is within scout distance
         if distance_to_destination > scout_distance:
-            print(f"❌ {self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
+            print(f"{self.name} cannot reach scout destination {distance_to_destination:.1f}\" away (max scout: {scout_distance}\")")
             return False
         
         # Generate potential positions for models with reduced boundary repulsors for better formation finding
@@ -10583,7 +10622,7 @@ class Unit:
         
         # Check if formation finding failed
         if potential_positions is None:
-            print(f"❌ {self.name} cannot scout move - no valid formation found at destination")
+            print(f"{self.name} cannot scout move - no valid formation found at destination")
             return False
 
         # Check scout restriction: cannot end within 9" of enemy models (base-to-base closest-point distance).
@@ -10595,7 +10634,7 @@ class Unit:
             mb = self._create_potential_base(x, y, z, facing, model=self.models[idx])
             for em in enemy_models:
                 if float(distance_between_bases_3d(mb, em.model_base)) < 9.0:
-                    print(f"❌ {self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
+                    print(f"{self.name} cannot scout move to destination - would end within 9\" of {em.parent_unit.name}")
                     return False
             
         # BACKUP ORIGINAL POSITIONS - Critical for proper rollback on failure
@@ -10692,7 +10731,7 @@ class Unit:
         
         # Check if any movement occurred
         if successful_moves == 0:
-            print(f"❌ {self.name} could not scout move - no models could reach valid positions")
+            print(f"{self.name} could not scout move - no models could reach valid positions")
             return False
         
         # NEW: Validate unit coherency after all models have moved (scout moves must maintain coherency)
@@ -10706,7 +10745,7 @@ class Unit:
         is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self, final_positions)
         
         if not is_coherent:
-            print(f"❌ {self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
+            print(f"{self.name} scout move rejected: unit coherency would be broken (non-coherent models: {non_coherent_models})")
             # ROLLBACK: Restore original positions (movement ending out of coherency is not allowed)
             for i, original_pos in enumerate(original_model_positions):
                 if i < len(self.models):
@@ -10727,7 +10766,7 @@ class Unit:
                         continue
                     # Check if this model's base overlaps with the enemy model's base
                     if model.model_base.collides_with(enemy_model.model_base):
-                        print(f"❌ {self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
+                        print(f"{self.name} cannot scout move - {model.name} cannot end overlapping with {enemy_model.name} from {enemy_unit.name}")
                         # ROLLBACK: Restore original positions
                         for i, original_pos in enumerate(original_model_positions):
                             if i < len(self.models):
@@ -10756,10 +10795,10 @@ class Unit:
         self.scout_move_made = True
         
         # Provide detailed feedback
-        print(f"🔍 {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
+        print(f"{self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         
         if successful_moves < len(self.models):
-            print(f"⚠️  Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
+            print(f" Note: Only {successful_moves}/{len(self.models)} models could scout move to valid positions")
         
         logger.info(f"Unit {self.name} scout moved from ({start_x:.1f}, {start_y:.1f}) to ({end_x:.1f}, {end_y:.1f}) - distance: {unit_distance_moved:.1f}\"")
         return True
@@ -10856,23 +10895,23 @@ class Unit:
             bool: True if any attacks were successful
         """
         if not weapon_declarations:
-            print(f"❌ {self.name}: No shooting declarations to execute")
+            print(f"{self.name}: No shooting declarations to execute")
             return False
             
         # Check if unit can shoot
         # Mission Actions: a unit performing an Action is not eligible to shoot until that Action completes or end of turn
         if getattr(self.round_state, 'action_locked_until_turn_end', False):
-            print(f"❌ {self.name} is performing an Action and cannot shoot this turn")
+            print(f"{self.name} is performing an Action and cannot shoot this turn")
             return False
         if (not out_of_phase) and self.round_state.shot_this_round:
-            print(f"❌ {self.name} has already shot this round")
+            print(f"{self.name} has already shot this round")
             return False
 
         # Chapter Approved exception: if this unit arrived from reserves via the "base touches edge"
         # Strategic Reserves placement, it cannot shoot this turn.
         try:
             if bool(getattr(self, "_reserves_edge_touch_this_turn", False)) and bool(getattr(self, "arrived_from_reserves_this_turn", False)):
-                print(f"❌ {self.name} cannot shoot this turn (edge-touch Strategic Reserves placement)")
+                print(f"{self.name} cannot shoot this turn (edge-touch Strategic Reserves placement)")
                 return False
         except Exception:
             pass
@@ -10886,7 +10925,7 @@ class Unit:
                     break
             
             if not can_shoot_any_weapon:
-                print(f"❌ {self.name} cannot shoot after falling back")
+                print(f"{self.name} cannot shoot after falling back")
                 return False
             
         # BGNT hit modifier snapshot:
@@ -10968,7 +11007,7 @@ class Unit:
         except Exception:
             pass
 
-        print(f"🎯 {self.name} executing {len(weapon_declarations)} shooting declarations...")
+        print(f"{self.name} executing {len(weapon_declarations)} shooting declarations...")
         
         if not out_of_phase:
             # Mark unit as having shot this round (regardless of success)
@@ -11050,7 +11089,7 @@ class Unit:
             # Validate this declaration
             validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map)
             if not validation['valid']:
-                print(f"❌ {self.name} - {weapon_profile.name}: {validation['reason']}")
+                print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
                 continue
                 
             # Execute attacks with this weapon
@@ -11079,7 +11118,7 @@ class Unit:
             
         # Report shooting results
         if successful_attacks > 0:
-            print(f"✅ {self.name} completed shooting with {successful_attacks} attacks executed")
+            print(f"{self.name} completed shooting with {successful_attacks} attacks executed")
             try:
                 from ..utility.event_bus import append_action
                 pn = self.get_parent_army().player.name
@@ -11091,9 +11130,9 @@ class Unit:
             for declaration in weapon_declarations:
                 target_unit = declaration['target_unit']
                 if not target_unit.is_alive():
-                    print(f"💀 {target_unit.name} has been destroyed!")
+                    print(f"{target_unit.name} has been destroyed!")
         else:
-            print(f"❌ {self.name} failed to execute any attacks")
+            print(f"{self.name} failed to execute any attacks")
             
         # End attack resolution window(s) and resolve pending separations (now that this unit is done attacking).
         try:
@@ -11703,7 +11742,7 @@ class Unit:
                 weapon_display = f"{weapon_profile.parent_wargear.name}"
                 if weapon_instance:
                     weapon_display += f" #{weapon_instance}"
-                print(f"🎯 {model.name} attacking with {weapon_display}")
+                print(f"{model.name} attacking with {weapon_display}")
                 
                 # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
                 attack_result = weapon_profile.attack(target_unit, model, game_map=game_map)
@@ -11735,7 +11774,7 @@ class Unit:
                 except Exception:
                     pass
             except Exception as e:
-                print(f"❌ Error executing attack with {weapon_profile.name}: {e}")
+                print(f"Error executing attack with {weapon_profile.name}: {e}")
                 # Don't increment successful_attacks if there was an exception
                 
         return successful_attacks
@@ -12507,37 +12546,32 @@ class Unit:
         else:
             print(f"{self.name} does not have ability: {ability.name}.")
 
-    def embark(self, transport_unit: 'Unit') -> None:
+    def embark(self, transport_unit: 'Unit', *, game_map: 'Map') -> None:
         """
         Embark (10th edition core rules, best-effort):
         - End a Normal/Advance/Fall Back move with all models within 3" of a friendly Transport.
         - Capacity must allow it.
         - Cannot embark and disembark in the same phase/turn (tracked by round_state flags).
         """
-        # Backwards-compatible signature; if no map context is available, do only capacity bookkeeping.
-        game_map = None
-        try:
-            # Allow callers to pass a map via attribute if they use Unit.player.game.map patterns
-            _player = getattr(self.get_parent_army(), 'player', None)
-            _game = getattr(_player, 'game', None) if _player else None
-            game_map = getattr(_game, 'map', None)
-        except Exception:
-            game_map = None
+        if game_map is None:
+            raise RuntimeError("Embark requires an active game map.")
+        army = self.get_parent_army()
+        if army is None or getattr(army, "player", None) is None or getattr(army.player, "game", None) is None:
+            raise RuntimeError("Embark requires a unit assigned to a player with an active game.")
+        game = army.player.game
 
-        try:
-            sr = getattr(self, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
-                owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
-                turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
-                if owner and _game is not None:
-                    if _game.get_current_player().name == owner and int(getattr(_game, "turn", 0) or 0) == turn:
-                        print(f"❌ {self.name} cannot embark this turn (Fire and Fade)")
-                        return
-        except Exception:
-            pass
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+            owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+            turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+            current_player = game.get_current_player()
+            if owner and current_player is not None:
+                if current_player.name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                    print(f"{self.name} cannot embark this turn (Fire and Fade)")
+                    return
 
         if self.round_state.disembarked_this_round:
-            print(f"❌ {self.name} cannot embark after disembarking this turn")
+            print(f"{self.name} cannot embark after disembarking this turn")
             return
 
         if not transport_unit.can_transport(self):
@@ -12546,37 +12580,30 @@ class Unit:
 
         # Pre-battle "declare embarked units" support: during setup/deployment, units can start embarked
         # without having moved or being within 3". If neither unit is deployed yet, allow embark bookkeeping only.
-        try:
-            if (not getattr(self, "deployed", False)) and (not getattr(transport_unit, "deployed", False)):
-                ok = transport_unit.add_passenger(self, game_map=None)
-                if ok:
-                    print(f"{self.name} starts embarked within {transport_unit.name}.")
-                else:
-                    print(f"{self.name} cannot embark onto {transport_unit.name}.")
-                return
-        except Exception:
-            pass
+        if (not self.deployed) and (not transport_unit.deployed):
+            ok = transport_unit.add_passenger(self, game_map=game_map)
+            if ok:
+                print(f"{self.name} starts embarked within {transport_unit.name}.")
+            else:
+                print(f"{self.name} cannot embark onto {transport_unit.name}.")
+            return
 
         # Must have actually moved (Normal/Advance/Fall Back) this round (not remain stationary)
         if getattr(self.round_state, "remained_stationary_this_round", False):
-            print(f"❌ {self.name} cannot embark (did not move this phase)")
+            print(f"{self.name} cannot embark (did not move this phase)")
             return
 
         # Must be within 3" with all models
-        try:
-            if transport_unit.models and transport_unit.models[0].is_alive:
-                t_model = transport_unit.models[0]
-                for m in self.models:
-                    if not m.is_alive:
-                        continue
-                    from ..utility.aura_utils import distance_between_models_bases_3d
-                    d = distance_between_models_bases_3d(m, t_model)
-                    if d > 3.0 + 1e-6:
-                        print(f"❌ {self.name} cannot embark: not all models are within 3\" of {transport_unit.name}")
-                        return
-        except Exception:
-            # If we can't evaluate distances, still allow capacity bookkeeping (useful for setup)
-            pass
+        if transport_unit.models and transport_unit.models[0].is_alive:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+            t_model = transport_unit.models[0]
+            for m in self.models:
+                if not m.is_alive:
+                    continue
+                d = distance_between_models_bases_3d(m, t_model)
+                if d > 3.0 + 1e-6:
+                    print(f"{self.name} cannot embark: not all models are within 3\" of {transport_unit.name}")
+                    return
 
         ok = transport_unit.add_passenger(self, game_map=game_map)
         if ok:
@@ -12893,11 +12920,10 @@ class Unit:
           set up wholly within 6"; harsher mortals; models that cannot be set up are destroyed.
         """
         if game_map is None:
-            print(f"❌ {self.name} cannot disembark (no map context)")
-            return False
+            raise RuntimeError("Disembark requires an active game map.")
 
         if self.round_state.embarked_this_round and not destroyed_transport:
-            print(f"❌ {self.name} cannot disembark after embarking this turn")
+            print(f"ERROR: {self.name} cannot disembark after embarking this turn")
             return False
 
         if self.round_state.disembarked_this_round:
@@ -12906,41 +12932,31 @@ class Unit:
         if transport_unit is None:
             transport_unit = self.embarked_in
         if transport_unit is None:
-            print(f"❌ {self.name} is not embarked in a transport")
+            print(f"ERROR: {self.name} is not embarked in a transport")
             return False
 
-        transport_rules = {}
-        try:
-            transport_rules = transport_unit._transport_disembark_rules()
-        except Exception:
-            transport_rules = {}
+        transport_rules = transport_unit._transport_disembark_rules()
         allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
         allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
-        try:
-            sr = getattr(transport_unit, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
-                allow_after_advance = True
-        except Exception:
-            pass
+        sr = getattr(transport_unit, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+            allow_after_advance = True
 
         # Transport state restrictions for normal disembark
         if not destroyed_transport:
             if getattr(transport_unit.round_state, "advanced_this_round", False):
                 if not allow_after_advance:
-                    print(f"??O {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
+                    print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
                     return False
             if getattr(transport_unit.round_state, "fell_back_this_round", False):
-                print(f"??O {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
                 return False
 
 
         # Determine transport base reference (alive transport uses its current model base)
         transport_base = None
-        try:
-            if transport_unit.models and transport_unit.models[0].is_alive:
-                transport_base = transport_unit.models[0].model_base
-        except Exception:
-            transport_base = None
+        if transport_unit.models and transport_unit.models[0].is_alive:
+            transport_base = transport_unit.models[0].model_base
 
         if transport_base is None:
             # If transport is destroyed, caller should supply a transport_unit that has a last-known base available
@@ -12948,7 +12964,7 @@ class Unit:
             transport_base = getattr(transport_unit, "_last_known_base", None)
 
         if transport_base is None:
-            print(f"❌ {self.name} cannot disembark (missing transport position)")
+            print(f"ERROR: {self.name} cannot disembark (missing transport position)")
             return False
 
         # Choose disembark radius
@@ -12974,7 +12990,7 @@ class Unit:
         if placements is None:
             if destroyed_transport and emergency:
                 # Emergency disembarkation: models that cannot be set up are destroyed (not necessarily the whole unit).
-                print(f"⚠️  {self.name} emergency disembarkation: could not place all models within 6\"; destroying any unplaced models")
+                print(f"WARN: {self.name} emergency disembarkation: could not place all models within 6\"; destroying any unplaced models")
                 alive_models = [m for m in self.models if getattr(m, "is_alive", False)]
                 placed_positions: List[Tuple[float, float, float, float]] = []
                 placed_models: List[Model] = []
@@ -12996,33 +13012,21 @@ class Unit:
 
                 # Commit placements (if any)
                 for m, pos in zip(placed_models, placed_positions):
-                    try:
-                        m.set_location(*pos)
-                    except Exception:
-                        pass
+                    m.set_location(*pos)
 
                 # Destroy any unplaced models (so they don't interfere with placement validation)
                 for m in unplaced_models:
-                    try:
-                        m.wounds = 0
-                        m.die(game_map=game_map)
-                    except Exception:
-                        pass
+                    m.wounds = 0
+                    m.die(game_map=game_map)
 
                 if placed_models:
-                    try:
-                        if hasattr(game_map, "place_unit") and not game_map.place_unit(self):
-                            # If battlefield validation fails, treat as no placements
-                            placed_models = []
-                            placed_positions = []
-                    except Exception:
-                        pass
+                    if not game_map.place_unit(self):
+                        # If battlefield validation fails, treat as no placements
+                        placed_models = []
+                        placed_positions = []
 
                 # Remove from passengers list (even if unit ended up destroyed)
-                try:
-                    transport_unit.remove_passenger(self)
-                except Exception:
-                    pass
+                transport_unit.remove_passenger(self)
                 if not placed_models:
                     # Nothing could be set up; unit is likely destroyed or cannot disembark at all
                     return False
@@ -13034,96 +13038,64 @@ class Unit:
                 self.round_state.moved_this_round = True
                 self.round_state.remained_stationary_this_round = False
                 game = None
-                try:
-                    army = self.get_parent_army()
-                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
-                    sr = getattr(self, "special_rules", None)
-                    if not isinstance(sr, dict):
-                        sr = {}
-                    if pname:
-                        sr["voice_of_command_disembark_phase"] = pname
-                        try:
-                            sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn)
-                        except Exception:
-                            sr["voice_of_command_disembark_round"] = int(current_turn or 0)
-                    self.special_rules = sr
-                except Exception:
-                    pass
-                try:
-                    self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
-                except Exception:
-                    pass
+                army = self.get_parent_army()
+                if army is not None and getattr(army, "player", None) is not None:
+                    game = army.player.game
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                if pname:
+                    sr["voice_of_command_disembark_phase"] = pname
+                    sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
+                self.special_rules = sr
+                self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
 
                 # Battle-shock until next Command phase
-                try:
-                    if not self.is_battle_shocked():
-                        self.apply_status_effect(BattleShockEffect(current_turn))
-                except Exception:
-                    pass
+                if not self.is_battle_shocked():
+                    self.apply_status_effect(BattleShockEffect(current_turn))
 
                 # Mortal wounds on 1-3
-                try:
-                    for m in list(self.models):
-                        if not getattr(m, "is_alive", False):
-                            continue
-                        roll = get_roll("D6")
-                        if roll <= 3:
-                            m.take_damage(1, is_mortal=True, game_map=game_map)
-                except Exception:
-                    pass
+                for m in list(self.models):
+                    if not getattr(m, "is_alive", False):
+                        continue
+                    roll = get_roll("D6")
+                    if roll <= 3:
+                        m.take_damage(1, is_mortal=True, game_map=game_map)
 
                 return True
-            print(f"❌ {self.name} cannot disembark: no valid placement found")
+            print(f"ERROR: {self.name} cannot disembark: no valid placement found")
             return False
 
         # Commit placements (include attached leaders' models if any)
-        try:
-            placement_models = [m for m in self.get_models_for_collision() if getattr(m, "is_alive", False)]
-        except Exception:
-            placement_models = [m for m in self.models if getattr(m, "is_alive", False)]
+        placement_models = [m for m in self.get_models_for_collision() if getattr(m, "is_alive", False)]
 
         for model, pos in zip(placement_models, placements):
             model.set_location(*pos)
         # Add back to map (place_unit validates collisions)
-        if hasattr(game_map, "place_unit"):
-            if not game_map.place_unit(self):
-                print(f"❌ {self.name} disembark failed: map placement validation failed")
-                return False
-        else:
-            try:
-                game_map.units.append(self)
-            except Exception:
-                pass
+        if not hasattr(game_map, "place_unit"):
+            raise RuntimeError("Disembark requires a game map with place_unit().")
+        if not game_map.place_unit(self):
+            print(f"ERROR: {self.name} disembark failed: map placement validation failed")
+            return False
 
         # Remove from transport passengers list
-        try:
-            transport_unit.remove_passenger(self)
-        except Exception:
-            pass
+        transport_unit.remove_passenger(self)
 
         self.round_state.disembarked_this_round = True
         game = None
-        try:
-            army = self.get_parent_army()
-            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
-            sr = getattr(self, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            if pname:
-                sr["voice_of_command_disembark_phase"] = pname
-                try:
-                    sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn)
-                except Exception:
-                    sr["voice_of_command_disembark_round"] = int(current_turn or 0)
-            self.special_rules = sr
-        except Exception:
-            pass
-        try:
-            self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
-        except Exception:
-            pass
+        army = self.get_parent_army()
+        if army is not None and getattr(army, "player", None) is not None:
+            game = army.player.game
+        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if pname:
+            sr["voice_of_command_disembark_phase"] = pname
+            sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
+        self.special_rules = sr
+        self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
 
         # Apply moved/charge restrictions depending on cause
         if destroyed_transport:
@@ -13132,23 +13104,17 @@ class Unit:
             self.round_state.moved_this_round = True
             self.round_state.remained_stationary_this_round = False
             # Battle-shock until next Command phase
-            try:
-                if not self.is_battle_shocked():
-                    self.apply_status_effect(BattleShockEffect(current_turn))
-            except Exception:
-                pass
+            if not self.is_battle_shocked():
+                self.apply_status_effect(BattleShockEffect(current_turn))
             # Mortal wounds
-            try:
-                # Destroyed transport: on 1 take 1 MW; Emergency: on 1-3 take 1 MW
-                threshold = 3 if emergency else 1
-                for m in list(self.models):
-                    if not getattr(m, "is_alive", False):
-                        continue
-                    roll = get_roll("D6")
-                    if roll <= threshold:
-                        m.take_damage(1, is_mortal=True, game_map=game_map)
-            except Exception:
-                pass
+            # Destroyed transport: on 1 take 1 MW; Emergency: on 1-3 take 1 MW
+            threshold = 3 if emergency else 1
+            for m in list(self.models):
+                if not getattr(m, "is_alive", False):
+                    continue
+                roll = get_roll("D6")
+                if roll <= threshold:
+                    m.take_damage(1, is_mortal=True, game_map=game_map)
         else:
             moved_this_round = bool(getattr(transport_unit.round_state, "moved_this_round", False))
             remained_stationary = bool(getattr(transport_unit.round_state, "remained_stationary_this_round", False))
@@ -13279,11 +13245,10 @@ class Unit:
     ) -> bool:
         """Finalize disembark bookkeeping after manual placement."""
         if game_map is None:
-            print(f"❌ {self.name} cannot disembark (no map context)")
-            return False
+            raise RuntimeError("Finalize disembark requires an active game map.")
 
         if self.round_state.embarked_this_round and not destroyed_transport:
-            print(f"❌ {self.name} cannot disembark after embarking this turn")
+            print(f"ERROR: {self.name} cannot disembark after embarking this turn")
             return False
 
         if self.round_state.disembarked_this_round:
@@ -13292,96 +13257,65 @@ class Unit:
         if transport_unit is None:
             transport_unit = self.embarked_in
         if transport_unit is None:
-            print(f"❌ {self.name} is not embarked in a transport")
+            print(f"ERROR: {self.name} is not embarked in a transport")
             return False
 
-        transport_rules = {}
-        try:
-            transport_rules = transport_unit._transport_disembark_rules()
-        except Exception:
-            transport_rules = {}
+        transport_rules = transport_unit._transport_disembark_rules()
         allow_after_advance = bool(transport_rules.get("allow_after_advance", False))
         allow_charge_after_normal_move = bool(transport_rules.get("allow_charge_after_normal_move", False))
-        try:
-            sr = getattr(transport_unit, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
-                allow_after_advance = True
-        except Exception:
-            pass
+        sr = getattr(transport_unit, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
+            allow_after_advance = True
 
         if not destroyed_transport:
             if getattr(transport_unit.round_state, "advanced_this_round", False):
                 if not allow_after_advance:
-                    print(f"??O {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
+                    print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Advanced this turn")
                     return False
             if getattr(transport_unit.round_state, "fell_back_this_round", False):
-                print(f"??O {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
+                print(f"ERROR: {self.name} cannot disembark: {transport_unit.name} Fell Back this turn")
                 return False
 
-        try:
-            if hasattr(game_map, "units") and self in game_map.units:
-                game_map.units.remove(self)
-        except Exception:
-            pass
+        if self in game_map.units:
+            game_map.units.remove(self)
 
-        if hasattr(game_map, "place_unit"):
-            if not game_map.place_unit(self):
-                print(f"❌ {self.name} disembark failed: map placement validation failed")
-                return False
-        else:
-            try:
-                game_map.units.append(self)
-            except Exception:
-                pass
+        if not hasattr(game_map, "place_unit"):
+            raise RuntimeError("Finalize disembark requires a game map with place_unit().")
+        if not game_map.place_unit(self):
+            print(f"ERROR: {self.name} disembark failed: map placement validation failed")
+            return False
 
-        try:
-            transport_unit.remove_passenger(self)
-        except Exception:
-            pass
+        transport_unit.remove_passenger(self)
 
         self.round_state.disembarked_this_round = True
         game = None
-        try:
-            army = self.get_parent_army()
-            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
-            sr = getattr(self, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            if pname:
-                sr["voice_of_command_disembark_phase"] = pname
-                try:
-                    sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn)
-                except Exception:
-                    sr["voice_of_command_disembark_round"] = int(current_turn or 0)
-            self.special_rules = sr
-        except Exception:
-            pass
-        try:
-            self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
-        except Exception:
-            pass
+        army = self.get_parent_army()
+        if army is not None and getattr(army, "player", None) is not None:
+            game = army.player.game
+        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if pname:
+            sr["voice_of_command_disembark_phase"] = pname
+            sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
+        self.special_rules = sr
+        self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
 
         if destroyed_transport:
             self.round_state.disembarked_from_destroyed_transport = True
             self.round_state.disembarked_cannot_charge = True
             self.round_state.moved_this_round = True
             self.round_state.remained_stationary_this_round = False
-            try:
-                if not self.is_battle_shocked():
-                    self.apply_status_effect(BattleShockEffect(current_turn))
-            except Exception:
-                pass
-            try:
-                threshold = 3 if emergency else 1
-                for m in list(self.models):
-                    if not getattr(m, "is_alive", False):
-                        continue
-                    roll = get_roll("D6")
-                    if roll <= threshold:
-                        m.take_damage(1, is_mortal=True, game_map=game_map)
-            except Exception:
-                pass
+            if not self.is_battle_shocked():
+                self.apply_status_effect(BattleShockEffect(current_turn))
+            threshold = 3 if emergency else 1
+            for m in list(self.models):
+                if not getattr(m, "is_alive", False):
+                    continue
+                roll = get_roll("D6")
+                if roll <= threshold:
+                    m.take_damage(1, is_mortal=True, game_map=game_map)
         else:
             moved_this_round = bool(getattr(transport_unit.round_state, "moved_this_round", False))
             remained_stationary = bool(getattr(transport_unit.round_state, "remained_stationary_this_round", False))
@@ -14215,9 +14149,8 @@ class Unit:
         min_y_dist = min(y, battlefield_height - y)
         edge_penalty = max(0, 6.0 - min(min_x_dist, min_y_dist)) * 10  # penalize <6" from edge
 
-        # Penalty if near obstacle/impassable (could use game_map.query_cover here)
+        # Penalty if near obstacle/impassable (cover not scored in this heuristic).
         cover_bonus = 0
-        # TODO: add more logic for proximity to cover/terrain if you want
 
         # Coherency bonus (number of coherent neighbors)
         coherent_neighbors = 0
@@ -14280,7 +14213,7 @@ class Unit:
         ])
         repulsors.append(top_edge)
 
-        print(f"🔍 DEBUG: _get_reduced_boundary_repulsors returning {len(repulsors)} repulsors for map size {game_map.width}x{game_map.height}")
+        print(f"DEBUG: _get_reduced_boundary_repulsors returning {len(repulsors)} repulsors for map size {game_map.width}x{game_map.height}")
 
         return repulsors
 
@@ -14371,20 +14304,20 @@ class Unit:
             self.models[0].set_location(start_x, start_y, z, 0.0)
             return [(start_x, start_y, z, 0.0)]
 
-        print(f"🔍 DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
-        print(f"🔍 DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
-        print(f"🔍 DEBUG: avoid_friendly_units: {avoid_friendly_units}")
-        print(f"🔍 DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
+        print(f"DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
+        print(f"DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
+        print(f"DEBUG: avoid_friendly_units: {avoid_friendly_units}")
+        print(f"DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
 
         # Debug boundary repulsors
         if len(boundary_repulsors) == 0:
-            print(f"🔍 DEBUG: No boundary repulsors provided - this might cause formation finding issues")
+            print(f"DEBUG: No boundary repulsors provided - this might cause formation finding issues")
         else:
-            print(f"🔍 DEBUG: Boundary repulsors provided: {[type(br).__name__ for br in boundary_repulsors]}")
+            print(f"DEBUG: Boundary repulsors provided: {[type(br).__name__ for br in boundary_repulsors]}")
 
         # FAST PATH FOR SINGLE-MODEL UNITS (avoid terrain & enemy models)
         if len(self.models) == 1:
-            print(f"🔍 DEBUG: Using single-model fast path")
+            print(f"DEBUG: Using single-model fast path")
             # initial drop
             z = game_map.get_height_at_point(start_x, start_y)
             f = self.calculate_strategic_facing(start_x, start_y, game_map)
@@ -14453,15 +14386,15 @@ class Unit:
 
             # commit and return
             m.set_location(*pos)
-            print(f"🔍 DEBUG: Single-model positioning successful")
+            print(f"DEBUG: Single-model positioning successful")
             return [(pos[0], pos[1], pos[2], pos[3])]
 
-        print(f"🔍 DEBUG: Using multi-model formation templates")
+        print(f"DEBUG: Using multi-model formation templates")
         # SLOW PATH FOR MULTI-MODEL UNITS
         # 1) Build list of blocking models (enemies + optionally friendlies)
         enemy_models = game_map.get_enemy_models(self)
         blocking_models = enemy_models
-        print(f"🔍 DEBUG: Found {len(enemy_models)} enemy models")
+        print(f"DEBUG: Found {len(enemy_models)} enemy models")
         
         if avoid_friendly_units:
             # Add friendly models from other units (excluding self)
@@ -14470,9 +14403,9 @@ class Unit:
                 if unit != self:  # Don't include models from the unit being positioned
                     friendly_models.extend(unit.models)
             blocking_models.extend(friendly_models)
-            print(f"🔍 DEBUG: Added {len(friendly_models)} friendly models from other units")
+            print(f"DEBUG: Added {len(friendly_models)} friendly models from other units")
         
-        print(f"🔍 DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
+        print(f"DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
         
         # 2) Use provided boundary repulsors or default to empty list
         if boundary_repulsors is None:
@@ -14493,17 +14426,17 @@ class Unit:
         # Models can be in base-to-base contact (spacing = 2 * radius) but we allow slightly tighter
         base_radius = self.models[0].model_base.radius[0]
         spacing = 2 * base_radius * 0.8  # 80% of full spacing allows for tighter formations
-        print(f"🔍 DEBUG: Computed spacing: {spacing:.2f} inches (base radius: {base_radius:.2f})")
+        print(f"DEBUG: Computed spacing: {spacing:.2f} inches (base radius: {base_radius:.2f})")
 
         # 5) Build formation templates
         templates = build_formation_templates(len(self.models), spacing)
-        print(f"🔍 DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
+        print(f"DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
 
         origin_2d = np.array((start_x, start_y), float)
 
         # 6) Try each template
         for template_name, offsets in templates.items():
-            print(f"🔍 DEBUG: Trying template '{template_name}' with {len(offsets)} positions")
+            print(f"DEBUG: Trying template '{template_name}' with {len(offsets)} positions")
             
             # world positions in 2D & then lift to 3D + facing
             world = []
@@ -14540,7 +14473,7 @@ class Unit:
                         break
             
             if model_collision_detected:
-                print(f"🔍 DEBUG: Template '{template_name}' rejected - model base overlap detected")
+                print(f"DEBUG: Template '{template_name}' rejected - model base overlap detected")
                 continue
 
             # Debug: Check if any models are outside battlefield bounds
@@ -14550,10 +14483,10 @@ class Unit:
                     models_outside_bounds += 1
 
             if models_outside_bounds > 0:
-                print(f"🔍 DEBUG: Template '{template_name}' rejected - {models_outside_bounds} models outside battlefield bounds (map: {game_map.width}x{game_map.height})")
+                print(f"DEBUG: Template '{template_name}' rejected - {models_outside_bounds} models outside battlefield bounds (map: {game_map.width}x{game_map.height})")
                 continue
 
-            print(f"🔍 DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
+            print(f"DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
 
             # Relaxation loop (terrain + self-collisions)
             for relax_iter in range(relax_iters):
@@ -14602,12 +14535,12 @@ class Unit:
                         collided = True
                         
                 if not collided:
-                    print(f"🔍 DEBUG: Template '{template_name}' completed relaxation after {relax_iter + 1} iterations")
+                    print(f"DEBUG: Template '{template_name}' completed relaxation after {relax_iter + 1} iterations")
                     break
                 elif relax_iter == relax_iters - 1:
-                    print(f"🔍 DEBUG: Template '{template_name}' still had collisions after {relax_iters} relaxation iterations")
+                    print(f"DEBUG: Template '{template_name}' still had collisions after {relax_iters} relaxation iterations")
 
-            # after you've cleared collisions…
+            # after you've cleared collisions...
             attract_iters = 5
             attract_step = 0.2
             target_min = 0.25
@@ -14650,24 +14583,24 @@ class Unit:
                 if not ok:
                     break
             if not ok:
-                print(f"🔍 DEBUG: Template '{template_name}' rejected - final overlap check failed")
+                print(f"DEBUG: Template '{template_name}' rejected - final overlap check failed")
                 continue
 
-            # Commit & coherency‐graph check
+            # Commit & coherency-graph check
             for m, pos in zip(self.models, world):
                 m.set_location(*pos)
                 
             coherency_ok = self.check_coherency_graph()
-            print(f"🔍 DEBUG: Template '{template_name}' coherency check: {'✅ PASSED' if coherency_ok else '❌ FAILED'}")
+            print(f"DEBUG: Template '{template_name}' coherency check: {' PASSED' if coherency_ok else ' FAILED'}")
             
             if coherency_ok:
-                print(f"🔍 DEBUG: Successfully found formation using template '{template_name}'")
+                print(f"DEBUG: Successfully found formation using template '{template_name}'")
                 return [(x, y, z, f) for x, y, z, f in world]
             else:
-                print(f"🔍 DEBUG: Template '{template_name}' rejected - coherency check failed")
+                print(f"DEBUG: Template '{template_name}' rejected - coherency check failed")
 
         # 7) If none fit, raise or fallback
-        print(f"🔍 DEBUG: All {len(templates)} templates failed - no valid formation found")
+        print(f"DEBUG: All {len(templates)} templates failed - no valid formation found")
         # No valid formation found - return None instead of raising exception
         # This allows auto-deployment to try other positions
         return None
@@ -14734,7 +14667,7 @@ class Unit:
         has the required number of neighbors within edge-to-edge
         coherency_distance.
 
-        - Units of 1–5 models: each model needs at least 1 neighbor.
+        - Units of 1\u20135 models: each model needs at least 1 neighbor.
         - Units of 6+ models: each model needs at least 2 neighbors.
         """
         models = self.models
@@ -15293,7 +15226,7 @@ class Unit:
                             count = max(count, total)
                             # Cache roll detail for UI/logging (generic cache)
                             setattr(self, '_redeploy_d_roll', {'expr': expr, 'total': total, 'rolls': rolls})
-                            print(f"🎲 {self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
+                            print(f"{self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
                         except Exception:
                             # Fallback to minimal 1 if dice utilities unavailable
                             count = max(count, 1)
@@ -15382,7 +15315,7 @@ class Unit:
 
         class _VirtualWargear:
             def __init__(self, name: str, profile_obj):
-                self.name = (name or "Firing Deck").replace("’", "'")
+                self.name = (name or "Firing Deck").replace("\u2019", "'")
                 self.type = "ranged"
                 self.profiles = {"default": profile_obj}
 
@@ -16301,7 +16234,7 @@ class Unit:
         seen_names: set[str] = set()
         for name, desc in self._iter_model_specific_ability_entries(model):
             try:
-                ability_name = str(name or "").replace("’", "'").strip()
+                ability_name = str(name or "").replace("\u2019", "'").strip()
             except Exception:
                 ability_name = ""
             name_key = ability_name.lower().strip()
@@ -17449,7 +17382,7 @@ class Unit:
 
         label = reason or "mid-battle ability"
         try:
-            print(f"🌀 {root.name} placed into Strategic Reserves ({label})")
+            print(f"{root.name} placed into Strategic Reserves ({label})")
         except Exception:
             pass
         return True
@@ -17654,7 +17587,7 @@ class Unit:
         except Exception:
             pass
 
-        logger.info(f"🪂 {self.name} arrived from reserves at turn {turn}")
+        logger.info(f" {self.name} arrived from reserves at turn {turn}")
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "battle_focus", None) if army is not None else None
@@ -17828,15 +17761,15 @@ class Unit:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bearer_unit_auto_pass_desperate_escape"):
-                print(f"✅ {self.name} automatically passes Desperate Escape tests.")
+                print(f"{self.name} automatically passes Desperate Escape tests.")
                 return 0
         except Exception:
             pass
         note = str(reason or "").strip()
         if note:
-            print(f"💀 {self.name} {note} - taking Desperate Escape Test!")
+            print(f"{self.name} {note} - taking Desperate Escape Test!")
         else:
-            print(f"💀 {self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
+            print(f"{self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
         
         models_to_test = self.models.copy()  # Copy to avoid modifying list while iterating
         models_destroyed = 0
@@ -17848,22 +17781,22 @@ class Unit:
             if final_roll <= 2:
                 # Model is destroyed
                 if mod:
-                    print(f"🎲 Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! 💀")
+                    print(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! ")
                 else:
-                    print(f"🎲 Model {i+1}: Rolled {roll} - DESTROYED! 💀")
+                    print(f"Model {i+1}: Rolled {roll} - DESTROYED! ")
                 self.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
                 models_destroyed += 1
             else:
                 # Model survives
                 if mod:
-                    print(f"🎲 Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ✅")
+                    print(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ")
                 else:
-                    print(f"🎲 Model {i+1}: Rolled {roll} - Survives ✅")
+                    print(f"Model {i+1}: Rolled {roll} - Survives ")
         
         if models_destroyed > 0:
-            print(f"💥 Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
+            print(f"Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
         else:
-            print(f"✅ Desperate Escape Test complete: All models survived!")
+            print(f"Desperate Escape Test complete: All models survived!")
         
         return models_destroyed
 

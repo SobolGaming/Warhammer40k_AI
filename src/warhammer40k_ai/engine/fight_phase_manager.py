@@ -86,7 +86,7 @@ class FightPhaseManager:
         
     def start_fight_phase(self, current_player: Player, opponent_player: Player) -> None:
         """Start the fight phase with proper initialization."""
-        print("⚔️ Starting Fight Phase")
+        print("Starting Fight Phase")
         
         # Reset state
         self.fought_units.clear()
@@ -105,25 +105,31 @@ class FightPhaseManager:
     
     def _start_fight_first_stage(self, current_player: Player, opponent_player: Player) -> None:
         """Start the Fight First stage."""
-        print("⚔️ Starting Fight First Stage")
+        print("Starting Fight First Stage")
         self.current_stage = FightStage.FIGHT_FIRST
 
         # Get Fight First units for both players with detailed debugging
         current_player_units = self.game.get_fight_first_units(current_player)
         opponent_units = self.game.get_fight_first_units(opponent_player)
 
-        print(f"  Current Player ({current_player.name}): {len(current_player_units)} Fight First units")
+        print(f"Current Player ({current_player.name}): {len(current_player_units)} Fight First units")
         if current_player_units:
             for unit in current_player_units:
-                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'charged_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
+                print(
+                    f"  - {unit.name} (charged: {getattr(unit.round_state, 'charged_this_round', False)}, "
+                    f"fight_first_ability: {unit.has_fight_first()})"
+                )
 
-        print(f"  Opponent ({opponent_player.name}): {len(opponent_units)} Fight First units")
+        print(f"Opponent ({opponent_player.name}): {len(opponent_units)} Fight First units")
         if opponent_units:
             for unit in opponent_units:
-                print(f"    - {unit.name} (charged: {getattr(unit.round_state, 'charged_this_round', False)}, fight_first_ability: {unit.has_fight_first()})")
+                print(
+                    f"  - {unit.name} (charged: {getattr(unit.round_state, 'charged_this_round', False)}, "
+                    f"fight_first_ability: {unit.has_fight_first()})"
+                )
 
         if not current_player_units and not opponent_units:
-            print("📋 No units with Fight First abilities - moving to Remaining Combatants")
+            print("No units with Fight First abilities - moving to Remaining Combatants")
             self._start_remaining_combatants_stage(current_player, opponent_player)
             return
 
@@ -133,25 +139,25 @@ class FightPhaseManager:
     
     def _start_remaining_combatants_stage(self, current_player: Player, opponent_player: Player) -> None:
         """Start the Remaining Combatants stage."""
-        print("⚔️ Starting Remaining Combatants Stage")
+        print("Starting Remaining Combatants Stage")
         self.current_stage = FightStage.REMAINING_COMBATANTS
 
         # Get remaining combatant units for both players with detailed debugging
         current_player_units = self.game.get_remaining_combatant_units(current_player)
         opponent_units = self.game.get_remaining_combatant_units(opponent_player)
 
-        print(f"  Current Player ({current_player.name}): {len(current_player_units)} Remaining units")
+        print(f"Current Player ({current_player.name}): {len(current_player_units)} Remaining units")
         if current_player_units:
             for unit in current_player_units:
-                print(f"    - {unit.name} (eligible_to_fight: {unit.is_eligible_to_fight(self.game.map)})")
+                print(f"  - {unit.name} (eligible_to_fight: {unit.is_eligible_to_fight(self.game.map)})")
 
-        print(f"  Opponent ({opponent_player.name}): {len(opponent_units)} Remaining units")
+        print(f"Opponent ({opponent_player.name}): {len(opponent_units)} Remaining units")
         if opponent_units:
             for unit in opponent_units:
-                print(f"    - {unit.name} (eligible_to_fight: {unit.is_eligible_to_fight(self.game.map)})")
+                print(f"  - {unit.name} (eligible_to_fight: {unit.is_eligible_to_fight(self.game.map)})")
 
         if not current_player_units and not opponent_units:
-            print("📋 No remaining combatant units - Fight Phase complete")
+            print("No remaining combatant units - Fight Phase complete")
             self._complete_fight_phase()
             return
 
@@ -192,8 +198,8 @@ class FightPhaseManager:
             self.active_player = other_player
             eligible_units = other_eligible
         
-        print(f"🎯 {self.active_player.name} must select a unit to fight ({self.current_stage.value} stage)")
-        print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
+        print(f"{self.active_player.name} must select a unit to fight ({self.current_stage.value} stage)")
+        print(f"Eligible units: {[unit.name for unit in eligible_units]}")
         
         # Call callback for unit selection
         if self.on_unit_selection_required:
@@ -312,7 +318,7 @@ class FightPhaseManager:
                 self._forced_next_player = None
         except Exception:
             pass
-        print(f"⚔️ {self.active_player.name} selected {selected_unit.name} to fight")
+        print(f"{self.active_player.name} selected {selected_unit.name} to fight")
 
         # Publish an event so reaction stratagems (e.g. EPIC CHALLENGE) can open a window.
         try:
@@ -331,17 +337,17 @@ class FightPhaseManager:
         eligible_targets = self._get_eligible_targets(selected_unit)
         
         if not eligible_targets:
-            print(f"❌ {selected_unit.name} has no eligible targets")
+            print(f"{selected_unit.name} has no eligible targets")
             return
         
         # Always show target selection dialog, even for single targets
         # This gives the user a chance to see what's happening and confirm the attack
-        print(f"🎯 {selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
+        print(f"{selected_unit.name} can fight {len(eligible_targets)} target(s): {[target.name for target in eligible_targets]}")
         self.on_target_selection_required(selected_unit, eligible_targets, self.active_player)
     
     def targets_selected(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player) -> None:
         """Handle target selection and execute the fight sequence."""
-        print(f"⚔️ {fighting_unit.name} will fight with target declarations:")
+        print(f"{fighting_unit.name} will fight with target declarations:")
         for target_unit, models in target_declarations.items():
             print(f"  {len(models)} models attacking {target_unit.name}")
 
@@ -411,7 +417,7 @@ class FightPhaseManager:
     
     def _execute_fight_sequence(self, fighting_unit: Unit, target_unit: Unit, current_player: Player, opponent_player: Player, ui_callback=None) -> None:
         """Execute the complete fight sequence for a single target."""
-        print(f"⚔️ Executing fight sequence: {fighting_unit.name} vs {target_unit.name}")
+        print(f"Executing fight sequence: {fighting_unit.name} vs {target_unit.name}")
 
         # If UI callback is provided, use individual model movement for pile-in and consolidate
         if ui_callback:
@@ -424,11 +430,11 @@ class FightPhaseManager:
         """Execute fight sequence using individual model movement UI."""
         fighting_unit = self._canonical_unit_for_fight(fighting_unit)
         target_unit = self._canonical_unit_for_fight(target_unit)
-        print(f"⚔️ Starting UI-based fight sequence: {fighting_unit.name} vs {target_unit.name}")
+        print(f"Starting UI-based fight sequence: {fighting_unit.name} vs {target_unit.name}")
 
         # Step 1: Pile-in using Individual Model Movement Dialog
         def on_pile_in_complete(completed: bool):
-            print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
+            print(f"{fighting_unit.name} pile-in completed: {completed}")
 
             try:
                 if completed and hasattr(fighting_unit, "pile_in_towards_enemies"):
@@ -438,7 +444,7 @@ class FightPhaseManager:
 
             # Step 2: Melee weapon selection
             def on_weapon_selection_complete(weapon_declarations):
-                print(f"⚔️ {fighting_unit.name} weapon selection completed: {len(weapon_declarations)} weapons")
+                print(f"{fighting_unit.name} weapon selection completed: {len(weapon_declarations)} weapons")
 
                 # Step 3: Resolve melee attacks
                 # Use attached view so leader models fight as part of the attached unit
@@ -455,7 +461,7 @@ class FightPhaseManager:
 
                 # Step 4: Consolidate using Individual Model Movement Dialog
                 def on_consolidate_complete(completed: bool):
-                    print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+                    print(f"{fighting_unit.name} consolidate completed: {completed}")
 
                     try:
                         if completed and hasattr(fighting_unit, "consolidate_towards_enemies"):
@@ -481,7 +487,7 @@ class FightPhaseManager:
 
     def _execute_fight_sequence_with_declarations(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback=None) -> None:
         """Execute the complete fight sequence with target declarations."""
-        print(f"⚔️ Executing fight sequence with declarations: {fighting_unit.name}")
+        print(f"Executing fight sequence with declarations: {fighting_unit.name}")
 
         # If UI callback is provided, use individual model movement for pile-in and consolidate
         if ui_callback:
@@ -523,11 +529,11 @@ class FightPhaseManager:
 
     def _execute_fight_sequence_with_declarations_ui(self, fighting_unit: Unit, target_declarations: Dict[Unit, List['Model']], current_player: Player, opponent_player: Player, ui_callback) -> None:
         """Execute fight sequence with declarations using individual model movement UI."""
-        print(f"⚔️ Starting UI-based fight sequence with declarations: {fighting_unit.name}")
+        print(f"Starting UI-based fight sequence with declarations: {fighting_unit.name}")
 
         # Step 1: Pile-in using Individual Model Movement Dialog
         def on_pile_in_complete(completed: bool):
-            print(f"📍 {fighting_unit.name} pile-in completed: {completed}")
+            print(f"{fighting_unit.name} pile-in completed: {completed}")
 
             try:
                 if completed and hasattr(fighting_unit, "pile_in_towards_enemies"):
@@ -536,7 +542,7 @@ class FightPhaseManager:
                 pass
 
             # Step 2: Make melee attacks based on declarations
-            print(f"⚔️ {fighting_unit.name} makes melee attacks")
+            print(f"{fighting_unit.name} makes melee attacks")
             for target_unit, attacking_models in target_declarations.items():
                 print(f"  {len(attacking_models)} models attacking {target_unit.name}")
                 # TODO: Implement proper melee attack resolution with model-specific targeting
@@ -552,7 +558,7 @@ class FightPhaseManager:
 
             # Step 3: Consolidate using Individual Model Movement Dialog
             def on_consolidate_complete(completed: bool):
-                print(f"🏃 {fighting_unit.name} consolidate completed: {completed}")
+                print(f"{fighting_unit.name} consolidate completed: {completed}")
 
                 try:
                     if completed and hasattr(fighting_unit, "consolidate_towards_enemies"):
@@ -575,7 +581,7 @@ class FightPhaseManager:
 
         # Clear enemy model cache when switching players since enemy positions may have changed
         clear_enemy_model_cache(id(self.game.map))
-        print(f"⚔️ Fight phase player switched to {self.active_player.name} - cleared enemy model cache")
+        print(f"Fight phase player switched to {self.active_player.name} - cleared enemy model cache")
 
         # Request next unit selection
         self._request_unit_selection(current_player, opponent_player)
@@ -589,7 +595,7 @@ class FightPhaseManager:
     
     def _complete_fight_phase(self) -> None:
         """Complete the entire fight phase."""
-        print("✅ Fight Phase complete")
+        print("Fight Phase complete")
         self.current_stage = FightStage.COMPLETE
         self.stage_complete = True
         
@@ -650,14 +656,14 @@ class FightPhaseManager:
         # AIRCRAFT fight restrictions (defensive guard)
         try:
             if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(attacking_unit, "is_flying", False)):
-                print(f"❌ {attacking_unit.name} cannot make melee attacks against AIRCRAFT")
+                print(f"{attacking_unit.name} cannot make melee attacks against AIRCRAFT")
                 return
             if bool(getattr(attacking_unit, "is_aircraft", False)) and not bool(getattr(target_unit, "is_flying", False)):
-                print(f"❌ {attacking_unit.name} can only make melee attacks against FLY units")
+                print(f"{attacking_unit.name} can only make melee attacks against FLY units")
                 return
         except Exception:
             pass
-        print(f"⚔️ Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
+        print(f"Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
 
         eligible_models = None
         try:
@@ -687,10 +693,10 @@ class FightPhaseManager:
             if not model or not weapon_profile:
                 continue
             if eligible_models is not None and model not in eligible_models:
-                print(f"⚠️ {getattr(model, 'name', 'Model')} is not eligible to fight {getattr(target_unit, 'name', 'Target')}")
+                print(f"{getattr(model, 'name', 'Model')} is not eligible to fight {getattr(target_unit, 'name', 'Target')}")
                 continue
 
-            print(f"🗡️ {model.name} attacks with {weapon_profile.name}")
+            print(f"{model.name} attacks with {weapon_profile.name}")
 
             # Get number of attacks
             attacks = weapon_profile.attacks
@@ -699,7 +705,7 @@ class FightPhaseManager:
                 from ..utility.dice import get_roll
                 attacks = get_roll(attacks)
 
-            print(f"🎲 Number of attacks: {attacks}")
+            print(f"Number of attacks: {attacks}")
 
             # Roll to hit
             hit_rolls = []
@@ -711,10 +717,10 @@ class FightPhaseManager:
                 if roll >= weapon_profile.weapon_skill:
                     hits += 1
 
-            print(f"🎯 Hit rolls: {hit_rolls} (WS {weapon_profile.weapon_skill}+) - {hits} hits")
+            print(f"Hit rolls: {hit_rolls} (WS {weapon_profile.weapon_skill}+) - {hits} hits")
 
             if hits == 0:
-                print("❌ No hits - attack sequence ends")
+                print("No hits - attack sequence ends")
                 continue
 
             # Roll to wound
@@ -729,10 +735,10 @@ class FightPhaseManager:
                 if roll >= wound_target:
                     wounds += 1
 
-            print(f"🩸 Wound rolls: {wound_rolls} (need {wound_target}+) - {wounds} wounds")
+            print(f"Wound rolls: {wound_rolls} (need {wound_target}+) - {wounds} wounds")
 
             if wounds == 0:
-                print("❌ No wounds - attack sequence ends")
+                print("No wounds - attack sequence ends")
                 continue
 
             # Apply damage
@@ -742,11 +748,11 @@ class FightPhaseManager:
                 damage_per_wound = get_roll(damage_per_wound)
 
             total_damage = wounds * damage_per_wound
-            print(f"💥 {wounds} wounds × {damage_per_wound} damage = {total_damage} total damage")
+            print(f"{wounds} wounds x {damage_per_wound} damage = {total_damage} total damage")
 
             # Apply damage to target unit
             target_unit.take_damage(total_damage)
-            print(f"🎯 {target_unit.name} takes {total_damage} damage")
+            print(f"{target_unit.name} takes {total_damage} damage")
 
         # End attack resolution window for this target after this unit has finished its melee attacks.
         try:

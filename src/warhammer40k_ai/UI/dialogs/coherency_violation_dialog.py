@@ -57,8 +57,8 @@ class CoherencyViolationDialog(BaseDialog):
         # Update button positions in case dialog position was changed by overlap avoidance
         self._update_model_buttons()
 
-        print(f"⚠️  Coherency violation dialog opened for {unit.name}")
-        print(f"⚠️  Unit has coherency violations - select models to remove")
+        print(f"INFO: Coherency violation dialog opened for {unit.name}")
+        print(f"INFO: Unit has coherency violations - select models to remove")
         
     def hide(self):
         """Hide the dialog"""
@@ -180,14 +180,14 @@ class CoherencyViolationDialog(BaseDialog):
         selected_models = [btn['model_index'] for btn in self.model_buttons if btn['selected']]
 
         if not selected_models:
-            print("⚠️  No models selected for removal")
+            print("ERROR: No models selected for removal")
             return
 
         # Remove selected models
         for model_index in sorted(selected_models, reverse=True):
             if model_index < len(self.unit.models):
                 model = self.unit.models[model_index]
-                print(f"💀 Removing {model.name} from play due to coherency violation")
+                print(f"INFO: Removing {model.name} from play due to coherency violation")
                 # Set wounds to 0 to make the model dead (is_alive property checks wounds > 0)
                 model.wounds = 0
                 # Call die() method to properly remove the model from the unit
@@ -200,7 +200,7 @@ class CoherencyViolationDialog(BaseDialog):
     
     def _cancel_removal(self):
         """Cancel the removal process (this shouldn't be allowed in actual rules)"""
-        print("❌ Coherency violation removal cancelled")
+        print("INFO: Coherency violation removal cancelled")
         if self.callback:
             self.callback(False)
         self.hide()
@@ -219,11 +219,11 @@ class CoherencyViolationDialog(BaseDialog):
         is_coherent, remaining_non_coherent = validate_unit_coherency_after_movement(self.unit, final_positions)
 
         if is_coherent:
-            print(f"✅ {self.unit.name} is now in coherency")
+            print(f"INFO: {self.unit.name} is now in coherency")
             self._complete_removal()
         else:
-            print(f"⚠️  {self.unit.name} still has coherency violations")
-            print(f"⚠️  Additional models may need to be removed")
+            print(f"WARN: {self.unit.name} still has coherency violations")
+            print(f"INFO: Additional models may need to be removed")
             # Update the non_coherent_models for reference, but still show all models
             self.non_coherent_models = remaining_non_coherent
             # Recreate model buttons to reflect the current state (some models may have been removed)
@@ -236,9 +236,9 @@ class CoherencyViolationDialog(BaseDialog):
         
         # Check if unit is still alive
         if not self.unit.is_alive():
-            print(f"💀 {self.unit.name} has been destroyed due to coherency violations")
+            print(f"INFO: {self.unit.name} has been destroyed due to coherency violations")
         else:
-            print(f"✅ {self.unit.name} coherency violations resolved")
+            print(f"INFO: {self.unit.name} coherency violations resolved")
         
         if self.callback:
             self.callback(True)

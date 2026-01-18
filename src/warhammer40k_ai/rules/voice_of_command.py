@@ -147,7 +147,7 @@ class VoiceOfCommandManager:
         raw = re.sub(r"<[^>]+>", " ", str(text or ""))
         raw = html.unescape(raw)
         raw = raw.replace("\u2019", "'").replace("\u2018", "'")
-        raw = raw.replace("ƒ?T", "'")
+        raw = raw.replace("\u0192?T", "'")
         raw = re.sub(r"\s+", " ", raw).strip()
         return raw
 

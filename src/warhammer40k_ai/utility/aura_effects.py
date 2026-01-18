@@ -75,7 +75,7 @@ def _norm(s: str) -> str:
     return (s or "").strip().lower()
 
 def _norm_name(s: str) -> str:
-    return _norm((s or "").replace("’", "'"))
+    return _norm((s or "").replace("\u2019", "'"))
 
 
 def _iter_possible_abilities(unit) -> Iterable[object]:
@@ -338,7 +338,7 @@ def _beacons_of_rage(attacker_unit, target_unit, weapon_profile, source_unit) ->
 
 def _nurgles_gift(attacker_unit, target_unit, source_unit) -> AuraAttackModifiers:
     """
-    Nurgle’s Gift (Aura): While an enemy unit is within Contagion Range of this unit, subtract 1 from Toughness.
+    Nurgle's Gift (Aura): While an enemy unit is within Contagion Range of this unit, subtract 1 from Toughness.
     We implement the baseline Contagion Range scaling by battle round (3/6/9).
     """
     br = _get_battle_round_from_unit(source_unit) or _get_battle_round_from_unit(attacker_unit)
@@ -347,7 +347,7 @@ def _nurgles_gift(attacker_unit, target_unit, source_unit) -> AuraAttackModifier
         return AuraAttackModifiers()
     return AuraAttackModifiers(
         target_toughness_delta=-1,
-        target_toughness_reasons=(f"-1T from Nurgle’s Gift (Aura) (Contagion Range {rng}\")",),
+        target_toughness_reasons=(f"-1T from Nurgle's Gift (Aura) (Contagion Range {rng}\")",),
     )
 
 
@@ -390,7 +390,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                 out = out.merge(_beacons_of_rage(attacker_unit, target_unit, weapon_profile, source))
                 continue
 
-            # Nurgle’s Gift (Aura) debuff (enemy-targeted).
+            # Nurgle's Gift (Aura) debuff (enemy-targeted).
             if _norm_name(ab_name) == _norm_name("Nurgle's Gift (Aura)"):
                 out = out.merge(_nurgles_gift(attacker_unit, target_unit, source))
                 continue

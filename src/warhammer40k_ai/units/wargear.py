@@ -77,20 +77,26 @@ class WargearProfile:
 
     def _parse_attribute(self, attribute_value: str) -> Union[int, DiceCollection]:
         # Remove " and normalize common placeholders.
-        attribute_value = (attribute_value or "").replace("\"", "").replace("â€™", "'").strip()
-        
-        # Remove trailing + if it exists
+        attribute_value = (attribute_value or "").replace('"', "").strip()
+        attribute_value = (
+            attribute_value.replace("\u00e2\u0080\u0099", "'")
+            .replace("\u2019", "'")
+            .replace("\u00e2\u0080\u0093", "-")
+            .replace("\u2013", "-")
+            .replace("\u2014", "-")
+        )
+
+        # Remove trailing + if it exists.
         if attribute_value.endswith("+"):
             attribute_value = attribute_value[:-1]
-            
+
         # Common placeholders in Wahapedia exports.
-        if attribute_value in ("", "-", "â€“", "N/A"):
+        if attribute_value in ("", "-", "N/A"):
             return 0
 
         if "D" in attribute_value:
             return DiceCollection.from_string(attribute_value)
-        else:
-            return int(attribute_value)
+        return int(attribute_value)
 
     def _parse_keywords(self, keywords_string):
         if keywords_string:
@@ -225,7 +231,7 @@ class WargearProfile:
             except Exception:
                 pass
 
-        # TODO - handle rest of special rules
+        # Other special rules are ignored in this estimate to keep it fast and deterministic.
         #######################################################################
 
         # Expected damage
@@ -283,7 +289,7 @@ class WargearProfile:
                 z = float(getattr(m, "z", 0.0))
             except Exception:
                 z = 0.0
-            # Ground level tolerance matches RUINS placement validation tolerance (Â±1")
+            # Ground level tolerance matches RUINS placement validation tolerance (+/-1")
             if abs(z) >= 1.0:
                 return False
 
@@ -640,7 +646,7 @@ class WargearProfile:
                 if key and key in used:
                     try:
                         wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
-                        print(f"âš ï¸ ONE SHOT already used for {attacker.name}: {wname}")
+                        print(f"WARN: ONE SHOT already used for {attacker.name}: {wname}")
                     except Exception:
                         pass
                     return
@@ -1965,8 +1971,28 @@ class WargearProfile:
         except Exception:
             pass
         
-        # Add other potential modifiers here
-        # TODO: Add more hit modifiers (cover, moving, etc.)
+        # Apply externally supplied hit roll modifiers (e.g. stratagem hooks).
+        extra_hit_mods = attack_instance.get("hit_roll_modifiers")
+        if extra_hit_mods:
+            for mod in extra_hit_mods:
+                val = None
+                reason = None
+                if isinstance(mod, dict):
+                    val = mod.get("value", mod.get("modifier"))
+                    reason = mod.get("reason", mod.get("source"))
+                elif isinstance(mod, (tuple, list)):
+                    if mod:
+                        val = mod[0]
+                        if len(mod) > 1:
+                            reason = mod[1]
+                else:
+                    val = mod
+                if val is None:
+                    continue
+                if reason:
+                    _add_hit_mod(val, reason)
+                else:
+                    _add_hit_mod(val, "External hit modifier")
 
         # Friendly aura modifiers (e.g. "Beacons of Rage (Aura)")
         aura_mods = attack_instance.get("_aura_attack_mods")
@@ -3593,7 +3619,7 @@ class WargearProfile:
             aura_mods = get_aura_attack_modifiers(attacker.parent_unit, target, self)
             attack_instance["_aura_attack_mods"] = aura_mods
 
-        # Enemy-targeted aura debuffs affecting target characteristics (e.g. Nurgleâ€™s Gift (Aura): -1T)
+        # Enemy-targeted aura debuffs affecting target characteristics (e.g. Nurgle's Gift (Aura): -1T)
         try:
             dt = int(getattr(aura_mods, "target_toughness_delta", 0) or 0)
             if dt:
@@ -4980,7 +5006,7 @@ class WargearProfile:
             strength_comparison = ""
             if strength >= (target_toughness * 2):
                 base_needed = 2
-                strength_comparison = f"S{strength} â‰¥ 2Ã—T{target_toughness}"
+                strength_comparison = f"S{strength} >= 2xT{target_toughness}"
             elif strength > target_toughness:
                 base_needed = 3
                 strength_comparison = f"S{strength} > T{target_toughness}"
@@ -4989,7 +5015,7 @@ class WargearProfile:
                 strength_comparison = f"S{strength} = T{target_toughness}"
             elif strength <= (target_toughness / 2):
                 base_needed = 6
-                strength_comparison = f"S{strength} â‰¤ T{target_toughness}/2"
+                strength_comparison = f"S{strength} <= T{target_toughness}/2"
             else:
                 base_needed = 5
                 strength_comparison = f"S{strength} < T{target_toughness}"
@@ -5309,7 +5335,34 @@ class WargearProfile:
         except Exception:
             pass
 
-        # TODO: Apply other save modifiers (stratagems, auras, etc.)
+        # Apply externally supplied save roll modifiers (e.g. stratagem hooks).
+        extra_save_mods = attack_instance.get("save_roll_modifiers")
+        if extra_save_mods:
+            for mod in extra_save_mods:
+                val = None
+                reason = None
+                if isinstance(mod, dict):
+                    val = mod.get("value", mod.get("modifier"))
+                    reason = mod.get("reason", mod.get("source"))
+                elif isinstance(mod, (tuple, list)):
+                    if mod:
+                        val = mod[0]
+                        if len(mod) > 1:
+                            reason = mod[1]
+                else:
+                    val = mod
+                if val is None:
+                    continue
+                try:
+                    dice_modifier += int(val)
+                except Exception:
+                    continue
+                if reason:
+                    if isinstance(reason, (list, tuple)):
+                        reason = ", ".join(str(r) for r in reason if str(r or "").strip())
+                    save_result["special_effects"].append(f"{int(val):+d} save ({reason})")
+                else:
+                    save_result["special_effects"].append(f"{int(val):+d} save modifier")
         dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
         save_result['saved'] = (dice_roll + dice_modifier) >= save_value
         
@@ -5361,7 +5414,7 @@ class WargearProfile:
         
         # If we can't parse the condition, default to applying the save
         # This is safer than blocking legitimate saves due to parsing issues
-        print(f"âš ï¸  Unknown invulnerable save condition format: '{condition}' - applying save")
+        print(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
         return True
 
     def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict, game_map: Optional['Map'] = None) -> Dict:
@@ -5907,29 +5960,31 @@ class WargearProfile:
         return result
 
     def _print_attack_summary(self, result: AttackResult) -> None:
-        """Print comprehensive attack summary"""
-        print(f"\nðŸŽ¯ ATTACK SUMMARY: {result.weapon_name}")
-        print(f"   Attacker: {result.attacker_name} â†’ Target: {result.target_unit_name}")
-        
+        '''Print comprehensive attack summary.'''
+        print(f"\nATTACK SUMMARY: {result.weapon_name}")
+        print(f"   Attacker: {result.attacker_name} -> Target: {result.target_unit_name}")
+
         # Attack generation with dice details
         modifiers_str = f" ({', '.join(result.attacks_special_modifiers)})" if result.attacks_special_modifiers else ""
         dice_details = ""
         if result.attacks_dice_rolls:
             dice_str = ", ".join(map(str, result.attacks_dice_rolls))
             dice_details = f" - rolled: [{dice_str}]"
-        print(f"   ðŸŽ² Attacks: {result.attacks_rolled} (from {result.attacks_dice_expression}{dice_details}){modifiers_str}")
-        
+        print(
+            f"   Attacks: {result.attacks_rolled} (from {result.attacks_dice_expression}{dice_details}){modifiers_str}"
+        )
+
         # Hit results with needed/rolled format and modifier breakdown
         if result.hit_results:
             hit_rolls = [str(hit['roll']) if hit['roll'] is not None else 'Auto' for hit in result.hit_results]
             hit_rolls_str = ", ".join(hit_rolls)
-            
+
             # Show hit details with modifiers if any
             first_hit = result.hit_results[0]
             if 'final_needed' in first_hit and first_hit['final_needed'] is not None:
                 base_skill = first_hit['base_skill']
                 final_needed = first_hit['final_needed']
-                
+
                 if first_hit.get('modifiers'):
                     modifiers_str = ", ".join(first_hit['modifiers'])
                     needed_str = f"needed {final_needed}+ (base {base_skill}+ with {modifiers_str})"
@@ -5938,25 +5993,27 @@ class WargearProfile:
             else:
                 # Fallback for auto-hit or special cases
                 needed_str = "auto-hit"
-            
-            print(f"   âš”ï¸ Hits: {result.total_hits}/{len(result.hit_results)} - {needed_str} - rolled: [{hit_rolls_str}]")
-        
+
+            print(
+                f"   Hits: {result.total_hits}/{len(result.hit_results)} - {needed_str} - rolled: [{hit_rolls_str}]"
+            )
+
         # Wound results with needed/rolled format and strength comparison
         if result.wound_results:
             wound_rolls = [str(wound['roll']) if wound['roll'] is not None else 'Auto' for wound in result.wound_results]
             wound_rolls_str = ", ".join(wound_rolls)
-            
+
             # Determine display logic based on wound results
             normal_wounds = [w for w in result.wound_results if 'final_needed' in w and w['final_needed'] is not None]
             special_wounds = [w for w in result.wound_results if 'final_needed' not in w or w['final_needed'] is None]
-            
+
             if normal_wounds:
                 # Use normal wound logic - show strength vs toughness
                 first_normal = normal_wounds[0]
                 base_needed = first_normal['needed']
                 final_needed = first_normal['final_needed']
                 strength_comp = first_normal.get('strength_comparison', '')
-                
+
                 if first_normal.get('modifiers'):
                     modifiers_str = ", ".join(first_normal['modifiers'])
                     needed_str = f"needed {final_needed}+ (base {base_needed}+ with {modifiers_str}, {strength_comp})"
@@ -5980,34 +6037,41 @@ class WargearProfile:
             else:
                 # Fallback
                 needed_str = "auto-fail"
-            
-            print(f"   ðŸ©¸ Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]")
-        
+
+            print(
+                f"   Wounds: {result.total_wounds}/{len(result.wound_results)} - {needed_str} - rolled: [{wound_rolls_str}]"
+            )
+
         # Save results with save type and modifiers
         if result.save_results:
             save_rolls = [str(save['roll']) for save in result.save_results]
             save_rolls_str = ", ".join(save_rolls)
-            
+
             # Show save details - assume all saves are the same type for this attack
             first_save = result.save_results[0]
             save_type_str = "Inv" if first_save['save_type'] == 'invulnerable' else "Armor"
-            
+
             if first_save['save_type'] == 'armor' and first_save['ap_modifier'] < 0:
-                needed_str = f"needed {first_save['needed']}+ {save_type_str} (base {first_save['base_save']}+ with AP{first_save['ap_modifier']})"
+                needed_str = (
+                    f"needed {first_save['needed']}+ {save_type_str} "
+                    f"(base {first_save['base_save']}+ with AP{first_save['ap_modifier']})"
+                )
             else:
                 needed_str = f"needed {first_save['needed']}+ {save_type_str}"
-            
+
             failed_saves = len(result.save_results) - sum(1 for s in result.save_results if s['saved'])
-            print(f"   ðŸ›¡ï¸ Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]")
-        
+            print(
+                f"   Saves: {failed_saves}/{len(result.save_results)} failed - {needed_str} - rolled: [{save_rolls_str}]"
+            )
+
         # Damage results with Feel No Pain details
         if result.damage_results:
             damage_summary = []
             for i, dmg in enumerate(result.damage_results):
                 effects = f" [{', '.join(dmg['special_effects'])}]" if dmg['special_effects'] else ""
-                killed = " ðŸ’€" if dmg['model_killed'] else ""
+                killed = " (killed)" if dmg['model_killed'] else ""
                 fnp_info = ""
-                
+
                 # Add Feel No Pain information
                 if dmg['fnp_rolls']:
                     fnp_saves = dmg['fnp_saves']
@@ -6015,27 +6079,30 @@ class WargearProfile:
                     fnp_rolls_str = ", ".join([str(roll['roll']) for roll in dmg['fnp_rolls']])
                     fnp_needed = dmg['fnp_rolls'][0]['needed'] if dmg['fnp_rolls'] else 'N/A'
                     fnp_info = f" FNP: {fnp_saves}/{fnp_total} saved (needed {fnp_needed}+ - rolled: [{fnp_rolls_str}])"
-                
+
                 # Add damage dice roll information
-                damage_info = f"{dmg['damage_rolled']}â†’{dmg['damage_applied']}"
+                damage_info = f"{dmg['damage_rolled']}->{dmg['damage_applied']}"
                 if dmg['damage_dice_rolls']:
                     dice_rolls_str = ", ".join([str(roll) for roll in dmg['damage_dice_rolls']])
-                    damage_info = f"{dmg['damage_rolled']}â†’{dmg['damage_applied']} (from {dmg['damage_expression']} - rolled: [{dice_rolls_str}])"
-                
+                    damage_info = (
+                        f"{dmg['damage_rolled']}->{dmg['damage_applied']} "
+                        f"(from {dmg['damage_expression']} - rolled: [{dice_rolls_str}])"
+                    )
+
                 damage_summary.append(f"#{i+1}: {damage_info} to {dmg['target_model']}{fnp_info}{effects}{killed}")
-            print(f"   ðŸ’¥ Damage: {result.total_damage_dealt} total - {', '.join(damage_summary)}")
-        
+            print(f"   Damage: {result.total_damage_dealt} total - {', '.join(damage_summary)}")
+
         # Hazardous effects
         if result.hazardous_roll is not None:
-            hazard_result = "ðŸ’€ Backfire!" if result.hazardous_roll == 1 else "âœ“ Safe"
-            print(f"   âš ï¸ Hazardous: Rolled {result.hazardous_roll} - {hazard_result}")
+            hazard_result = "Backfire!" if result.hazardous_roll == 1 else "Safe"
+            print(f"   Hazardous: Rolled {result.hazardous_roll} - {hazard_result}")
             if result.hazardous_damage > 0:
                 print(f"      {result.attacker_name} takes {result.hazardous_damage} mortal wounds")
-        
+
         # Final summary
         if result.models_killed > 0:
-            print(f"   â˜ ï¸ Models eliminated: {result.models_killed}")
-        
+            print(f"   Models eliminated: {result.models_killed}")
+
         print()  # Empty line for readability
 
     def opponent_wound_allocation(self, target: 'Unit', *, attacker: Optional['Model'] = None, game_map: Optional['Map'] = None) -> Optional['Model']:
@@ -6730,7 +6797,7 @@ def parse_wargear_item(item_str: str) -> list[tuple[int, str]]:
 
 def parse_alternate_3(str_list: list[str], unit_ptr: 'Unit' = None) -> list[WargearOption]:
     def _norm_name(s: str) -> str:
-        s = (s or "").replace("â€™", "'").lower().strip()
+        s = (s or "").replace("\u00e2\u0080\u0099", "'").replace("\u2019", "'").lower().strip()
         s = re.sub(r"[^\w\s\-']", " ", s)
         s = s.replace("'", "")
         s = re.sub(r"\s+", " ", s).strip()

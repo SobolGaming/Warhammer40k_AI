@@ -75,10 +75,10 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         y_pos = y + 15 - self.scroll_offset
         x_left = x + 15
         x_right = x + self.width - 15
-        line_large = self.font_large.get_linesize()
-        line_medium = self.font_medium.get_linesize()
-        line_small = self.font_small.get_linesize()
-        line_tiny = self.font_tiny.get_linesize()
+        line_large = max(1, self.font_large.get_linesize())
+        line_medium = max(1, self.font_medium.get_linesize())
+        line_small = max(1, self.font_small.get_linesize())
+        line_tiny = max(1, self.font_tiny.get_linesize())
         pad_sm = 4
         pad_md = 6
         pad_lg = 8
@@ -423,7 +423,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
 
     def draw_wargear_profile(self, surface: pygame.Surface, profile, profile_name: str, x_pos: int, y_pos: int) -> int:
         """Draw detailed wargear profile information and return new y position"""
-        line_tiny = self.font_tiny.get_linesize()
+        line_tiny = max(1, self.font_tiny.get_linesize())
         # Profile name (if not 'default')
         if profile_name != 'default':
             profile_header = self.font_tiny.render(f"      {profile_name}:", True, TEXT_ACCENT)

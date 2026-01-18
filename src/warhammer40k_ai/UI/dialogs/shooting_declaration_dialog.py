@@ -111,9 +111,9 @@ class ShootingDeclarationDialog(BaseDialog):
         # Create buttons using BaseDialog button system
         self._create_dialog_buttons()
 
-        print(f"🎯 ShootingDeclarationDialog shown for {unit.name}")
-        print(f"🎯 Found {len(self.available_weapons)} available weapons")
-        print(f"🎯 Found {len(self.available_targets)} available targets")
+        print(f"INFO: ShootingDeclarationDialog shown for {unit.name}")
+        print(f"INFO: Found {len(self.available_weapons)} available weapons")
+        print(f"INFO: Found {len(self.available_targets)} available targets")
 
     def _create_dialog_buttons(self):
         """Create the Execute and Cancel buttons using BaseDialog button system"""
@@ -140,7 +140,7 @@ class ShootingDeclarationDialog(BaseDialog):
             self.execute_shooting()
             return True
         elif button_name == 'cancel':
-            print("Cancel button clicked")
+            print("INFO: Cancel button clicked")
             self.hide()
             return True
         if not self.allow_actions and button_name.startswith("start_"):
@@ -336,10 +336,10 @@ class ShootingDeclarationDialog(BaseDialog):
         game = self.game_view.game
         check = game.can_start_terraform(self.unit)
         if not check.get('valid'):
-            print(f"❌ Cannot start Terraform: {check.get('reason')}")
+            print(f"ERROR: Cannot start Terraform: {check.get('reason')}")
             return False
         result = game.start_terraform_action(self.unit)
-        print("✅ Terraform Action started")
+        print("INFO: Terraform Action started")
         # Lock dialog to prevent shooting; optionally close dialog
         self.hide()
         return True
@@ -350,10 +350,10 @@ class ShootingDeclarationDialog(BaseDialog):
         game = self.game_view.game
         check = game.can_start_sabotage(self.unit)
         if not check.get('valid'):
-            print(f"❌ Cannot start Sabotage: {check.get('reason')}")
+            print(f"ERROR: Cannot start Sabotage: {check.get('reason')}")
             return False
         result = game.start_sabotage_action(self.unit)
-        print("✅ Sabotage Action started")
+        print("INFO: Sabotage Action started")
         self.hide()
         return True
 
@@ -363,14 +363,14 @@ class ShootingDeclarationDialog(BaseDialog):
         game = self.game_view.game
         # Reuse terraform-like check but specific API if available
         if not hasattr(game, 'can_start_burn_objective'):
-            print("❌ Burn Objective not available for current primary")
+            print("ERROR: Burn Objective not available for current primary")
             return False
         check = game.can_start_burn_objective(self.unit)
         if not check.get('valid'):
-            print(f"❌ Cannot start Burn Objective: {check.get('reason')}")
+            print(f"ERROR: Cannot start Burn Objective: {check.get('reason')}")
             return False
         result = game.start_burn_objective_action(self.unit)
-        print("🔥 Burn Objective Action started")
+        print("INFO: Burn Objective Action started")
         self.hide()
         return True
 
@@ -379,7 +379,7 @@ class ShootingDeclarationDialog(BaseDialog):
             return False
         game = self.game_view.game
         if not hasattr(game, "can_start_the_ritual") or not hasattr(game, "start_the_ritual_action"):
-            print("❌ The Ritual action is not available")
+            print("ERROR: The Ritual action is not available")
             return False
 
         # Open point picker modal: user clicks battlefield to choose placement.
@@ -397,9 +397,9 @@ class ShootingDeclarationDialog(BaseDialog):
             x, y = pt
             res = game.start_the_ritual_action(self.unit, new_objective_xy=(x, y))
             if not res.get("valid", False):
-                print(f"❌ Cannot start The Ritual: {res.get('reason')}")
+                print(f"ERROR: Cannot start The Ritual: {res.get('reason')}")
                 return
-            print("✅ The Ritual Action started")
+            print("INFO: The Ritual Action started")
             self.hide()
 
         picker.show(
@@ -421,7 +421,7 @@ class ShootingDeclarationDialog(BaseDialog):
             return False
         game = self.game_view.game
         if not hasattr(game, "can_start_move_hazard") or not hasattr(game, "start_move_hazard_action"):
-            print("❌ Move Hazard action is not available")
+            print("ERROR: Move Hazard action is not available")
             return False
 
         # Build eligible hazard objectives: controlled by player, marked hazard, and this unit is within range.
@@ -445,7 +445,7 @@ class ShootingDeclarationDialog(BaseDialog):
             eligible.append(obj)
 
         if not eligible:
-            print("❌ No eligible Hazard objective markers in range that you control")
+            print("ERROR: No eligible Hazard objective markers in range that you control")
             return False
 
         from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
@@ -467,9 +467,9 @@ class ShootingDeclarationDialog(BaseDialog):
                 x, y = pt
                 res = game.start_move_hazard_action(self.unit, hazard_objective=hazard_obj, new_xy=(x, y))
                 if not res.get("valid", False):
-                    print(f"❌ Cannot start Move Hazard: {res.get('reason')}")
+                    print(f"ERROR: Cannot start Move Hazard: {res.get('reason')}")
                     return
-                print("✅ Move Hazard Action started")
+                print("INFO: Move Hazard Action started")
                 self.hide()
 
             picker.show(
@@ -685,7 +685,7 @@ class ShootingDeclarationDialog(BaseDialog):
         # If in targeting mode, only handle ESC key and let all other events pass through
         if self.is_targeting_mode:
             if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                print("🎯 ESC pressed in targeting mode - clearing targeting")
+                print("INFO: ESC pressed in targeting mode - clearing targeting")
                 self.clear_targeting_mode()
                 return True
             return False  # Let other handlers (like battle phase) handle targeting clicks
@@ -758,7 +758,7 @@ class ShootingDeclarationDialog(BaseDialog):
                     button_y <= y <= button_y + button_size):
                     group_id = weapon_info['group_id']
                     self._toggle_weapon_group_expansion(group_id)
-                    print(f"🔄 Toggled weapon group expansion for {weapon_profile.parent_wargear.name}")
+                    print(f"INFO: Toggled weapon group expansion for {weapon_profile.parent_wargear.name}")
                     return True
             
             # Handle individual weapon selection
@@ -767,19 +767,19 @@ class ShootingDeclarationDialog(BaseDialog):
                 
                 # Check if weapon can be used and hasn't been declared already
                 if self._can_use_weapon(weapon_profile) and not self._is_weapon_already_declared(weapon_profile.parent_wargear, weapon_instance):
-                    print(f"🎯 Selected weapon: {weapon_profile.parent_wargear.name} #{weapon_instance}")
+                    print(f"INFO: Selected weapon: {weapon_profile.parent_wargear.name} #{weapon_instance}")
                     self.select_weapon_for_targeting(weapon_profile, weapon_instance)
                     return True
                 else:
-                    print(f"❌ Cannot use {weapon_profile.parent_wargear.name} #{weapon_instance} - already declared or unavailable")
+                    print(f"ERROR: Cannot use {weapon_profile.parent_wargear.name} #{weapon_instance} - already declared or unavailable")
             else:
                 # Handle grouped weapon selection - all weapons in group target the same enemy
                 if self._can_use_weapon(weapon_profile):
-                    print(f"🎯 Selected weapon group: {weapon_profile.parent_wargear.name} (x{weapon_info['count']})")
+                    print(f"INFO: Selected weapon group: {weapon_profile.parent_wargear.name} (x{weapon_info['count']})")
                     self.select_weapon_group_for_targeting(weapon_info)
                     return True
                 else:
-                    print(f"❌ Cannot use weapon group {weapon_profile.parent_wargear.name} - unavailable")
+                    print(f"ERROR: Cannot use weapon group {weapon_profile.parent_wargear.name} - unavailable")
         
         return False
     
@@ -878,10 +878,10 @@ class ShootingDeclarationDialog(BaseDialog):
     def execute_shooting(self):
         """Execute all shooting declarations"""
         if not self.weapon_declarations:
-            print("❌ No shooting declarations to execute")
+            print("ERROR: No shooting declarations to execute")
             return
         
-        print(f"🎯 Executing {len(self.weapon_declarations)} shooting declarations...")
+        print(f"INFO: Executing {len(self.weapon_declarations)} shooting declarations...")
         
         # Execute shooting using the unit's new method
         success = self.unit.execute_shooting_declarations(
@@ -892,9 +892,9 @@ class ShootingDeclarationDialog(BaseDialog):
         self.last_execution_success = bool(success)
         
         if success:
-            print(f"✅ {self.unit.name} completed shooting phase")
+            print(f"INFO: {self.unit.name} completed shooting phase")
         else:
-            print(f"❌ {self.unit.name} failed to execute shooting")
+            print(f"ERROR: {self.unit.name} failed to execute shooting")
         
         # Call the callback with the results
         if self.callback:
@@ -1118,7 +1118,7 @@ class ShootingDeclarationDialog(BaseDialog):
 
     def select_weapon_for_targeting(self, weapon_profile, weapon_instance=1):
         """Select a weapon and enter targeting mode"""
-        print(f"🎯 select_weapon_for_targeting called with {weapon_profile.parent_wargear.name} #{weapon_instance}")
+        print(f"INFO: select_weapon_for_targeting called with {weapon_profile.parent_wargear.name} #{weapon_instance}")
         self.selected_weapon = weapon_profile
         self.selected_weapon_instance = weapon_instance
         self.selected_weapon_group = None
@@ -1129,12 +1129,12 @@ class ShootingDeclarationDialog(BaseDialog):
         if hasattr(self, 'game_view') and self.game_view:
             self.game_view.selected_weapon_profile = weapon_profile
 
-        print(f"🎯 Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon={self.selected_weapon}")
-        print(f"🎯 Selected {weapon_profile.parent_wargear.name} #{weapon_instance} for targeting - click on battlefield")
+        print(f"INFO: Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon={self.selected_weapon}")
+        print(f"INFO: Selected {weapon_profile.parent_wargear.name} #{weapon_instance} for targeting - click on battlefield")
     
     def select_weapon_group_for_targeting(self, weapon_group_info):
         """Select a weapon group and enter targeting mode"""
-        print(f"🎯 select_weapon_group_for_targeting called with {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']})")
+        print(f"INFO: select_weapon_group_for_targeting called with {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']})")
         self.selected_weapon = weapon_group_info['profile']
         self.selected_weapon_group = weapon_group_info
         self.selected_weapon_instance = None
@@ -1145,8 +1145,8 @@ class ShootingDeclarationDialog(BaseDialog):
         if hasattr(self, 'game_view') and self.game_view:
             self.game_view.selected_weapon_profile = weapon_group_info['profile']
 
-        print(f"🎯 Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon_group={self.selected_weapon_group}")
-        print(f"🎯 Selected weapon group {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']}) for targeting - click on battlefield")
+        print(f"INFO: Targeting mode set: is_targeting_mode={self.is_targeting_mode}, selected_weapon_group={self.selected_weapon_group}")
+        print(f"INFO: Selected weapon group {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']}) for targeting - click on battlefield")
 
     def _build_valid_targets_cache(self):
         # Deprecated: no precomputation to keep targeting responsive
@@ -1155,7 +1155,7 @@ class ShootingDeclarationDialog(BaseDialog):
     def handle_battlefield_targeting(self, x: float, y: float) -> bool:
         """Handle clicking on the battlefield for targeting."""
         if not self.selected_weapon:
-            print("❌ No weapon selected for targeting")
+            print("ERROR: No weapon selected for targeting")
             return False
             
         # Auto-target support (e.g., FIRE OVERWATCH): if force_single_target_unit is set, use it
@@ -1168,7 +1168,7 @@ class ShootingDeclarationDialog(BaseDialog):
                 clicked_unit = self.game_view.get_unit_at_position(x, y, needs_conversion=False)
         
         if not clicked_unit:
-            print("❌ No unit found at clicked position")
+            print("ERROR: No unit found at clicked position")
             try:
                 if self.game_view is not None:
                     self.game_view._mission_popup = {
@@ -1188,7 +1188,7 @@ class ShootingDeclarationDialog(BaseDialog):
         valid, reason = self._validate_click_target_with_reason(self.selected_weapon, clicked_unit, clicked_model)
         if not valid:
             suffix = f" - {reason}" if reason else ""
-            print(f"❌ {clicked_unit.name} is not a valid target for {weapon_name}{suffix}")
+            print(f"ERROR: {clicked_unit.name} is not a valid target for {weapon_name}{suffix}")
             try:
                 if self.game_view is not None:
                     self.game_view._mission_popup = {
@@ -1217,7 +1217,7 @@ class ShootingDeclarationDialog(BaseDialog):
                 except Exception:
                     pass
                 self.weapon_declarations.append(decl)
-            print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
+            print(f"INFO: {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
             try:
                 from ...utility.event_bus import append_action
                 pn = self.unit.get_parent_army().player.name
@@ -1246,7 +1246,7 @@ class ShootingDeclarationDialog(BaseDialog):
             except Exception:
                 pass
             self.weapon_declarations.append(decl)
-            print(f"✅ {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
+            print(f"ERROR: {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
             try:
                 from ...utility.event_bus import append_action
                 pn = self.unit.get_parent_army().player.name
@@ -1271,4 +1271,4 @@ class ShootingDeclarationDialog(BaseDialog):
             if hasattr(self, 'game_view') and self.game_view:
                 self.game_view.selected_weapon_profile = None
 
-            print("❌ Targeting mode cleared")
+            print("INFO: Targeting mode cleared")
