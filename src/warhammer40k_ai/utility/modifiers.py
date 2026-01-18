@@ -5,6 +5,8 @@ from enum import Enum, auto
 from fractions import Fraction
 from typing import Iterable, Optional
 
+from .count import Count, CountType
+
 
 class ModifierOp(Enum):
     """
@@ -151,3 +153,109 @@ def apply_characteristic_caps(
 
     return v
 
+
+def compute_save_roll_modifier(
+    target_model,
+    *,
+    attack_instance: Optional[dict] = None,
+    ap: int = 0,
+    save_type: str = "armor",
+    weapon_profile: Optional[object] = None,
+) -> tuple[int, list[str]]:
+    """
+    Return (dice_modifier, effects) for a saving throw.
+
+    The modifier is capped at +1 (core rules). Negative modifiers are allowed.
+    """
+    dice_modifier = 0
+    effects: list[str] = []
+    atk = attack_instance if isinstance(attack_instance, dict) else {}
+    save_type = str(save_type or "armor").strip().lower()
+
+    def _coerce_int(value) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_damage_characteristic() -> Optional[int]:
+        dmg_val = None
+        if isinstance(atk, dict):
+            dmg_val = atk.get("damage_characteristic")
+        if dmg_val is None and weapon_profile is not None:
+            dmg_val = getattr(weapon_profile, "damage", None)
+        if isinstance(dmg_val, Count) and dmg_val.ctype == CountType.FLAT:
+            return _coerce_int(dmg_val.value)
+        if isinstance(dmg_val, int):
+            return dmg_val
+        if isinstance(dmg_val, str):
+            s = dmg_val.strip()
+            if s.isdigit():
+                return int(s)
+        return None
+
+    # Benefit of Cover: +1 to armor saves against ranged attacks (not invulnerable).
+    if save_type == "armor" and atk.get("benefit_of_cover", False):
+        ignores_cover = bool(atk.get("ignores_cover", False))
+        if ignores_cover:
+            effects.append("Ignores Cover")
+        else:
+            ap_val = _coerce_int(ap) or 0
+            save_val = _coerce_int(getattr(target_model, "save", 7)) or 7
+            if not (ap_val == 0 and save_val <= 3):
+                dice_modifier += 1
+                src = atk.get("benefit_of_cover_source")
+                if src:
+                    effects.append(f"Benefit of Cover ({src})")
+                else:
+                    effects.append("Benefit of Cover")
+
+    # Armor save bonuses based on the incoming damage characteristic.
+    if save_type == "armor":
+        t_unit = getattr(target_model, "parent_unit", None)
+        sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+        dmg_char = _resolve_damage_characteristic()
+        if isinstance(sr, dict) and dmg_char is not None:
+            spec = sr.get("armor_save_bonus_vs_damage_characteristic")
+            if isinstance(spec, dict):
+                bonus = spec.get(dmg_char)
+                if bonus is None:
+                    bonus = spec.get(str(dmg_char))
+                bonus_val = _coerce_int(bonus) or 0
+                if bonus_val:
+                    dice_modifier += bonus_val
+                    effects.append(f"+{bonus_val} armor save vs Damage {int(dmg_char)}")
+
+    # Apply externally supplied save roll modifiers.
+    extra_save_mods = atk.get("save_roll_modifiers")
+    if extra_save_mods:
+        for mod in extra_save_mods:
+            val = None
+            reason = None
+            if isinstance(mod, dict):
+                val = mod.get("value", mod.get("modifier"))
+                reason = mod.get("reason", mod.get("source"))
+            elif isinstance(mod, (tuple, list)):
+                if mod:
+                    val = mod[0]
+                    if len(mod) > 1:
+                        reason = mod[1]
+            else:
+                val = mod
+            val_int = _coerce_int(val)
+            if val_int is None:
+                continue
+            dice_modifier += val_int
+            if reason:
+                if isinstance(reason, (list, tuple)):
+                    reason = ", ".join(str(r) for r in reason if str(r or "").strip())
+                effects.append(f"{val_int:+d} save ({reason})")
+            else:
+                effects.append(f"{val_int:+d} save modifier")
+
+    if dice_modifier > 1:
+        dice_modifier = 1
+
+    return int(dice_modifier), effects

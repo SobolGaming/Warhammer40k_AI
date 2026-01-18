@@ -228,6 +228,9 @@ If you have **any questions** about:
 
 Do not guess on rules nuance. Propose a concrete set of questions and a recommended interpretation, then wait for developer direction before proceeding with implementation.
 
+## Distance/range interpretation
+Unless an ability explicitly states a distance is measured "horizontally" or "vertically," interpret any stated distance/range as **3D distance**.
+
 ---
 
 ## Out-of-scope requests and escalation

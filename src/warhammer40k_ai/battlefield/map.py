@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple, Dict, Any
 from enum import Enum, auto
 from ..units.unit import Unit
 from ..units.model import Model
-from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely
+from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely, _resolve_ruins_floor_level
 from ..utility.constants import (
     ENGAGEMENT_RANGE_HORIZONTAL,
     ENGAGEMENT_RANGE_VERTICAL,
@@ -2112,31 +2112,9 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
             
         # Find which floor this z-coordinate corresponds to
         floors = getattr(terrain, 'floors', []) or []
-        current_floor = None
-        floor_level = 0
-        
-        # Find the closest floor by elevation
-        closest_floor_distance = float('inf')
-        for floor in floors:
-            floor_elev = floor.get('elevation', 0.0)
-            floor_thickness = floor.get('thickness', RUINS_FLOOR_THICKNESS)
-            floor_surface = floor_elev + floor_thickness
-            
-            # Check if z is close to this floor surface
-            distance = abs(z - floor_surface)
-            if distance < closest_floor_distance and distance < 1.0:  # Allow 1" tolerance
-                closest_floor_distance = distance
-                current_floor = floor
-                floor_level = int(round(float(floor_elev) / float(RUINS_FLOOR_HEIGHT)))
-        
-        # If no floor found, assume ground level (z=0) is valid
-        if current_floor is None:
-            if abs(z) < 1.0:  # Close to ground level
-                floor_level = 0
-                # Create a virtual ground floor for validation
-                current_floor = {'polygon': terrain.footprint, 'elevation': 0.0, 'thickness': 0.0}
-            else:
-                return {'valid': False, 'reason': f'Position not on a valid floor level (z={z:.1f})', 'floor_level': 0}
+        floor_level, current_floor = _resolve_ruins_floor_level(z, terrain)
+        if current_floor is None or floor_level is None:
+            return {'valid': False, 'reason': f'Position not on a valid floor level (z={z:.1f})', 'floor_level': 0}
 
         # Helper to check base-vs-wall intersection for one model at (mx,my,mz)
         def _base_overlaps_wall(model: 'Model', mx: float, my: float, mz: float) -> Optional[str]:

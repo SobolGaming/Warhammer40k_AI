@@ -1,5 +1,5 @@
 import logging
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Callable
 from typing import TYPE_CHECKING
 from .model import Model
 from ..utility.model_base import Base, BaseType
@@ -782,7 +782,7 @@ class Unit:
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
     _BEARER_UNIT_CHARGE_BONUS_RE = re.compile(
-        r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|this\s+unit|this\s+model'?s\s+unit)",
         re.IGNORECASE,
     )
     _BEARER_UNIT_ADVANCE_BONUS_RE = re.compile(
@@ -4523,12 +4523,20 @@ class Unit:
 
         print(f"{model.name} shoots on death into {best_target.name}")
         shots_executed = 0
+        attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
         for profile in ranged_profiles:
             try:
-                shots_executed += self._execute_weapon_attacks(profile, best_target, [model], game_map)
+                shots_executed += self._execute_weapon_attacks(
+                    profile,
+                    best_target,
+                    [model],
+                    game_map,
+                    attack_context=attack_context,
+                )
             except Exception as e:
                 print(f"Shoot on Death attack error: {e}")
 
+        self._resolve_pending_attack_mortal_wounds(attack_context, best_target, game_map=game_map)
         return shots_executed > 0
 
     def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> None:
@@ -4656,23 +4664,38 @@ class Unit:
         game_map: Optional['Map'] = None,
         *,
         is_psychic_attack: bool = False,
+        initial_model: Optional['Model'] = None,
+        apply_fn: Optional[Callable[['Model'], None]] = None,
+        allocation_ctx: Optional[object] = None,
+        allow_initial_model_outside_candidates: bool = False,
     ) -> int:
         """Apply mortal wounds to a unit, distributing them among models.
-        
+
         Args:
             target_unit: The unit to apply mortal wounds to
             mortal_wound_amount: Number of mortal wounds to apply
-            
+            initial_model: Optional model to allocate the first mortal wound to (e.g., Precision)
+            apply_fn: Optional callback to apply each mortal wound to a model (defaults to Model.take_damage)
+            allocation_ctx: Optional DamageAllocationCtx override for UI context
+            allow_initial_model_outside_candidates: Allow initial_model even if not in allocation candidates
+
         Returns:
             Number of models destroyed by the mortal wounds
         """
         models_destroyed = 0
-        
+        current_model = None
+
+        try:
+            if initial_model is not None and getattr(initial_model, "is_alive", True):
+                current_model = initial_model
+        except Exception:
+            current_model = None
+
         # Apply mortal wounds one at a time to models in the unit
         for _ in range(mortal_wound_amount):
             if not target_unit.is_alive():
                 break  # Unit is destroyed, stop applying wounds
-            
+
             # Use the standard wound allocation candidate list (handles attached units: bodyguard -> leaders)
             try:
                 candidates = target_unit.get_models_for_wound_allocation()
@@ -4681,38 +4704,78 @@ class Unit:
             if not candidates:
                 break
 
-            # Human UI may choose among eligible models only when rules allow (i.e., no wounded eligible model)
-            from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
-            try:
-                player = target_unit.get_parent_army().player
-                is_human = self._player_has_local_control(player)
-            except Exception:
-                is_human = False
-            provider = getattr(game_map, "damage_allocation_provider", None) if game_map is not None else None
-            target_model = choose_damage_allocation_model(
-                target_unit,
-                candidates,
-                is_human=is_human,
-                provider=provider,
-                ctx=DamageAllocationCtx(reason="Allocate mortal wound", damage_source="mortal"),
-            )
-            if target_model is None:
-                break
-            
+            # Reset current model if it is no longer eligible.
+            if current_model is not None:
+                try:
+                    if not getattr(current_model, "is_alive", True):
+                        current_model = None
+                    elif current_model not in candidates:
+                        if allow_initial_model_outside_candidates:
+                            try:
+                                all_models = target_unit.get_models_for_collision()
+                            except Exception:
+                                all_models = list(candidates)
+                            if current_model not in all_models:
+                                current_model = None
+                        else:
+                            current_model = None
+                except Exception:
+                    current_model = None
+
+            if current_model is None:
+                # Human UI may choose among eligible models only when rules allow (i.e., no wounded eligible model)
+                from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
+                try:
+                    player = target_unit.get_parent_army().player
+                    is_human = self._player_has_local_control(player)
+                except Exception:
+                    is_human = False
+                provider = getattr(game_map, "damage_allocation_provider", None) if game_map is not None else None
+                ctx = allocation_ctx or DamageAllocationCtx(reason="Allocate mortal wound", damage_source="mortal")
+                current_model = choose_damage_allocation_model(
+                    target_unit,
+                    candidates,
+                    is_human=is_human,
+                    provider=provider,
+                    ctx=ctx,
+                )
+                if current_model is None:
+                    break
+
             # Apply the mortal wound
-            target_model.take_damage(
-                1,
-                is_mortal=True,
-                weapon_profile=None,
-                game_map=game_map,
-                is_psychic_attack=is_psychic_attack,
-            )
-            
+            if callable(apply_fn):
+                apply_fn(current_model)
+            else:
+                current_model.take_damage(
+                    1,
+                    is_mortal=True,
+                    weapon_profile=None,
+                    game_map=game_map,
+                    is_psychic_attack=is_psychic_attack,
+                )
+
             # Check if the model was destroyed
-            if not target_model.is_alive:
+            if not current_model.is_alive:
                 models_destroyed += 1
-        
+                current_model = None
+
         return models_destroyed
+
+    def _resolve_pending_attack_mortal_wounds(
+        self,
+        attack_context: Optional[dict],
+        target_unit: Optional['Unit'],
+        game_map: Optional['Map'] = None,
+    ) -> None:
+        if not isinstance(attack_context, dict) or target_unit is None:
+            return
+        pending_by_target = attack_context.get("pending_mortal_wounds")
+        if not isinstance(pending_by_target, dict):
+            return
+        from .wargear import WargearProfile
+        WargearProfile.resolve_pending_mortal_wounds_for_target(
+            pending_by_target, target_unit, game_map=game_map
+        )
 
     def _player_has_local_control(self, player) -> bool:
         if player is None:
@@ -11053,11 +11116,17 @@ class Unit:
             if weapon_declarations and hasattr(self, "get_parent_army") and self.get_parent_army() is not None:
                 game = getattr(self.get_parent_army().player, "game", None)
                 if game is not None and hasattr(game, "event_system"):
-                    touched_targets = set()
+                    touched_targets = []
+                    seen_targets = set()
                     for decl in weapon_declarations:
                         t = decl.get("target_unit")
-                        if t is not None:
-                            touched_targets.add(t)
+                        if t is None:
+                            continue
+                        tid = id(t)
+                        if tid in seen_targets:
+                            continue
+                        seen_targets.add(tid)
+                        touched_targets.append(t)
                     if touched_targets:
                         game.event_system.publish(
                             "shooting_targets_selected",
@@ -11067,17 +11136,36 @@ class Unit:
         except Exception:
             pass
 
-        touched_targets = set()
+        touched_targets = []
         try:
+            seen_targets = set()
             for decl in weapon_declarations:
                 t = decl.get("target_unit")
-                if t is not None:
-                    touched_targets.add(t)
+                if t is None:
+                    continue
+                tid = id(t)
+                if tid in seen_targets:
+                    continue
+                seen_targets.add(tid)
+                touched_targets.append(t)
             for t in touched_targets:
                 if hasattr(t, "begin_attack_resolution"):
                     t.begin_attack_resolution()
         except Exception:
-            touched_targets = set()
+            touched_targets = []
+
+        attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
+        remaining_by_target: dict[int, dict] = {}
+        for decl in weapon_declarations:
+            t = decl.get("target_unit")
+            if t is None:
+                continue
+            tid = id(t)
+            entry = remaining_by_target.get(tid)
+            if entry is None:
+                remaining_by_target[tid] = {"unit": t, "count": 1}
+            else:
+                entry["count"] = int(entry.get("count", 0) or 0) + 1
 
         # Execute each weapon declaration
         for declaration in weapon_declarations:
@@ -11085,24 +11173,32 @@ class Unit:
             target_unit = declaration['target_unit']
             models_with_weapon = declaration['models']
             weapon_instance = declaration.get('weapon_instance', None)
-            
-            # Validate this declaration
-            validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map)
-            if not validation['valid']:
-                print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
-                continue
-                
-            # Execute attacks with this weapon
-            weapon_attacks = self._execute_weapon_attacks(
-                weapon_profile,
-                target_unit,
-                models_with_weapon,
-                game_map,
-                weapon_instance,
-                hit_tracker=hit_tracker,
-                hit_models_by_target=hit_models_by_target,
-            )
-            successful_attacks += weapon_attacks
+            try:
+                # Validate this declaration
+                validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map)
+                if not validation['valid']:
+                    print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
+                    continue
+
+                # Execute attacks with this weapon
+                weapon_attacks = self._execute_weapon_attacks(
+                    weapon_profile,
+                    target_unit,
+                    models_with_weapon,
+                    game_map,
+                    weapon_instance,
+                    hit_tracker=hit_tracker,
+                    hit_models_by_target=hit_models_by_target,
+                    attack_context=attack_context,
+                )
+                successful_attacks += weapon_attacks
+            finally:
+                tid = id(target_unit)
+                entry = remaining_by_target.get(tid)
+                if entry is not None:
+                    entry["count"] = int(entry.get("count", 0) or 0) - 1
+                    if entry["count"] <= 0:
+                        self._resolve_pending_attack_mortal_wounds(attack_context, entry["unit"], game_map=game_map)
 
         try:
             game = self.get_parent_army().player.game
@@ -11702,7 +11798,17 @@ class Unit:
         # If target is different from engaged unit, only vehicles can shoot
         return False
     
-    def _execute_weapon_attacks(self, weapon_profile, target_unit, models_with_weapon, game_map, weapon_instance=None, hit_tracker=None, hit_models_by_target=None) -> int:
+    def _execute_weapon_attacks(
+        self,
+        weapon_profile,
+        target_unit,
+        models_with_weapon,
+        game_map,
+        weapon_instance=None,
+        hit_tracker=None,
+        hit_models_by_target=None,
+        attack_context: Optional[dict] = None,
+    ) -> int:
         """Execute attacks with a specific weapon profile"""
         successful_attacks = 0
         
@@ -11745,7 +11851,17 @@ class Unit:
                 print(f"{model.name} attacking with {weapon_display}")
                 
                 # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
-                attack_result = weapon_profile.attack(target_unit, model, game_map=game_map)
+                try:
+                    attack_result = weapon_profile.attack(
+                        target_unit, model, game_map=game_map, attack_context=attack_context
+                    )
+                except TypeError as exc:
+                    if "attack_context" in str(exc):
+                        attack_result = weapon_profile.attack(
+                            target_unit, model, game_map=game_map
+                        )
+                    else:
+                        raise
                 if hit_tracker is not None:
                     try:
                         hits = int(getattr(attack_result, "total_hits", 0) or 0)

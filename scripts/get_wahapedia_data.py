@@ -9,6 +9,10 @@ import argparse
 import logging
 from pathlib import Path
 from typing import Union, List, Dict
+from datetime import datetime
+import shutil
+import subprocess
+import sys
 import requests
 import openpyxl
 import csv
@@ -17,11 +21,14 @@ import json
 # Constants
 WAHAPEDIA_URL = "https://wahapedia.ru/wh40k10ed/Export%20Data%20Specs.xlsx"
 INDEX_FILENAME = "Index.xlsx"
+LAST_UPDATE_FILENAME = "Last_update.json"
 CSV_EXTENSION = ".csv"
 JSON_EXTENSION = ".json"
 CLEANED_EXTENSION = ".csv.cleaned"
 CSV_DELIMITER = '|'
 ENCODING = 'utf-8-sig'
+ARCHIVE_DIRNAME = "Archive"
+ARCHIVE_TEMP_DIRNAME = "Archive_Temp"
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -114,6 +121,52 @@ def convert_csv_to_json(srcdir: Union[str, Path], dstdir: Union[str, Path]) -> N
         except Exception as e:
             logger.error(f"Error processing {csv_file}: {e}")
 
+def read_last_update_value(path: Path) -> str:
+    if not path.exists():
+        raise FileNotFoundError(f"Missing Last_update.json at {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, list) or not data or not isinstance(data[0], dict):
+        raise ValueError(f"Unexpected Last_update.json format at {path}")
+    value = data[0].get("last_update")
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Invalid last_update value in {path}")
+    return value.strip()
+
+def parse_last_update(value: str) -> datetime:
+    try:
+        return datetime.strptime(value, "%Y-%m-%d %H:%M:%S")
+    except ValueError as exc:
+        raise ValueError(f"Invalid last_update timestamp format: {value}") from exc
+
+def move_existing_data_to_archive_temp(data_dir: Path) -> Path:
+    archive_temp = data_dir / ARCHIVE_TEMP_DIRNAME
+    if archive_temp.exists():
+        shutil.rmtree(archive_temp)
+    archive_temp.mkdir(parents=True, exist_ok=True)
+    for pattern in (f"*{JSON_EXTENSION}", "*.xlsx"):
+        for path in data_dir.glob(pattern):
+            if path.is_file():
+                path.rename(archive_temp / path.name)
+    return archive_temp
+
+def delete_matching_files(data_dir: Path, patterns: List[str]) -> None:
+    for pattern in patterns:
+        for path in data_dir.glob(pattern):
+            if path.is_file():
+                path.unlink()
+
+def run_diff(old_dir: Path, new_dir: Path, out_path: Path) -> None:
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "diff_wahapedia_data.py"
+    cmd = [
+        sys.executable,
+        str(script_path),
+        "--old", str(old_dir),
+        "--new", str(new_dir),
+        "--out", str(out_path),
+    ]
+    subprocess.run(cmd, check=True)
+    logger.info("Wahapedia diff report written to %s", out_path)
+
 def main() -> None:
     """Main function to handle command line arguments and execute tasks."""
     parser = argparse.ArgumentParser(description='Fetches csv data files from wahapedia')
@@ -139,12 +192,33 @@ def main() -> None:
         logger.info(f"Logging Level:{caps_log_level} numeric:{numeric_level}")
 
     if args.fetch:
-        retrieve_data("", args.out_dir)
-        args.src_dir = args.out_dir
+        out_dir = Path(args.out_dir)
+        old_update_value = read_last_update_value(out_dir / LAST_UPDATE_FILENAME)
+        old_update_dt = parse_last_update(old_update_value)
 
-    if args.convert:
+        archive_temp = move_existing_data_to_archive_temp(out_dir)
+
+        retrieve_data("", out_dir)
+        convert_csv_to_json(out_dir, out_dir)
+        delete_matching_files(out_dir, [f"*{CSV_EXTENSION}", f"*{CLEANED_EXTENSION}"])
+
+        new_update_value = read_last_update_value(out_dir / LAST_UPDATE_FILENAME)
+        new_update_dt = parse_last_update(new_update_value)
+
+        if new_update_dt > old_update_dt:
+            archive_dir = out_dir / ARCHIVE_DIRNAME
+            if archive_dir.exists():
+                shutil.rmtree(archive_dir)
+            archive_temp.rename(archive_dir)
+            diff_out = Path(__file__).resolve().parents[1] / "docs" / "wahapedia_diff.txt"
+            run_diff(archive_dir, out_dir, diff_out)
+            logger.info("Diff ran because data is newer (old=%s new=%s).", old_update_value, new_update_value)
+        else:
+            shutil.rmtree(archive_temp)
+            logger.info("No newer data (old=%s new=%s). Skipping diff.", old_update_value, new_update_value)
+    elif args.convert:
         convert_csv_to_json(args.src_dir, args.out_dir)
 
 if __name__ == "__main__":
     main()
-    # RUN: python get_datasheets.py -f -c -o ../wahapedia_data -s ../wahapedia_data
+    # RUN: python scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data

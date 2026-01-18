@@ -71,11 +71,12 @@ Only certain unit types can move through walls:
 
 ### Floor Access
 
-All units can move onto floors if they can reach them:
+Upper floors are restricted by unit type:
 
-- Models can be positioned on any floor level
-- Vertical movement cost applies when climbing between floors
-- Flying units can access any floor level freely
+- Ground floor: any unit can end a move on the RUINS footprint (no base overhang).
+- Upper floors: only units that can access upper floors (see `Unit.can_access_upper_floors`) can end moves.
+- Upper-floor bases must be wholly within the floor polygon unless the unit can overhang floors (`Unit.can_overhang_floor`).
+- Vertical movement cost applies when climbing between floors.
 
 ## Creating RUINS Terrain
 

@@ -183,7 +183,7 @@ def draw_bottom_logs_pane(self) -> None:
     self._ui_hitboxes['army_rule_p2'] = (pygame.Rect(army_right_rect), self.player2)
 
     # Initialize bottom log scroll state and hitboxes
-    if not hasattr(self, '_bottom_log_scroll'):
+    if not isinstance(getattr(self, '_bottom_log_scroll', None), dict):
         self._bottom_log_scroll = {
             'p1_actions': 0,
             'p1_dice': 0,
@@ -198,10 +198,10 @@ def draw_bottom_logs_pane(self) -> None:
     }
 
     # Draw the four log boxes with wrapping and scroll support
-    draw_scroll_text_box(self, boxes[0], p1_actions, key='p1_actions', title=f\"{p1_name} Actions\")
-    draw_scroll_text_box(self, boxes[1], p1_dice, key='p1_dice', title=f\"{p1_name} Dice\")
-    draw_scroll_text_box(self, boxes[2], p2_dice, key='p2_dice', title=f\"{p2_name} Dice\")
-    draw_scroll_text_box(self, boxes[3], p2_actions, key='p2_actions', title=f\"{p2_name} Actions\")
+    draw_scroll_text_box(self, boxes[0], p1_actions, key='p1_actions', title=f"{p1_name} Actions")
+    draw_scroll_text_box(self, boxes[1], p1_dice, key='p1_dice', title=f"{p1_name} Dice")
+    draw_scroll_text_box(self, boxes[2], p2_dice, key='p2_dice', title=f"{p2_name} Dice")
+    draw_scroll_text_box(self, boxes[3], p2_actions, key='p2_actions', title=f"{p2_name} Actions")
 
 def draw_stratagem_panes(self) -> None:
     if not hasattr(self, '_ui_hitboxes'):
@@ -278,6 +278,12 @@ def draw_rule_button(self, rect: pygame.Rect, label: str, player, rule_type: str
         self.screen.blit(badge_text, (badge_rect.x + pad, badge_rect.y + 1))
 
 def draw_scroll_text_box(self, rect: pygame.Rect, lines, key: str, title: str = "Logs") -> None:
+    if lines is None:
+        lines = []
+    elif isinstance(lines, (list, tuple)):
+        lines = list(lines)
+    else:
+        lines = [lines]
     pygame.draw.rect(self.screen, (40,40,44), rect)
     pygame.draw.rect(self.screen, (70,70,78), rect, 1)
     try:
@@ -319,7 +325,10 @@ def draw_scroll_text_box(self, rect: pygame.Rect, lines, key: str, title: str = 
     # Determine how many wrapped lines fit and apply scroll offset (from bottom)
     line_height = msg_font.get_height() + 2
     max_visible = max(0, content_height // line_height)
-    offset = int(self._bottom_log_scroll.get(key, 0) or 0)
+    scroll_state = getattr(self, "_bottom_log_scroll", None)
+    if not isinstance(scroll_state, dict):
+        scroll_state = {}
+    offset = int(scroll_state.get(key, 0) or 0)
     start_index = max(0, len(wrapped_lines) - max_visible - offset)
     end_index = len(wrapped_lines) - offset if offset > 0 else len(wrapped_lines)
     to_show = wrapped_lines[start_index:end_index]

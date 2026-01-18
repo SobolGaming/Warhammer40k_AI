@@ -37,6 +37,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.game_map = None
         self.target_unit = None
         self.eligible_models = None
+        self.eligible_models_override = None
         
         # Model-based weapon declarations storage
         self.model_weapon_selections = {}  # {model_index: {weapon_profile_id: weapon_info}}
@@ -61,12 +62,13 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         
         # Fonts provided by BaseDialog: self.font_large/medium/small
     
-    def show(self, unit: Unit, callback: Callable, game_map=None, target_unit=None):
+    def show(self, unit: Unit, callback: Callable, game_map=None, target_unit=None, *, eligible_models=None):
         """Show the melee weapon declaration dialog."""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
         self.target_unit = target_unit
+        self.eligible_models_override = set(eligible_models) if eligible_models is not None else None
         # Preserve callback in BaseDialog for button handling
         super().show(callback)
         
@@ -83,6 +85,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.game_map = None
         self.target_unit = None
         self.eligible_models = None
+        self.eligible_models_override = None
         self.model_weapon_selections = {}
         self.available_weapons_by_model = {}
         self.weapon_buttons = []
@@ -109,15 +112,21 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
             and self.unit.has_fight_within_3_ability()
         ):
             try:
-                self.eligible_models = set(
-                    self.unit.get_fight_eligible_models_for_target(
-                        self.target_unit,
-                        game_map=self.game_map,
-                        allow_within_3=self.unit.fight_within_3_active(),
+                    self.eligible_models = set(
+                        self.unit.get_fight_eligible_models_for_target(
+                            self.target_unit,
+                            game_map=self.game_map,
+                            allow_within_3=self.unit.fight_within_3_active(),
+                        )
                     )
-                )
             except Exception:
                 self.eligible_models = None
+
+        if self.eligible_models_override is not None:
+            if self.eligible_models is None:
+                self.eligible_models = set(self.eligible_models_override)
+            else:
+                self.eligible_models = set(self.eligible_models) & set(self.eligible_models_override)
 
         eligible_indices = []
         # Initialize weapon selections for each model

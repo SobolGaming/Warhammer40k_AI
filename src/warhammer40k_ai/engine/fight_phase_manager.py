@@ -543,9 +543,13 @@ class FightPhaseManager:
 
             # Step 2: Make melee attacks based on declarations
             print(f"{fighting_unit.name} makes melee attacks")
+            auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
             for target_unit, attacking_models in target_declarations.items():
                 print(f"  {len(attacking_models)} models attacking {target_unit.name}")
-                # TODO: Implement proper melee attack resolution with model-specific targeting
+                decls = list(auto_decls or [])
+                if attacking_models:
+                    decls = [d for d in decls if d.get("model") in attacking_models]
+                self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
             try:
                 if hasattr(self.game, "event_system"):
                     self.game.event_system.publish(
@@ -686,9 +690,19 @@ class FightPhaseManager:
         except Exception:
             pass
 
+        game_map = getattr(self.game, "map", None)
+        attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
+        base_provider = None
+        if game_map is not None:
+            base_provider = getattr(game_map, "damage_allocation_provider", None)
+
         for declaration in weapon_declarations:
             model = declaration.get('model')
             weapon_profile = declaration.get('weapon_profile')
+            attacks_override = declaration.get('attacks_override')
+            attacks_override_modifiers = declaration.get('attacks_override_modifiers')
+            attacks_override_note = declaration.get('attacks_override_note')
+            wound_target = declaration.get('wound_target')
 
             if not model or not weapon_profile:
                 continue
@@ -697,62 +711,39 @@ class FightPhaseManager:
                 continue
 
             print(f"{model.name} attacks with {weapon_profile.name}")
+            provider_reset = False
+            if game_map is not None and wound_target is not None:
+                def _forced_provider(unit, candidates, ctx, *, _target=wound_target, _base=base_provider):
+                    if isinstance(candidates, (list, tuple, set)) and _target in candidates and getattr(_target, "is_alive", True):
+                        return _target
+                    if callable(_base):
+                        return _base(unit, candidates, ctx)
+                    return None
+                setattr(game_map, "damage_allocation_provider", _forced_provider)
+                provider_reset = True
+            try:
+                weapon_profile.attack(
+                    target_unit,
+                    model,
+                    game_map=game_map,
+                    attack_context=attack_context,
+                    attacks_override=attacks_override,
+                    attacks_override_modifiers=attacks_override_modifiers,
+                    attacks_override_note=attacks_override_note,
+                )
+            finally:
+                if provider_reset and game_map is not None:
+                    setattr(game_map, "damage_allocation_provider", base_provider)
 
-            # Get number of attacks
-            attacks = weapon_profile.attacks
-            if isinstance(attacks, str):
-                # Handle dice notation like "D6" or "2D6"
-                from ..utility.dice import get_roll
-                attacks = get_roll(attacks)
-
-            print(f"Number of attacks: {attacks}")
-
-            # Roll to hit
-            hit_rolls = []
-            hits = 0
-            for i in range(attacks):
-                from ..utility.dice import get_roll
-                roll = get_roll("1D6")
-                hit_rolls.append(roll)
-                if roll >= weapon_profile.weapon_skill:
-                    hits += 1
-
-            print(f"Hit rolls: {hit_rolls} (WS {weapon_profile.weapon_skill}+) - {hits} hits")
-
-            if hits == 0:
-                print("No hits - attack sequence ends")
-                continue
-
-            # Roll to wound
-            wound_rolls = []
-            wounds = 0
-            for i in range(hits):
-                from ..utility.dice import get_roll
-                roll = get_roll("1D6")
-                wound_rolls.append(roll)
-                # Simplified wound calculation - would need proper S vs T comparison
-                wound_target = 4  # Placeholder
-                if roll >= wound_target:
-                    wounds += 1
-
-            print(f"Wound rolls: {wound_rolls} (need {wound_target}+) - {wounds} wounds")
-
-            if wounds == 0:
-                print("No wounds - attack sequence ends")
-                continue
-
-            # Apply damage
-            damage_per_wound = weapon_profile.damage
-            if isinstance(damage_per_wound, str):
-                from ..utility.dice import get_roll
-                damage_per_wound = get_roll(damage_per_wound)
-
-            total_damage = wounds * damage_per_wound
-            print(f"{wounds} wounds x {damage_per_wound} damage = {total_damage} total damage")
-
-            # Apply damage to target unit
-            target_unit.take_damage(total_damage)
-            print(f"{target_unit.name} takes {total_damage} damage")
+        try:
+            if hasattr(attacking_unit, "_resolve_pending_attack_mortal_wounds"):
+                attacking_unit._resolve_pending_attack_mortal_wounds(
+                    attack_context,
+                    target_unit,
+                    game_map=game_map,
+                )
+        except Exception:
+            pass
 
         # End attack resolution window for this target after this unit has finished its melee attacks.
         try:

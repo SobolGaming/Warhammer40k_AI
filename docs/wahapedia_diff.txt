@@ -13,67 +13,7 @@ File: Datasheets_abilities.json
 Counts: old=6998, new=6998, added=0, removed=0, changed=0
 
 File: Datasheets_detachment_abilities.json
-Counts: old=15082, new=15124, added=50, removed=8, changed=0
-Added:
-  + datasheet_id=000000522, detachment_ability_id=000010667
-  + datasheet_id=000000523, detachment_ability_id=000010667
-  + datasheet_id=000000524, detachment_ability_id=000010667
-  + datasheet_id=000000527, detachment_ability_id=000010667
-  + datasheet_id=000000528, detachment_ability_id=000010667
-  + datasheet_id=000000530, detachment_ability_id=000010667
-  + datasheet_id=000000531, detachment_ability_id=000010667
-  + datasheet_id=000000532, detachment_ability_id=000010667
-  + datasheet_id=000000533, detachment_ability_id=000010667
-  + datasheet_id=000000534, detachment_ability_id=000010667
-  + datasheet_id=000000535, detachment_ability_id=000010667
-  + datasheet_id=000000536, detachment_ability_id=000010667
-  + datasheet_id=000000537, detachment_ability_id=000010667
-  + datasheet_id=000000538, detachment_ability_id=000010667
-  + datasheet_id=000000539, detachment_ability_id=000010667
-  + datasheet_id=000000540, detachment_ability_id=000010667
-  + datasheet_id=000000541, detachment_ability_id=000010671
-  + datasheet_id=000000542, detachment_ability_id=000010671
-  + datasheet_id=000000543, detachment_ability_id=000010667
-  + datasheet_id=000000544, detachment_ability_id=000010667
-  + datasheet_id=000000545, detachment_ability_id=000010667
-  + datasheet_id=000000546, detachment_ability_id=000010667
-  + datasheet_id=000000548, detachment_ability_id=000010667
-  + datasheet_id=000000551, detachment_ability_id=000010667
-  + datasheet_id=000000553, detachment_ability_id=000010667
-  + datasheet_id=000000554, detachment_ability_id=000010667
-  + datasheet_id=000000555, detachment_ability_id=000010671
-  + datasheet_id=000000558, detachment_ability_id=000010671
-  + datasheet_id=000000559, detachment_ability_id=000010667
-  + datasheet_id=000000560, detachment_ability_id=000010671
-  + datasheet_id=000000561, detachment_ability_id=000010667
-  + datasheet_id=000000562, detachment_ability_id=000010667
-  + datasheet_id=000000564, detachment_ability_id=000010667
-  + datasheet_id=000002092, detachment_ability_id=000010667
-  + datasheet_id=000002108, detachment_ability_id=000010667
-  + datasheet_id=000002111, detachment_ability_id=000010667
-  + datasheet_id=000002112, detachment_ability_id=000010667
-  + datasheet_id=000002114, detachment_ability_id=000010667
-  + datasheet_id=000002115, detachment_ability_id=000010667
-  + datasheet_id=000002350, detachment_ability_id=000010667
-  + datasheet_id=000002352, detachment_ability_id=000010667
-  + datasheet_id=000002353, detachment_ability_id=000010667
-  + datasheet_id=000002354, detachment_ability_id=000010667
-  + datasheet_id=000002357, detachment_ability_id=000010671
-  + datasheet_id=000002360, detachment_ability_id=000010667
-  + datasheet_id=000002361, detachment_ability_id=000010667
-  + datasheet_id=000003693, detachment_ability_id=000010667
-  + datasheet_id=000004176, detachment_ability_id=000010667
-  + datasheet_id=000004177, detachment_ability_id=000010667
-  + datasheet_id=000004178, detachment_ability_id=000010667
-Removed:
-  - datasheet_id=000002109, detachment_ability_id=000010671
-  - datasheet_id=000002110, detachment_ability_id=000010671
-  - datasheet_id=000002116, detachment_ability_id=000010671
-  - datasheet_id=000002351, detachment_ability_id=000010671
-  - datasheet_id=000002355, detachment_ability_id=000010671
-  - datasheet_id=000002358, detachment_ability_id=000010671
-  - datasheet_id=000002359, detachment_ability_id=000010671
-  - datasheet_id=000004186, detachment_ability_id=000010671
+Counts: old=15124, new=15124, added=0, removed=0, changed=0
 
 File: Datasheets_enhancements.json
 Counts: old=10115, new=10115, added=0, removed=0, changed=0
@@ -93,7 +33,10 @@ File: Datasheets_models_cost.json
 Counts: old=2094, new=2094, added=0, removed=0, changed=0
 
 File: Datasheets_options.json
-Counts: old=2773, new=2773, added=0, removed=0, changed=0
+Counts: old=2773, new=2773, added=0, removed=0, changed=1
+Changed:
+  * datasheet_id=000000431, line=2
+      description: This model's 2 twin pulse carbines can be replaced with one of the following: 2 accelerator burst cannons 2 twin smart missile systems -> This model's 2 twin pulse carbines can be replaced with one of the following: 2 accelerator burst cannons 2 smart missile systems
 
 File: Datasheets_stratagems.json
 Counts: old=82522, new=82522, added=0, removed=0, changed=0
@@ -102,8 +45,13 @@ File: Datasheets_unit_composition.json
 Counts: old=2125, new=2125, added=0, removed=0, changed=0
 
 File: Datasheets_wargear.json
-Counts: old=9159, new=9159, added=0, removed=0, changed=0
+Counts: old=9159, new=9159, added=0, removed=0, changed=1
 Note: Duplicate keys detected; duplicates are disambiguated by full-row signature.
+Changed:
+  * datasheet_id=000000431, line=7, line_in_wargear=1, name=Smart missile system
+      A: 4 -> 3
+      description: indirect fire, twin-linked -> indirect fire
+      name: Twin smart missile system -> Smart missile system
 
 File: Detachment_abilities.json
 Counts: old=259, new=259, added=0, removed=0, changed=0
@@ -112,10 +60,7 @@ File: Detachments.json
 Counts: old=240, new=240, added=0, removed=0, changed=0
 
 File: Enhancements.json
-Counts: old=845, new=845, added=0, removed=0, changed=1
-Changed:
-  * id=000009460002, name=Master Saboteur
-      description: The first lime in the battle that your opponent's army Secures an objective marker while the bearer is on the battlefield, roll one D6: on a 3+, that objective marker is not Secured by your opponent's army. -> The first time in the battle that your opponent's army Secures an objective marker while the bearer is on the battlefield, roll one D6: on a 3+, that objective marker is not Secured by your opponent's army.
+Counts: old=845, new=845, added=0, removed=0, changed=0
 
 File: Factions.json
 Counts: old=26, new=26, added=0, removed=0, changed=0
@@ -123,15 +68,12 @@ Counts: old=26, new=26, added=0, removed=0, changed=0
 File: Last_update.json
 Counts: old=1, new=1, added=1, removed=1, changed=0
 Added:
-  + last_update=2026-01-11 18:30:21
+  + last_update=2026-01-16 15:55:46
 Removed:
-  - last_update=2026-01-09 18:32:41
+  - last_update=2026-01-14 00:30:31
 
 File: Source.json
 Counts: old=70, new=70, added=0, removed=0, changed=0
 
 File: Stratagems.json
-Counts: old=1361, new=1361, added=0, removed=0, changed=1
-Changed:
-  * id=000010638007, name=ADDITIONAL ARMOUR
-      description: WHEN: Your opponent's Shooting phase , just after an enemy unit has selected its targets. TARGET: One ASTRA MILITARUM unit from your army that was selected as the target of one or more of the attacking unit's attacks. EFFECT: Uuntil the ... -> WHEN: Your opponent's Shooting phase , just after an enemy unit has selected its targets. TARGET: One ASTRA MILITARUM unit from your army that was selected as the target of one or more of the attacking unit's attacks. EFFECT: Until the a...
+Counts: old=1361, new=1361, added=0, removed=0, changed=0

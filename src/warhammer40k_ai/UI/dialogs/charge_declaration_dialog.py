@@ -170,9 +170,11 @@ class ChargeDeclarationDialog(BaseDialog):
 
         # Check if unit fell back this round (unless special abilities allow charging after fall back)
         if self.unit.round_state.fell_back_this_round:
-            print(f"ERROR: {self.unit.name} charge eligibility: Fell back this round and cannot charge")
-            # TODO: Check for special abilities that allow charging after fall back
-            return False
+            can_charge_after_fall_back = self.unit.can_charge_after_fall_back()
+            print(f"INFO: {self.unit.name} fell back this round. Can charge after fall back: {can_charge_after_fall_back}")
+            if not can_charge_after_fall_back:
+                print(f"ERROR: {self.unit.name} charge eligibility: Fell back this round and cannot charge")
+                return False
 
         # Check if unit is already in engagement range
         if self.game_map:
@@ -208,7 +210,8 @@ class ChargeDeclarationDialog(BaseDialog):
         
         # Check if unit fell back this round
         if self.unit.round_state.fell_back_this_round:
-            return {"valid": False, "reason": "Unit fell back and cannot charge"}
+            if not self.unit.can_charge_after_fall_back():
+                return {"valid": False, "reason": "Unit fell back and cannot charge"}
         
         # Check if unit is already in engagement range
         if self.game_map.is_within_engagement_range(self.unit, target):

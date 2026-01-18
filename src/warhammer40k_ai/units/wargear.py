@@ -46,6 +46,14 @@ class AttackResult:
     models_killed: int
 
 
+@dataclass(frozen=True)
+class AttackCountInfo:
+    """Resolved attacks count plus supporting roll/modifier context."""
+    num_attacks: int
+    dice_rolls: List[int]
+    special_modifiers: List[str]
+
+
 class WargearProfile:
     def __init__(self, profile_name: str, wargear_data: Dict, parent_wargear: Optional['Wargear'] = None):
         self.name = profile_name
@@ -636,7 +644,304 @@ class WargearProfile:
             out.append(entry)
         return out
 
-    def attack(self, target: 'Unit', attacker: 'Model', game_map: Optional['Map'] = None) -> Optional[AttackResult]:
+    def _resolve_attack_count(
+        self,
+        target: 'Unit',
+        attacker: 'Model',
+        attack_result: AttackResult,
+        *,
+        game_map: Optional['Map'] = None,
+        closest_dist: float = 0.0,
+        attacks_override: Optional[int] = None,
+        attacks_override_modifiers: Optional[list[str]] = None,
+        attacks_override_note: Optional[str] = None,
+        publish_roll_event: bool = True,
+    ) -> AttackCountInfo:
+        if attacks_override is not None:
+            num_attacks = max(0, int(attacks_override))
+            attack_result.attacks_rolled = num_attacks
+            attack_result.attacks_dice_rolls = []
+            if attacks_override_modifiers:
+                attack_result.attacks_special_modifiers.extend(list(attacks_override_modifiers))
+            if attacks_override_note:
+                attack_result.attacks_special_modifiers.append(str(attacks_override_note))
+            return AttackCountInfo(
+                num_attacks=num_attacks,
+                dice_rolls=list(attack_result.attacks_dice_rolls or []),
+                special_modifiers=list(attack_result.attacks_special_modifiers or []),
+            )
+
+        num_attacks = 0
+        if isinstance(self.attacks, Count):
+            def _reroll_attacks():
+                new_num, new_rolls = self.attacks.resolve_detailed()
+                attack_result.attacks_rolled = new_num
+                attack_result.attacks_dice_rolls = new_rolls
+                return new_num, new_rolls
+            num_attacks, dice_rolls = self.attacks.resolve_detailed()
+            attack_result.attacks_rolled = num_attacks
+            attack_result.attacks_dice_rolls = dice_rolls
+            if publish_roll_event:
+                try:
+                    unit = attacker.parent_unit
+                    game = unit.get_parent_army().player.game
+                    from ..utility.reroll_tracker import prepare_reroll_event
+                    roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_attacks)
+                    game.event_system.publish(
+                        "roll_made",
+                        player=unit.get_parent_army().player,
+                        unit=unit,
+                        roll_type="attacks",
+                        value=num_attacks,
+                        dice=dice_rolls,
+                        reroll=reroll_cb,
+                        reroll_locked=bool(reroll_locked),
+                        roll_id=roll_id,
+                    )
+                except Exception:
+                    pass
+        else:
+            num_attacks = self.attacks or 0
+            attack_result.attacks_rolled = num_attacks
+
+        from ..utility.modifiers import Modifier, ModifierOp, apply_numeric_modifiers, apply_characteristic_caps
+        atk_mods: list[Modifier] = []
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
+                bonus = int(
+                    getattr(attacker.parent_unit, "special_rules", {}).get(
+                        "enhancement_melee_attacks_bonus_no_extra_attacks", 0
+                    )
+                    or 0
+                )
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add_no_extra"))
+                    attack_result.attacks_special_modifiers.append(f"Berzerker Glaive +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker, "get_temporary_melee_attacks_bonus", lambda: 0)() or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append(f"Ability +{bonus}A (melee) [temporary]")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "waaagh", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.unit_is_affected(unit, game=game):
+                    atk_mods.append(Modifier(ModifierOp.ADD, 1, source="ability:waaagh_melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append("Waaagh! +1A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("relentless_rage_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:relentless_rage_attacks"))
+                    attack_result.attacks_special_modifiers.append(f"Relentless Rage +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="power_from_pain:melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append(f"Power from Pain +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
+                set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
+                if set_val:
+                    atk_mods.append(Modifier(ModifierOp.SET, int(set_val), source="power_from_pain:melee_attacks_set"))
+                    attack_result.attacks_special_modifiers.append(f"Power from Pain set Attacks {set_val} (non-character melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="damaged_profile:melee_attacks_add"))
+                    attack_result.attacks_special_modifiers.append(f"Damaged profile +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            from ..utility.aura_effects import get_aura_melee_attacks_bonus
+            aura_a, aura_reasons = get_aura_melee_attacks_bonus(attacker.parent_unit, self, game_map=game_map)
+            if aura_a:
+                atk_mods.append(Modifier(ModifierOp.ADD, int(aura_a), source="aura:melee_attacks_add"))
+                attack_result.attacks_special_modifiers.extend(list(aura_reasons or ()))
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and getattr(unit, "get_two_melee_weapons_bonus", None):
+                    bonus, bonus_wargear = unit.get_two_melee_weapons_bonus(attacker)
+                    if bonus and bonus_wargear and self.parent_wargear in bonus_wargear:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:two_melee_weapons_attacks_add"))
+                        attack_result.attacks_special_modifiers.append(f"Two melee weapons +{bonus}A")
+        except Exception:
+            pass
+
+        try:
+            wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
+            amt = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_amount", 0) or 0)
+            if wname and amt:
+                parent_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip().lower()
+                if parent_name and (parent_name == wname or wname in parent_name or parent_name in wname):
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(amt), source=f"damaged_profile:weapon_attacks_add:{wname}"))
+                    attack_result.attacks_special_modifiers.append(f"Damaged profile +{amt}A ({wname})")
+        except Exception:
+            pass
+
+        try:
+            if bool(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_half_attacks", False)):
+                atk_mods.append(Modifier(ModifierOp.DIV, 2, source="damaged_profile:halve_attacks"))
+                attack_result.attacks_special_modifiers.append("Damaged profile: halve Attacks")
+        except Exception:
+            pass
+
+        applied_pain_rapid_fire = False
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            bonuses = dict(sr.get("pain_rapid_fire_weapon_bonus", {}) or {}) if isinstance(sr, dict) else {}
+            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= (self.range.max / 2):
+                parent_name = str(getattr(self.parent_wargear, "name", "") or "").strip().lower()
+                matched = None
+                for key, val in bonuses.items():
+                    key_norm = str(key or "").strip().lower()
+                    if key_norm and key_norm in parent_name:
+                        matched = (key_norm, int(val or 0))
+                        break
+                if matched and matched[1]:
+                    attack_result.attacks_special_modifiers.append(f"Power from Pain Rapid Fire +{matched[1]} ({matched[0]})")
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(matched[1]), source="power_from_pain:rapid_fire"))
+                    applied_pain_rapid_fire = True
+        except Exception:
+            applied_pain_rapid_fire = False
+
+        if (not applied_pain_rapid_fire) and closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
+            try:
+                rf = self.get_rapid_fire_bonus()
+                rf_bonus = int(rf.resolve())
+                attack_result.attacks_special_modifiers.append(f"Rapid Fire +{rf_bonus} ({rf})")
+                atk_mods.append(Modifier(ModifierOp.ADD, int(rf_bonus), source="weapon:rapid_fire"))
+            except Exception as exc:
+                print(f"WARN: Rapid Fire bonus parsing failed for {self.name}: {exc}")
+
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
+            if order_key == "FIRST_RANK_FIRE" and self.is_rapid_fire():
+                attack_result.attacks_special_modifiers.append("First Rank, Fire! Second Rank, Fire! +1A")
+                atk_mods.append(Modifier(ModifierOp.ADD, 1, source="voice_of_command:first_rank_fire"))
+        except Exception:
+            pass
+
+        if self.is_blast():
+            try:
+                target_model_count = len(target.models)
+            except Exception:
+                target_model_count = 0
+            num_attacks_modifier = int(target_model_count / 5)
+            attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
+            atk_mods.append(Modifier(ModifierOp.ADD, int(num_attacks_modifier), source="weapon:blast"))
+
+        num_attacks, _dbg = apply_numeric_modifiers(int(num_attacks), atk_mods, base_raw=getattr(self, "_raw_attacks", None))
+        num_attacks = apply_characteristic_caps("attacks", int(num_attacks), base_raw=getattr(self, "_raw_attacks", None))
+        try:
+            attack_result.attacks_rolled = int(num_attacks)
+        except Exception:
+            pass
+
+        return AttackCountInfo(
+            num_attacks=int(num_attacks),
+            dice_rolls=list(attack_result.attacks_dice_rolls or []),
+            special_modifiers=list(attack_result.attacks_special_modifiers or []),
+        )
+
+    def preview_attack_count(
+        self,
+        target: 'Unit',
+        attacker: 'Model',
+        *,
+        game_map: Optional['Map'] = None,
+        publish_roll_event: bool = True,
+    ) -> AttackCountInfo:
+        weapon_display_name = self.name
+        if hasattr(self, 'parent_wargear') and self.parent_wargear:
+            if self.name == 'default':
+                weapon_display_name = self.parent_wargear.name
+            else:
+                weapon_display_name = f"{self.parent_wargear.name} - {self.name}"
+        attack_result = AttackResult(
+            weapon_name=weapon_display_name,
+            attacker_name=getattr(attacker, "name", "Attacker"),
+            target_unit_name=getattr(target, "name", "Target"),
+            attacks_rolled=0,
+            attacks_dice_expression=str(self.attacks),
+            attacks_dice_rolls=[],
+            attacks_special_modifiers=[],
+            hit_results=[],
+            wound_results=[],
+            save_results=[],
+            damage_results=[],
+            hazardous_roll=None,
+            hazardous_damage=0,
+            total_hits=0,
+            total_wounds=0,
+            total_saves_failed=0,
+            total_damage_dealt=0,
+            models_killed=0
+        )
+        closest_dist = 0.0
+        try:
+            _closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
+        except Exception:
+            closest_dist = 0.0
+        return self._resolve_attack_count(
+            target,
+            attacker,
+            attack_result,
+            game_map=game_map,
+            closest_dist=float(closest_dist),
+            publish_roll_event=bool(publish_roll_event),
+        )
+
+    def attack(
+        self,
+        target: 'Unit',
+        attacker: 'Model',
+        game_map: Optional['Map'] = None,
+        *,
+        attack_context: Optional[Dict] = None,
+        attacks_override: Optional[int] = None,
+        attacks_override_modifiers: Optional[list[str]] = None,
+        attacks_override_note: Optional[str] = None,
+    ) -> Optional[AttackResult]:
         # ONE SHOT: enforce once per battle per model per weapon.
         # (Higher-level code also filters declarations, but this is the final guard.)
         try:
@@ -682,6 +987,13 @@ class WargearProfile:
             total_damage_dealt=0,
             models_killed=0
         )
+
+        local_context = False
+        if not isinstance(attack_context, dict):
+            attack_context = {}
+            local_context = True
+        pending_mortal_by_target = attack_context.setdefault("pending_mortal_wounds", {})
+        defer_mortals = bool(attack_context.get("defer_mortal_wounds", True))
         
         wound_instances = []
         hit_instances = []
@@ -711,177 +1023,23 @@ class WargearProfile:
             attack_result.attacks_special_modifiers.append("Torrent cannot be used via Indirect Fire (no target models visible)")
             attack_result.attacks_rolled = 0
             return attack_result
-
-        # Roll attacks for this specific weapon instance
-        if isinstance(self.attacks, Count):
-            # Provide reroll callback for attacks count
-            def _reroll_attacks():
-                new_num, new_rolls = self.attacks.resolve_detailed()
-                attack_result.attacks_rolled = new_num
-                attack_result.attacks_dice_rolls = new_rolls
-                return new_num, new_rolls
-            num_attacks, dice_rolls = self.attacks.resolve_detailed()
-            attack_result.attacks_rolled = num_attacks
-            attack_result.attacks_dice_rolls = dice_rolls
-            # Publish roll_made for attacks count
-            try:
-                unit = attacker.parent_unit
-                game = unit.get_parent_army().player.game
-                from ..utility.reroll_tracker import prepare_reroll_event
-                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_attacks)
-                game.event_system.publish(
-                    "roll_made",
-                    player=unit.get_parent_army().player,
-                    unit=unit,
-                    roll_type="attacks",
-                    value=num_attacks,
-                    dice=dice_rolls,
-                    reroll=reroll_cb,
-                    reroll_locked=bool(reroll_locked),
-                    roll_id=roll_id,
-                )
-            except Exception:
-                pass
-        else:
-            num_attacks = self.attacks or 0
-            attack_result.attacks_rolled = num_attacks
-
-        # Core Rules modifier ordering: replacements -> DIV -> MUL -> ADD -> SUB, then round up.
-        # Gather ALL Attacks modifiers first (so e.g. halve happens before +1).
-        from ..utility.modifiers import Modifier, ModifierOp, apply_numeric_modifiers, apply_characteristic_caps
-        atk_mods: list[Modifier] = []
-
-        # Enhancement: improve melee weapons' Attacks by X (bearer enhancement).
+        closest_dist = 0.0
         try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("enhancement_melee_attacks_bonus", 0) or 0)
-                if bonus:
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add"))
-                    attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
+            _closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
         except Exception:
-            pass
-        # Berzerker Glaive: +1 Attacks to melee weapons (excluding Extra Attacks).
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
-                bonus = int(
-                    getattr(attacker.parent_unit, "special_rules", {}).get(
-                        "enhancement_melee_attacks_bonus_no_extra_attacks", 0
-                    )
-                    or 0
-                )
-                if bonus:
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="enhancement:melee_attacks_add_no_extra"))
-                    attack_result.attacks_special_modifiers.append(f"Berzerker Glaive +{bonus}A (melee)")
-        except Exception:
-            pass
+            closest_dist = 0.0
 
-        # Once-per-battle temporary buffs on the attacking model (e.g. Possessed Lord)
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                bonus = int(getattr(attacker, "get_temporary_melee_attacks_bonus", lambda: 0)() or 0)
-                if bonus:
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_melee_attacks_add"))
-                    attack_result.attacks_special_modifiers.append(f"Ability +{bonus}A (melee) [temporary]")
-        except Exception:
-            pass
-
-        # Orks: Waaagh! (+1 Attacks to melee weapons).
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                unit = getattr(attacker, "parent_unit", None)
-                army = unit.get_parent_army() if unit is not None else None
-                mgr = getattr(army, "waaagh", None) if army is not None else None
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                if mgr is not None and mgr.unit_is_affected(unit, game=game):
-                    atk_mods.append(Modifier(ModifierOp.ADD, 1, source="ability:waaagh_melee_attacks_add"))
-                    attack_result.attacks_special_modifiers.append("Waaagh! +1A (melee)")
-        except Exception:
-            pass
-
-        # Detachment ability: Relentless Rage (World Eaters - Berzerker Warband)
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("relentless_rage_melee_attacks_bonus", 0) or 0)
-                if bonus:
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:relentless_rage_attacks"))
-                    attack_result.attacks_special_modifiers.append(f"Relentless Rage +{bonus}A (melee)")
-        except Exception:
-            pass
-
-        # Drukhari: Power from Pain (Battlefield Butchery) - +1A (melee).
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_bonus", 0) or 0)
-                if bonus:
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="power_from_pain:melee_attacks_add"))
-                    attack_result.attacks_special_modifiers.append(f"Power from Pain +{bonus}A (melee)")
-        except Exception:
-            pass
-
-        # Drukhari: Power from Pain (Experimental Enhancements) - set Attacks for non-CHARACTER melee weapons.
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
-                set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
-                if set_val:
-                    atk_mods.append(Modifier(ModifierOp.SET, int(set_val), source="power_from_pain:melee_attacks_set"))
-                    attack_result.attacks_special_modifiers.append(f"Power from Pain set Attacks {set_val} (non-character melee)")
-        except Exception:
-            pass
-
-        # Damaged profile: add attacks to melee weapons (+N).
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_melee_attacks_bonus", 0) or 0)
-                if bonus:
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="damaged_profile:melee_attacks_add"))
-                    attack_result.attacks_special_modifiers.append(f"Damaged profile +{bonus}A (melee)")
-        except Exception:
-            pass
-
-        # Friendly auras: add to the Attacks characteristic of melee weapons (e.g. Rage Embodied (Aura))
-        try:
-            from ..utility.aura_effects import get_aura_melee_attacks_bonus
-            aura_a, aura_reasons = get_aura_melee_attacks_bonus(attacker.parent_unit, self, game_map=game_map)
-            if aura_a:
-                atk_mods.append(Modifier(ModifierOp.ADD, int(aura_a), source="aura:melee_attacks_add"))
-                attack_result.attacks_special_modifiers.extend(list(aura_reasons or ()))
-        except Exception:
-            pass
-
-        # Two melee weapons (plus close combat weapon): add Attacks to those two weapons.
-        try:
-            if self.parent_wargear and self.parent_wargear.is_melee():
-                unit = getattr(attacker, "parent_unit", None)
-                if unit is not None and getattr(unit, "get_two_melee_weapons_bonus", None):
-                    bonus, bonus_wargear = unit.get_two_melee_weapons_bonus(attacker)
-                    if bonus and bonus_wargear and self.parent_wargear in bonus_wargear:
-                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:two_melee_weapons_attacks_add"))
-                        attack_result.attacks_special_modifiers.append(f"Two melee weapons +{bonus}A")
-        except Exception:
-            pass
-
-        # Damaged profile: add attacks to a specific named weapon (+N).
-        try:
-            wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
-            amt = int(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_amount", 0) or 0)
-            if wname and amt:
-                parent_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip().lower()
-                # Match either exact or substring.
-                if parent_name and (parent_name == wname or wname in parent_name or parent_name in wname):
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(amt), source=f"damaged_profile:weapon_attacks_add:{wname}"))
-                    attack_result.attacks_special_modifiers.append(f"Damaged profile +{amt}A ({wname})")
-        except Exception:
-            pass
-
-        # Damaged profile: halve attacks characteristic of the model's weapons.
-        try:
-            if bool(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_half_attacks", False)):
-                atk_mods.append(Modifier(ModifierOp.DIV, 2, source="damaged_profile:halve_attacks"))
-                attack_result.attacks_special_modifiers.append("Damaged profile: halve Attacks")
-        except Exception:
-            pass
-
-        closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
+        attack_count_info = self._resolve_attack_count(
+            target,
+            attacker,
+            attack_result,
+            game_map=game_map,
+            closest_dist=float(closest_dist),
+            attacks_override=attacks_override,
+            attacks_override_modifiers=attacks_override_modifiers,
+            attacks_override_note=attacks_override_note,
+        )
+        num_attacks = int(attack_count_info.num_attacks)
 
         furious_onslaught_applies = False
         try:
@@ -983,61 +1141,6 @@ class WargearProfile:
                     f"Conversion active (target >{conversion_distance_threshold}\")"
                 )
 
-        # Apply attack modifiers
-        applied_pain_rapid_fire = False
-        try:
-            sr = getattr(attacker.parent_unit, "special_rules", None)
-            bonuses = dict(sr.get("pain_rapid_fire_weapon_bonus", {}) or {}) if isinstance(sr, dict) else {}
-            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= (self.range.max / 2):
-                parent_name = str(getattr(self.parent_wargear, "name", "") or "").strip().lower()
-                matched = None
-                for key, val in bonuses.items():
-                    key_norm = str(key or "").strip().lower()
-                    if key_norm and key_norm in parent_name:
-                        matched = (key_norm, int(val or 0))
-                        break
-                if matched and matched[1]:
-                    attack_result.attacks_special_modifiers.append(f"Power from Pain Rapid Fire +{matched[1]} ({matched[0]})")
-                    atk_mods.append(Modifier(ModifierOp.ADD, int(matched[1]), source="power_from_pain:rapid_fire"))
-                    applied_pain_rapid_fire = True
-        except Exception:
-            applied_pain_rapid_fire = False
-
-        if (not applied_pain_rapid_fire) and closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
-            # Support Rapid Fire N / Rapid Fire D3 / Rapid Fire D6+X, etc.
-            try:
-                rf = self.get_rapid_fire_bonus()
-                rf_bonus = int(rf.resolve())
-                attack_result.attacks_special_modifiers.append(f"Rapid Fire +{rf_bonus} ({rf})")
-                atk_mods.append(Modifier(ModifierOp.ADD, int(rf_bonus), source="weapon:rapid_fire"))
-            except Exception as exc:
-                print(f"WARN: Rapid Fire bonus parsing failed for {self.name}: {exc}")
-
-        try:
-            sr = getattr(attacker.parent_unit, "special_rules", None)
-            order_key = str(sr.get("voice_of_command_order_key", "") or "") if isinstance(sr, dict) else ""
-            if order_key == "FIRST_RANK_FIRE" and self.is_rapid_fire():
-                attack_result.attacks_special_modifiers.append("First Rank, Fire! Second Rank, Fire! +1A")
-                atk_mods.append(Modifier(ModifierOp.ADD, 1, source="voice_of_command:first_rank_fire"))
-        except Exception:
-            pass
-
-        if self.is_blast():
-            target_model_count = len(target.models)
-            num_attacks_modifier = int(target_model_count / 5)
-            attack_result.attacks_special_modifiers.append(f"Blast +{num_attacks_modifier}")
-            atk_mods.append(Modifier(ModifierOp.ADD, int(num_attacks_modifier), source="weapon:blast"))
-
-        # Apply all Attacks modifiers at once (Core Rules ordering + round up).
-        num_attacks, _dbg = apply_numeric_modifiers(int(num_attacks), atk_mods, base_raw=getattr(self, "_raw_attacks", None))
-        num_attacks = apply_characteristic_caps("attacks", int(num_attacks), base_raw=getattr(self, "_raw_attacks", None))
-
-        # Ensure the reported attacks count matches the final resolved count after all modifiers.
-        try:
-            attack_result.attacks_rolled = int(num_attacks)
-        except Exception:
-            pass
-
         # Imperial Agents Kill Team: majority Toughness (tie -> highest) for the attack sequence.
         kill_team_toughness = None
         try:
@@ -1122,18 +1225,10 @@ class WargearProfile:
                 wound_instances.append(hit_instance)
                 attack_result.total_wounds += 1
 
-        # Process saves and damage
+        # Process saves and damage.
         #
-        # Core rule: If an attacking unit inflicts a mixture of mortal wounds and normal damage,
-        # resolve all normal damage first. (Saves cannot be made against mortal wounds.)
-        try:
-            ordered_wounds = [w for w in wound_instances if not bool(w.get("mortal_wound", False))] + [
-                w for w in wound_instances if bool(w.get("mortal_wound", False))
-            ]
-        except Exception:
-            ordered_wounds = wound_instances
-
-        for wound_instance in ordered_wounds:
+        # Core rule: resolve all normal damage first; mortal wounds from attacks are applied after.
+        for wound_instance in wound_instances:
             # PRECISION (10e): after a successful wound vs an Attached Unit, attacker may allocate
             # the wound to a visible CHARACTER model in that unit.
             target_model = None
@@ -1222,6 +1317,7 @@ class WargearProfile:
                 target_model = self.opponent_wound_allocation(target, attacker=attacker, game_map=game_map)
             if target_model is None:
                 continue
+            wound_instance["_allocated_model"] = target_model
 
             # INDIRECT FIRE: if no target models were visible at selection time, the target gains Benefit of Cover
             # (unless the weapon ignores cover). This stacks with terrain evaluation but is not cumulative (+1 max).
@@ -1257,21 +1353,52 @@ class WargearProfile:
                 pass
                 
             save_result = None
-            if not wound_instance['mortal_wound']:
+            is_mortal_only = bool(wound_instance.get("mortal_wound", False)) and not bool(
+                wound_instance.get("mortal_wound_in_addition", False)
+            )
+            is_mortal_additional = bool(wound_instance.get("mortal_wound_in_addition", False))
+
+            if not is_mortal_only:
                 save_result = self._save_with_tracking(target_model, wound_instance, effective_ap)
                 attack_result.save_results.append(save_result)
             
             # Apply damage if save failed or mortal wound
-            if wound_instance['mortal_wound'] or (save_result and not save_result['saved']):
-                if save_result and not save_result['saved']:
-                    attack_result.total_saves_failed += 1
-                
-                damage_result = self._damage_target_with_tracking(target_model, attacker, wound_instance, game_map=game_map)
-                attack_result.damage_results.append(damage_result)
-                attack_result.total_damage_dealt += damage_result['damage_applied']
-                
-                if damage_result['model_killed']:
-                    attack_result.models_killed += 1
+            if save_result and not save_result.get('saved'):
+                attack_result.total_saves_failed += 1
+                damage_result = self._damage_target_with_tracking(
+                    target_model, attacker, wound_instance, game_map=game_map
+                )
+                self._record_damage_result(attack_result, damage_result)
+
+            if is_mortal_only or is_mortal_additional:
+                amount = 0
+                if is_mortal_additional:
+                    amount = self._resolve_mortal_wound_amount(wound_instance.get("mortal_wound_amount"))
+                    if amount <= 0:
+                        try:
+                            wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "Weapon")
+                            print(f"WARN: {wname} mortal_wound_in_addition set without amount")
+                        except Exception:
+                            pass
+                if is_mortal_only or amount > 0:
+                    target_key = self._pending_mortal_target_key(target)
+                    pending_mortal_by_target.setdefault(target_key, []).append(
+                        {
+                            "weapon_profile": self,
+                            "attacker": attacker,
+                            "target_unit": target,
+                            "target_model": target_model,
+                            "attack_instance": wound_instance,
+                            "attack_result": attack_result,
+                            "no_spill": bool(is_mortal_only),
+                            "mortal_wound_amount": int(amount),
+                        }
+                    )
+
+        if local_context or not defer_mortals:
+            self.resolve_pending_mortal_wounds_for_target(
+                pending_mortal_by_target, target, game_map=game_map
+            )
         
         # Handle hazardous weapon effects
         hazardous_active = self.is_hazardous()
@@ -5285,90 +5412,21 @@ class WargearProfile:
             save_result['special_effects'].append("Natural 1 (auto-fail)")
             return save_result
 
-        dice_modifier = 0  # positive/negative save modifiers
-
-        # Benefit of Cover:
-        # - Add 1 to the saving throw against ranged attacks.
-        # - Does not apply to invulnerable saving throws.
-        # - Models with a Save characteristic of 3+ or better cannot benefit vs AP 0.
-        # - Multiple instances are not cumulative (we only ever apply +1).
-        try:
-            ignores_cover = bool(attack_instance.get("ignores_cover", False))
-        except Exception:
-            ignores_cover = False
-        try:
-            if save_result.get('save_type') == 'armor' and attack_instance.get('benefit_of_cover', False):
-                if ignores_cover:
-                    save_result['special_effects'].append("Ignores Cover")
-                else:
-                    ap_val = int(ap)
-                    if not (ap_val == 0 and int(target_model.save) <= 3):
-                        dice_modifier += 1
-                        src = attack_instance.get('benefit_of_cover_source')
-                        if src:
-                            save_result['special_effects'].append(f"Benefit of Cover ({src})")
-                        else:
-                            save_result['special_effects'].append("Benefit of Cover")
-        except Exception:
-            pass
-
-        # Defensive rules keyed off incoming attack characteristics.
-        # Core timing: AP/Damage-based ones are applied at Allocate Attack; we already have the allocated model here.
-        try:
-            if save_result.get("save_type") == "armor":
-                t_unit = getattr(target_model, "parent_unit", None)
-                sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
-                # Damage characteristic is only meaningful here when it is a fixed integer.
-                dmg_char = attack_instance.get("damage_characteristic", None)
-                if dmg_char is None:
-                    try:
-                        dmg_char = int(self.damage)
-                    except Exception:
-                        dmg_char = None
-                if isinstance(sr, dict) and dmg_char is not None:
-                    spec = sr.get("armor_save_bonus_vs_damage_characteristic")
-                    if isinstance(spec, dict) and int(dmg_char) in spec:
-                        bonus = int(spec.get(int(dmg_char), 0) or 0)
-                        if bonus:
-                            dice_modifier += bonus
-                            save_result["special_effects"].append(f"+{bonus} armor save vs Damage {int(dmg_char)}")
-        except Exception:
-            pass
-
-        # Apply externally supplied save roll modifiers (e.g. stratagem hooks).
-        extra_save_mods = attack_instance.get("save_roll_modifiers")
-        if extra_save_mods:
-            for mod in extra_save_mods:
-                val = None
-                reason = None
-                if isinstance(mod, dict):
-                    val = mod.get("value", mod.get("modifier"))
-                    reason = mod.get("reason", mod.get("source"))
-                elif isinstance(mod, (tuple, list)):
-                    if mod:
-                        val = mod[0]
-                        if len(mod) > 1:
-                            reason = mod[1]
-                else:
-                    val = mod
-                if val is None:
-                    continue
-                try:
-                    dice_modifier += int(val)
-                except Exception:
-                    continue
-                if reason:
-                    if isinstance(reason, (list, tuple)):
-                        reason = ", ".join(str(r) for r in reason if str(r or "").strip())
-                    save_result["special_effects"].append(f"{int(val):+d} save ({reason})")
-                else:
-                    save_result["special_effects"].append(f"{int(val):+d} save modifier")
-        dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
+        from ..utility.modifiers import compute_save_roll_modifier
+        dice_modifier, effects = compute_save_roll_modifier(
+            target_model,
+            attack_instance=attack_instance,
+            ap=ap,
+            save_type=save_result.get("save_type"),
+            weapon_profile=self,
+        )
+        if effects:
+            save_result["special_effects"].extend(list(effects))
         save_result['saved'] = (dice_roll + dice_modifier) >= save_value
-        
+
         if dice_modifier != 0:
             save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
-        
+
         return save_result
 
     def _check_invulnerable_save_condition(self, condition: str, attack_instance: dict) -> bool:
@@ -5416,6 +5474,38 @@ class WargearProfile:
         # This is safer than blocking legitimate saves due to parsing issues
         print(f"WARN: Unknown invulnerable save condition format: '{condition}' - applying save")
         return True
+
+    def _resolve_wounds_cannot_be_ignored(self, attack_instance: Dict) -> bool:
+        wounds_cannot_be_ignored = bool(attack_instance.get("wounds_cannot_be_ignored", False))
+        if not wounds_cannot_be_ignored:
+            try:
+                wounds_cannot_be_ignored = bool(self.wounds_cannot_be_ignored())
+            except Exception:
+                wounds_cannot_be_ignored = False
+        return bool(wounds_cannot_be_ignored)
+
+    def _record_damage_result(self, attack_result: AttackResult, damage_result: Dict) -> None:
+        if attack_result is None or damage_result is None:
+            return
+        try:
+            attack_result.damage_results.append(damage_result)
+            attack_result.total_damage_dealt += int(damage_result.get("damage_applied", 0) or 0)
+            if damage_result.get("model_killed"):
+                attack_result.models_killed += 1
+        except Exception:
+            pass
+
+    @staticmethod
+    def _pending_mortal_target_key(target_unit: Optional['Unit']) -> str:
+        if target_unit is None:
+            return ""
+        try:
+            key = getattr(target_unit, "_id", None)
+            if key:
+                return str(key)
+        except Exception:
+            pass
+        return str(id(target_unit))
 
     def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict, game_map: Optional['Map'] = None) -> Dict:
         """Damage application with detailed tracking"""
@@ -5808,6 +5898,7 @@ class WargearProfile:
                 attacker,
                 damage_value,
                 attack_instance["mortal_wound"],
+                attack_instance=attack_instance,
                 game_map=game_map,
                 wounds_cannot_be_ignored=wounds_cannot_be_ignored,
             )
@@ -5825,6 +5916,8 @@ class WargearProfile:
         attacker: 'Model',
         damage_amount: int,
         is_mortal: bool,
+        *,
+        attack_instance: Optional[Dict] = None,
         game_map: Optional['Map'] = None,
         wounds_cannot_be_ignored: bool = False,
     ) -> Dict:
@@ -5837,6 +5930,7 @@ class WargearProfile:
             'fnp_rolls': [],
             'excess_damage': 0
         }
+        attack_instance = attack_instance if isinstance(attack_instance, dict) else {}
         
         # Handle Feel No Pain saves
         final_damage = damage_amount
@@ -5873,7 +5967,19 @@ class WargearProfile:
 
         if fnp_abilities and not wounds_cannot_be_ignored:
             # Find the best applicable Feel No Pain ability
-            best_fnp = target_model._get_best_applicable_fnp(fnp_abilities, self, is_mortal)
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            attack_context = {
+                "attack_instance": attack_instance,
+                "attacker_unit": attacker_unit,
+                "attacker_model": attacker,
+            }
+            best_fnp = target_model._get_best_applicable_fnp(
+                fnp_abilities,
+                self,
+                is_mortal,
+                attack_context=attack_context,
+                attacker_unit=attacker_unit,
+            )
             
             if best_fnp:
                 fnp_value, fnp_condition = best_fnp
@@ -5958,6 +6064,155 @@ class WargearProfile:
             pass
         
         return result
+
+    def _resolve_mortal_wound_amount(self, value) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, DiceCollection):
+            try:
+                return int(value.roll())
+            except Exception:
+                return 0
+        if isinstance(value, Count):
+            try:
+                return int(value.resolve())
+            except Exception:
+                return 0
+        if isinstance(value, str):
+            s = value.strip()
+            if not s:
+                return 0
+            if s.isdigit():
+                return int(s)
+            try:
+                return int(get_roll(s))
+            except Exception:
+                return 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
+    def _apply_single_mortal_wound_with_tracking(
+        self,
+        target_model: 'Model',
+        attacker: 'Model',
+        attack_instance: Dict,
+        game_map: Optional['Map'] = None,
+    ) -> Dict:
+        damage_result = {
+            'damage_rolled': 1,
+            'damage_applied': 0,
+            'target_model': target_model.name,
+            'excess_damage': 0,
+            'model_killed': False,
+            'fnp_saves': 0,
+            'fnp_rolls': [],
+            'damage_dice_rolls': [],
+            'damage_expression': "1",
+            'special_effects': ["Mortal Wounds"],
+        }
+
+        wounds_cannot_be_ignored = self._resolve_wounds_cannot_be_ignored(attack_instance)
+        was_alive = target_model.is_alive
+        damage_result.update(
+            self._apply_damage_with_tracking(
+                target_model,
+                attacker,
+                1,
+                True,
+                attack_instance=attack_instance,
+                game_map=game_map,
+                wounds_cannot_be_ignored=wounds_cannot_be_ignored,
+            )
+        )
+        damage_result['model_killed'] = was_alive and not target_model.is_alive
+        return damage_result
+
+    @staticmethod
+    def resolve_pending_mortal_wounds_for_target(
+        pending_by_target: Dict,
+        target_unit: Optional['Unit'],
+        game_map: Optional['Map'] = None,
+    ) -> None:
+        if not pending_by_target or target_unit is None:
+            return
+        target_key = WargearProfile._pending_mortal_target_key(target_unit)
+        entries = pending_by_target.pop(target_key, [])
+        if not entries:
+            return
+
+        from ..utility.damage_allocation import DamageAllocationCtx
+
+        for entry in entries:
+            weapon_profile = entry.get("weapon_profile")
+            attacker = entry.get("attacker")
+            attack_instance = entry.get("attack_instance")
+            attack_result = entry.get("attack_result")
+            target_model = entry.get("target_model")
+            no_spill = bool(entry.get("no_spill", False))
+
+            if weapon_profile is None or attacker is None:
+                continue
+            if not isinstance(attack_instance, dict):
+                attack_instance = {}
+
+            if no_spill:
+                if target_model is None or not getattr(target_model, "is_alive", True):
+                    continue
+                damage_result = weapon_profile._damage_target_with_tracking(
+                    target_model, attacker, attack_instance, game_map=game_map
+                )
+                weapon_profile._record_damage_result(attack_result, damage_result)
+                continue
+
+            amount = int(entry.get("mortal_wound_amount", 0) or 0)
+            if amount <= 0:
+                continue
+
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            if attacker_unit is None or not hasattr(attacker_unit, "_apply_mortal_wounds_to_unit"):
+                continue
+
+            initial_model = None
+            if target_model is not None and getattr(target_model, "is_alive", True):
+                initial_model = target_model
+
+            try:
+                wname = getattr(getattr(weapon_profile, "parent_wargear", None), "name", None) or getattr(
+                    weapon_profile, "name", ""
+                )
+            except Exception:
+                wname = ""
+            try:
+                aname = getattr(attacker, "name", "") or ""
+            except Exception:
+                aname = ""
+            allocation_ctx = DamageAllocationCtx(
+                reason="Allocate mortal wound",
+                damage_source="attack",
+                weapon_name=str(wname or ""),
+                attacker_name=str(aname or ""),
+            )
+
+            def _apply(model):
+                dmg = weapon_profile._apply_single_mortal_wound_with_tracking(
+                    model,
+                    attacker,
+                    attack_instance,
+                    game_map=game_map,
+                )
+                weapon_profile._record_damage_result(attack_result, dmg)
+
+            attacker_unit._apply_mortal_wounds_to_unit(
+                target_unit,
+                amount,
+                game_map=game_map,
+                initial_model=initial_model,
+                apply_fn=_apply,
+                allocation_ctx=allocation_ctx,
+                allow_initial_model_outside_candidates=bool(initial_model),
+            )
 
     def _print_attack_summary(self, result: AttackResult) -> None:
         '''Print comprehensive attack summary.'''

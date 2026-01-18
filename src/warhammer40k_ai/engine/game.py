@@ -6070,12 +6070,7 @@ class Game:
         modified_roll = base_roll
         modifiers: list[tuple[int, str]] = []
 
-        # Check for charge modifiers from abilities/enhancements
-        # TODO: Implement ability-based charge modifiers
-        # Examples:
-        # - Shock Assault Stratagem: +1" to charge roll
-        # - Swift and Deadly ability: re-roll one dice
-        # - Relentless Advance trait: roll 3 dice and drop the lowest
+        # Check for charge modifiers from abilities/enhancements.
         sr = getattr(charging_unit, "special_rules", None)
         if isinstance(sr, dict):
             battle_lust_bonus = int(sr.get("enhancement_battle_lust_bonus_if_unbridled", 0) or 0)

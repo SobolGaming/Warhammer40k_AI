@@ -1,10 +1,13 @@
 from typing import List, Dict, Optional, Tuple
 from .wargear import Wargear, WargearProfile
 from .ability import Ability
+from ..utility.count import Count, CountType
 from ..utility.dice import get_roll
+from ..utility.modifiers import compute_save_roll_modifier
 from ..utility.model_base import Base
 import uuid
 import logging
+import re
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -305,13 +308,12 @@ class Model:
         game_map: Optional['Map'] = None,
         wounds_cannot_be_ignored: bool = False,
         is_psychic_attack: bool = False,
+        attack_context: Optional[dict] = None,
     ) -> int:
-        if not wounds_cannot_be_ignored:
-            try:
-                if weapon_profile is not None and hasattr(weapon_profile, "wounds_cannot_be_ignored"):
-                    wounds_cannot_be_ignored = bool(weapon_profile.wounds_cannot_be_ignored())
-            except Exception:
-                wounds_cannot_be_ignored = False
+        if not wounds_cannot_be_ignored and weapon_profile is not None:
+            wcni_fn = getattr(weapon_profile, "wounds_cannot_be_ignored", None)
+            if callable(wcni_fn):
+                wounds_cannot_be_ignored = bool(wcni_fn())
 
         try:
             fnp_abilities = self.parent_unit.has_feel_no_pain()
@@ -324,6 +326,7 @@ class Model:
                 weapon_profile,
                 is_mortal,
                 is_psychic_attack=is_psychic_attack,
+                attack_context=attack_context,
             )
             
             if best_fnp:
@@ -364,6 +367,8 @@ class Model:
         is_mortal: bool,
         *,
         is_psychic_attack: bool = False,
+        attack_context: Optional[dict] = None,
+        attacker_unit: Optional['Unit'] = None,
     ) -> Optional[Tuple[int, Optional[str]]]:
         """Find the best applicable Feel No Pain ability (lowest dice value) for the current damage source.
         
@@ -383,6 +388,8 @@ class Model:
                 weapon_profile,
                 is_mortal,
                 is_psychic_attack=is_psychic_attack,
+                attack_context=attack_context,
+                attacker_unit=attacker_unit,
             ):
                 applicable_fnp.append((dice_value, condition))
         
@@ -399,6 +406,8 @@ class Model:
         is_mortal: bool,
         *,
         is_psychic_attack: bool = False,
+        attack_context: Optional[dict] = None,
+        attacker_unit: Optional['Unit'] = None,
     ) -> bool:
         """Check if Feel No Pain condition is met for the current weapon profile.
         
@@ -412,41 +421,129 @@ class Model:
         """
         if not condition:
             return True  # No condition means FNP always applies
-        
+
         condition = condition.lower().strip()
-        
-        # Check for mortal wound conditions
-        if "mortal wound" in condition and is_mortal:
+        if not condition:
             return True
-        
-        # Check for psychic attack conditions (weapon-based or flagged psychic source)
-        if "psychic" in condition:
-            if is_psychic_attack:
-                return True
-            if weapon_profile is not None and weapon_profile.is_psychic():
+
+        if condition in ("against that attack", "against that attack instead"):
+            return True
+
+        requires_leading = "while leading" in condition
+        if requires_leading:
+            unit = getattr(self, "parent_unit", None)
+            if not (unit and getattr(unit, "is_attached_leader", False)):
+                return False
+            condition = condition.replace("while leading a unit", "")
+            condition = condition.replace("while leading", "")
+            condition = condition.strip(" ,")
+            if not condition:
                 return True
 
-        # If no weapon profile provided, can only check mortal wounds or psychic flag
-        if weapon_profile is None:
-            return False
-        
-        # Check for ranged attack conditions
-        if "ranged" in condition and weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_ranged():
-            return True
-        
-        # Check for melee attack conditions
-        if "melee" in condition and weapon_profile.parent_wargear and weapon_profile.parent_wargear.is_melee():
-            return True
-        
-        # Check for specific weapon keyword conditions
-        weapon_keywords = [keyword.lower() for keyword in weapon_profile.get_keywords()]
-        for keyword in weapon_keywords:
-            if keyword in condition:
+        atk_ctx = attack_context if isinstance(attack_context, dict) else {}
+        atk_instance = atk_ctx.get("attack_instance")
+        if not isinstance(atk_instance, dict):
+            atk_instance = {}
+
+        if attacker_unit is None:
+            attacker_unit = atk_ctx.get("attacker_unit")
+        if attacker_unit is None:
+            attacker_model = atk_ctx.get("attacker_model")
+            if attacker_model is not None:
+                attacker_unit = getattr(attacker_model, "parent_unit", None)
+
+        def _coerce_int(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        is_psychic = bool(is_psychic_attack)
+        if weapon_profile is not None:
+            is_psychic_fn = getattr(weapon_profile, "is_psychic", None)
+            if callable(is_psychic_fn) and is_psychic_fn():
+                is_psychic = True
+
+        is_melee = False
+        is_ranged = False
+        parent = getattr(weapon_profile, "parent_wargear", None) if weapon_profile is not None else None
+        if parent is not None:
+            is_melee_fn = getattr(parent, "is_melee", None)
+            if callable(is_melee_fn):
+                is_melee = bool(is_melee_fn())
+            is_ranged_fn = getattr(parent, "is_ranged", None)
+            if callable(is_ranged_fn):
+                is_ranged = bool(is_ranged_fn())
+
+        weapon_keywords: list[str] = []
+        if weapon_profile is not None:
+            get_keywords = getattr(weapon_profile, "get_keywords", None)
+            if callable(get_keywords):
+                weapon_keywords = [str(keyword).lower() for keyword in get_keywords() if str(keyword or "").strip()]
+
+        damage_char = None
+        dmg_val = atk_instance.get("damage_characteristic") if isinstance(atk_instance, dict) else None
+        if dmg_val is None and weapon_profile is not None:
+            dmg_val = getattr(weapon_profile, "damage", None)
+        if isinstance(dmg_val, Count) and dmg_val.ctype == CountType.FLAT:
+            damage_char = _coerce_int(dmg_val.value)
+        elif isinstance(dmg_val, int):
+            damage_char = dmg_val
+        elif isinstance(dmg_val, str):
+            s = dmg_val.strip()
+            if s.isdigit():
+                damage_char = int(s)
+
+        is_devastating = False
+        if weapon_profile is not None:
+            is_dev_fn = getattr(weapon_profile, "is_devastating_wounds", None)
+            if callable(is_dev_fn):
+                is_devastating = bool(is_dev_fn())
+
+        crit_wound = bool(atk_instance.get("crit_wound", False))
+
+        clauses = [c.strip() for c in re.split(r"\s*(?:,|\band\b|\bor\b)\s*", condition) if c.strip()]
+        if not clauses:
+            clauses = [condition]
+
+        def _clause_matches(clause: str) -> bool:
+            text = clause.strip()
+            if text.startswith(("against ", "while ", "when ")):
+                text = text.split(" ", 1)[1].strip()
+
+            if "mortal wound" in text and is_mortal:
                 return True
-        
-        # Add more condition checks as needed
-        # TODO: Implement more sophisticated condition parsing for complex rules
-        
+            if "psychic" in text and is_psychic:
+                return True
+            if "battle-shocked" in text or "battleshocked" in text:
+                if "attack" in text or "attacker" in text:
+                    if attacker_unit is None:
+                        return False
+                    is_bs_fn = getattr(attacker_unit, "is_battle_shocked", None)
+                    if callable(is_bs_fn):
+                        return bool(is_bs_fn())
+                    return False
+            if "damage characteristic" in text:
+                if damage_char is not None and re.search(r"damage characteristic(?: of)?\s+1", text):
+                    return int(damage_char) == 1
+            if "devastating wounds" in text:
+                if is_devastating and crit_wound:
+                    return True
+            if "melee" in text and is_melee:
+                return True
+            if "ranged" in text and is_ranged:
+                return True
+
+            for keyword in weapon_keywords:
+                if keyword and keyword in text:
+                    return True
+
+            return False
+
+        for clause in clauses:
+            if _clause_matches(clause):
+                return True
+
         return False  # Condition not met
 
     def die(self, game_map: Optional['Map'] = None) -> None:
@@ -683,16 +780,27 @@ class Model:
 
     def passed_saving_throw(self, attack_instance: Dict, attacking_ap: int = 0) -> bool:
         assert attacking_ap <= 0
+        atk = attack_instance if isinstance(attack_instance, dict) else {}
         save_value = self.save - attacking_ap
+        save_type = "armor"
+        inv_override = atk.get("inv_save_override", None)
+        try:
+            inv_override_val = int(inv_override) if inv_override is not None else None
+        except (TypeError, ValueError):
+            inv_override_val = None
+        if inv_override_val is not None and inv_override_val > 0 and inv_override_val < save_value:
+            save_value = inv_override_val
+            save_type = "invulnerable"
         inv_save, inv_save_condition = self.inv_save
         if inv_save:
             # Check invulnerable save condition (string-based, not callable)
             condition_met = True
             if inv_save_condition and inv_save_condition.strip():
-                condition_met = self._check_invulnerable_save_condition(inv_save_condition, attack_instance)
+                condition_met = self._check_invulnerable_save_condition(inv_save_condition, atk)
             
-            if condition_met:
+            if condition_met and inv_save < save_value:
                 save_value = min(save_value, inv_save)
+                save_type = "invulnerable"
 
         dice_roll = get_roll("D6")
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
@@ -700,8 +808,13 @@ class Model:
             # print(f"Saving Throw: dice_roll == 1, returning False")
             return False
 
-        dice_modifier = 0  # TODO - handle positive & negative modifiers
-        dice_modifier = min(dice_modifier, 1)  # modifications are capped at +1
+        dice_modifier, _effects = compute_save_roll_modifier(
+            self,
+            attack_instance=atk,
+            ap=attacking_ap,
+            save_type=save_type,
+            weapon_profile=atk.get("weapon_profile"),
+        )
         # Suppress print for comprehensive attack summary
         # print(f"Saving Throw: dice_roll: {dice_roll}, dice_modifier: {dice_modifier}, save_value: {save_value}")
         return (dice_roll + dice_modifier) >= save_value

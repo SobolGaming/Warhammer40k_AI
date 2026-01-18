@@ -20,12 +20,9 @@ pip3 install -r requirements.txt
 pip3 install -e .
 ```
 
-2. **Download Warhammer 40k data** (first time only):
+2. **Updated Warhammer 40k Data**:
 ```bash
-mkdir wahapedia_data
-cd scripts
-python3 -m get_wahapedia_data -f -c -o ../wahapedia_data -s ../wahapedia_data
-cd ..
+python3 scripts/get_wahapedia_data.py -f -c -o wahapedia_data -s wahapedia_data
 ```
 
 ### Usage Examples

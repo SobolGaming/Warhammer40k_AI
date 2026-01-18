@@ -3,6 +3,9 @@ from .charge_declaration_dialog import ChargeDeclarationDialog
 from .fight_unit_selection_dialog import FightUnitSelectionDialog
 from .individual_model_movement_dialog import IndividualModelMovementDialog
 from .melee_weapon_declaration_dialog import MeleeWeaponDeclarationDialog
+from .melee_target_allocation_dialog import MeleeTargetAllocationDialog
+from .melee_weapon_target_allocation_dialog import MeleeWeaponTargetAllocationDialog
+from .melee_attack_split_dialog import MeleeAttackSplitDialog
 from .mission_selection_dialog import MissionSelectionDialog
 from .movement_choice_dialog import MovementChoiceDialog
 
@@ -49,6 +52,9 @@ __all__ = [
     'FightUnitSelectionDialog',
     'IndividualModelMovementDialog',
     'MeleeWeaponDeclarationDialog',
+    'MeleeTargetAllocationDialog',
+    'MeleeWeaponTargetAllocationDialog',
+    'MeleeAttackSplitDialog',
     'MissionSelectionDialog',
     'MovementChoiceDialog',
 

@@ -2,7 +2,14 @@ from math import sqrt, atan2, pi, cos, sin, acos
 from typing import Tuple, List, Optional
 import heapq
 import numpy as np
-from ..utility.constants import MM_TO_INCHES, FREELY_CLIMBABLE_RANGE, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+from ..utility.constants import (
+    MM_TO_INCHES,
+    FREELY_CLIMBABLE_RANGE,
+    ENGAGEMENT_RANGE_HORIZONTAL,
+    ENGAGEMENT_RANGE_VERTICAL,
+    RUINS_FLOOR_HEIGHT,
+    RUINS_FLOOR_THICKNESS,
+)
 from shapely.geometry import LineString, Point, Polygon
 from shapely.affinity import translate, rotate
 from shapely.ops import unary_union
@@ -3361,6 +3368,50 @@ def simplify_path(path, obstacles, ellipse, tolerance=0.1):
             i += 1
     return simplified
 
+
+def _resolve_ruins_floor_level(z_value: float, terrain_feature: 'TerrainFeature') -> tuple[Optional[int], Optional[dict]]:
+    """Best-effort floor-level resolution for RUINS based on model Z and floor surfaces."""
+    try:
+        z = float(z_value)
+    except (TypeError, ValueError):
+        return None, None
+
+    floors = getattr(terrain_feature, "floors", []) or []
+    current_floor = None
+    floor_level = None
+
+    best_dist = float("inf")
+    for floor in floors:
+        if not isinstance(floor, dict):
+            continue
+        try:
+            floor_elev = float(floor.get("elevation", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            floor_elev = 0.0
+        try:
+            thickness = float(floor.get("thickness", RUINS_FLOOR_THICKNESS) or RUINS_FLOOR_THICKNESS)
+        except (TypeError, ValueError):
+            thickness = RUINS_FLOOR_THICKNESS
+        surface = floor_elev + thickness
+        dist = abs(z - surface)
+        if dist < best_dist and dist < 1.0:
+            best_dist = dist
+            current_floor = floor
+            floor_level = int(round(floor_elev / float(RUINS_FLOOR_HEIGHT)))
+
+    if current_floor is None:
+        if abs(z) < 1.0:
+            floor_level = 0
+            current_floor = {
+                "polygon": getattr(terrain_feature, "footprint", None),
+                "elevation": 0.0,
+                "thickness": 0.0,
+            }
+        else:
+            return None, None
+
+    return floor_level, current_floor
+
 def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -> bool:
     """
     Check if a model can end its move on a specific terrain feature.
@@ -3388,20 +3439,38 @@ def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -
     elif terrain == TerrainType.WOODS:
         return True  # Units can move over this terrain freely (can end move)
     elif terrain == TerrainType.RUINS:
-        # All models can end move on ground floor of ruins
-        # Special keyworded models + FLY can end move on any floor level
-        is_flying = False
-        try:
-            val = getattr(unit, "is_flying", False)
-            is_flying = bool(val() if callable(val) else val)
-        except Exception:
-            is_flying = False
-        if counts_as_infantry_for_terrain(unit) or unit.is_beast or unit.is_belisarius_cawl or unit.is_imperium_primarch or is_flying:
-            return not base_overhang  # Must not overhang if not ground floor
-        else:
-            # Other units can only end move on ground floor
-            # TODO: Need to determine if this is ground floor vs upper floor
+        if not isinstance(terrain_feature, RuinsTerrain):
             return not base_overhang
+        if unit is None:
+            return False
+        floor_level, current_floor = _resolve_ruins_floor_level(model.z, terrain_feature)
+        if floor_level is None or current_floor is None:
+            return False
+        if floor_level == 0:
+            return not base_overhang
+
+        can_access_val = getattr(unit, "can_access_upper_floors", None)
+        can_access = bool(can_access_val() if callable(can_access_val) else can_access_val)
+        if not can_access:
+            return False
+
+        floor_poly = current_floor.get("polygon") if isinstance(current_floor, dict) else None
+        if floor_poly is not None:
+            base_shape = model.model_base.get_base_shape_at(
+                model.model_base.x,
+                model.model_base.y,
+                model.model_base.facing,
+            )
+            if hasattr(floor_poly, "covers"):
+                within = floor_poly.covers(base_shape)
+            else:
+                within = floor_poly.contains(base_shape)
+            if not within:
+                can_overhang_val = getattr(unit, "can_overhang_floor", None)
+                can_overhang = bool(can_overhang_val() if callable(can_overhang_val) else can_overhang_val)
+                if not can_overhang:
+                    return False
+        return True
     else:
         # Default behavior for unknown terrain types
         return True
