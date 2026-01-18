@@ -3,29 +3,33 @@
 This project uses a **centralized, callback-based modal stack** for UI dialogs to ensure:
 
 - Dialogs that receive events are always drawn when active
-- Modal dialogs reliably block underlying game input (no “SPACE advanced phase while dialog was open” bugs)
-- Adding new dialogs doesn’t require editing multiple phase handlers + draw loops
+- Modal dialogs reliably block underlying game input (no "SPACE advanced phase while dialog was open" bugs)
+- Adding new dialogs does not require editing multiple phase handlers and draw loops
 
 ### Core idea
 
 The `DialogManager` maintains a **stack** of dialogs:
 
-- **Draw order**: bottom → top (stack order)
+- **Draw order**: bottom -> top (stack order)
 - **Event routing**: only the **topmost active** dialog receives events
-- **Modal behavior**: while a modal dialog is active, **all input is consumed** (even if the dialog doesn’t explicitly “handle” it)
+- **Modal behavior**: while a modal dialog is active, **clicks/keys/wheel are consumed** even if the dialog does not explicitly handle them
+- **Passthrough**: dialogs can expose `should_passthrough_event(event)` to allow specific events to reach the phase handler
+- **Hover previews**: `MOUSEMOTION` is allowed to pass through modal dialogs so hover/path previews still update
+
+Each stack entry has a `modal` flag (default `True` when opened).
 
 Implementation lives in:
 
 - `src/warhammer40k_ai/UI/dialogs/dialog_manager.py`
 
-### What counts as an “active dialog”
+### What counts as an "active dialog"
 
 A dialog is considered **active** if either of these is true:
 
 - `dialog.visible == True`
 - `dialog.is_targeting_mode == True` (used by targeting-style overlays)
 
-This lets “targeting mode” behave like a modal overlay even if it doesn’t use `visible`.
+This lets "targeting mode" behave like a modal overlay even if it does not use `visible`.
 
 ### How dialogs get onto the stack
 
@@ -35,8 +39,8 @@ This lets “targeting mode” behave like a modal overlay even if it doesn’t 
 - If it finds a dialog that has become active since the last check, it is moved to the **top** of the stack
 - Inactive dialogs are **pruned** automatically
 
-This means most dialogs don’t need to manually call `dialog_manager.open()` to be drawn/handled.
-We still call `open()` in a few places (e.g. setup modals) to make the “last opened is topmost” intent explicit.
+This means most dialogs do not need to manually call `dialog_manager.open()` to be drawn/handled.
+We still call `open()` in a few places (e.g. setup modals) to make the "last opened is topmost" intent explicit.
 
 Discovery list is defined in:
 
@@ -53,7 +57,8 @@ Discovery list is defined in:
 
   - `self.dialog_manager.draw(self.screen)`
 
-This guarantees the “if it can handle events, it must be drawn” invariant.
+This guarantees the "if it can handle events, it must be drawn" invariant. Events allowed to passthrough
+(`should_passthrough_event` or `MOUSEMOTION`) can still reach the phase handler.
 
 ### Callback-based dialogs (recommended pattern)
 
@@ -101,7 +106,5 @@ Setup phase uses this modal adapter in `SetupPhaseHandler._show_mission_selectio
 
 - The discovery list is centralized and explicit. If a dialog is not on the list, it can still be used,
   but you must manually call `dialog_manager.open()` to put it on the stack.
-- Some “nested” dialogs (e.g. floor selection within individual model movement) are managed internally
+- Some "nested" dialogs (e.g. floor selection within individual model movement) are managed internally
   by their parent dialog and do not need to be registered with `DialogManager`.
-
-
