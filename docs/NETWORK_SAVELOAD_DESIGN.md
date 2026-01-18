@@ -1,0 +1,257 @@
+# Network + Save/Load Design (Battle Round 1+)
+
+Status: Draft
+
+## Goals
+
+- Support deterministic network play (server authoritative, client UI) with replayable event logs.
+- Support save/load at any point once battle round 1 has started.
+- Ensure every UI dialog is a thin view over a decision/action API so headless play is possible.
+- Keep engine state fully serializable, with stable references and predictable ordering.
+
+## Non-Goals
+
+- Saving before battle round 1 begins (explicitly unsupported).
+- Backwards compatibility for older save versions (versioned migrations only).
+- Networking or persistence of UI-only state (dialogs, cursor positions, hovered items).
+
+## Terminology
+
+- Snapshot: Full serialized state of the game at a point in time.
+- Command: A validated, deterministic input from a player/controller.
+- Event: A deterministic state transition recorded in the log.
+- DecisionRequest: A request emitted by the engine that must be answered before it can proceed.
+- DecisionResult: The response that resolves a DecisionRequest.
+
+## Determinism Rules
+
+- All randomness flows through a single RandomSource; snapshot includes full RNG state.
+- All ordering over collections is deterministic (stable ID ordering).
+- Coordinates are serialized in fixed-point units (for example, integer mil-inches).
+- Derived/cached values are never serialized; they are recomputed on load.
+
+## Entity Identity & Registries
+
+Every entity that can be referenced across the network or in saved state gets a stable ID.
+
+Entities requiring IDs:
+- Player, Army
+- Unit, Model
+- Wargear instance (not just profile)
+- Objective marker, Terrain piece, Token/Marker
+- Ongoing Effect (aura, stratagem effect, once-per-phase flags)
+- DecisionRequest, Command, Event
+
+Registries:
+- Each entity type has an ID->entity map.
+- All references use IDs, not object pointers or names.
+- If multiple datasheets share names, IDs disambiguate.
+
+## Snapshot Schema (Versioned)
+
+Top-level:
+- schema_version
+- game: battle_round, phase, step, active_player_id
+- players: CP, victory points, stratagem usage, once-per-battle flags
+- map: terrain, objectives, boundaries, mission metadata
+- units: state, positions, attachment relationships, embarked status
+- models: wounds, alive, position, base, wargear state
+- effects: aura effects, temporary modifiers, timers
+- decisions: pending DecisionRequests
+- events: optional tail of event log since last snapshot
+- rng_state
+
+Snapshot gating:
+- Saving is allowed only when battle_round >= 1.
+- If battle_round == 1 but pre-turn steps still running, saving is allowed.
+
+## Event Log Schema
+
+Events are serialized state transitions. Examples:
+- unit_moved, unit_shot, unit_charged
+- dice_rolled (with results)
+- stratagem_used
+- decision_resolved
+- model_destroyed, unit_destroyed
+
+Events include:
+- event_id, type, timestamp, actor_id
+- deterministic payload (IDs + parameters)
+- optional derived text for UI display (not used for state)
+
+## Command Schema
+
+Commands are the only inputs accepted by the engine in headless mode.
+
+Common command fields:
+- command_id, request_id (if from DecisionRequest)
+- actor_player_id
+- target IDs (unit_id, model_id, target_unit_id)
+- parameters (numbers, enum values, fixed-point coords)
+
+Validation:
+- Engine validates every command before applying.
+- Invalid commands do not mutate state and produce error events.
+
+## Decision/Action API (Core)
+
+DecisionRequest:
+- request_id
+- actor_player_id
+- type (enum)
+- context (phase, unit_id, target_id, weapon_id, etc)
+- options (list of valid options with IDs and parameters)
+- constraints (range, min/max, count limits)
+
+DecisionResult:
+- request_id
+- chosen_option_id
+- parameters (if option includes parameters)
+
+## UI Dialog to Decision Mapping
+
+Each dialog is a view over a DecisionRequest. The UI never mutates state directly.
+Below is the mapping for all current dialogs. Each line is the decision type and
+the required parameters (IDs and bounded values).
+
+Setup / Mission:
+- mission_selection_dialog: CHOOSE_MISSION {mission_id}
+- mission_selection_modal: CHOOSE_MISSION {mission_id}
+- side_by_side_modal: CONFIRM_MODAL {choice_id}
+
+Deployment / Pre-battle:
+- leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
+- reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
+- transport_assignment_dialog: ASSIGN_TRANSPORT {unit_id, transport_id}
+- scout_choice_dialog: SCOUT_MOVE {unit_id, destination}
+- floor_selection_dialog: SELECT_FLOOR {unit_id, floor_id}
+
+Movement:
+- movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
+- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions}
+- coherency_violation_dialog: RESOLVE_COHERENCY {unit_id, fix_choice}
+- transport_embark_dialog: EMBARK {unit_id, transport_id}
+- transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
+- battlefield_point_pick_dialog: PICK_POINT {point}
+- hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
+
+Shooting:
+- weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
+- shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]}
+- firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
+- overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id}
+- roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
+
+Charge:
+- charge_declaration_dialog: DECLARE_CHARGE {unit_id, target_unit_id}
+
+Fight:
+- fight_unit_selection_dialog: SELECT_FIGHTER {unit_id}
+- fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids}
+- melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
+- melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {bundle_id, target_unit_id}
+- melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}
+- melee_attack_split_dialog: SPLIT_ATTACKS {bundle_id, split_plan[]}
+- target_model_selection_dialog: SELECT_TARGET_MODEL {unit_id, target_model_id}
+- precision_allocation_dialog: SELECT_PRECISION_TARGET {unit_id, target_model_id}
+- damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id, amount}
+
+Faction / Detachment / Ability choices:
+- blessings_of_khorne_dialog: CHOOSE_BLESSINGS {choices[]}
+- blood_tithe_dialog: CHOOSE_BLOOD_TITHE {choice_id}
+- cabal_of_sorcerers_dialog: CHOOSE_RITUALS {choices[]}
+- code_chivalric_dialog: CHOOSE_CHIVALRIC_OATH {choice_id}
+- daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {choice_id}
+- dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id}
+- doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
+- frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
+- harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
+- martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}
+- miracle_dice_dialog: USE_MIRACLE_DIE {die_id, roll_context}
+- nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
+- pledge_selection_dialog: CHOOSE_PLEDGE {choice_id}
+- quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id}
+- secondary_discard_dialog: DISCARD_SECONDARY {card_id}
+- shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
+- templar_vows_dialog: CHOOSE_VOW {choice_id}
+- voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
+- wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}
+- yes_no_dialog: CONFIRM_YES_NO {choice}
+- aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}
+- example_dialog: CONFIRM_EXAMPLE {choice_id}
+
+Note: All decision types must be validated in the engine and return errors if
+the selected option is not currently legal.
+
+## Headless Controller Contract
+
+Headless play uses the same DecisionRequest and Command API:
+- Engine emits DecisionRequest.
+- Controller picks a DecisionResult and sends as a command.
+- Engine validates, applies, and emits events.
+
+This keeps AI and network clients identical to human UI behavior.
+
+## Network Flow
+
+- Server is authoritative.
+- Client sends Command; server validates and emits Event(s).
+- Server broadcasts Event(s) to all clients for visualization.
+- Client UIs replay events to update local views.
+- Server can push Snapshot + Event tail for resync.
+
+## Save/Load Flow
+
+- Save is a Snapshot + (optional) Event tail.
+- Load restores Snapshot, rehydrates registries, replays Event tail.
+- On load, pending DecisionRequests are re-queued exactly once.
+- Save/Load allowed only if battle_round >= 1.
+
+## Staged PR Plan
+
+PR1: IDs and registries
+- Add stable IDs for all entities.
+- Replace name-based references in engine state with IDs.
+- Add deterministic ordering utilities.
+
+PR2: Snapshot schema + serializer
+- Define schema_versioned snapshot.
+- Implement serialization/deserialization with fixed-point coordinates.
+- Exclude caches; rebuild on load.
+
+PR3: Decision/Command API enforcement
+- Make engine accept only commands for state mutations.
+- Convert existing direct UI mutations to commands.
+- Emit DecisionRequests for every optional choice.
+
+PR4: Dialog integration
+- Map every dialog to a DecisionRequest type.
+- Ensure UI uses the decision options payload.
+- Add headless controller path for all dialogs.
+
+PR5: Event log and replay
+- Emit events for every mutation.
+- Persist event tail alongside snapshot.
+- Add replay tests for determinism.
+
+PR6: Network transport
+- Add server/client message types (Snapshot, Command, Event, Error, Resync).
+- Implement round-trip validation and resync.
+
+PR7: Save/Load UX
+- Add save/load endpoints in engine API (no UI changes required here).
+- Enforce battle_round >= 1 gating.
+
+## Acceptance Criteria
+
+- Any game state after battle round start can be snapshotted and reloaded with
+  identical outcomes.
+- Headless controller can complete a full game without UI.
+- Two clients can remain in sync via server events and resync when needed.
+- All dialogs are mirrored by DecisionRequests with explicit parameters.
+
+## Open Questions
+
+- Fixed-point scale (mil-inches vs 1/100 inch) for positions.
+- Where to store snapshot files and event logs (docs vs data directory).
+- How much event history to retain for resyncs.
