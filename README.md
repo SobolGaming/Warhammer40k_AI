@@ -71,18 +71,49 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 ### Documentation
 
 - **Support matrices**
-  - [Ability Support Matrix](docs/ABILITY_SUPPORT_MATRIX.md)
-  - [Wargear Keyword Support Matrix](docs/WARGEAR_KEYWORD_SUPPORT_MATRIX.md)
-  - [Optional Wargear Support Matrix](docs/OPTIONAL_WARGEAR_SUPPORT_MATRIX.md)
-  - [Damaged Profile Support Matrix](docs/DAMAGED_PROFILE_SUPPORT_MATRIX.md)
-- **Design/implementation docs**
-  - [Player configuration](docs/PLAYER_CONFIGURATION.md)
-  - [Deployment architecture](docs/DEPLOYMENT_ARCHITECTURE.md)
-  - [Mission deployment system](docs/MISSION_DEPLOYMENT_SYSTEM.md)
-  - [Mission selection dialog](docs/MISSION_SELECTION_DIALOG.md)
-  - [Reserve limits implementation](docs/RESERVE_LIMITS_IMPLEMENTATION.md)
-  - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md)
-  - [Pile-in implementation](docs/PILE_IN_IMPLEMENTATION.md)
+  - [Ability Support Matrix](docs/ABILITY_SUPPORT_MATRIX.md): engine support status for abilities and stratagems.
+  - [Wargear Keyword Support Matrix](docs/WARGEAR_KEYWORD_SUPPORT_MATRIX.md): wargear keyword behavior coverage.
+  - [Optional Wargear Support Matrix](docs/OPTIONAL_WARGEAR_SUPPORT_MATRIX.md): optional wargear and replacement rules support.
+  - [Damaged Profile Support Matrix](docs/DAMAGED_PROFILE_SUPPORT_MATRIX.md): damaged profile handling coverage.
+- **Rules and mechanics**
+  - [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md): parsing and application of charge modifiers.
+  - [Mortal wounds](docs/MORTAL_WOUNDS.md): mortal wound timing and spillover handling.
+  - [Melee target allocation](docs/MELEE_TARGET_ALLOCATION.md): multi-target melee allocation flow.
+  - [Pile-in implementation](docs/PILE_IN_IMPLEMENTATION.md): pile-in rules and movement constraints.
+  - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md): terrain, floors, and line-of-sight behavior in ruins.
+  - [Reserve limits implementation](docs/RESERVE_LIMITS_IMPLEMENTATION.md): reserve caps and enforcement.
+- **Setup, UI, and decisions**
+  - [Deployment architecture](docs/DEPLOYMENT_ARCHITECTURE.md): deployment sequence and decision flow.
+  - [Mission deployment system](docs/MISSION_DEPLOYMENT_SYSTEM.md): mission-specific deployment steps and logic.
+  - [Mission selection dialog](docs/MISSION_SELECTION_DIALOG.md): mission selection UI flow.
+  - [Dialog manager](docs/DIALOG_MANAGER.md): modal dialog routing and stacking behavior.
+  - [Player configuration](docs/PLAYER_CONFIGURATION.md): controller ownership and UI enablement.
+- **Networking and save/load**
+  - [Network + save/load design](docs/NETWORK_SAVELOAD_DESIGN.md): snapshot, event log, and decision API plan.
+- **Faction support docs**
+  - [Adepta Sororitas](docs/factions/adepta_sororitas.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Adeptus Custodes](docs/factions/adeptus_custodes.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Adeptus Mechanicus](docs/factions/adeptus_mechanicus.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Aeldari](docs/factions/aeldari.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Astra Militarum](docs/factions/astra_militarum.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Chaos Daemons](docs/factions/chaos_daemons.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Chaos Knights](docs/factions/chaos_knights.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Chaos Space Marines](docs/factions/chaos_space_marines.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Death Guard](docs/factions/death_guard.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Drukhari](docs/factions/drukhari.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Emperor's Children](docs/factions/emperor_s_children.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Genestealer Cults](docs/factions/genestealer_cults.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Grey Knights](docs/factions/grey_knights.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Imperial Agents](docs/factions/imperial_agents.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Imperial Knights](docs/factions/imperial_knights.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Leagues of Votann](docs/factions/leagues_of_votann.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Necrons](docs/factions/necrons.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Orks](docs/factions/orks.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Space Marines](docs/factions/space_marines.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [T'au Empire](docs/factions/t_au_empire.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Thousand Sons](docs/factions/thousand_sons.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [Tyranids](docs/factions/tyranids.md): faction abilities, detachments, stratagems, enhancements, datasheets.
+  - [World Eaters](docs/factions/world_eaters.md): faction abilities, detachments, stratagems, enhancements, datasheets.
 
 ## Project Structure
 

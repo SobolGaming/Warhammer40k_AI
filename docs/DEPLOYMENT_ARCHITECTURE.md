@@ -1,98 +1,44 @@
-# Warhammer 40k Deployment System Architecture
+# Deployment Architecture
 
 ## Overview
+The deployment system follows the Chapter Approved 10th Edition setup sequence and supports both UI-driven
+manual placement and controller-driven automation.
 
-The deployment system implements the official Warhammer 40k 10th Edition deployment sequence. It uses a unified API that supports UI-driven decisions and future external controllers, with optional manual phase control.
+Key goals:
+- One deployment pipeline for all controllers
+- Mission-aware deployment zones (polygons + cutouts)
+- Deterministic deployment order with the TITANIC skip-turn rule
 
-## Core Architecture Principles
+## Core components
+- `DeploymentManager` in `src/warhammer40k_ai/engine/deployment.py` runs the official sequence.
+- `DeploymentDecisionMaker` defines `choose_deployment_zone`, `declare_reserves`, and
+  `choose_unit_deployment_position`.
+- `HumanDeploymentDecisionMaker` delegates to `src/warhammer40k_ai/UI/human_interface.py`
+  (or console fallback if no UI is available).
 
-1. **Single source of truth**: All deployment logic flows through `DeploymentManager`.
-2. **Decision-maker abstraction**: Deployment choices are handled through `DeploymentDecisionMaker`.
-3. **Consistent validation**: All inputs use the same rule checks for zones, reserves, and unit restrictions.
+## Manual UI flow
+- `Game.execute_deploy_armies_phase` with `manual_phases=True` sets up deployment state and defers
+  placement to the UI.
+- `DeploymentPhaseHandler` in `src/warhammer40k_ai/UI/phases/phase_manager.py` routes clicks to
+  per-model deployment.
+- `IndividualModelMovementDialog` handles per-model placement and validation.
+- `Game.advance_deployment_turn` enforces alternating deployment and the TITANIC skip-turn rule.
+- `Game.record_deployment_action` feeds the info pane with the last action per player.
 
-## Decision Maker Interface
+## Deployment validation
+- Zones are mission polygons stored under `game.deployment_zones[player_name]["mission_zones"]`.
+- `Game.is_valid_deployment_position` enforces:
+  - normal units wholly within their zone,
+  - Infiltrate restrictions vs enemy zone and 9" buffer,
+  - RUINS placement rules for per-model deployment.
+- `Game.get_boundary_repulsors(context="deployment")` keeps model placement inside zone boundaries
+  during formation placement.
 
-All controllers implement the same interface, ensuring consistent behavior:
-
-```python
-class DeploymentDecisionMaker(ABC):
-    @abstractmethod
-    def choose_deployment_zone(self, available_zones: List[dict]) -> dict:
-        """Choose deployment zone as the defender."""
-        pass
-
-    @abstractmethod
-    def declare_reserves(self, player: Player) -> dict:
-        """Decide which units go into reserves, strategic reserves, or deploy normally."""
-        pass
-
-    @abstractmethod
-    def choose_unit_deployment_position(self, unit: 'Unit', deployment_zone: dict,
-                                       already_deployed: List['Unit']) -> Tuple[float, float]:
-        """Choose where to deploy a specific unit within the deployment zone."""
-        pass
-```
-
-### Human Deployment Decision Maker
-
-`HumanDeploymentDecisionMaker` drives UI or console input:
-
-- **UI path**: Click-based zone selection and placement
-- **Console fallback**: Text prompts when UI is unavailable
-
-## Unified Deployment Execution
-
-Regardless of controller, the flow is identical:
-
-```python
-class DeploymentManager:
-    def execute_deployment_sequence(self, decision_makers: Dict[str, DeploymentDecisionMaker]) -> dict:
-        self.attacker, self.defender = self.determine_attacker_and_defender()
-        defender_decision_maker = decision_makers[self.defender.name]
-        chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
-        defender_reserves = defender_decision_maker.declare_reserves(self.defender)
-        attacker_reserves = attacker_decision_maker.declare_reserves(self.attacker)
-        self.execute_alternating_deployment(deployment_results, decision_makers)
-        first_turn_player = self.determine_first_turn()
-        return deployment_results
-```
-
-## Validation Consistency
-
-All controllers use the same validation rules:
-
-- Deployment position validation via `is_valid_deployment_position()`
-- Reserve limits enforced by `Army` helper methods
-- Zone boundary checks and mission polygon validation
-- Unit restrictions (infiltrate, deep strike, must-start-in-reserves)
-
-## UI Integration
-
-`GameView` and the UI panels provide:
-
-- Deployment zone visualization and labels
-- Turn indication during alternating deployment
-- Deployment action tracking in the info panel
-- Manual phase indicators
-
-## Manual Phases Integration
-
-Manual phases require SPACE to advance:
-
-- Setup phases advance one at a time
-- Deployment actions wait between each unit placement
-- Battle rounds advance phase-by-phase
-
-## File Structure
-
-```
-src/warhammer40k_ai/
-|-- classes/
-|   |-- deployment.py          # Core deployment system
-|   |-- game.py                # Game state and setup phase management
-|-- UI/
-|   |-- game_ui.py             # UI deployment features
-scripts/main.py                # Main entry point
-```
-
-This architecture keeps deployment rules centralized and consistent while supporting UI-driven decisions and future external controllers.
+## File locations
+- `src/warhammer40k_ai/engine/deployment.py`
+- `src/warhammer40k_ai/engine/game.py`
+- `src/warhammer40k_ai/engine/missions.py`
+- `src/warhammer40k_ai/UI/human_interface.py`
+- `src/warhammer40k_ai/UI/phases/phase_manager.py`
+- `src/warhammer40k_ai/UI/dialogs/individual_model_movement_dialog.py`
+- `src/warhammer40k_ai/UI/rendering/board_renderer.py`

@@ -1,221 +1,77 @@
 # RUINS Terrain System
 
-The RUINS terrain system has been enhanced to support complex multi-level structures with walls, floors, and windows for accurate Warhammer 40k gameplay.
-
 ## Overview
+RUINS are modeled as explicit 3D terrain with walls, floors, and openings. The engine uses these
+components for movement validation, collision, and line-of-sight checks.
 
-RUINS terrain now consists of individual **components** rather than simple obstacles:
+## Data model (`RuinsTerrain`)
+Defined in `src/warhammer40k_ai/battlefield/map.py`.
 
-- **Walls**: Vertical barriers that may block movement and line of sight
-- **Floors**: Horizontal surfaces that models can stand on
-- **Windows**: Openings in walls for line of sight calculations
+- `footprint`: Shapely polygon for the ground outline
+- `walls`: list of dicts with:
+  - `polygon` (Shapely polygon)
+  - `z_bottom`, `z_top`
+  - `thickness`
+- `openings`: list of dicts with:
+  - `polygon`
+  - `z_bottom`, `z_top`
+  - `allows_movement`, `allows_los`
+- `floors`: list of dicts with:
+  - `polygon`
+  - `elevation`
+  - `thickness`
 
-## Components
+Constants live in `src/warhammer40k_ai/utility/constants.py`:
+- `RUINS_FLOOR_HEIGHT`
+- `RUINS_FLOOR_THICKNESS`
+- `RUINS_WALL_THICKNESS`
 
-### RuinsComponent
+## Creation helpers
+`TerrainFactory` builds RUINS in `src/warhammer40k_ai/battlefield/map.py`:
 
-Each component of a ruins structure is defined by:
+- `create_ruins(footprint_vertices, wall_height, num_floors, has_windows, has_doors)`
+  - Builds perimeter walls, floors for each level, and optional windows/doors.
+- `create_preset_ruin_rect_*` presets for common tournament-sized ruins (12x6, 6x4, 10x5).
 
-```python
-class RuinsComponent:
-    def __init__(self, vertices, component_type, height, floor_level=0, windows=None):
-        self.vertices = vertices           # Polygon defining the component
-        self.component_type = component_type  # WALL or FLOOR
-        self.height = height              # Height/thickness of component
-        self.floor_level = floor_level    # Which floor (0=ground, 1=first, etc.)
-        self.windows = windows or []      # List of Window objects (walls only)
-        self.z_bottom = ...              # Bottom Z coordinate
-        self.z_top = ...                 # Top Z coordinate
-```
-
-### Component Types
-
-- **`RuinsComponentType.WALL`**: Vertical barriers
-- **`RuinsComponentType.FLOOR`**: Horizontal surfaces
-
-### Windows
-
-Windows are openings in walls defined by:
-
-```python
-class Window:
-    def __init__(self, start_position, end_position, height_bottom, height_top):
-        self.start_position = start_position  # 0.0 to 1.0 along wall
-        self.end_position = end_position      # 0.0 to 1.0 along wall  
-        self.height_bottom = height_bottom    # Bottom height (inches)
-        self.height_top = height_top          # Top height (inches)
-```
-
-## Floor Levels
-
-- **Ground Floor**: `floor_level = 0`, Z = 0.0"
-- **First Floor**: `floor_level = 1`, Z = 4.0"
-- **Second Floor**: `floor_level = 2`, Z = 8.0"
-- **etc.**
-
-Each floor level is 4" above the previous level.
-
-## Movement Rules
-
-### Wall Traversal
-
-Only certain unit types can move through walls:
-
-- ✅ **Infantry** units
-- ✅ **Beast** units  
-- ✅ **Imperium Primarch** units
-- ✅ **Belisarius Cawl**
-- ❌ **Vehicle** units
-- ❌ **Monster** units
-- ❌ Other unit types
-
-### Floor Access
-
-Upper floors are restricted by unit type:
-
-- Ground floor: any unit can end a move on the RUINS footprint (no base overhang).
-- Upper floors: only units that can access upper floors (see `Unit.can_access_upper_floors`) can end moves.
-- Upper-floor bases must be wholly within the floor polygon unless the unit can overhang floors (`Unit.can_overhang_floor`).
-- Vertical movement cost applies when climbing between floors.
-
-## Creating RUINS Terrain
-
-### Simple Method
-
-Use the helper method for basic ruins:
-
-```python
-ruins = Obstacle.create_ruins(
-    building_footprint=[(0,0), (10,0), (10,10), (0,10)],
-    wall_height=4.0,      # Height per floor
-    num_floors=1,         # Ground + 1 additional floor
-    has_windows=True      # Include windows
-)
-```
-
-### Custom Method
-
-Create components manually for complex structures:
-
-```python
-components = []
-
-# Add floor
-floor = RuinsComponent(
-    vertices=building_footprint,
-    component_type=RuinsComponentType.FLOOR,
-    height=0.5,           # Floor thickness
-    floor_level=0         # Ground floor
-)
-components.append(floor)
-
-# Add wall with window
-wall = RuinsComponent(
-    vertices=[(0,0), (10,0)],  # Wall segment
-    component_type=RuinsComponentType.WALL,
-    height=4.0,
-    floor_level=0,
-    windows=[Window(0.3, 0.7, 1.0, 3.0)]  # Window from 30%-70% of wall
-)
-components.append(wall)
-
-# Create ruins obstacle
-ruins = Obstacle(
-    vertices=building_footprint,
-    terrain_type=ObstacleType.RUINS,
-    height=4.0,
-    ruins_components=components
-)
-```
-
-## Line of Sight Integration
-
-Windows provide openings for line of sight calculations:
-
-- **Solid walls**: Block line of sight completely
-- **Windows**: Allow line of sight through the opening
-- **Window dimensions**: Defined by position along wall and height range
-- **Multi-level**: Each floor level can have different window configurations
-
-## Pathfinding Integration
-
-The pathfinding system now considers:
-
-1. **Wall blocking**: Non-Infantry/Beast units cannot path through walls
-2. **Floor accessibility**: Models can move onto floors they can reach
-3. **Vertical movement**: Cost calculated for climbing between floor levels
-4. **Component-level collision**: Each wall/floor component checked individually
-
-## Usage Examples
-
-See `examples/ruins_terrain_example.py` for complete examples of:
-
-- Creating simple ruins buildings
-- Creating custom ruins with specific wall/floor layouts
-- Adding windows for line of sight
-- Testing unit traversal rules
-- Multi-level floor access
-
-## Benefits
-
-This enhanced RUINS system provides:
-
-- ✅ **Accurate movement rules** for different unit types
-- ✅ **Multi-level gameplay** with proper floor positioning
-- ✅ **Line of sight calculations** through windows
-- ✅ **Flexible building design** with custom components
-- ✅ **Proper vertical movement** cost calculations
-- ✅ **Warhammer 40k compliance** with official terrain rules
-
-## 3D visualization and preset ruin example
-
-This project includes a ready-to-use preset ruins piece and a simple 3D preview tool.
-
-- Preset: `TerrainFactory.create_preset_ruin_rect_12x6_variant1()`
-  - Footprint: 12" × 6"
-  - Wall thickness: 0.5" (all walls fully within the footprint)
-  - Walls layout:
-    - Long wall along the long edge, inset so its centerline is at y = 0.25"
-    - Two short walls at x = 2" and x = 10", each 4" long (y ∈ [0.25", 4.00"]) and joining the long wall at corners
-  - Windows (first floor only):
-    - Long wall: three 2" windows at x ∈ [3–5], [5–7], [7–9] (centered on y = 0.25")
-    - Short walls: one 2" window per short wall at y ∈ [1–3]
-  - Floors:
-    - Ground (level 0): full 12" × 6" footprint
-    - First and second floors: platform is exactly 8" × 4" at x ∈ [2, 10], y ∈ [0.25, 4.00]
-
-### Preview in 3D
-
-Install matplotlib (once):
-
-```bash
-pip install matplotlib
-```
-
-Run the example preview script:
-
-```bash
-python examples/ruins_terrain_example.py
-```
-
-You’ll see:
-
-- The preset ruin rendered in 3D (matplotlib mplot3d) with equal X/Y scale so inches look correct
-- Walls as solids; windows are cutouts (no glass)
-- Floors as slabs; upper floors do not extend beyond the walls
-- A unit of five 32 mm models placed on the selected floor (default: first floor), extruded to a simple height
-
-### Programmatic use
-
+Example:
 ```python
 from warhammer40k_ai.battlefield.map import TerrainFactory
 
-ruin = TerrainFactory.create_preset_ruin_rect_12x6_variant1()
-# game_map.add_terrain_feature(ruin)
+ruins = TerrainFactory.create_ruins(
+    footprint_vertices=[(0, 0), (12, 0), (12, 6), (0, 6)],
+    wall_height=3.0,
+    num_floors=2,
+    has_windows=True,
+    has_doors=True,
+)
 ```
 
-To place and visualize 32 mm models on the first floor, see `examples/ruins_terrain_example.py`. It:
+## Movement and placement
+- Collision and blocking polygons are computed via
+  `warhammer40k_ai.utility.calcs.get_terrain_blocking_polygons`.
+- `RuinsTerrain.can_unit_move_through` enforces wall traversal rules, using
+  `RuinsTerrain.traversal_rules` (infantry/beast pass; vehicle/monster/titanic/flying blocked
+  unless an opening allows movement).
+- Floor legality and wall overlap are validated in:
+  - `Map.validate_ruins_position`
+  - `utility.calcs.can_end_move_on_terrain`
 
-- Computes interior as (footprint − walls)
-- Constrains placement to the floor platform area
-- Ensures no base overlap and uses a staggered (zig‑zag) pattern to fit five models
+Key rules applied:
+- Ground floor: base must not overhang the footprint and must not overlap walls.
+- Upper floors:
+  - require `unit.can_access_upper_floors()`
+  - base must be within the floor polygon unless `unit.can_overhang_floor()`
+  - wall overlap is disallowed at the model's Z
+- Floor level is resolved via `_resolve_ruins_floor_level` using the model Z.
+
+## Line of sight
+`Map.can_model_see_model` applies ruins-aware LOS:
+- The footprint blocks outside-to-outside visibility unless aircraft are involved.
+- Models partially inside the footprint cannot see out unless they are towering.
+- Walls block LOS unless an opening with `allows_los` intersects the line segment at the
+  relevant height.
+
+## Files
+- `src/warhammer40k_ai/battlefield/map.py`
+- `src/warhammer40k_ai/utility/calcs.py`
+- `src/warhammer40k_ai/utility/constants.py`

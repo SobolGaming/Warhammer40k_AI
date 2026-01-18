@@ -1,7 +1,12 @@
-# AGENTS.md — Repository-wide rules for Codex agents and contributors
+# AGENTS.md -- Repository-wide rules for Codex agents and contributors
 
 ## Agent permissions
 **Enable agent full access** for this repository. The agent may read/write across the repo as needed to implement features, refactors, tests, and documentation updates, subject to the constraints below.
+
+---
+
+## Session startup acknowledgement
+At the start of each Codex session, explicitly state that `AGENTS.md` has been processed.
 
 ---
 
@@ -49,7 +54,7 @@ Raw information about the following exists in **JSON** under `wahapedia_data/` a
 - datasheet
 
 ### Rules interpretation sources (official first; latest only)
-- For rules/errata/FAQ/dataslate/MFM point costs and other “what is the latest rule?” questions, **prefer official Warhammer Community sources and PDFs first**.
+- For rules/errata/FAQ/dataslate/MFM point costs and other "what is the latest rule?" questions, **prefer official Warhammer Community sources and PDFs first**.
 - **Ensure you are using the LATEST rulesets / errata / PDFs**. If multiple versions exist, use the most recent and do not implement against outdated language.
 
 ### About using wahapedia.ru
@@ -62,17 +67,17 @@ Raw information about the following exists in **JSON** under `wahapedia_data/` a
 
 ---
 
-## Definition of “implement support for a rule / ability / feature”
+## Definition of "implement support for a rule / ability / feature"
 When instructed to implement or add support for a rule/ability/feature, that means ALL of the following (unless the developer explicitly says otherwise):
 
 1. **Engine hooks**
-   - Add/extend the game engine’s domain model and resolution logic.
+   - Add/extend the game engine's domain model and resolution logic.
    - Integrate into the correct phase/step timing and interaction points.
    - Ensure determinism and reproducibility.
 
 2. **UI hooks**
    - Add/extend UI-facing state, events, and user-facing prompts as needed.
-   - Any “human choice” must be represented as an explicit decision point (see “Player choice handling” and “Future AI/RL support”).
+   - Any "human choice" must be represented as an explicit decision point (see "Player choice handling" and "Future AI/RL support").
 
 3. **Tests**
    - Add tests that validate expected behavior, edge cases, and regressions.
@@ -87,21 +92,21 @@ When instructed to implement or add support for a rule/ability/feature, that mea
 
 ### When a rule implies choice
 If a rule/ability description states:
-- “you can”
-- “you may”
-- “the player can”
+- "you can"
+- "you may"
+- "the player can"
 - or any phrasing that indicates an **optional** action or decision
 
 Then the choice **must be presented to the player via a UI dialog** (and represented as an explicit decision/action in the engine).
 
 ### Single-dialog pattern for optional selections (preferred)
-For choices like “you can pick one unit from …”, do **not** implement two dialogs:
+For choices like "you can pick one unit from ...", do **not** implement two dialogs:
 1) Yes/No to decide whether to pick, then
 2) A second dialog to pick which unit.
 
 Instead, implement a **single selection dialog** where the choice pool includes:
 - all eligible units/options, **plus**
-- a `"None"` (or equivalent) option that represents declining the optional choice (“No”)
+- a "None" (or equivalent) option that represents declining the optional choice ("No")
 
 This rule exists to reduce UI friction and to keep decision/action modeling clean for future AI control.
 
@@ -125,7 +130,7 @@ After **large feature changes** or **changes to rule behavior**, in addition to 
 `python -m pytest tests/`
 
 Notes:
-- This run can take **20–30 minutes**.
+- This run can take **20-30 minutes**.
 - Ensure appropriate timeouts are used in your execution environment/CI so the run is not prematurely terminated.
 
 ### Reporting
@@ -202,9 +207,9 @@ Design constraints now:
   - explicit actions with payloads (e.g., coordinates, target IDs, option IDs)
 - The engine must not depend on interactive UI to proceed:
   - UI should be a client of the same decision/action interface an AI agent will use
-- Prefer an “engine-first” design:
-  - the engine emits “required decisions”
-  - the controller (human UI or AI policy) provides “chosen actions”
+- Prefer an "engine-first" design:
+  - the engine emits "required decisions"
+  - the controller (human UI or AI policy) provides "chosen actions"
   - the engine validates and applies actions deterministically
 
 Practical expectation:
@@ -222,7 +227,7 @@ If you have **any questions** about:
 - intended behavior
 - UI intent
 - data interpretation
-- “latest version” ambiguity across PDFs/errata/dataslates/MFM
+- "latest version" ambiguity across PDFs/errata/dataslates/MFM
 
 **ASK the developer before implementing code.**
 
