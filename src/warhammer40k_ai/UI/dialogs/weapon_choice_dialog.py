@@ -63,6 +63,40 @@ class WeaponChoiceDialog:
             
             for wargear in model.wargear:
                 if wargear.is_ranged():
+                    if wargear.is_bubblechukka():
+                        profile = None
+                        for candidate in wargear.profiles.values():
+                            if getattr(candidate, "is_bubblechukka", lambda: False)():
+                                profile = candidate
+                                break
+                        if profile is None:
+                            profile = next(iter(wargear.profiles.values()), None)
+                        if profile is None:
+                            continue
+                        # Check if unit can shoot this weapon
+                        can_shoot = True
+                        if unit.round_state.advanced_this_round:
+                            # Unit method already checks both weapon-specific and unit-specific abilities
+                            if not unit.can_shoot_after_advance(profile):
+                                can_shoot = False
+                        if unit.round_state.fell_back_this_round:
+                            if not unit.can_shoot_after_fall_back(profile):
+                                can_shoot = False
+
+                        weapon_info = {
+                            'wargear': wargear,
+                            'profile': profile,
+                            'profile_name': "random profile",
+                            'model': model,
+                            'can_shoot': can_shoot,
+                            'models_with_weapon': self._count_models_with_weapon(unit, wargear)
+                        }
+
+                        # Avoid duplicates (same weapon/profile combo)
+                        if not any(w['wargear'] == wargear and w['profile'] == profile
+                                 for w in self.available_weapons):
+                            self.available_weapons.append(weapon_info)
+                        continue
                     for profile_name, profile in wargear.profiles.items():
                         # Check if unit can shoot this weapon
                         can_shoot = True
@@ -252,7 +286,9 @@ class WeaponChoiceDialog:
         
         # Draw weapon name and profile
         weapon_name = f"{wargear.name}"
-        if len(wargear.profiles) > 1:
+        if wargear.is_bubblechukka():
+            weapon_name += " (random profile)"
+        elif len(wargear.profiles) > 1:
             weapon_name += f" ({weapon_info['profile_name']})"
         
         name_text = self.font_small.render(weapon_name, True, text_color)

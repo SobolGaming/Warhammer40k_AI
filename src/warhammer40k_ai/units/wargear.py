@@ -3,7 +3,7 @@ from enum import Enum, auto
 from collections import namedtuple
 import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
-from warhammer40k_ai.utility.event_bus import append_dice
+from warhammer40k_ai.utility.event_bus import append_dice, append_action
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
 from dataclasses import dataclass
@@ -805,6 +805,22 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.append(f"Two melee weapons +{bonus}A")
         except Exception:
             pass
+
+        # Dead Choppy: +1 Attacks for each additional dread klaw equipped.
+        if self.is_dead_choppy():
+            dread_klaw_count = 0
+            model_wargear = getattr(attacker, "wargear", []) or []
+            for wg in model_wargear:
+                wg_name = str(getattr(wg, "name", "") or "").strip().lower()
+                if "dread klaw" in wg_name:
+                    dread_klaw_count += 1
+
+            if dread_klaw_count > 1:
+                bonus = dread_klaw_count - 1
+                atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="weapon:dead_choppy"))
+                attack_result.attacks_special_modifiers.append(
+                    f"Dead Choppy +{bonus}A ({dread_klaw_count} dread klaws)"
+                )
 
         try:
             wname = str(getattr(attacker.parent_unit, "special_rules", {}).get("damaged_attacks_bonus_weapon_name", "") or "").strip().lower()
@@ -3612,6 +3628,75 @@ class WargearProfile:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
                         attack_instance['sustained_hit'] = max(bearer_unit_sustained_value, pain_sustained_value) if (bearer_unit_sustained or pain_sustained) else 1
+
+        # Ork charge-related keywords: track hits against MONSTER/VEHICLE units.
+        if hit_result.get("hit"):
+            if hasattr(target, "has_keyword"):
+                is_monster_or_vehicle = bool(target.has_keyword("Monster") or target.has_keyword("Vehicle"))
+            else:
+                is_monster_or_vehicle = bool(getattr(target, "is_monster", False) or getattr(target, "is_vehicle", False))
+
+            if is_monster_or_vehicle:
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+                pname = str(getattr(player, "name", "") or "") if player is not None else ""
+
+                if self.is_harpooned():
+                    attack_instance["harpooned_target"] = True
+                    hit_result["special_effects"].append("Harpooned (charge bonus)")
+                    if unit is not None and hasattr(unit, "register_wargear_charge_keyword_hit"):
+                        updated = unit.register_wargear_charge_keyword_hit(
+                            target,
+                            "harpooned",
+                            no_overwatch=False,
+                            game=game,
+                        )
+                        if updated and pname:
+                            append_action(pname, f"{unit.name}: Harpooned hit on {target.name} (+2 charge)")
+                if self.is_hooked():
+                    attack_instance["hooked_target"] = True
+                    hit_result["special_effects"].append("Hooked (charge bonus + no Overwatch)")
+                    if unit is not None and hasattr(unit, "register_wargear_charge_keyword_hit"):
+                        updated = unit.register_wargear_charge_keyword_hit(
+                            target,
+                            "hooked",
+                            no_overwatch=True,
+                            game=game,
+                        )
+                        if updated and pname:
+                            append_action(
+                                pname,
+                                f"{unit.name}: Hooked hit on {target.name} (+2 charge, no Overwatch)",
+                            )
+                if self.is_impaled():
+                    attack_instance["impaled_target"] = True
+                    hit_result["special_effects"].append("Impaled (charge bonus)")
+                    if unit is not None and hasattr(unit, "register_wargear_charge_keyword_hit"):
+                        updated = unit.register_wargear_charge_keyword_hit(
+                            target,
+                            "impaled",
+                            no_overwatch=False,
+                            game=game,
+                        )
+                        if updated and pname:
+                            append_action(pname, f"{unit.name}: Impaled hit on {target.name} (+2 charge)")
+                if self.is_snagged():
+                    attack_instance["snagged_target"] = True
+                    hit_result["special_effects"].append("Snagged (charge bonus + no Overwatch)")
+                    if unit is not None and hasattr(unit, "register_wargear_charge_keyword_hit"):
+                        updated = unit.register_wargear_charge_keyword_hit(
+                            target,
+                            "snagged",
+                            no_overwatch=True,
+                            game=game,
+                        )
+                        if updated and pname:
+                            append_action(
+                                pname,
+                                f"{unit.name}: Snagged hit on {target.name} (+2 charge, no Overwatch)",
+                            )
 
         return hit_result
 
@@ -6553,6 +6638,65 @@ class WargearProfile:
         # Defaults to Melta 1 when unspecified
         return self._get_keyword_suffix_count("melta", default=1)
 
+    ###########################################################################
+    ### Ork-specific keyword detection methods
+    ###########################################################################
+    def is_bubblechukka(self) -> bool:
+        """Check if this weapon has the Bubblechukka keyword."""
+        return 'bubblechukka' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_dead_choppy(self) -> bool:
+        """Check if this weapon has the Dead Choppy keyword."""
+        return 'dead choppy' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_harpooned(self) -> bool:
+        """Check if this weapon has the Harpooned keyword."""
+        return 'harpooned' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_hooked(self) -> bool:
+        """Check if this weapon has the Hooked keyword."""
+        return 'hooked' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_impaled(self) -> bool:
+        """Check if this weapon has the Impaled keyword."""
+        return 'impaled' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_snagged(self) -> bool:
+        """Check if this weapon has the Snagged keyword."""
+        return 'snagged' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def get_bubblechukka_profile_for_roll(self, roll: int) -> Optional['WargearProfile']:
+        """
+        Get the appropriate Bubblechukka profile based on a D6 roll.
+
+        Args:
+            roll: D6 roll result (1-6)
+
+        Returns:
+            The appropriate WargearProfile based on the roll:
+            - 1-2: big bubble
+            - 3-4: wobbly bubble
+            - 5-6: dense bubble
+            Returns None if this is not a Bubblechukka weapon or roll is invalid.
+        """
+        if not self.is_bubblechukka():
+            return None
+
+        if roll < 1 or roll > 6:
+            return None
+
+        if not self.parent_wargear:
+            return None
+
+        if roll <= 2:
+            profile_name = "big bubble"
+        elif roll <= 4:
+            profile_name = "wobbly bubble"
+        else:
+            profile_name = "dense bubble"
+
+        return self.parent_wargear.profiles.get(profile_name, None)
+
     def get_anti_specs(self) -> list[tuple[str, int]]:
         """Return all Anti-<keyword> <value>+ specs present on this profile (best-effort)."""
         out: list[tuple[str, int]] = []
@@ -6689,6 +6833,32 @@ class Wargear:
         else:
             max_range = self.profiles[profile_name].range.max
         return max_range
+
+    def is_bubblechukka(self) -> bool:
+        """Check if this wargear is a Bubblechukka weapon."""
+        for profile in self.profiles.values():
+            if profile.is_bubblechukka():
+                return True
+        return False
+
+    def select_bubblechukka_profile(self) -> Optional[WargearProfile]:
+        """
+        Select a random Bubblechukka profile based on a D6 roll.
+
+        Returns:
+            The selected WargearProfile, or None if this is not a Bubblechukka weapon.
+        """
+        if not self.is_bubblechukka():
+            return None
+
+        roll = int(get_roll("D6"))
+        first_profile = next(iter(self.profiles.values()))
+        selected_profile = first_profile.get_bubblechukka_profile_for_roll(roll)
+
+        if selected_profile:
+            print(f"Bubblechukka rolled {roll}: using {selected_profile.name} profile")
+
+        return selected_profile
 
 
 class WargearOptionType(Enum):

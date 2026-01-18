@@ -3666,6 +3666,9 @@ class StratagemManager:
                 # Core rule: Overwatch targets the shooter; battle-shocked units cannot be targeted.
                 if _unit_cannot_be_target_of_stratagem(unit):
                     continue
+                if hasattr(moving_unit, "is_overwatch_prevented_against"):
+                    if moving_unit.is_overwatch_prevented_against(unit, game=self.game):
+                        continue
                 # Distance check to moving enemy unit (edge-to-edge shortest model pair)
                 dist = None
                 try:

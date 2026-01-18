@@ -45,11 +45,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Adds attacks based on target unit size.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>bubblechukka</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">3</td>
-<td bgcolor="#f8d7da">bubblechukka</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>bubblechukka</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">3</td>
+<td bgcolor="#d4edda">bubblechukka</td>
+<td bgcolor="#d4edda">Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).</td>
 </tr>
 <tr>
 <td bgcolor="#f8d7da"><code>c'tan power</code></td>
@@ -59,18 +59,18 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#d4edda"><code>conversion</code></td>
-<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">16</td>
-<td bgcolor="#d4edda">conversion</td>
-<td bgcolor="#d4edda">Unmodified successful Hit rolls of 4+ score Critical Hits when target is more than the Conversion distance (12&quot;/18&quot;/24&quot; per datasheet).</td>
+<td bgcolor="#f8d7da"><code>conversion</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">16</td>
+<td bgcolor="#f8d7da">conversion</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>dead choppy</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">dead choppy</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>dead choppy</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">dead choppy</td>
+<td bgcolor="#d4edda">+1 Attacks for each additional dread klaw equipped.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>devastating wounds</code></td>
@@ -87,18 +87,25 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>harpooned</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">harpooned</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>harpooned</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">harpooned</td>
+<td bgcolor="#d4edda">Tracks hits against MONSTER/VEHICLE units for +2 charge bonus.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>hazardous</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">400</td>
+<td bgcolor="#d4edda">399</td>
 <td bgcolor="#d4edda">HAZARDOUS<br/>HAzARDOUS<br/>hazardous</td>
 <td bgcolor="#d4edda">Hazardous test after attacking; on 1 suffer mortal wounds.</td>
+</tr>
+<tr>
+<td bgcolor="#f8d7da"><code>hazardous. ignores cover. psychic</code></td>
+<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
+<td bgcolor="#f8d7da">1</td>
+<td bgcolor="#f8d7da">HAZARDOUS. IGNORES COVER. PSYCHIC</td>
+<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>heavy</code></td>
@@ -108,25 +115,25 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">+1 to hit if the firing unit Remained Stationary.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>hooked</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">hooked</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>hooked</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">hooked</td>
+<td bgcolor="#d4edda">Tracks hits against MONSTER/VEHICLE units for +2 charge bonus and prevents Overwatch.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>ignores cover</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">624</td>
+<td bgcolor="#d4edda">623</td>
 <td bgcolor="#d4edda">IGNORES COVER<br/>IGNORES COvER<br/>Ignores Cover</td>
 <td bgcolor="#d4edda">Cancels Benefit of Cover from terrain and Indirect Fire.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>impaled</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">impaled</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>impaled</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">impaled</td>
+<td bgcolor="#d4edda">Tracks hits against MONSTER/VEHICLE units for +2 charge bonus.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>indirect fire</code></td>
@@ -201,7 +208,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>psychic</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">337</td>
+<td bgcolor="#d4edda">336</td>
 <td bgcolor="#d4edda">PSYCHIC<br/>psychic</td>
 <td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
@@ -227,11 +234,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>snagged</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">snagged</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>snagged</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">snagged</td>
+<td bgcolor="#d4edda">Tracks hits against MONSTER/VEHICLE units for +2 charge bonus and prevents Overwatch.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>sustained hits</code></td>
@@ -250,7 +257,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>twin-linked</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">843</td>
+<td bgcolor="#d4edda">842</td>
 <td bgcolor="#d4edda">TWIN-LINKED<br/>TwIN-lINkED<br/>twin-linked</td>
 <td bgcolor="#d4edda">Re-roll failed wound rolls for attacks made with this weapon.</td>
 </tr>

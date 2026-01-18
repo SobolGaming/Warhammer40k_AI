@@ -1036,6 +1036,7 @@ class Game:
                         fn(phase)
         # Unit-level temporary effects (e.g. detachment abilities that last until end of turn)
         pname = str(getattr(phase, "name", "") or "").strip().upper()
+        active_name = str(getattr(player, "name", "") or "") if player is not None else ""
         if not pname:
             return
         for p in list(self.players or []):
@@ -1150,6 +1151,15 @@ class Game:
                         sr.pop(k, None)
                 if pname == "SHOOTING_PHASE":
                     sr.pop("cabal_temporal_surge_move_max", None)
+                if pname == "FIGHT_PHASE" and active_name:
+                    owner = str(sr.get("wargear_charge_keyword_hits_turn_owner", "") or "")
+                    if owner and owner == active_name:
+                        for k in (
+                            "wargear_charge_keyword_hits",
+                            "wargear_charge_keyword_hits_turn_owner",
+                            "wargear_charge_keyword_hits_turn",
+                        ):
+                            sr.pop(k, None)
         for p in list(self.players or []):
             if p is None:
                 raise RuntimeError("Phase-end cleanup requires players.")
@@ -6065,9 +6075,12 @@ class Game:
 
         return False
 
-    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int, *, target_unit: Optional['Unit'] = None) -> int:
-        """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
-        modified_roll = base_roll
+    def _collect_charge_modifiers(
+        self,
+        charging_unit: 'Unit',
+        *,
+        target_unit: Optional['Unit'] = None,
+    ) -> list[tuple[int, str]]:
         modifiers: list[tuple[int, str]] = []
 
         # Check for charge modifiers from abilities/enhancements.
@@ -6135,12 +6148,49 @@ class Game:
                 if val:
                     modifiers.append((int(val), source))
 
+        get_kw_mods = getattr(charging_unit, "get_wargear_charge_keyword_modifiers", None)
+        if callable(get_kw_mods):
+            for val, source in get_kw_mods(target_unit, game=self):
+                if val:
+                    modifiers.append((int(val), source))
+
         filt = getattr(charging_unit, "_filter_internal_rivalries_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
         filt = getattr(charging_unit, "_filter_driven_by_ultimate_rage_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
+
+        return modifiers
+
+    def get_charge_roll_modifiers(
+        self,
+        charging_unit: 'Unit',
+        *,
+        target_unit: Optional['Unit'] = None,
+    ) -> list[tuple[int, str]]:
+        return self._collect_charge_modifiers(charging_unit, target_unit=target_unit)
+
+    def get_max_charge_distance(
+        self,
+        charging_unit: 'Unit',
+        *,
+        target_unit: Optional['Unit'] = None,
+    ) -> float:
+        base_max = 12.0
+        mods = self._collect_charge_modifiers(charging_unit, target_unit=target_unit)
+        total = 0
+        for val, _source in mods:
+            try:
+                total += int(val)
+            except Exception:
+                continue
+        return max(0.0, base_max + float(total))
+
+    def _apply_charge_modifiers(self, charging_unit: 'Unit', base_roll: int, *, target_unit: Optional['Unit'] = None) -> int:
+        """Apply charge roll modifiers based on unit abilities, stratagems, etc."""
+        modified_roll = base_roll
+        modifiers = self._collect_charge_modifiers(charging_unit, target_unit=target_unit)
 
         for val, source in modifiers:
             if not val:
@@ -6151,7 +6201,6 @@ class Game:
             else:
                 print(f"Charge penalty: {val} ({source})")
 
-        # For now, just return the modified roll
         return int(modified_roll)
 
     def get_eligible_charging_units(self, player: Player) -> List['Unit']:

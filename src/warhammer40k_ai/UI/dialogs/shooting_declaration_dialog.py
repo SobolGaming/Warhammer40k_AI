@@ -222,6 +222,32 @@ class ShootingDeclarationDialog(BaseDialog):
             
             for wargear in model.wargear:
                 if wargear.is_ranged():
+                    if wargear.is_bubblechukka():
+                        profile = None
+                        for candidate in wargear.profiles.values():
+                            if getattr(candidate, "is_bubblechukka", lambda: False)():
+                                profile = candidate
+                                break
+                        if profile is None:
+                            profile = next(iter(wargear.profiles.values()), None)
+                        if profile is None:
+                            continue
+                        # Check if weapon can be used
+                        if self._can_use_weapon(profile):
+                            # ONE SHOT: if this model already used this weapon, don't list it as available.
+                            if profile.is_one_shot():
+                                key = profile.one_shot_key()
+                                used = getattr(model, "_one_shot_used", set())
+                                if key and key in used:
+                                    continue
+                            individual_weapons.append({
+                                'profile': profile,
+                                'wargear': wargear,
+                                'profile_name': "random profile",
+                                'model': model,
+                                'weapon_instance': len([w for w in individual_weapons if w['profile'] == profile]) + 1
+                            })
+                        continue
                     for profile_name, profile in wargear.profiles.items():
                         # Check if weapon can be used
                         if self._can_use_weapon(profile):
@@ -499,6 +525,8 @@ class ShootingDeclarationDialog(BaseDialog):
 
     def _get_weapon_display_name(self, weapon_profile) -> str:
         name = weapon_profile.parent_wargear.name
+        if getattr(weapon_profile, "is_bubblechukka", lambda: False)():
+            return f"{name} (random profile)"
         try:
             profile_name = getattr(weapon_profile, 'name', 'default')
             if profile_name and profile_name != 'default':
@@ -999,7 +1027,9 @@ class ShootingDeclarationDialog(BaseDialog):
             
             # Line 1: Weapon name with count/instance and keywords
             weapon_name = weapon_profile.parent_wargear.name
-            if weapon_profile.name != 'default':
+            if getattr(weapon_profile, "is_bubblechukka", lambda: False)():
+                weapon_name += " (random profile)"
+            elif weapon_profile.name != 'default':
                 weapon_name += f" - {weapon_profile.name}"
             
             if is_group:

@@ -1459,7 +1459,13 @@ class BattlePhaseHandler(BasePhaseHandler):
                 if not declared:
                     return
 
-                max_charge_distance = int(declared.get("base_roll", 0) or 0)
+                base_roll = int(declared.get("base_roll", 0) or 0)
+                modifiers = []
+                getter = getattr(self.game, "get_charge_roll_modifiers", None)
+                if callable(getter):
+                    modifiers = list(getter(charging_unit, target_unit=target_unit) or [])
+                mod_total = sum(int(val) for val, _source in modifiers if isinstance(val, (int, float)))
+                max_charge_distance = max(0, base_roll + mod_total)
 
                 # Open individual model movement dialog for charge movement
                 def on_charge_movement_complete(completed: bool):

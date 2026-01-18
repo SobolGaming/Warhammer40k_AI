@@ -157,6 +157,13 @@ def _keyword_support(canon: str, examples: Set[str]) -> Tuple[str, str]:
         "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
         "precision": "Allows allocating a successful wound to a visible CHARACTER in an Attached unit.",
         "psychic": "Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.",
+        # Ork-specific keywords
+        "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",
+        "dead choppy": "+1 Attacks for each additional dread klaw equipped.",
+        "harpooned": "Tracks hits against MONSTER/VEHICLE units for +2 charge bonus.",
+        "hooked": "Tracks hits against MONSTER/VEHICLE units for +2 charge bonus and prevents Overwatch.",
+        "impaled": "Tracks hits against MONSTER/VEHICLE units for +2 charge bonus.",
+        "snagged": "Tracks hits against MONSTER/VEHICLE units for +2 charge bonus and prevents Overwatch.",
     }
 
     # Partials: some related logic exists but full 10e rules not fully enforced.

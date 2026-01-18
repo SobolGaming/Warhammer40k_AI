@@ -8477,6 +8477,108 @@ class Unit:
                 modifiers.append((int(spec.get("base_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
         return modifiers
 
+    def register_wargear_charge_keyword_hit(
+        self,
+        target_unit: 'Unit',
+        keyword: str,
+        *,
+        no_overwatch: bool = False,
+        game: Optional['Game'] = None,
+    ) -> bool:
+        """Track charge/Overwatch effects from wargear keyword hits against a target unit."""
+        if target_unit is None:
+            return False
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+            self.special_rules = sr
+
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        target_id = str(getattr(target_root, "_id", None) or id(target_root))
+
+        hits = sr.get("wargear_charge_keyword_hits")
+        if not isinstance(hits, dict):
+            hits = {}
+
+        entry = dict(hits.get(target_id) or {})
+        keywords = set(entry.get("keywords", []) or [])
+        key_norm = str(keyword or "").strip().lower()
+        if key_norm:
+            keywords.add(key_norm)
+
+        updated = False
+        prev_bonus = int(entry.get("charge_bonus", 0) or 0)
+        if prev_bonus < 2:
+            entry["charge_bonus"] = 2
+            updated = True
+        if no_overwatch and not bool(entry.get("no_overwatch", False)):
+            entry["no_overwatch"] = True
+            updated = True
+        if keywords != set(entry.get("keywords", []) or []):
+            entry["keywords"] = sorted(keywords)
+            updated = True
+
+        hits[target_id] = entry
+        sr["wargear_charge_keyword_hits"] = hits
+
+        owner_name = ""
+        if game is not None:
+            getter = getattr(game, "get_current_player", None)
+            if callable(getter):
+                current_player = getter()
+                owner_name = str(getattr(current_player, "name", "") or "")
+        if not owner_name:
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            owner_name = str(getattr(getattr(army, "player", None), "name", "") or "")
+        if owner_name:
+            sr["wargear_charge_keyword_hits_turn_owner"] = owner_name
+        if game is not None:
+            sr["wargear_charge_keyword_hits_turn"] = int(getattr(game, "turn", 0) or 0)
+        return updated
+
+    def _get_wargear_charge_keyword_effects(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> Optional[dict]:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        hits = sr.get("wargear_charge_keyword_hits")
+        if not isinstance(hits, dict) or target_unit is None:
+            return None
+        if game is not None:
+            owner_name = str(sr.get("wargear_charge_keyword_hits_turn_owner", "") or "")
+            if owner_name:
+                getter = getattr(game, "get_current_player", None)
+                if callable(getter):
+                    current = getter()
+                    if current is None or str(getattr(current, "name", "") or "") != owner_name:
+                        return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        target_id = str(getattr(target_root, "_id", None) or id(target_root))
+        entry = hits.get(target_id)
+        if not isinstance(entry, dict):
+            return None
+        return entry
+
+    def get_wargear_charge_keyword_modifiers(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> list[tuple[int, str]]:
+        entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
+        if not entry:
+            return []
+        bonus = int(entry.get("charge_bonus", 0) or 0)
+        if not bonus:
+            return []
+        keywords = [str(k) for k in (entry.get("keywords", []) or []) if str(k or "").strip()]
+        if keywords:
+            label = "/".join([k.title() for k in keywords])
+            source = f"{label} (wargear)"
+        else:
+            source = "Wargear keyword (charge bonus)"
+        return [(bonus, source)]
+
+    def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
+        entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
+        if not entry:
+            return False
+        return bool(entry.get("no_overwatch", False))
+
     def has_thrill_seekers(self) -> bool:
         for ab in self._iter_active_abilities():
             try:
@@ -11816,25 +11918,34 @@ class Unit:
             if not model.is_alive:
                 continue
 
+            active_profile = weapon_profile
+            if getattr(active_profile, "is_bubblechukka", lambda: False)():
+                roll = int(get_roll("D6") or 0)
+                selected = active_profile.get_bubblechukka_profile_for_roll(roll)
+                if selected is not None:
+                    active_profile = selected
+                    army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+                    pname = str(getattr(getattr(army, "player", None), "name", "") or "")
+                    if pname:
+                        from ..utility.event_bus import append_dice
+                        append_dice(pname, f"Bubblechukka rolled {roll}: using {selected.name}")
+
             # ONE SHOT: prevent repeated use (per model)
-            try:
-                if getattr(weapon_profile, "is_one_shot", lambda: False)():
-                    key = getattr(weapon_profile, "one_shot_key", lambda: "")()
-                    used = getattr(model, "_one_shot_used", set())
-                    if key and key in used:
-                        continue
-            except Exception:
-                pass
+            if getattr(active_profile, "is_one_shot", lambda: False)():
+                key = getattr(active_profile, "one_shot_key", lambda: "")()
+                used = getattr(model, "_one_shot_used", set())
+                if key and key in used:
+                    continue
                 
             # Check if this model can still shoot this weapon at this target
-            if not self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
+            if not self._can_model_shoot_weapon_at_target(model, active_profile, target_unit, game_map):
                 continue
                 
             # Verify the model has this weapon
             has_weapon = False
             for wargear in model.wargear:
                 for profile_name, profile in wargear.profiles.items():
-                    if profile == weapon_profile:
+                    if profile == active_profile:
                         has_weapon = True
                         break
                 if has_weapon:
@@ -11845,19 +11956,19 @@ class Unit:
                 
             # Execute the attack - each declaration represents exactly one weapon firing
             try:
-                weapon_display = f"{weapon_profile.parent_wargear.name}"
+                weapon_display = f"{active_profile.parent_wargear.name}"
                 if weapon_instance:
                     weapon_display += f" #{weapon_instance}"
                 print(f"{model.name} attacking with {weapon_display}")
                 
                 # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
                 try:
-                    attack_result = weapon_profile.attack(
+                    attack_result = active_profile.attack(
                         target_unit, model, game_map=game_map, attack_context=attack_context
                     )
                 except TypeError as exc:
                     if "attack_context" in str(exc):
-                        attack_result = weapon_profile.attack(
+                        attack_result = active_profile.attack(
                             target_unit, model, game_map=game_map
                         )
                     else:
@@ -11878,17 +11989,14 @@ class Unit:
                 successful_attacks += 1
 
                 # Mark ONE SHOT weapons as expended after firing (hit or miss).
-                try:
-                    if getattr(weapon_profile, "is_one_shot", lambda: False)():
-                        key = getattr(weapon_profile, "one_shot_key", lambda: "")()
-                        if key:
-                            used = getattr(model, "_one_shot_used", set())
-                            if not isinstance(used, set):
-                                used = set()
-                            used.add(key)
-                            setattr(model, "_one_shot_used", used)
-                except Exception:
-                    pass
+                if getattr(active_profile, "is_one_shot", lambda: False)():
+                    key = getattr(active_profile, "one_shot_key", lambda: "")()
+                    if key:
+                        used = getattr(model, "_one_shot_used", set())
+                        if not isinstance(used, set):
+                            used = set()
+                        used.add(key)
+                        setattr(model, "_one_shot_used", used)
             except Exception as e:
                 print(f"Error executing attack with {weapon_profile.name}: {e}")
                 # Don't increment successful_attacks if there was an exception
@@ -14946,7 +15054,11 @@ class Unit:
             
         # Check if target is within maximum charge range (2D6 = max 12")
         distance = game.map.get_distance_between_units(self, target_unit)
-        if distance > self.max_charge_distance:
+        max_distance = self.max_charge_distance
+        getter = getattr(game, "get_max_charge_distance", None) if game is not None else None
+        if callable(getter):
+            max_distance = float(getter(self, target_unit=target_unit))
+        if distance > max_distance:
             return False
             
         # Check if there's a clear charge path

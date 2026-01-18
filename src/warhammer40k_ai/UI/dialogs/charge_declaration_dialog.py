@@ -189,6 +189,44 @@ class ChargeDeclarationDialog(BaseDialog):
 
         print(f"INFO: {self.unit.name} is eligible to charge")
         return True
+
+    def _get_charge_modifiers(self, target):
+        if not self.unit or not self.game_view:
+            return []
+        game = getattr(self.game_view, "game", None)
+        if game is None:
+            return []
+        getter = getattr(game, "get_charge_roll_modifiers", None)
+        if not callable(getter):
+            return []
+        return list(getter(self.unit, target_unit=target) or [])
+
+    def _get_max_charge_distance(self, target) -> float:
+        base = float(getattr(self.unit, "max_charge_distance", 0) or 0)
+        if not self.game_view:
+            return base
+        game = getattr(self.game_view, "game", None)
+        if game is None:
+            return base
+        getter = getattr(game, "get_max_charge_distance", None)
+        if not callable(getter):
+            return base
+        return float(getter(self.unit, target_unit=target))
+
+    def _format_charge_modifiers(self, modifiers) -> str:
+        parts = []
+        for val, source in list(modifiers or []):
+            if not isinstance(val, (int, float)):
+                continue
+            num = int(val)
+            if not num:
+                continue
+            label = str(source or "").strip()
+            if label:
+                parts.append(f"{num:+d} {label}")
+            else:
+                parts.append(f"{num:+d}")
+        return ", ".join(parts)
     
     def _get_target_validation_info(self, target):
         """Get validation information for a target"""
@@ -219,14 +257,23 @@ class ChargeDeclarationDialog(BaseDialog):
         
         # Check distance
         distance = self.game_map.get_distance_between_units(self.unit, target)
-        if distance > self.unit.max_charge_distance:
-            return {"valid": False, "reason": f"Target too far ({distance:.1f}\" > {self.unit.max_charge_distance}\")"}
+        max_distance = self._get_max_charge_distance(target)
+        modifiers = self._get_charge_modifiers(target)
+        mod_text = self._format_charge_modifiers(modifiers)
+        if distance > max_distance:
+            reason = f"Target too far ({distance:.1f}\" > {max_distance:.1f}\")"
+            if mod_text:
+                reason = f"{reason} mods: {mod_text}"
+            return {"valid": False, "reason": reason}
         
         # Check if path is blocked (simplified)
         if self.game_map.is_path_blocked(self.unit, target):
             return {"valid": False, "reason": "Path to target is blocked"}
         
-        return {"valid": True, "reason": f"Distance: {distance:.1f}\""}
+        reason = f"Distance: {distance:.1f}\" (max {max_distance:.1f}\")"
+        if mod_text:
+            reason = f"{reason} mods: {mod_text}"
+        return {"valid": True, "reason": reason}
     
     def handle_event(self, event):
         """Handle pygame events"""
@@ -382,7 +429,19 @@ class ChargeDeclarationDialog(BaseDialog):
             screen.blit(status_surface, (self.x + 20, info_y))
         
         # Charge distance
-        charge_text = f"Max Charge Distance: {self.unit.max_charge_distance}\""
+        if self.selected_target is not None:
+            max_distance = self._get_max_charge_distance(self.selected_target)
+            modifiers = self._get_charge_modifiers(self.selected_target)
+            mod_text = self._format_charge_modifiers(modifiers)
+            charge_text = f"Max Charge Distance: {max_distance:.1f}\""
+            if mod_text:
+                charge_text = f"{charge_text} ({mod_text})"
+        else:
+            max_distance = float(getattr(self.unit, "max_charge_distance", 0) or 0)
+            mod_hint = ""
+            if any(self._get_charge_modifiers(t) for t in self.valid_targets):
+                mod_hint = " (mods vary by target)"
+            charge_text = f"Max Charge Distance: {max_distance:.1f}\"{mod_hint}"
         charge_surface = self.font_small.render(charge_text, True, TEXT_SECONDARY)
         screen.blit(charge_surface, (self.x + 20, info_y + 20))
         
