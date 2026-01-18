@@ -721,7 +721,14 @@ class ShootingDeclarationDialog(BaseDialog):
         if not bool(getattr(self, "is_targeting_mode", False)):
             return False
         try:
-            return getattr(event, "type", None) in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP)
+            etype = getattr(event, "type", None)
+            if etype in (pygame.KEYDOWN, pygame.KEYUP):
+                return getattr(event, "key", None) != pygame.K_ESCAPE
+            return etype in (
+                pygame.MOUSEBUTTONDOWN,
+                pygame.MOUSEBUTTONUP,
+                pygame.MOUSEWHEEL,
+            )
         except Exception:
             return False
     

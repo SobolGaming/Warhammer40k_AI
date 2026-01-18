@@ -7,6 +7,7 @@ import pygame
 import random
 from typing import Optional, Tuple, Dict, List
 from .base_dialog import BaseDialog
+from ..ui_fonts import get_ui_font
 
 
 class MissionSelectionDialog(BaseDialog):
@@ -66,10 +67,10 @@ class MissionSelectionDialog(BaseDialog):
         self.max_scroll = 0
         
         # UI elements
-        self.font_title = pygame.font.Font(None, 28)
-        self.font_header = pygame.font.Font(None, 22)
-        self.font_normal = pygame.font.Font(None, 18)
-        self.font_small = pygame.font.Font(None, 16)
+        self.font_title = get_ui_font(28, bold=True)
+        self.font_header = get_ui_font(22, bold=True)
+        self.font_normal = get_ui_font(18, bold=False)
+        self.font_small = get_ui_font(16, bold=False)
         
         # Colors
         self.color_bg = (30, 30, 40)

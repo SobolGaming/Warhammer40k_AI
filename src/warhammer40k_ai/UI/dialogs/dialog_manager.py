@@ -174,6 +174,12 @@ class DialogManager:
         entry = self._stack[-1]
         dialog = entry.dialog
         try:
+            if hasattr(dialog, "should_passthrough_event") and callable(getattr(dialog, "should_passthrough_event")):
+                if bool(dialog.should_passthrough_event(event)):
+                    return False
+        except Exception:
+            pass
+        try:
             handled = bool(dialog.handle_event(event))
         except Exception:
             handled = False

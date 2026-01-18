@@ -3,6 +3,8 @@ import math
 from typing import Callable, Optional, Dict, Any
 from abc import ABC, abstractmethod
 
+from ..ui_fonts import get_ui_font
+
 # Font sizes
 FONT_LARGE = 20
 FONT_MEDIUM = 16
@@ -41,6 +43,8 @@ class BaseDialog(ABC):
         self.width = width
         self.height = height
         self.visible = False
+        self.allow_battlefield_input = False
+        self.debug_events = False
         
         # Positioning
         if center:
@@ -75,35 +79,10 @@ class BaseDialog(ABC):
     def _init_fonts(self):
         """Initialize fonts with explicit fall-through."""
         try:
-            # Prefer a modern, clean UI font stack (best-effort across OSes).
-            # On Windows, Segoe UI Variable / Segoe UI is typically available.
-            candidates = [
-                "Segoe UI Variable",
-                "Segoe UI",
-                "Inter",
-                "Roboto",
-                "Helvetica Neue",
-                "Helvetica",
-                "Arial",
-            ]
-
-            def _font(size: int, bold: bool) -> pygame.font.Font:
-                try:
-                    path = pygame.font.match_font(candidates, bold=bold)
-                    if path:
-                        return pygame.font.Font(path, size)
-                except Exception:
-                    pass
-                # Fallback to SysFont lookup
-                try:
-                    return pygame.font.SysFont(candidates, size, bold=bold)
-                except Exception:
-                    return pygame.font.Font(None, size)
-
-            self.font_large = _font(FONT_LARGE, bold=True)
-            self.font_medium = _font(FONT_MEDIUM, bold=True)
-            self.font_small = _font(FONT_SMALL, bold=False)
-            self.font_tiny = _font(FONT_TINY, bold=False)
+            self.font_large = get_ui_font(FONT_LARGE, bold=True)
+            self.font_medium = get_ui_font(FONT_MEDIUM, bold=True)
+            self.font_small = get_ui_font(FONT_SMALL, bold=False)
+            self.font_tiny = get_ui_font(FONT_TINY, bold=False)
         except:
             self.font_large = pygame.font.Font(None, FONT_LARGE)
             self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
@@ -164,6 +143,28 @@ class BaseDialog(ABC):
         """Update title bar rectangle for dragging"""
         if self.draggable:
             self.title_bar_rect = pygame.Rect(self.x, self.y, self.width, self.title_bar_height)
+
+    def get_dialog_rect(self) -> pygame.Rect:
+        """Return the dialog rectangle in screen coordinates."""
+        return pygame.Rect(self.x, self.y, self.width, self.height)
+
+    def should_passthrough_event(self, event: pygame.event.Event) -> bool:
+        """
+        Allow underlying handlers to receive pointer events outside the dialog when requested.
+        """
+        if not self.visible or not self.allow_battlefield_input:
+            return False
+        etype = getattr(event, "type", None)
+        if etype not in (pygame.MOUSEBUTTONDOWN, pygame.MOUSEBUTTONUP, pygame.MOUSEMOTION, pygame.MOUSEWHEEL):
+            return False
+        try:
+            if etype == pygame.MOUSEWHEEL:
+                mouse_pos = pygame.mouse.get_pos()
+            else:
+                mouse_pos = event.pos
+        except Exception:
+            return False
+        return not self.get_dialog_rect().collidepoint(mouse_pos)
     
     def show(self, callback: Optional[Callable] = None, **kwargs):
         """
@@ -190,37 +191,23 @@ class BaseDialog(ABC):
         if not self.visible:
             return False
 
-        # Debug: Log all events handled by this dialog
-        dialog_name = self.__class__.__name__
-        # if event.type == pygame.KEYDOWN:
-        #     print(f"DEBUG: {dialog_name}.handle_event - KEYDOWN: key={pygame.key.name(event.key)}")
-        # elif event.type == pygame.MOUSEBUTTONDOWN:
-        #     print(f"DEBUG: {dialog_name}.handle_event - MOUSEBUTTONDOWN: button={event.button}, pos={event.pos}")
-        # elif event.type == pygame.MOUSEBUTTONUP:
-        #     print(f"DEBUG: {dialog_name}.handle_event - MOUSEBUTTONUP: button={event.button}, pos={event.pos}")
-        # elif event.type == pygame.MOUSEMOTION:
-        #     print(f"DEBUG: {dialog_name}.handle_event - MOUSEMOTION: pos={event.pos}")
-        # else:
-        #     print(f"DEBUG: {dialog_name}.handle_event - OTHER: type={event.type}")
+        if self.should_passthrough_event(event):
+            return False
 
         # Handle ESC key to close dialog
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-            print(f"DEBUG: {dialog_name} - ESC key pressed, hiding dialog")
             self.hide()
             return True
         
         # Handle mouse events
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # Left click
             mouse_pos = event.pos
-            dialog_name = self.__class__.__name__
-            print(f"DEBUG: {dialog_name} - Left click at {mouse_pos}")
 
             # Ensure button positions are up-to-date
             self._update_buttons()
 
             # Check if clicking on title bar to start dragging
             if self.draggable and self.title_bar_rect and self.title_bar_rect.collidepoint(mouse_pos):
-                print(f"DEBUG: {dialog_name} - Starting drag from title bar")
                 self.dragging = True
                 self.drag_offset_x = mouse_pos[0] - self.x
                 self.drag_offset_y = mouse_pos[1] - self.y
@@ -229,34 +216,27 @@ class BaseDialog(ABC):
             # Check button clicks
             for button_name, button_rect in self.buttons.items():
                 if button_rect.collidepoint(mouse_pos):
-                    print(f"DEBUG: {dialog_name} - Button '{button_name}' clicked")
                     if self._handle_button_click(button_name):
                         return True
 
             # Check if click is within dialog bounds
-            dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+            dialog_rect = self.get_dialog_rect()
             if dialog_rect.collidepoint(mouse_pos):
-                print(f"DEBUG: {dialog_name} - Click inside dialog, delegating to subclass")
                 # Let subclass handle the click
                 if self._handle_dialog_click(mouse_pos):
                     return True
             else:
-                print(f"DEBUG: {dialog_name} - Click outside dialog, hiding")
                 # Click outside dialog - close it
                 self.hide()
                 return True
                 
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:  # Left click release
-            dialog_name = self.__class__.__name__
             if self.dragging:
-                print(f"DEBUG: {dialog_name} - Ending drag")
                 self.dragging = False
                 return True
 
         elif event.type == pygame.MOUSEMOTION:
-            dialog_name = self.__class__.__name__
             if self.dragging:
-                print(f"DEBUG: {dialog_name} - Dragging to {event.pos}")
                 # Update dialog position
                 self.x = event.pos[0] - self.drag_offset_x
                 self.y = event.pos[1] - self.drag_offset_y
@@ -271,8 +251,11 @@ class BaseDialog(ABC):
                 return True
             else:
                 # Update hover state (don't log every motion event to avoid spam)
-                self._update_hover(event.pos)
-                return True
+                dialog_rect = self.get_dialog_rect()
+                if dialog_rect.collidepoint(event.pos):
+                    self._update_hover(event.pos)
+                    return True
+                return False
         
         # Let subclass handle other events
         return self._handle_other_events(event)

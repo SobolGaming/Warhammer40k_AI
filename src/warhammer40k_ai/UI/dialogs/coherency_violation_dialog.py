@@ -8,6 +8,7 @@ the player to choose which models to remove from play until coherency is restore
 import pygame
 from typing import List, Callable, Optional
 from .base_dialog import BaseDialog, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_WARNING, TEXT_ERROR, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED
+from ..ui_fonts import get_ui_font
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.model import Model
 
@@ -26,9 +27,9 @@ class CoherencyViolationDialog(BaseDialog):
         
         # UI elements
         self.model_buttons = []
-        self.font_large = pygame.font.Font(None, 28)
-        self.font_medium = pygame.font.Font(None, 24)
-        self.font_small = pygame.font.Font(None, 20)
+        self.font_large = get_ui_font(28, bold=True)
+        self.font_medium = get_ui_font(24, bold=True)
+        self.font_small = get_ui_font(20, bold=False)
         
     def show(self, unit: Unit, non_coherent_models: List[int], callback: Callable[[bool], None], existing_dialogs: List = None):
         """

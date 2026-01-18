@@ -19,12 +19,21 @@ class SecondaryDiscardDialog(BaseDialog):
         self.cards = list(cards)
         self.selected_index = 0 if self.cards else None
         self.on_confirm = on_confirm
+        self._create_buttons()
 
     def hide(self):
         super().hide()
         self.cards = []
         self.selected_index = None
         self.on_confirm = None
+        self.buttons.clear()
+        self.button_states.clear()
+
+    def _create_buttons(self) -> None:
+        self.buttons.clear()
+        self.button_states.clear()
+        self.add_button('discard', self.width - 220, self.height - 50, 120, 35)
+        self.add_button('cancel', self.width - 95, self.height - 50, 90, 35)
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == 'discard':
@@ -71,17 +80,11 @@ class SecondaryDiscardDialog(BaseDialog):
                 desc = getattr(card, 'description', '')
             except Exception:
                 name, desc = str(card), ''
-            try:
-                font = pygame.font.SysFont('Arial', 14)
-            except Exception:
-                font = pygame.font.Font(None, 14)
             text = f"{name}"
-            surf = font.render(text, True, (255, 255, 255))
+            surf = self.font_small.render(text, True, (255, 255, 255))
             screen.blit(surf, (row.x + 8, row.y + 4))
 
         # Buttons
-        self.add_button('discard', self.width - 220, self.height - 50, 120, 35)
-        self.add_button('cancel', self.width - 95, self.height - 50, 90, 35)
         self.draw_button(screen, 'discard', 'Discard')
         self.draw_button(screen, 'cancel', 'Cancel')
 
@@ -112,5 +115,3 @@ class SecondaryDiscardDialog(BaseDialog):
                         self.on_confirm(card)
                     return True
         return False
-
-

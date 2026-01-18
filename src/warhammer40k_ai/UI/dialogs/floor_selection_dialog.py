@@ -6,6 +6,7 @@ Allows players to choose which floor level to target when moving units that can 
 import pygame
 from typing import Optional, Tuple, List
 from .base_dialog import BaseDialog
+from ..ui_fonts import get_ui_font
 from ...utility.constants import RUINS_FLOOR_HEIGHT
 
 
@@ -52,6 +53,9 @@ class FloorSelectionDialog(BaseDialog):
         self.button_selected_color = (0, 122, 204)
         self.button_disabled_color = (55, 55, 55)
         self.text_disabled_color = (150, 150, 150)
+        self.font_large = get_ui_font(24, bold=True)
+        self.font_medium = get_ui_font(20, bold=True)
+        self.font_small = get_ui_font(18, bold=False)
 
     # BaseDialog abstract requirement (we don't use BaseDialog's button system here)
     def _handle_button_click(self, button_name: str) -> bool:
@@ -145,19 +149,16 @@ class FloorSelectionDialog(BaseDialog):
         pygame.draw.rect(screen, self.border_color, dialog_rect, 2)
         
         # Draw title
-        font_large = pygame.font.Font(None, 24)
-        title_text = font_large.render("Select Floor Level", True, self.text_color)
+        title_text = self.font_large.render("Select Floor Level", True, self.text_color)
         title_rect = title_text.get_rect(center=(dialog_x + self.dialog_width // 2, dialog_y + 30))
         screen.blit(title_text, title_rect)
         
         # Draw unit name
-        font_medium = pygame.font.Font(None, 20)
-        unit_text = font_medium.render(f"Moving: {self.unit_name}", True, self.text_color)
+        unit_text = self.font_medium.render(f"Moving: {self.unit_name}", True, self.text_color)
         unit_rect = unit_text.get_rect(center=(dialog_x + self.dialog_width // 2, dialog_y + 55))
         screen.blit(unit_text, unit_rect)
         
         # Draw floor selection buttons
-        font_small = pygame.font.Font(None, 18)
         floor_buttons_start_y = dialog_y + 80
         
         for i, floor in enumerate(self.available_floors):
@@ -183,7 +184,7 @@ class FloorSelectionDialog(BaseDialog):
                 floor_text = f"Floor Level {floor} ({elev:.1f}\" elevation)"
             
             txt_color = self.text_disabled_color if floor in self.disabled_floors else self.text_color
-            text_surface = font_small.render(floor_text, True, txt_color)
+            text_surface = self.font_small.render(floor_text, True, txt_color)
             text_rect = text_surface.get_rect(center=button_rect.center)
             screen.blit(text_surface, text_rect)
         
@@ -198,8 +199,8 @@ class FloorSelectionDialog(BaseDialog):
         pygame.draw.rect(screen, self.border_color, cancel_button_rect, 1)
         
         # Button text
-        confirm_text = font_small.render("Confirm", True, self.text_color)
-        cancel_text = font_small.render("Cancel", True, self.text_color)
+        confirm_text = self.font_small.render("Confirm", True, self.text_color)
+        cancel_text = self.font_small.render("Cancel", True, self.text_color)
         
         confirm_text_rect = confirm_text.get_rect(center=confirm_button_rect.center)
         cancel_text_rect = cancel_text.get_rect(center=cancel_button_rect.center)
@@ -214,7 +215,7 @@ class FloorSelectionDialog(BaseDialog):
         ]
         
         for i, instruction in enumerate(instructions):
-            text = font_small.render(instruction, True, (180, 180, 180))
+            text = self.font_small.render(instruction, True, (180, 180, 180))
             text_rect = text.get_rect(center=(dialog_x + self.dialog_width // 2, 
                                             dialog_y + self.dialog_height - 100 + i * 15))
             screen.blit(text, text_rect)

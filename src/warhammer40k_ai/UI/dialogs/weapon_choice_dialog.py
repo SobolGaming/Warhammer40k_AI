@@ -1,6 +1,8 @@
 import pygame
 from typing import List
 
+from ..ui_fonts import get_ui_font
+
 # Font sizes
 FONT_MEDIUM = 16
 FONT_SMALL = 14
@@ -38,14 +40,9 @@ class WeaponChoiceDialog:
         self.y = (screen_height - self.height) // 2
         
         # Fonts
-        try:
-            self.font_medium = pygame.font.SysFont('Arial', FONT_MEDIUM, bold=True)
-            self.font_small = pygame.font.SysFont('Arial', FONT_SMALL, bold=False)
-            self.font_tiny = pygame.font.SysFont('Arial', FONT_TINY, bold=False)
-        except:
-            self.font_medium = pygame.font.Font(None, FONT_MEDIUM)
-            self.font_small = pygame.font.Font(None, FONT_SMALL)
-            self.font_tiny = pygame.font.Font(None, FONT_TINY)
+        self.font_medium = get_ui_font(FONT_MEDIUM, bold=True)
+        self.font_small = get_ui_font(FONT_SMALL, bold=False)
+        self.font_tiny = get_ui_font(FONT_TINY, bold=False)
         
         self.hovered_weapon = None
         self.weapon_buttons = []

@@ -631,8 +631,23 @@ class IndividualModelMovementDialog(BaseDialog):
         try:
             if not self.visible:
                 return False
-            if event.type == pygame.MOUSEBUTTONDOWN and getattr(event, "button", None) == 1:
-                if self.awaiting_battlefield_click:
+            if getattr(self, "floor_selection_dialog", None) is not None:
+                if getattr(self.floor_selection_dialog, "visible", False):
+                    return False
+            if getattr(self, "coherency_dialog", None) is not None:
+                if getattr(self.coherency_dialog, "visible", False):
+                    return False
+            if not self.awaiting_battlefield_click:
+                return False
+            if event.type in (pygame.KEYDOWN, pygame.KEYUP):
+                return getattr(event, "key", None) != pygame.K_ESCAPE
+            if event.type == pygame.MOUSEWHEEL and self.movement_type != "deploy":
+                return True
+            if event.type == pygame.MOUSEBUTTONDOWN:
+                button = getattr(event, "button", None)
+                if button in (4, 5) and self.movement_type != "deploy":
+                    return True
+                if button == 1:
                     mouse_pos = getattr(event, "pos", None)
                     if mouse_pos:
                         dialog_rect = pygame.Rect(self.x, self.y, self.width, self.height)

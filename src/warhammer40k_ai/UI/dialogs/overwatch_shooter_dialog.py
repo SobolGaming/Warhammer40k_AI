@@ -35,6 +35,7 @@ class OverwatchShooterDialog(BaseDialog):
         self.on_cancel = on_cancel
         self._title = title
         self._subtitle = subtitle
+        self._create_buttons()
 
     def hide(self):
         super().hide()
@@ -45,6 +46,14 @@ class OverwatchShooterDialog(BaseDialog):
         self.enemy_unit = None
         self._title = None
         self._subtitle = None
+        self.buttons.clear()
+        self.button_states.clear()
+
+    def _create_buttons(self) -> None:
+        self.buttons.clear()
+        self.button_states.clear()
+        self.add_button('select', self.width - 220, self.height - 50, 120, 35)
+        self.add_button('cancel', self.width - 95, self.height - 50, 90, 35)
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == 'select':
@@ -93,17 +102,11 @@ class OverwatchShooterDialog(BaseDialog):
                 name = getattr(unit, 'name', str(unit))
             except Exception:
                 name = str(unit)
-            try:
-                font = pygame.font.SysFont('Arial', 14)
-            except Exception:
-                font = pygame.font.Font(None, 14)
             text = f"{name}"
-            surf = font.render(text, True, (255, 255, 255))
+            surf = self.font_small.render(text, True, (255, 255, 255))
             screen.blit(surf, (row.x + 8, row.y + 4))
 
         # Buttons
-        self.add_button('select', self.width - 220, self.height - 50, 120, 35)
-        self.add_button('cancel', self.width - 95, self.height - 50, 90, 35)
         self.draw_button(screen, 'select', 'Select')
         self.draw_button(screen, 'cancel', 'Cancel')
 
@@ -139,5 +142,3 @@ class OverwatchShooterDialog(BaseDialog):
                         self.on_confirm(unit)
                     return True
         return False
-
-
