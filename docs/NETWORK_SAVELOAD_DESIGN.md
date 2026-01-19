@@ -27,7 +27,7 @@ Status: Draft
 
 - All randomness flows through a single RandomSource; snapshot includes full RNG state.
 - All ordering over collections is deterministic (stable ID ordering).
-- Coordinates are serialized in fixed-point units (for example, integer mil-inches).
+- Coordinates are serialized in fixed-point units (1/1000 inch for positions/lengths; 1/10000 radians for facing).
 - Derived/cached values are never serialized; they are recomputed on load.
 
 ## Entity Identity & Registries
@@ -51,6 +51,8 @@ Registries:
 
 Top-level:
 - schema_version
+- fixed_point_scale
+- angle_scale
 - game: battle_round, phase, step, active_player_id
 - players: CP, victory points, stratagem usage, once-per-battle flags
 - map: terrain, objectives, boundaries, mission metadata
@@ -207,6 +209,13 @@ This keeps AI and network clients identical to human UI behavior.
 - On load, pending DecisionRequests are re-queued exactly once.
 - Save/Load allowed only if battle_round >= 1.
 
+## Snapshot Implementation Notes (PR2)
+
+- Fixed-point scale is stored in the snapshot header for validation.
+- Status effects serialization currently supports BattleShockEffect only.
+- Objective conditions reload to a controlling-player check; custom condition logic is not persisted.
+- Rule manager caches and UI hooks are excluded and rebuilt on load.
+
 ## Staged PR Plan
 
 PR1: IDs and registries (Completed)
@@ -214,7 +223,7 @@ PR1: IDs and registries (Completed)
 - Replace name-based references in engine state with IDs.
 - Add deterministic ordering utilities.
 
-PR2: Snapshot schema + serializer
+PR2: Snapshot schema + serializer (Completed)
 - Define schema_versioned snapshot.
 - Implement serialization/deserialization with fixed-point coordinates.
 - Exclude caches; rebuild on load.
@@ -252,6 +261,5 @@ PR7: Save/Load UX
 
 ## Open Questions
 
-- Fixed-point scale (mil-inches vs 1/100 inch) for positions.
 - Where to store snapshot files and event logs (docs vs data directory).
 - How much event history to retain for resyncs.
