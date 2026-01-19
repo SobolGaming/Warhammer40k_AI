@@ -14,6 +14,13 @@ from .phase import SetupPhase, BattleRoundPhases
 from .battlefield import Battlefield, BattlefieldSize
 from .turn_manager import next_phase as _next_phase
 from .commands import GameCommand
+from .command_kinds import (
+    CMD_ADVANCE_SETUP_PHASE,
+    CMD_EXECUTE_SETUP_PHASE,
+    CMD_NEXT_PHASE,
+    CMD_SELECT_MISSION,
+    CMD_SET_DEPLOYMENT_WAITING,
+)
 from .decisions import DecisionQueue, DecisionRequest, DecisionResult
 from .random_source import RandomSource
 from ..rules.lifecycle import AbilityLifecycle
@@ -42,6 +49,7 @@ class Game:
         self.objectives = []
         self.commands = []
         self.command_queue: list[GameCommand] = []
+        self._command_context_depth = 0
         self.decision_queue = DecisionQueue()
         self.random_source = RandomSource()
         self.ability_lifecycle = AbilityLifecycle(self)
@@ -3340,6 +3348,34 @@ class Game:
             return
         self.command_queue.append(command)
 
+    def _enter_command_context(self) -> None:
+        self._command_context_depth += 1
+
+    def _exit_command_context(self) -> None:
+        self._command_context_depth = max(0, self._command_context_depth - 1)
+
+    def in_command_context(self) -> bool:
+        return self._command_context_depth > 0
+
+    def apply_command(self, command: GameCommand):
+        """Validate and apply a command; returns CommandResult."""
+        from .command_dispatcher import dispatch_command
+
+        return dispatch_command(self, command)
+
+    def process_command_queue(self, *, limit: int | None = None):
+        """Process queued commands in order; returns list of CommandResult."""
+        results = []
+        remaining = None if limit is None else int(limit)
+        while self.command_queue and (remaining is None or remaining > 0):
+            cmd = self.next_command()
+            if cmd is None:
+                break
+            results.append(self.apply_command(cmd))
+            if remaining is not None:
+                remaining -= 1
+        return results
+
     def next_command(self) -> GameCommand | None:
         """Pop the next queued command, if any."""
         if not self.command_queue:
@@ -4056,7 +4092,16 @@ class Game:
 
     def next_phase(self):
         """Advance to the next phase."""
-        _next_phase(self)
+        if self.in_command_context():
+            _next_phase(self)
+            return
+        player_id = None
+        try:
+            player_id = self.get_current_player().id
+        except Exception:
+            player_id = None
+        cmd = GameCommand.create(CMD_NEXT_PHASE, player_id=player_id)
+        self.apply_command(cmd)
 
     def is_command_phase(self) -> bool:
         return self.phase == BattleRoundPhases.COMMAND_PHASE
@@ -6755,7 +6800,7 @@ class Game:
         """Get the current setup phase."""
         return self.setup_phase
     
-    def advance_setup_phase(self) -> bool:
+    def _advance_setup_phase_impl(self) -> bool:
         """Advance to the next setup phase. Returns True if setup is complete."""
         if self.setup_complete:
             return True
@@ -6828,6 +6873,21 @@ class Game:
             self.setup_phase = SetupPhase(next_phase_value)
             print(f"Advanced to setup phase: {self.setup_phase.name}")
             return False
+
+    def advance_setup_phase(self) -> bool:
+        """Advance to the next setup phase. Returns True if setup is complete."""
+        if self.in_command_context():
+            return self._advance_setup_phase_impl()
+        player_id = None
+        try:
+            player_id = self.get_current_player().id
+        except Exception:
+            player_id = None
+        cmd = GameCommand.create(CMD_ADVANCE_SETUP_PHASE, player_id=player_id)
+        result = self.apply_command(cmd)
+        if getattr(result, "ok", False):
+            return bool(getattr(result, "value", False))
+        return bool(self.setup_complete)
 
     def execute_muster_armies_phase(
         self,
@@ -7412,7 +7472,7 @@ class Game:
             
             print("INFO: Scout moves processed (auto-skipped for remote-only)")
     
-    def execute_current_setup_phase(self, **kwargs) -> None:
+    def _execute_current_setup_phase_impl(self, **kwargs) -> None:
         """Execute the current setup phase with any necessary parameters."""
         if self.setup_phase == SetupPhase.MUSTER_ARMIES:
             self.execute_muster_armies_phase(
@@ -7438,3 +7498,67 @@ class Game:
             self.execute_determine_first_turn_order_phase()
         elif self.setup_phase == SetupPhase.RESOLVE_PREBATTLE_RULES:
             self.execute_resolve_prebattle_rules_phase()
+
+    def execute_current_setup_phase(self, **kwargs) -> None:
+        """Execute the current setup phase via command dispatch."""
+        if self.in_command_context():
+            self._execute_current_setup_phase_impl(**kwargs)
+            return
+        if kwargs.get("decision_makers") is not None:
+            raise ValueError("decision_makers cannot be serialized in command dispatch.")
+        payload = {
+            "player1_army_file": kwargs.get("player1_army_file"),
+            "player2_army_file": kwargs.get("player2_army_file"),
+            "manual_phases": bool(kwargs.get("manual_phases", False)),
+        }
+        player_id = None
+        try:
+            player_id = self.get_current_player().id
+        except Exception:
+            player_id = None
+        cmd = GameCommand.create(CMD_EXECUTE_SETUP_PHASE, player_id=player_id, payload=payload)
+        self.apply_command(cmd)
+
+    def _apply_selected_mission(self, combination: dict, layout: object) -> None:
+        self.selected_mission_info = {
+            "combination_id": combination.get("id"),
+            "primary": combination.get("primary"),
+            "deployment": combination.get("deployment"),
+            "layout": layout,
+        }
+        from .mission_cards import create_primary_mission_card
+
+        for player in list(self.players or []):
+            player.set_primary_mission(create_primary_mission_card(combination.get("primary")))
+
+    def set_selected_mission(self, combination: dict, layout: object) -> None:
+        if self.in_command_context():
+            self._apply_selected_mission(combination, layout)
+            return
+        player_id = None
+        try:
+            player_id = self.get_current_player().id
+        except Exception:
+            player_id = None
+        cmd = GameCommand.create(
+            CMD_SELECT_MISSION,
+            player_id=player_id,
+            payload={"combination": dict(combination or {}), "layout": layout},
+        )
+        self.apply_command(cmd)
+
+    def set_waiting_for_deployment_input(self, value: bool) -> None:
+        if self.in_command_context():
+            self.waiting_for_deployment_input = bool(value)
+            return
+        player_id = None
+        try:
+            player_id = self.get_current_player().id
+        except Exception:
+            player_id = None
+        cmd = GameCommand.create(
+            CMD_SET_DEPLOYMENT_WAITING,
+            player_id=player_id,
+            payload={"value": bool(value)},
+        )
+        self.apply_command(cmd)

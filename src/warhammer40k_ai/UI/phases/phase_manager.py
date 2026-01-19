@@ -56,7 +56,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     hasattr(self.game, 'waiting_for_deployment_input') and 
                     self.game.waiting_for_deployment_input):
                     # Continue deployment
-                    self.game.waiting_for_deployment_input = False
+                    self.game.set_waiting_for_deployment_input(False)
                     return True
                 
                 # Execute the current setup phase
@@ -135,64 +135,8 @@ class SetupPhaseHandler(BasePhaseHandler):
         def _apply_result(result: dict) -> None:
             combination = result["combination"]
             layout = result["layout"]
-            self.game.selected_mission_info = {
-                "combination_id": combination["id"],
-                "primary": combination["primary"],
-                "deployment": combination["deployment"],
-                "layout": layout
-            }
+            self.game.set_selected_mission(combination, layout)
             print(f"Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
-
-            # Assign Primary Mission card to both players
-            try:
-                from warhammer40k_ai.engine.mission_cards import (
-                    TakeAndHoldPrimary,
-                    TerraformPrimary,
-                    LinchpinPrimary,
-                    PurgeTheFoePrimary,
-                    ScorchedEarthPrimary,
-                    HiddenSuppliesPrimary,
-                    SupplyDropPrimary,
-                    BurdenOfTrustPrimary,
-                    TheRitualPrimary,
-                    UnexplodedOrdnancePrimary,
-                    PrimaryMissionCard,
-                )
-                primary_name = (combination.get('primary') or '').strip().lower()
-                card = None
-                if primary_name == 'take and hold':
-                    card = TakeAndHoldPrimary()
-                elif primary_name == 'terraform':
-                    card = TerraformPrimary()
-                elif primary_name == 'linchpin':
-                    card = LinchpinPrimary()
-                elif primary_name == 'purge the foe':
-                    card = PurgeTheFoePrimary()
-                elif primary_name == 'scorched earth':
-                    card = ScorchedEarthPrimary()
-                elif primary_name == 'hidden supplies':
-                    card = HiddenSuppliesPrimary()
-                elif primary_name == 'supply drop':
-                    card = SupplyDropPrimary()
-                elif primary_name == 'burden of trust':
-                    card = BurdenOfTrustPrimary()
-                elif primary_name == 'the ritual':
-                    card = TheRitualPrimary()
-                elif primary_name == 'unexploded ordnance':
-                    card = UnexplodedOrdnancePrimary()
-                else:
-                    class _StubPrimary(PrimaryMissionCard):
-                        def __init__(self, name):
-                            super().__init__(name=name, summary=f"Stub for {name}", scoring_text=f"Stub for {name}")
-                        def score_at_command_phase(self, game, player) -> int:
-                            return 0
-                        def score_at_end_of_turn(self, game, player) -> int:
-                            return 0
-                    card = _StubPrimary(combination.get('primary', 'Primary'))
-                for p in self.game.players:
-                    p.set_primary_mission(card)
-            except Exception as e:
-                print(f"Warning: Failed to assign primary mission card: {e}")
 
             # Execute the phase and advance
             self.game.execute_current_setup_phase()

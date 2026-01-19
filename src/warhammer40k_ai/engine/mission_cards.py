@@ -1762,3 +1762,36 @@ def default_secondary_deck() -> List[SecondaryMissionCard]:
     except Exception:
         pass
     return deck
+
+
+_PRIMARY_CARD_BY_NAME = {
+    "take and hold": TakeAndHoldPrimary,
+    "terraform": TerraformPrimary,
+    "linchpin": LinchpinPrimary,
+    "purge the foe": PurgeTheFoePrimary,
+    "scorched earth": ScorchedEarthPrimary,
+    "hidden supplies": HiddenSuppliesPrimary,
+    "supply drop": SupplyDropPrimary,
+    "burden of trust": BurdenOfTrustPrimary,
+    "the ritual": TheRitualPrimary,
+    "unexploded ordnance": UnexplodedOrdnancePrimary,
+}
+
+
+def create_primary_mission_card(name: str | None) -> PrimaryMissionCard:
+    key = str(name or "").strip().lower()
+    cls = _PRIMARY_CARD_BY_NAME.get(key)
+    if cls is not None:
+        return cls()
+
+    class _StubPrimary(PrimaryMissionCard):
+        def __init__(self, label: str):
+            super().__init__(name=label, summary=f"Stub for {label}", scoring_text=f"Stub for {label}")
+
+        def score_at_command_phase(self, game, player) -> int:
+            return 0
+
+        def score_at_end_of_turn(self, game, player) -> int:
+            return 0
+
+    return _StubPrimary(name or "Primary")

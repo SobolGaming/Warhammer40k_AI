@@ -95,6 +95,11 @@ Validation:
 - Engine validates every command before applying.
 - Invalid commands do not mutate state and produce error events.
 
+Command execution:
+- `Game.apply_command(...)` validates and dispatches commands through the engine dispatcher.
+- `Game.process_command_queue(...)` drains queued commands in order for deterministic replay.
+- Setup/phase progression and mission selection are now routed through command handlers.
+
 ## Decision/Action API (Core)
 
 DecisionRequest:
@@ -229,9 +234,10 @@ PR2: Snapshot schema + serializer (Completed)
 - Exclude caches; rebuild on load.
 
 PR3: Decision/Command API enforcement
+PR3: Decision/Command API enforcement (Completed)
 - Make engine accept only commands for state mutations.
 - Convert existing direct UI mutations to commands.
-- Emit DecisionRequests for every optional choice.
+- Emit DecisionRequests for every optional choice (dialog mapping in PR4).
 
 PR4: Dialog integration
 - Map every dialog to a DecisionRequest type.
