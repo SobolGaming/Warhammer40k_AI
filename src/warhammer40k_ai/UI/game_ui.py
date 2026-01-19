@@ -10,6 +10,7 @@ from warhammer40k_ai.utility.model_base import Base, BaseType
 from warhammer40k_ai.roster.player import Player
 from warhammer40k_ai.utility.dice import get_roll
 from warhammer40k_ai.utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 # Import UI panels
 from .panels.roster_pane import RosterPane
@@ -457,9 +458,9 @@ class GameView:
                     if root is None:
                         continue
                     try:
-                        uid = getattr(root, "_id", id(root))
+                        uid = get_entity_id(root)
                     except Exception:
-                        uid = id(root)
+                        continue
                     if uid in seen:
                         continue
                     seen.add(uid)
@@ -558,9 +559,9 @@ class GameView:
                     if root is None:
                         continue
                     try:
-                        uid = getattr(root, "_id", id(root))
+                        uid = get_entity_id(root)
                     except Exception:
-                        uid = id(root)
+                        continue
                     if uid in seen:
                         continue
                     seen.add(uid)
@@ -623,9 +624,9 @@ class GameView:
                     if root is None:
                         continue
                     try:
-                        uid = getattr(root, "_id", id(root))
+                        uid = get_entity_id(root)
                     except Exception:
-                        uid = id(root)
+                        continue
                     if uid in seen:
                         continue
                     seen.add(uid)
@@ -678,9 +679,9 @@ class GameView:
                         if root is None:
                             continue
                         try:
-                            uid = getattr(root, "_id", id(root))
+                            uid = get_entity_id(root)
                         except Exception:
-                            uid = id(root)
+                            continue
                         if uid in seen:
                             continue
                         seen.add(uid)
@@ -763,9 +764,9 @@ class GameView:
                     if root is None:
                         continue
                     try:
-                        uid = getattr(root, "_id", id(root))
+                        uid = get_entity_id(root)
                     except Exception:
-                        uid = id(root)
+                        continue
                     if uid in seen:
                         continue
                     seen.add(uid)
@@ -818,9 +819,9 @@ class GameView:
                         if root is None:
                             continue
                         try:
-                            uid = getattr(root, "_id", id(root))
+                            uid = get_entity_id(root)
                         except Exception:
-                            uid = id(root)
+                            continue
                         if uid in seen:
                             continue
                         seen.add(uid)
@@ -1145,7 +1146,7 @@ class GameView:
                         names_text = ", ".join(names)
                     dice = list(getattr(payload.get("ctx", None), "dice", []) or [])
                     dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
-                    append_action(player.name, f"Blessings of Khorne (Skulls for the Skull Throne!): {names_text} (dice: {dice_text})")
+                    append_action(player, f"Blessings of Khorne (Skulls for the Skull Throne!): {names_text} (dice: {dice_text})")
                 except Exception:
                     pass
                 try:
@@ -1858,12 +1859,11 @@ class GameView:
             if chosen is None:
                 try:
                     from ..utility.event_bus import append_action
-                    pname = str(getattr(player, "name", "") or "")
-                    if pname:
+                    if player is not None:
                         if state["returned_any"]:
-                            append_action(pname, f"{ability_name}: no additional models returned to {subtitle}.")
+                            append_action(player, f"{ability_name}: no additional models returned to {subtitle}.")
                         else:
-                            append_action(pname, f"{ability_name}: no model returned to {subtitle}.")
+                            append_action(player, f"{ability_name}: no model returned to {subtitle}.")
                 except Exception:
                     pass
                 self._process_next_bodyguard_return_prompt(player)
@@ -1881,13 +1881,12 @@ class GameView:
             if returned > 0:
                 try:
                     from ..utility.event_bus import append_action
-                    pname = str(getattr(player, "name", "") or "")
-                    if pname:
+                    if player is not None:
                         summary = _wargear_summary(chosen)
                         if summary:
-                            append_action(pname, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} ({summary}) to {subtitle}.")
+                            append_action(player, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} ({summary}) to {subtitle}.")
                         else:
-                            append_action(pname, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} to {subtitle}.")
+                            append_action(player, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} to {subtitle}.")
                 except Exception:
                     pass
                 state["returned_any"] = True
@@ -2279,7 +2278,7 @@ class GameView:
                 try:
                     from ..utility.event_bus import append_action
                     append_action(
-                        player.name,
+                        player,
                         f"Voice of Command: {order_name} from {getattr(officer, 'name', 'Officer')} to {getattr(target_unit, 'name', 'Unit')}",
                     )
                 except Exception:
@@ -2432,7 +2431,7 @@ class GameView:
             try:
                 from ..utility.event_bus import append_action
                 append_action(
-                    player.name,
+                    player,
                     f"Gate of Infinity: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves",
                 )
             except Exception:
@@ -2564,10 +2563,9 @@ class GameView:
                     pass
                 try:
                     from ..utility.event_bus import append_action
-                    pname = str(getattr(player, "name", "") or "")
-                    if pname:
+                    if player is not None:
                         ab_name = ability_name or "Strategic Reserves"
-                        append_action(pname, f"{ab_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
+                        append_action(player, f"{ab_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
                 except Exception:
                     pass
             self._open_next_opponent_turn_strategic_reserves_prompt(game)
@@ -2893,10 +2891,9 @@ class GameView:
                     pass
             try:
                 from ..utility.event_bus import append_action
-                pname = getattr(player, "name", "")
-                if pname:
+                if player is not None:
                     action = "activated" if chosen else "skipped"
-                    append_action(pname, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} {action}.")
+                    append_action(player, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} {action}.")
             except Exception:
                 pass
             self._emperors_children_sensational_flow_active = False
@@ -3016,7 +3013,7 @@ class GameView:
             try:
                 from ..utility.event_bus import append_action
                 ability_name = getattr(choice, "name", None) or str(choice)
-                append_action(player.name, f"Blood Tithe: {ability_name}")
+                append_action(player, f"Blood Tithe: {ability_name}")
             except Exception:
                 pass
             _finish()
@@ -3523,8 +3520,7 @@ class GameView:
                     pass
                 try:
                     from ..utility.event_bus import append_action
-                    pname = getattr(player, "name", "Player")
-                    append_action(pname, f"{ability_name}: {getattr(unit, 'name', 'Unit')} can fight within 3\".")
+                    append_action(player, f"{ability_name}: {getattr(unit, 'name', 'Unit')} can fight within 3\".")
                 except Exception:
                     pass
             on_done()
@@ -4455,10 +4451,10 @@ class GameView:
                         res = mgr.roll_quality()
                         quality = res.get("quality", None)
                         if quality is not None:
-                            append_action(player.name, f"Code Chivalric Quality: {quality.name} (rolled {res.get('roll')})")
+                            append_action(player, f"Code Chivalric Quality: {quality.name} (rolled {res.get('roll')})")
                     else:
                         mgr.select_quality(choice, random=False)
-                        append_action(player.name, f"Code Chivalric Quality: {choice.name}")
+                        append_action(player, f"Code Chivalric Quality: {choice.name}")
                 except Exception:
                     pass
                 if mgr.deed_requires_character_target() and not getattr(mgr, "deed_target_model_id", None):
@@ -4495,10 +4491,10 @@ class GameView:
                         res = mgr.roll_deed(game=game, player=player)
                         deed = res.get("deed", None)
                         if deed is not None:
-                            append_action(player.name, f"Code Chivalric Deed: {deed.name} (rolled {res.get('roll')})")
+                            append_action(player, f"Code Chivalric Deed: {deed.name} (rolled {res.get('roll')})")
                     else:
                         mgr.select_deed(choice, random=False, game=game, player=player)
-                        append_action(player.name, f"Code Chivalric Deed: {choice.name}")
+                        append_action(player, f"Code Chivalric Deed: {choice.name}")
                 except Exception:
                     pass
                 _choose_quality()
@@ -4598,7 +4594,7 @@ class GameView:
                 pass
             try:
                 from ..utility.event_bus import append_action
-                append_action(player.name, f"Bondsman: {source_unit.name} -> {getattr(choice, 'name', '')}")
+                append_action(player, f"Bondsman: {source_unit.name} -> {getattr(choice, 'name', '')}")
             except Exception:
                 pass
             self._open_next_bondsman_prompt(game, player)
@@ -6733,7 +6729,7 @@ class GameView:
                     names_text = ", ".join(names)
                 dice = list(getattr(payload.get("ctx", None), "dice", []) or [])
                 dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
-                append_action(player.name, f"Blessings of Khorne: {names_text} (dice: {dice_text})")
+                append_action(player, f"Blessings of Khorne: {names_text} (dice: {dice_text})")
             except Exception:
                 pass
             try:
@@ -6944,7 +6940,7 @@ class GameView:
                 pass
             try:
                 from ..utility.event_bus import append_action
-                append_action(player.name, f"Doctrina Imperatives: {choice.name} (Battle Round {battle_round})")
+                append_action(player, f"Doctrina Imperatives: {choice.name} (Battle Round {battle_round})")
             except Exception:
                 pass
             try:
@@ -7076,7 +7072,7 @@ class GameView:
             try:
                 from ..utility.event_bus import append_action
                 if opt is not None:
-                    append_action(player.name, f"Wrathful Presence: {getattr(opt, 'name', '')} (Battle Round {br})")
+                    append_action(player, f"Wrathful Presence: {getattr(opt, 'name', '')} (Battle Round {br})")
             except Exception:
                 pass
             self._open_next_wrathful_presence_prompt()
@@ -7153,7 +7149,7 @@ class GameView:
                 pass
             try:
                 from ..utility.event_bus import append_action
-                append_action(player.name, f"Daemonic Allegiance: {getattr(unit, 'daemonic_allegiance', '')} ({unit.name})")
+                append_action(player, f"Daemonic Allegiance: {getattr(unit, 'daemonic_allegiance', '')} ({unit.name})")
             except Exception:
                 pass
             self._open_next_daemonic_allegiance_prompt(game)
@@ -7666,7 +7662,7 @@ class GameView:
                     if key in self._ui_hitboxes:
                         rect, player = self._ui_hitboxes[key]
                         if rect.collidepoint(event.pos):
-                            self._rule_support_cache.pop((id(player), rule_type), None)
+                            self._rule_support_cache.pop((get_entity_id(player), rule_type), None)
                             self._toggle_rule_panel(player, rule_type)
                             return True
 
@@ -8566,7 +8562,7 @@ class GameView:
             )
         except Exception:
             signature = None
-        cache_key = (id(player), rule_type)
+        cache_key = (get_entity_id(player), rule_type)
         cached = self._rule_support_cache.get(cache_key)
         if isinstance(cached, dict) and cached.get("signature") == signature:
             return bool(cached.get("supported", False))

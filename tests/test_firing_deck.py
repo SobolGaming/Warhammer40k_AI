@@ -99,7 +99,7 @@ def test_firing_deck_marks_source_models_as_shot_during_execute():
     passenger_model = _mk_model("Passenger")
     passenger_model.parent_unit = passenger_unit
 
-    target_unit = types.SimpleNamespace(is_alive=lambda: True)
+    target_unit = types.SimpleNamespace(is_alive=lambda: True, _id="target")
     decls = [
         {
             "weapon_profile": profile,
@@ -114,5 +114,4 @@ def test_firing_deck_marks_source_models_as_shot_during_execute():
     assert shooter.round_state.shot_this_round is True
     assert getattr(passenger_model, "_shot_via_firing_deck_this_round") is True
     assert passenger_unit.round_state.shot_this_round is True
-
 

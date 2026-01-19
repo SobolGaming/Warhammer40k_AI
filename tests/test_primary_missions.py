@@ -16,10 +16,12 @@ from warhammer40k_ai.engine.mission_cards import (
 
 class DummyArmy:
     def __init__(self):
+        self.id = None
         self.units = []
         self.player = None
     def set_player(self, p):
         self.player = p
+        self.id = f"army-{p.id}"
 
 
 class DummyObjective:
@@ -47,8 +49,8 @@ def make_game_with_players():
     game = Game(battlefield, players=[p1, p2])
     # Minimal deployment zones mapping for tests
     game.deployment_zones = {
-        p1.name: {"zone": types.SimpleNamespace(contains_point=lambda x, y: (x < 10))},
-        p2.name: {"zone": types.SimpleNamespace(contains_point=lambda x, y: (x > (battlefield.width - 10)))},
+        p1.id: {"zone": types.SimpleNamespace(contains_point=lambda x, y: (x < 10))},
+        p2.id: {"zone": types.SimpleNamespace(contains_point=lambda x, y: (x > (battlefield.width - 10)))},
     }
     # Convenience: attach back refs
     p1.army.set_player(p1)

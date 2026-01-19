@@ -46,6 +46,7 @@ class _ArmyStub:
 class _PlayerStub:
     def __init__(self, name, army):
         self.name = name
+        self.id = name
         self.army = army
         self.control = SimpleNamespace(name="LOCAL")
         self.has_control = lambda: True
@@ -181,7 +182,7 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
                 self.name = "Scourges"
                 self.round_state = _RoundState()
                 self.special_rules = {"pain_advance_no_roll": True, "pain_advance_fixed_bonus": 8}
-                self._army = SimpleNamespace(player=SimpleNamespace(name="P1"))
+                self._army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1"))
 
             def get_parent_army(self):
                 return self._army

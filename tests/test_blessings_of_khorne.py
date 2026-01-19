@@ -141,7 +141,7 @@ class TestBlessingsCombatInjection(unittest.TestCase):
                 return None
 
         game = SimpleNamespace(turn=1, event_system=_ES())
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player, blessings_of_khorne=mgr)
 
         class _Unit:
@@ -213,5 +213,4 @@ class TestBlessingsCombatInjection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

@@ -68,8 +68,8 @@ def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
     unit.deployed = True
     enemy.deployed = True
 
-    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
-    enemy_player = SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+    player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+    enemy_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
     army = SimpleNamespace(player=player, units=[unit])
     enemy_army = SimpleNamespace(player=enemy_player, units=[enemy])
     player.army = army
@@ -119,8 +119,8 @@ def test_fight_phase_end_mortal_wounds_prompts_human(monkeypatch):
     enemy1.deployed = True
     enemy2.deployed = True
 
-    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True)
-    enemy_player = SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+    player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True)
+    enemy_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
     army = SimpleNamespace(player=player, units=[unit])
     enemy_army = SimpleNamespace(player=enemy_player, units=[enemy1, enemy2])
     player.army = army

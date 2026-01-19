@@ -19,7 +19,7 @@ class DummyUnit:
         self.models = []
         self.keywords = list(keywords or [])
         self.faction_keywords = []
-        self._army = SimpleNamespace(player=SimpleNamespace(game=None))
+        self._army = SimpleNamespace(player=SimpleNamespace(game=None, name="P1", id="P1"))
 
     def get_parent_army(self):
         return self._army
@@ -267,7 +267,7 @@ def test_bubblechukka_execute_weapon_attacks_uses_selected_profile():
     unit = Unit.__new__(Unit)
     unit.name = "Shooters"
     unit._can_model_shoot_weapon_at_target = lambda *_a, **_k: True
-    unit.get_parent_army = lambda: SimpleNamespace(player=SimpleNamespace(name="Player 1"))
+    unit.get_parent_army = lambda: SimpleNamespace(player=SimpleNamespace(name="Player 1", id="Player 1"))
 
     model = SimpleNamespace(is_alive=True, wargear=[wargear], name="Shooter")
     unit.models = [model]
@@ -298,7 +298,7 @@ def test_wargear_charge_bonus_applies_to_max_distance():
         def get_friendly_units(self, _unit):
             return []
 
-    player = SimpleNamespace(name="Player 1")
+    player = SimpleNamespace(name="Player 1", id="Player 1")
     army = SimpleNamespace(player=player)
 
     game = Game.__new__(Game)
@@ -339,6 +339,7 @@ def test_overwatch_filtered_for_wargear_no_overwatch():
     class _DummyPlayer:
         def __init__(self, name):
             self.name = name
+            self.id = name
             self.command_points = 2
             self._army = None
 

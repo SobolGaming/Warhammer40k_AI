@@ -1,6 +1,7 @@
 import pygame
 from typing import List
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from ..ui_utils import draw_aspect_shrine_token_icon
 
 # Font sizes
@@ -191,7 +192,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             for c in candidates:
                 if c is None:
                     continue
-                cid = id(c)
+                cid = get_entity_id(c)
                 if cid in seen_ids:
                     continue
                 seen_ids.add(cid)

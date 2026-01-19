@@ -40,6 +40,7 @@ class TestMortalWoundsOrdering(unittest.TestCase):
         target_model = SimpleNamespace(name="T", save=3, inv_save=(None, ""), parent_unit=None)
         target_unit = SimpleNamespace(
             name="Target",
+            _id="target",
             toughness=4,
             has_keyword=lambda _k: False,
             has_stealth=lambda: False,
@@ -88,5 +89,4 @@ class TestMortalWoundsOrdering(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

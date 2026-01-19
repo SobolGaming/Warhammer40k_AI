@@ -64,7 +64,7 @@ class TestActsOfFaith(unittest.TestCase):
     def test_battle_round_gain(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
         game = SimpleNamespace(
             map=SimpleNamespace(roll_reroll_provider=lambda **_k: True),
             phase=SimpleNamespace(name="COMMAND_PHASE"),
@@ -96,7 +96,7 @@ class TestActsOfFaith(unittest.TestCase):
             map=SimpleNamespace(miracle_dice_provider=_provider),
             phase=SimpleNamespace(name="SHOOTING_PHASE"),
         )
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = self._make_army("AS", player)
         unit = self._make_unit("Sisters", army, acts=True)
         army.units.append(unit)
@@ -122,7 +122,7 @@ class TestActsOfFaith(unittest.TestCase):
     def test_litany_reroll_on_unit_destroyed(self):
         from warhammer40k_ai.rules import acts_of_faith as aof
 
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
         game = SimpleNamespace(map=None, phase=SimpleNamespace(name="COMMAND_PHASE"))
         player.game = game
         army = self._make_army("AS", player)

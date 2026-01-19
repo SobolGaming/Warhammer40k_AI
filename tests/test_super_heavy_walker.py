@@ -110,7 +110,7 @@ class TestSuperHeavyWalker(unittest.TestCase):
                 self.loadout = "This model is equipped with: nothing"
 
         unit = Unit(_Datasheet())
-        army = SimpleNamespace(player=SimpleNamespace(name="P1", game=SimpleNamespace(turn=1)))
+        army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1", game=SimpleNamespace(turn=1)))
         unit.set_parent_army(army)
 
         footprint = Polygon([(0, 0), (4, 0), (4, 4), (0, 4)])

@@ -91,7 +91,7 @@ class TestPistolRules(unittest.TestCase):
         u.is_alive = lambda: True
         u.deployed = True
         # BGNT only applies in the controlling player's Shooting phase
-        player = SimpleNamespace()
+        player = SimpleNamespace(id="P1")
         game = SimpleNamespace(is_shooting_phase=lambda: True, get_current_player=lambda: player)
         player.game = game
         u.get_parent_army = lambda: SimpleNamespace(player=player)
@@ -109,4 +109,3 @@ class TestPistolRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

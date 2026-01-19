@@ -12,6 +12,7 @@ class _Ability:
 class _PlayerStub:
     def __init__(self, name="Player", *, is_human=True):
         self.name = name
+        self.id = name
         self.control = SimpleNamespace(name="LOCAL" if is_human else "REMOTE")
         self.has_control = lambda: is_human
         self.game = None

@@ -76,6 +76,10 @@ class DecisionRequest:
             "timeout_seconds": self.timeout_seconds,
         }
 
+    @property
+    def id(self) -> str:
+        return self.decision_id
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DecisionRequest":
         return cls(
@@ -105,6 +109,10 @@ class DecisionResult:
             "payload": dict(self.payload or {}),
             "resolved_at": float(self.resolved_at or 0.0),
         }
+
+    @property
+    def id(self) -> str:
+        return self.decision_id
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DecisionResult":

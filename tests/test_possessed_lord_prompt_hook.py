@@ -22,6 +22,7 @@ class TestPossessedLordPromptHook(unittest.TestCase):
         class _Unit:
             def __init__(self):
                 self.name = "Slaughterbound"
+                self._id = "Slaughterbound"
                 self.possible_abilities = [possessed]
                 self.models = [
                     Model(
@@ -43,11 +44,13 @@ class TestPossessedLordPromptHook(unittest.TestCase):
 
         class _Army:
             def __init__(self, unit):
+                self.id = None
                 self.units = [unit]
                 self.player = None
 
             def set_player(self, p):
                 self.player = p
+                self.id = f"army-{p.id}"
 
             def on_battle_round_start(self, *_a, **_k):
                 return None

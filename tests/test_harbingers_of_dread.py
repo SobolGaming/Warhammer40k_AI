@@ -10,6 +10,7 @@ class _UnitStub:
         self.deployed = True
         self._army = army
         self.name = name
+        self._id = name
         self.battle_shock_tests = 0
         self.mortal_applied = 0
 
@@ -56,7 +57,11 @@ class TestHarbingersOfDread(unittest.TestCase):
     def test_selection_and_roll(self):
         from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DOOM, DELIRIUM
 
-        army = SimpleNamespace(faction_id="QT", units=[], player=SimpleNamespace(control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+        army = SimpleNamespace(
+            faction_id="QT",
+            units=[],
+            player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False),
+        )
         mgr = HarbingersOfDreadManager(army)
         army.harbingers_of_dread = mgr
 
@@ -108,7 +113,7 @@ class TestHarbingersOfDread(unittest.TestCase):
                 return True
 
         game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player, faction_id="QT", units=[])
 
         mgr = HarbingersOfDreadManager(army)
@@ -188,12 +193,12 @@ class TestHarbingersOfDread(unittest.TestCase):
         )
         game = SimpleNamespace(event_system=EventSystem(), map=game_map)
 
-        attacker_player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        attacker_player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         attacker_army = SimpleNamespace(player=attacker_player, faction_id="CSM", units=[])
         attacker_unit = _Unit("Attacker", keywords=["INFANTRY"], army=attacker_army)
         attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
 
-        target_player = SimpleNamespace(name="P2", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        target_player = SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         target_army = SimpleNamespace(player=target_player, faction_id="QT", units=[])
         mgr = HarbingersOfDreadManager(target_army)
         mgr.active_dread_keys.add(DARKNESS.key)
@@ -255,8 +260,8 @@ class TestHarbingersOfDread(unittest.TestCase):
         target_army = SimpleNamespace(faction_id="SM", units=[], player=None)
         target_unit = _UnitStub(keywords=["INFANTRY"], army=target_army, name="Target")
 
-        enemy_player = SimpleNamespace(army=enemy_army)
-        target_player = SimpleNamespace(army=target_army)
+        enemy_player = SimpleNamespace(army=enemy_army, id="P1")
+        target_player = SimpleNamespace(army=target_army, id="P2")
         game = SimpleNamespace(players=[enemy_player, target_player], map=SimpleNamespace())
 
         with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
@@ -281,8 +286,8 @@ class TestHarbingersOfDread(unittest.TestCase):
         target_unit = _UnitStub(keywords=["INFANTRY"], army=current_army, name="Target")
         current_army.units = [target_unit]
 
-        enemy_player = SimpleNamespace(army=enemy_army)
-        current_player = SimpleNamespace(army=current_army)
+        enemy_player = SimpleNamespace(army=enemy_army, id="P1")
+        current_player = SimpleNamespace(army=current_army, id="P2")
         game = SimpleNamespace(players=[enemy_player, current_player], turn=1)
 
         with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):

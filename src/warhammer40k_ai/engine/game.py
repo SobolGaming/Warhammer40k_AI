@@ -22,6 +22,8 @@ from ..rules.providers.default_rules import build_default_rule_providers
 from ..utility.calcs import get_dist, clear_enemy_model_cache
 from ..utility.dice import DiceCollection, get_roll
 from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+from ..utility.entity_ids import get_entity_id
+from ..utility.entity_registry import EntityRegistry, rebuild_registry_from_game
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +65,9 @@ class Game:
         self.deployment_turn_index = 0  # Track whose turn it is to deploy (0 = defender, 1 = attacker)
         self.attacker_index = None  # Index of the attacking player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
         self.defender_index = None  # Index of the defending player (will be set during DETERMINE_ATTACKER_AND_DEFENDER)
-        self.deployment_zones = {}  # Store deployment zones for visualization {player_name: zone_dict}
+        self.deployment_zones = {}  # Store deployment zones for visualization {player_id: zone_dict}
         self.waiting_for_deployment_input = False  # Flag for manual phases during deployment
-        self.deployment_actions = {}  # Track last deployment action for each player
+        self.deployment_actions = {}  # Track last deployment action for each player (by id)
         # Deployment special rule tracking:
         # If a player deploys a TITANIC unit, they skip their next deployment turn (opponent deploys twice in a row).
         # Stored as {player_index: skip_count}.
@@ -96,12 +98,17 @@ class Game:
         self._pain_parasite_fight_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Optional in-engine army mustering requests (player1/player2) for setup phase.
         self.army_muster_requests: Dict[str, Any] = {}
+        self.entity_registry = EntityRegistry()
+        self.rebuild_entity_registry()
 
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
         registry = RuleRegistry(build_default_rule_providers())
         registry.apply(self)
         self.rule_registry = registry
+
+    def rebuild_entity_registry(self) -> None:
+        rebuild_registry_from_game(self.entity_registry, self)
 
     def refresh_rule_subscribers(self) -> None:
         """Re-apply rule providers after armies are updated."""
@@ -156,7 +163,7 @@ class Game:
                     continue
                 if not bool(getattr(unit, "deployed", True)):
                     continue
-                uid = str(getattr(unit, "_id", None) or id(unit))
+                uid = get_entity_id(unit)
                 if uid in tested_ids:
                     continue
                 if not unit.is_below_starting_strength():
@@ -210,7 +217,7 @@ class Game:
                     continue
                 if not bool(getattr(unit, "deployed", True)):
                     continue
-                uid = str(getattr(unit, "_id", None) or id(unit))
+                uid = get_entity_id(unit)
                 if uid in tested_ids:
                     continue
                 if not unit.is_below_starting_strength():
@@ -336,7 +343,7 @@ class Game:
                 continue
             root_fn = getattr(unit, "get_attached_unit_root", None)
             root = root_fn() if callable(root_fn) else unit
-            uid = str(getattr(root, "_id", None) or id(root))
+            uid = get_entity_id(root)
             if uid in seen:
                 continue
             seen.add(uid)
@@ -644,14 +651,13 @@ class Game:
                 chosen_models=chosen_models,
             )
             from ..utility.event_bus import append_action
-            pname = str(getattr(player, "name", "") or "")
-            if pname:
+            if player is not None:
                 ability_name = ability.get("name", "") or "Bodyguard Return"
                 if returned > 0:
                     names = ", ".join(getattr(m, "name", "Model") for m in (chosen_models[:returned] or []))
-                    append_action(pname, f"{ability_name}: returned {names} to {getattr(bodyguard, 'name', 'Unit')}.")
+                    append_action(player, f"{ability_name}: returned {names} to {getattr(bodyguard, 'name', 'Unit')}.")
                 else:
-                    append_action(pname, f"{ability_name}: no model returned to {getattr(bodyguard, 'name', 'Unit')}.")
+                    append_action(player, f"{ability_name}: no model returned to {getattr(bodyguard, 'name', 'Unit')}.")
 
     def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
@@ -719,7 +725,7 @@ class Game:
                     if enemy is None:
                         continue
                     root = enemy.get_attached_unit_root()
-                    key = str(getattr(root, "_id", None) or id(root))
+                    key = get_entity_id(root)
                     if key in seen_enemy:
                         continue
                     seen_enemy.add(key)
@@ -752,11 +758,10 @@ class Game:
                                 reason = "Below Half-strength"
                             _apply_battleshock(enemy_root, modifier=mod, reason=reason)
                             from ..utility.event_bus import append_action
-                            pname = str(getattr(p, "name", "") or "")
-                            if pname:
+                            if p is not None:
                                 label = f"{getattr(model, 'name', 'Model')} {source}".strip()
                                 append_action(
-                                    pname,
+                                    p,
                                     f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
                                 )
 
@@ -935,7 +940,7 @@ class Game:
                 root = unit.get_attached_unit_root()
                 if root is None:
                     continue
-                rid = getattr(root, "_id", None) or id(root)
+                rid = get_entity_id(root)
                 if rid in seen:
                     continue
                 seen.add(rid)
@@ -1001,10 +1006,9 @@ class Game:
                 )
                 if used:
                     from ..utility.event_bus import append_action
-                    pname = str(getattr(opp, "name", "") or "")
-                    if pname:
+                    if opp is not None:
                         ability_name = ability.get("name", "") or "Strategic Reserves"
-                        append_action(pname, f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
+                        append_action(opp, f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
 
     def _on_phase_end_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Clear For the Greater Good state at the end of the Shooting phase."""
@@ -1036,7 +1040,7 @@ class Game:
                         fn(phase)
         # Unit-level temporary effects (e.g. detachment abilities that last until end of turn)
         pname = str(getattr(phase, "name", "") or "").strip().upper()
-        active_name = str(getattr(player, "name", "") or "") if player is not None else ""
+        active_name = str(getattr(player, "id", "") or "") if player is not None else ""
         if not pname:
             return
         for p in list(self.players or []):
@@ -1195,7 +1199,7 @@ class Game:
                 seen = set()
                 for unit in list(army.units):
                     root = unit.get_attached_unit_root()
-                    uid = getattr(root, "_id", id(root))
+                    uid = get_entity_id(root)
                     if uid in seen:
                         continue
                     seen.add(uid)
@@ -1220,7 +1224,7 @@ class Game:
         if pname == "FIGHT_PHASE":
             if player is None:
                 raise RuntimeError("Phase-end cleanup requires an active player.")
-            owner_name = str(getattr(player, "name", "") or "")
+            owner_id = player.id
             for p in list(self.players or []):
                 if p is None:
                     raise RuntimeError("Phase-end cleanup requires players.")
@@ -1231,22 +1235,22 @@ class Game:
                     sr = getattr(u, "special_rules", None)
                     if not isinstance(sr, dict):
                         continue
-                    if str(sr.get("cabal_temporal_surge_no_charge_turn_owner", "") or "") == owner_name:
+                    if str(sr.get("cabal_temporal_surge_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("cabal_temporal_surge_no_charge_turn_owner", "cabal_temporal_surge_no_charge_turn"):
                             sr.pop(k, None)
-                    if str(sr.get("pain_swooping_descent_no_charge_turn_owner", "") or "") == owner_name:
+                    if str(sr.get("pain_swooping_descent_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("pain_swooping_descent_no_charge_turn_owner", "pain_swooping_descent_no_charge_turn"):
                             sr.pop(k, None)
-                    if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_name:
+                    if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_id:
                         for k in ("feigned_retreat_active", "feigned_retreat_turn_owner", "feigned_retreat_turn"):
                             sr.pop(k, None)
-                    if str(sr.get("fire_and_fade_no_charge_turn_owner", "") or "") == owner_name:
+                    if str(sr.get("fire_and_fade_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("fire_and_fade_no_charge_turn_owner", "fire_and_fade_no_charge_turn"):
                             sr.pop(k, None)
-                    if str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") == owner_name:
+                    if str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") == owner_id:
                         for k in ("fire_and_fade_no_embark_turn_owner", "fire_and_fade_no_embark_turn"):
                             sr.pop(k, None)
-                    if str(sr.get("goretrack_onslaught_turn_owner", "") or "") == owner_name:
+                    if str(sr.get("goretrack_onslaught_turn_owner", "") or "") == owner_id:
                         for k in ("goretrack_onslaught_active", "goretrack_onslaught_turn_owner", "goretrack_onslaught_turn"):
                             sr.pop(k, None)
 
@@ -1481,7 +1485,7 @@ class Game:
                 root = candidate.get_attached_unit_root()
                 if root is None:
                     continue
-                rid = getattr(root, "_id", None) or id(root)
+                rid = get_entity_id(root)
                 if rid in seen:
                     continue
                 seen.add(rid)
@@ -1652,7 +1656,7 @@ class Game:
                 return
             target_unit.take_battle_shock_test(self.turn)
             from ..utility.event_bus import append_action
-            pn = attacker_player.name
+            pn = attacker_player
             ability_name = str(spec.get("source", "") or "Post-shoot Battle-shock").strip()
             append_action(pn, f"{getattr(model, 'name', 'Model')} used {ability_name} on {target_unit.name}")
 
@@ -1775,7 +1779,7 @@ class Game:
         if not triggers:
             return
 
-        owner_name = attacker_player.name
+        owner_id = attacker_player.id
         current_turn = int(getattr(self, "turn", 0) or 0)
 
         def _apply_suppression(target_unit, model, spec) -> None:
@@ -1792,11 +1796,11 @@ class Game:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["post_shoot_suppressed_active"] = True
-                sr["post_shoot_suppressed_owner"] = owner_name
+                sr["post_shoot_suppressed_owner"] = owner_id
                 sr["post_shoot_suppressed_turn"] = int(current_turn)
                 unit.special_rules = sr
             from ..utility.event_bus import append_action
-            pn = attacker_player.name
+            pn = attacker_player
             ability_name = str(spec.get("source", "") or "Suppressed").strip()
             append_action(pn, f"{getattr(model, 'name', 'Model')} suppressed {target_unit.name} ({ability_name})")
 
@@ -1973,10 +1977,10 @@ class Game:
         if total_mw > 0:
             unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
         from ..utility.event_bus import append_action
-        pname = str(getattr(getattr(unit.get_parent_army(), "player", None), "name", "") or "")
-        if pname:
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
             append_action(
-                pname,
+                player,
                 f"{ability_name}: {getattr(unit, 'name', 'Unit')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
             )
 
@@ -2078,10 +2082,10 @@ class Game:
         ability_name = str((ability or {}).get("name", "") or "Leadership Test").strip() or "Leadership Test"
         model.die(game_map=getattr(self, "map", None))
         from ..utility.event_bus import append_action
-        pname = str(getattr(getattr(leader_unit.get_parent_army(), "player", None), "name", "") or "")
-        if pname:
+        player = getattr(getattr(leader_unit.get_parent_army(), "player", None), None)
+        if player is not None:
             append_action(
-                pname,
+                player,
                 f"{ability_name}: {getattr(model, 'name', 'Bodyguard model')} destroyed in {getattr(bodyguard, 'name', 'Unit')}.",
             )
 
@@ -2240,14 +2244,14 @@ class Game:
         if total_mw > 0:
             unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(self, "map", None))
         from ..utility.event_bus import append_action, append_dice
-        pname = str(getattr(getattr(unit.get_parent_army(), "player", None), "name", "") or "")
-        if pname:
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
             append_dice(
-                pname,
+                player,
                 f"{ability_name}: rolls {rolls} => {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
             )
             append_action(
-                pname,
+                player,
                 f"{ability_name}: {getattr(model, 'name', 'Model')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
             )
 
@@ -2311,7 +2315,7 @@ class Game:
                         if enemy is None:
                             continue
                         root = enemy.get_attached_unit_root()
-                        key = str(getattr(root, "_id", None) or id(root))
+                        key = get_entity_id(root)
                         if key in seen_enemy:
                             continue
                         seen_enemy.add(key)
@@ -2838,9 +2842,8 @@ class Game:
         unit.special_rules = sr
         try:
             from ..utility.event_bus import append_action
-            pname = str(getattr(player, "name", "") or "")
-            if pname:
-                append_action(pname, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} gains bonuses this Fight phase.")
+            if player is not None:
+                append_action(player, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} gains bonuses this Fight phase.")
         except Exception:
             pass
 
@@ -3478,7 +3481,7 @@ class Game:
         else:
             action_text = f"{unit.name} - {action}"
         
-        self.deployment_actions[player.name] = action_text
+        self.deployment_actions[player.id] = action_text
 
     def clear_deployment_actions(self) -> None:
         """Clear deployment action history after deployment phase ends."""
@@ -3569,7 +3572,7 @@ class Game:
         return False
 
 
-    def _is_position_too_crowded(self, x: float, y: float, unit: 'Unit', player_name: str) -> bool:
+    def _is_position_too_crowded(self, x: float, y: float, unit: 'Unit', player_id: str) -> bool:
         """Quick check if a position is too close to existing units to likely succeed."""
         # Much more reasonable minimum distance - just need to avoid immediate overlap
         min_distance = max(2.0, len(unit.models) * 0.4)  # Reduced from 4.0 and 0.8
@@ -3596,7 +3599,7 @@ class Game:
         
         return False
 
-    def _get_infiltrate_search_zones(self, player_name: str, battlefield_width: float, battlefield_height: float) -> list:
+    def _get_infiltrate_search_zones(self, player_id: str, battlefield_width: float, battlefield_height: float) -> list:
         """Get valid search zones for infiltrate units (avoiding enemy deployment zones and 9\" buffer)."""
         # We intentionally do NOT derive "safe" search rectangles from deployment-zone bounding boxes.
         # Infiltrate legality is enforced by the validation logic itself (enemy zone + 9" buffer + enemy models).
@@ -3622,11 +3625,11 @@ class Game:
         # This is a final safety check to catch any edge cases where models extend outside zones
         # EXCEPTION: Skip this check for Infiltrate units as they can deploy outside deployment zones
         parent_army = unit.get_parent_army()
-        player_name = parent_army.player.name if parent_army and parent_army.player else None
-        if player_name and not unit.has_infiltrate():
+        player_id = parent_army.player.id if parent_army and parent_army.player else None
+        if player_id and not unit.has_infiltrate():
             for model, position in zip(unit.models, model_positions):
                 model_x, model_y = position[0], position[1]
-                if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
+                if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_id):
                     print(
                         "CRITICAL: Auto-deployment validation failed - "
                         f"{unit.name} {model.name} at ({model_x:.1f}, {model_y:.1f}) extends outside deployment zone"
@@ -3671,15 +3674,15 @@ class Game:
                 
                 model.set_location(model_x, model_y, center_z, 0.0)
 
-    def is_position_in_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
+    def is_position_in_deployment_zone(self, x: float, y: float, player_id: str) -> bool:
         """Check if a position is within a player's deployment zone."""
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
             return False
         
-        if player_name not in self.deployment_zones:
+        if player_id not in self.deployment_zones:
             return False
         
-        zone = self.deployment_zones[player_name]
+        zone = self.deployment_zones[player_id]
         
         # Only mission zones are supported
         if 'mission_zones' in zone and zone['mission_zones']:
@@ -3688,15 +3691,15 @@ class Game:
                     return True
         return False
 
-    def is_model_wholly_in_deployment_zone(self, model: 'Model', player_name: str) -> bool:
+    def is_model_wholly_in_deployment_zone(self, model: 'Model', player_id: str) -> bool:
         """Check if a model's entire base is wholly within a player's deployment zone."""
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
             raise RuntimeError("Deployment zones not configured (invalid configuration).")
         
-        if player_name not in self.deployment_zones:
+        if player_id not in self.deployment_zones:
             return False
         
-        zone = self.deployment_zones[player_name]
+        zone = self.deployment_zones[player_id]
         
         # Get model position and base size
         model_x, model_y = model.get_location()[:2]
@@ -3717,7 +3720,7 @@ class Game:
                     return True
         return False
 
-    def is_position_wholly_in_deployment_zone(self, x: float, y: float, model_base, player_name: str) -> bool:
+    def is_position_wholly_in_deployment_zone(self, x: float, y: float, model_base, player_id: str) -> bool:
         """Check if a model base at (x,y) is wholly within the player's deployment zone,
         using mission zones with cutout-aware Shapely checks when available."""
         # Require configured zones
@@ -3725,10 +3728,10 @@ class Game:
             return False
 
         # Player must have a zone
-        if player_name not in self.deployment_zones:
+        if player_id not in self.deployment_zones:
             return False
 
-        zone_info = self.deployment_zones[player_name]
+        zone_info = self.deployment_zones[player_id]
 
         # Only support mission_zones from missions.py with cutouts
         if 'mission_zones' in zone_info and zone_info['mission_zones']:
@@ -3754,13 +3757,13 @@ class Game:
             return False
         return False
 
-    def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
+    def is_position_in_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> bool:
         """Check if a position is within any enemy deployment zone."""
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
             return False
         
-        for zone_player_name, zone in self.deployment_zones.items():
-            if zone_player_name != player_name:
+        for zone_player_id, zone in self.deployment_zones.items():
+            if zone_player_id != player_id:
                 # Deployment zones are polygons (mission_zones); rectangular zones are not supported.
                 if 'mission_zones' not in zone or not zone['mission_zones']:
                     raise RuntimeError("Deployment zone missing mission_zones polygons (invalid configuration).")
@@ -3769,15 +3772,15 @@ class Game:
                         return True
         return False
 
-    def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_name: str) -> float:
+    def get_distance_to_enemy_deployment_zone(self, x: float, y: float, player_id: str) -> float:
         """Get the minimum distance from a position to any enemy deployment zone."""
         if not hasattr(self, 'deployment_zones') or not self.deployment_zones:
             return float('inf')
         
         min_distance = float('inf')
         
-        for zone_player_name, zone in self.deployment_zones.items():
-            if zone_player_name != player_name and 'mission_zones' in zone and zone['mission_zones']:
+        for zone_player_id, zone in self.deployment_zones.items():
+            if zone_player_id != player_id and 'mission_zones' in zone and zone['mission_zones']:
                 from shapely.geometry import Point as _ShPoint
                 from shapely.geometry import Polygon as _ShPoly
                 pt = _ShPoint(x, y)
@@ -3789,12 +3792,12 @@ class Game:
         
         return min_distance
 
-    def get_distance_to_enemy_models(self, x: float, y: float, player_name: str) -> float:
+    def get_distance_to_enemy_models(self, x: float, y: float, player_id: str) -> float:
         """Get the minimum distance from a position to any enemy model."""
         min_distance = float('inf')
         
         for player in self.players:
-            if player.name != player_name and player.get_army():
+            if player.id != player_id and player.get_army():
                 for unit in player.get_army().units:
                     if unit.deployed and unit.reserve_status == 'deployed':
                         for model in unit.models:
@@ -3819,13 +3822,13 @@ class Game:
         
         repulsors = []
         battlefield_width, battlefield_height = self.get_battlefield_size()
-        player_name = unit.get_parent_army().player.name if unit.get_parent_army() and unit.get_parent_army().player else None
+        player_id = unit.get_parent_army().player.id if unit.get_parent_army() and unit.get_parent_army().player else None
         
         if context == 'deployment':
             # For deployment, add deployment zone boundaries (mission-aware) and cutouts as repulsors
-            if hasattr(self, 'deployment_zones') and self.deployment_zones and player_name:
-                if player_name in self.deployment_zones:
-                    zone = self.deployment_zones[player_name]
+            if hasattr(self, 'deployment_zones') and self.deployment_zones and player_id:
+                if player_id in self.deployment_zones:
+                    zone = self.deployment_zones[player_id]
                     repulsor_thickness = 0.5  # 0.5 inch thick edge repulsor ring
 
                     # New mission system: polygon zones + cutouts
@@ -3889,7 +3892,7 @@ class Game:
         
         return repulsors
 
-    def is_valid_deployment_position(self, unit: 'Unit', x: float, y: float, player_name: str) -> bool:
+    def is_valid_deployment_position(self, unit: 'Unit', x: float, y: float, player_id: str) -> bool:
         """Check if a position is valid for deploying a unit during deployment phase."""
         # Units in reserves don't need position validation
         if unit.reserve_status in ['reserves', 'strategic_reserves']:
@@ -3920,7 +3923,7 @@ class Game:
                 model_x, model_y = position[0], position[1]
 
                 # Check if any part of the model is in enemy deployment zone
-                if self.is_position_in_enemy_deployment_zone(model_x, model_y, player_name):
+                if self.is_position_in_enemy_deployment_zone(model_x, model_y, player_id):
                     model_name = getattr(model, 'name', 'model')
                     print(
                         f"DEBUG: Infiltrate - {unit.name} {model_name} at ({model_x:.1f}, {model_y:.1f}) "
@@ -3930,7 +3933,7 @@ class Game:
 
                 # Check 9" distance to enemy deployment zone (from model edge)
                 base_radius = model.model_base.get_radius()
-                distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(model_x, model_y, player_name)
+                distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(model_x, model_y, player_id)
                 if distance_to_enemy_zone - base_radius < 9.0:
                     model_name = getattr(model, 'name', 'model')
                     print(
@@ -3940,7 +3943,7 @@ class Game:
                     return False
 
                 # Check 9" distance to enemy models (from model edge)
-                distance_to_enemy_models = self.get_distance_to_enemy_models(model_x, model_y, player_name)
+                distance_to_enemy_models = self.get_distance_to_enemy_models(model_x, model_y, player_id)
                 if distance_to_enemy_models - base_radius < 9.0:
                     model_name = getattr(model, 'name', 'model')
                     print(
@@ -3983,11 +3986,11 @@ class Game:
                 model_x, model_y, model_z = position[0], position[1], position[2]
 
                 # Check if this model would be wholly within the deployment zone
-                if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_name):
+                if not self.is_position_wholly_in_deployment_zone(model_x, model_y, model.model_base, player_id):
                     model_name = getattr(model, 'name', 'model')
                     print(
                         f"DEBUG: Zone check failed for {unit.name} {model_name} at "
-                        f"({model_x:.1f}, {model_y:.1f}) in player '{player_name}' zone"
+                        f"({model_x:.1f}, {model_y:.1f}) in player '{player_id}' zone"
                     )
                     return False
 
@@ -4004,7 +4007,7 @@ class Game:
                     return False
             return True
 
-    def is_valid_single_model_deployment(self, model: 'Model', x: float, y: float, z: float, player_name: str) -> dict:
+    def is_valid_single_model_deployment(self, model: 'Model', x: float, y: float, z: float, player_id: str) -> dict:
         """Validate deploying a single model at (x,y,z) during deployment.
 
         Applies deployment-zone rules (infiltrate vs normal) and RUINS placement rules for the model only.
@@ -4019,20 +4022,20 @@ class Game:
         # Infiltrate logic: anywhere except inside enemy zone or within 9" from enemy zone/models (edge of base)
         if unit.has_infiltrate():
             # Inside enemy zone
-            if self.is_position_in_enemy_deployment_zone(x, y, player_name):
+            if self.is_position_in_enemy_deployment_zone(x, y, player_id):
                 return {'valid': False, 'reason': 'Inside enemy deployment zone'}
             # 9" from enemy zone (from model edge)
             base_radius = model.model_base.get_radius()
-            distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(x, y, player_name)
+            distance_to_enemy_zone = self.get_distance_to_enemy_deployment_zone(x, y, player_id)
             if distance_to_enemy_zone - base_radius < 9.0:
                 return {'valid': False, 'reason': 'Too close to enemy deployment zone (<9\")'}
             # 9" from enemy models (from model edge)
-            distance_to_enemy_models = self.get_distance_to_enemy_models(x, y, player_name)
+            distance_to_enemy_models = self.get_distance_to_enemy_models(x, y, player_id)
             if distance_to_enemy_models - base_radius < 9.0:
                 return {'valid': False, 'reason': 'Too close to enemy models (<9\")'}
         else:
             # Normal deployment: wholly within own zone
-            if not self.is_position_wholly_in_deployment_zone(x, y, model.model_base, player_name):
+            if not self.is_position_wholly_in_deployment_zone(x, y, model.model_base, player_id):
                 return {'valid': False, 'reason': 'Model base not wholly within deployment zone'}
 
         # RUINS placement validation for this single model
@@ -4077,9 +4080,7 @@ class Game:
                     continue
                 if game_map.is_within_engagement_range(unit, enemy):
                     root = enemy.get_attached_unit_root()
-                    eid = getattr(root, "_id", None)
-                    if eid:
-                        engaged_ids.add(eid)
+                    engaged_ids.add(get_entity_id(root))
             unit.round_state.engaged_enemies_at_turn_start = engaged_ids
 
     def _shadow_of_chaos_zones(self, player) -> set[str]:
@@ -4097,8 +4098,8 @@ class Game:
             if loc is None or getattr(loc, "removed", False):
                 continue
             loc.update_control(self)
-            in_own = self.is_position_in_deployment_zone(loc.x, loc.y, player.name)
-            in_enemy = self.is_position_in_deployment_zone(loc.x, loc.y, opponent.name) if opponent is not None else False
+            in_own = self.is_position_in_deployment_zone(loc.x, loc.y, player.id)
+            in_enemy = self.is_position_in_deployment_zone(loc.x, loc.y, opponent.id) if opponent is not None else False
             if in_enemy:
                 enemy_total += 1
                 if getattr(loc, "controlling_player", None) is player:
@@ -4131,9 +4132,9 @@ class Game:
             base = getattr(model, "model_base", None)
             if base is None:
                 continue
-            in_own = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.name)
+            in_own = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.id)
             in_enemy = (
-                self.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.name)
+                self.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.id)
                 if opponent is not None
                 else False
             )
@@ -4165,9 +4166,9 @@ class Game:
             base = getattr(model, "model_base", None)
             if base is None:
                 continue
-            in_own = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.name)
+            in_own = self.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.id)
             in_enemy = (
-                self.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.name)
+                self.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.id)
                 if opponent is not None
                 else False
             )
@@ -4360,7 +4361,7 @@ class Game:
             if is_below_starting:
                 print(f"WARN: {unit.name} is below starting strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
-                uid = str(getattr(unit, "_id", None) or id(unit))
+                uid = get_entity_id(unit)
                 tested_ids.add(uid)
                 continue
             is_below_half = False
@@ -4373,7 +4374,7 @@ class Game:
             if is_below_half:
                 print(f"WARN: {unit.name} is below half strength - taking Battle-Shock test")
                 unit.take_battle_shock_test(self.turn)
-                uid = str(getattr(unit, "_id", None) or id(unit))
+                uid = get_entity_id(unit)
                 tested_ids.add(uid)
 
         # Belakor: Pall of Despair can force additional tests for eligible enemy units.
@@ -5057,7 +5058,7 @@ class Game:
         return {"valid": True, "reason": "Eligible"}
 
     def _unit_is_in_player_deployment(self, player: Player, unit: 'Unit') -> bool:
-        zones = self.deployment_zones.get(player.name, {})
+        zones = self.deployment_zones.get(player.id, {})
         zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
         if not zone:
             return False
@@ -5070,7 +5071,7 @@ class Game:
         return False
 
     def _objective_in_player_deployment(self, player: Player, objective_point) -> bool:
-        zones = self.deployment_zones.get(player.name, {})
+        zones = self.deployment_zones.get(player.id, {})
         zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
         if not zone:
             return False
@@ -5162,7 +5163,7 @@ class Game:
             # Find first eligible unit within range of this objective.
             chosen = None
             for u in candidates:
-                if id(u) in used_units:
+                if get_entity_id(u) in used_units:
                     continue
                 if self._unit_within_range_of_objective(u) is obj:
                     chosen = u
@@ -5170,7 +5171,7 @@ class Game:
             if chosen is None:
                 continue
             chosen.guarding_objective = obj
-            used_units.add(id(chosen))
+            used_units.add(get_entity_id(chosen))
 
     def _apply_primary_mission_setup_rules(self) -> None:
         """
@@ -5186,7 +5187,7 @@ class Game:
         # Helper: objective is in No Man's Land if it is not within any player's deployment zone.
         def _is_nml(loc) -> bool:
             for p in self.players:
-                zones = self.deployment_zones.get(p.name, {})
+                zones = self.deployment_zones.get(p.id, {})
                 zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
                 if zone and hasattr(zone, "contains_point") and zone.contains_point(loc.x, loc.y):
                     return False
@@ -5276,7 +5277,7 @@ class Game:
 
         # Must be within No Man's Land (not in either deployment zone)
         for p in self.players:
-            zones = self.deployment_zones.get(p.name, {})
+            zones = self.deployment_zones.get(p.id, {})
             zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
             if zone and hasattr(zone, "contains_point") and zone.contains_point(x, y):
                 return {"valid": False, "reason": "Objective marker must be wholly within No Man's Land"}
@@ -5302,7 +5303,7 @@ class Game:
             # Only consider NML markers
             in_any_dz = False
             for p in self.players:
-                zones = self.deployment_zones.get(p.name, {})
+                zones = self.deployment_zones.get(p.id, {})
                 zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
                 if zone and hasattr(zone, "contains_point") and zone.contains_point(loc.x, loc.y):
                     in_any_dz = True
@@ -5589,7 +5590,7 @@ class Game:
                 completes = False
                 opponents = [p for p in self.players if p is not actor]
                 opp = opponents[0] if opponents else None
-                zones = self.deployment_zones.get(opp.name, {}) if opp is not None else {}
+                zones = self.deployment_zones.get(opp.id, {}) if opp is not None else {}
                 zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
                 pos = unit.models[0].get_location() if unit.models else (0, 0, 0)
                 if zone and hasattr(zone, 'contains_point') and zone.contains_point(pos[0], pos[1]):
@@ -5663,7 +5664,7 @@ class Game:
                 if in_range and controls and not getattr(loc, 'removed', False):
                     # Determine zone of objective for VP
                     opponent = next((p for p in self.players if p is not actor), None)
-                    zones = self.deployment_zones.get(opponent.name, {}) if opponent is not None else {}
+                    zones = self.deployment_zones.get(opponent.id, {}) if opponent is not None else {}
                     zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
                     in_opponent_dz = bool(zone and hasattr(zone, 'contains_point') and zone.contains_point(loc.x, loc.y))
                     vp = 10 if in_opponent_dz else 5
@@ -5845,12 +5846,12 @@ class Game:
         from ..utility.event_bus import append_dice
         if miracle_used:
             append_dice(
-                player.name,
+                player,
                 f"Miracle die used for Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}",
             )
         else:
             append_dice(
-                player.name,
+                player,
                 f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}",
             )
         return {
@@ -5877,7 +5878,7 @@ class Game:
                     from ..utility.event_bus import append_dice
                     player = getattr(unit.get_parent_army(), "player", None)
                     if player is not None:
-                        append_dice(player.name, f"Blood Surge fixed distance: {int(fixed)}\" for {unit.name}")
+                        append_dice(player, f"Blood Surge fixed distance: {int(fixed)}\" for {unit.name}")
                     return int(fixed)
                 sr.pop("blood_surge_fixed_distance", None)
                 sr.pop("blood_surge_fixed_distance_phase_key", None)
@@ -5913,7 +5914,7 @@ class Game:
         from ..utility.event_bus import append_dice
         if player is not None:
             tag = "Blood Surge reroll" if reroll_used else "Blood Surge roll"
-            append_dice(player.name, f"{tag}: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
+            append_dice(player, f"{tag}: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
 
         return int(max_distance)
 
@@ -5926,7 +5927,7 @@ class Game:
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
-            append_dice(player.name, f"Loping Speed roll: {int(base_roll)}\" for {unit.name}")
+            append_dice(player, f"Loping Speed roll: {int(base_roll)}\" for {unit.name}")
         return int(base_roll)
 
     def attempt_charge(
@@ -6128,7 +6129,7 @@ class Game:
                 if owner or turn:
                     cur_turn = int(getattr(self, "turn", 0) or 0)
                     cur_player = self.get_current_player()
-                    cur_owner = str(getattr(cur_player, "name", "") or "")
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
                     if owner and owner != cur_owner:
                         goretrack_active = False
                     if turn and turn != cur_turn:
@@ -6531,17 +6532,17 @@ class Game:
             # Round 2 Strategic Reserves restriction: cannot be set up within the enemy deployment zone
             # (applies only when using Strategic Reserves edge placement, not Deep Strike alternative).
             parent_army = unit.get_parent_army()
-            player_name = parent_army.player.name if parent_army and parent_army.player else None
+            player_id = parent_army.player.id if parent_army and parent_army.player else None
 
             for edge in candidate_edges:
                 if not self.is_valid_strategic_reserves_edge(edge):
                     continue
 
                 # Turn-based enemy deployment zone restriction (turn 2 only)
-                if self.turn == 2 and player_name:
+                if self.turn == 2 and player_id:
                     any_in_enemy_dz = False
                     for (mx, my, _mz, _f) in prospective:
-                        if self.is_position_in_enemy_deployment_zone(float(mx), float(my), player_name):
+                        if self.is_position_in_enemy_deployment_zone(float(mx), float(my), player_id):
                             any_in_enemy_dz = True
                             break
                     if any_in_enemy_dz:
@@ -6685,14 +6686,14 @@ class Game:
         This should be called at the end of each player's movement phase.
 
         Returns:
-            Dict mapping player names to lists of units that arrived from reserves
+            Dict mapping player ids to lists of units that arrived from reserves
         """
         arrival_results = {}
         current_player = self.get_current_player()
 
         # Handle reserves arrivals for the current player
         units_arrived = self.process_player_reserves_arrivals(current_player)
-        arrival_results[current_player.name] = units_arrived
+        arrival_results[current_player.id] = units_arrived
 
         # Cult Ambush: opponent's reinforcements step (end of this player's Movement phase)
         self._handle_cult_ambush_reinforcements(current_player)
@@ -7018,10 +7019,10 @@ class Game:
         for zone in mission_zones:
             if zone['zone_type'] == 'defender':
                 # Assign to first player as defender (will be properly assigned later)
-                self.deployment_zones[self.players[0].name] = zone
+                self.deployment_zones[self.players[0].id] = zone
             elif zone['zone_type'] == 'attacker':
                 # Assign to second player as attacker
-                self.deployment_zones[self.players[1].name] = zone
+                self.deployment_zones[self.players[1].id] = zone
         
         print(f"Mission deployment zones created: {deployment_mission}")
         
@@ -7042,8 +7043,8 @@ class Game:
         
         player1_roll = get_roll("1D6")
         player2_roll = get_roll("1D6")
-        append_dice(self.players[0].name, f"First turn roll: {player1_roll}")
-        append_dice(self.players[1].name, f"First turn roll: {player2_roll}")
+        append_dice(self.players[0], f"First turn roll: {player1_roll}")
+        append_dice(self.players[1], f"First turn roll: {player2_roll}")
         
         print(f"{self.players[0].name} rolled: {player1_roll}")
         print(f"{self.players[1].name} rolled: {player2_roll}")
@@ -7206,8 +7207,8 @@ class Game:
                     raise RuntimeError("Attacker/defender indices not set before deployment.")
 
                 self.deployment_zones = {
-                    self.players[defender_idx].name: defender_zone,
-                    self.players[attacker_idx].name: attacker_zone,
+                    self.players[defender_idx].id: defender_zone,
+                    self.players[attacker_idx].id: attacker_zone,
                 }
             
             # Initialize deployment tracking
@@ -7321,8 +7322,8 @@ class Game:
         while True:
             roll1 = get_roll("1D6")
             roll2 = get_roll("1D6")
-            append_dice(p1.name, f"First turn roll-off: {roll1}")
-            append_dice(p2.name, f"First turn roll-off: {roll2}")
+            append_dice(p1, f"First turn roll-off: {roll1}")
+            append_dice(p2, f"First turn roll-off: {roll2}")
             print(f"INFO: {p1.name} rolled: {roll1}")
             print(f"INFO: {p2.name} rolled: {roll2}")
             if roll1 == roll2:

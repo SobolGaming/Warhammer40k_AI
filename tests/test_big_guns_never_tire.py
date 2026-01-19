@@ -76,11 +76,11 @@ def test_vehicle_engaged_shoots_out_of_combat_allowed_and_hit_penalty(monkeypatc
     from warhammer40k_ai.units.wargear import WargearProfile
 
     # Shooter is a VEHICLE, locked in combat with enemy1, shooting enemy2 (not in ER)
-    player_a = SimpleNamespace()
+    player_a = SimpleNamespace(name="Player A", id="Player A")
     _make_phase(player_a, shooting_phase=True)
     army_a = SimpleNamespace(player=player_a)
 
-    player_b = SimpleNamespace()
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     _make_phase(player_b, shooting_phase=True)
     army_b = SimpleNamespace(player=player_b)
 
@@ -112,11 +112,11 @@ def test_vehicle_engaged_shoots_out_of_combat_allowed_and_hit_penalty(monkeypatc
 
 
 def test_vehicle_engaged_can_shoot_engaged_unit_non_blast_but_blast_blocked():
-    player_a = SimpleNamespace()
+    player_a = SimpleNamespace(name="Player A", id="Player A")
     _make_phase(player_a, shooting_phase=True)
     army_a = SimpleNamespace(player=player_a)
 
-    player_b = SimpleNamespace()
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     _make_phase(player_b, shooting_phase=True)
     army_b = SimpleNamespace(player=player_b)
 
@@ -134,11 +134,11 @@ def test_vehicle_engaged_can_shoot_engaged_unit_non_blast_but_blast_blocked():
 
 def test_enemy_blast_cannot_target_locked_vehicle_due_to_friendly_engagement():
     # Shooter is Army B. Target is a VEHICLE from Army A locked with a friendly Army B unit.
-    player_a = SimpleNamespace()
+    player_a = SimpleNamespace(name="Player A", id="Player A")
     _make_phase(player_a, shooting_phase=True)
     army_a = SimpleNamespace(player=player_a)
 
-    player_b = SimpleNamespace()
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     _make_phase(player_b, shooting_phase=True)
     army_b = SimpleNamespace(player=player_b)
 
@@ -154,11 +154,11 @@ def test_enemy_blast_cannot_target_locked_vehicle_due_to_friendly_engagement():
 
 def test_overwatch_cannot_target_locked_vehicle_via_bgnt():
     # Out-of-phase: shooter is NOT in its Shooting phase (e.g., Overwatch window).
-    player_a = SimpleNamespace()
+    player_a = SimpleNamespace(name="Player A", id="Player A")
     _make_phase(player_a, shooting_phase=True)
     army_a = SimpleNamespace(player=player_a)
 
-    player_b = SimpleNamespace()
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     _make_phase(player_b, shooting_phase=False)  # out-of-phase for shooter
     army_b = SimpleNamespace(player=player_b)
 
@@ -174,11 +174,11 @@ def test_overwatch_cannot_target_locked_vehicle_via_bgnt():
 
 def test_locked_vehicle_cannot_overwatch_while_engaged_with_non_pistol():
     # Vehicle is the shooter, but it's not its Shooting phase and it is engaged.
-    player_a = SimpleNamespace()
+    player_a = SimpleNamespace(name="Player A", id="Player A")
     _make_phase(player_a, shooting_phase=False)
     army_a = SimpleNamespace(player=player_a)
 
-    player_b = SimpleNamespace()
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     _make_phase(player_b, shooting_phase=True)
     army_b = SimpleNamespace(player=player_b)
 
@@ -190,4 +190,3 @@ def test_locked_vehicle_cannot_overwatch_while_engaged_with_non_pistol():
 
     non_pistol = _DummyProfile(pistol=False, blast=False, indirect=True)
     assert not vehicle._can_shoot_while_engaged(vehicle.models[0], non_pistol, other_enemy, game_map)
-

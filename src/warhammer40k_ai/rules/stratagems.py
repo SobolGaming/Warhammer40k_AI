@@ -4,6 +4,7 @@ import html
 import re
 from typing import Callable, Optional, Dict, Any, List
 from ..utility.dice import get_roll
+from ..utility.entity_ids import get_entity_id
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
@@ -965,10 +966,7 @@ class StratagemManager:
             root = unit.get_attached_unit_root()
         except Exception:
             raise
-        try:
-            return str(getattr(root, "_id", None) or id(root))
-        except Exception:
-            raise
+        return get_entity_id(root)
     @staticmethod
     def _phase_key_from_name(phase_name: str) -> str:
         return str(phase_name or "").strip().upper().replace(" ", "_")
@@ -1518,7 +1516,7 @@ class StratagemManager:
             except Exception:
                 raise
             try:
-                uid = getattr(root, "_id", id(root))
+                uid = get_entity_id(root)
             except Exception:
                 raise
             if uid in seen:
@@ -2108,7 +2106,7 @@ class StratagemManager:
                         if root is None:
                             continue
                         try:
-                            uid = getattr(root, "_id", id(root))
+                            uid = get_entity_id(root)
                         except Exception:
                             raise
                         if uid in seen:
@@ -2158,7 +2156,7 @@ class StratagemManager:
                             owner = str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") if isinstance(sr, dict) else ""
                             turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0) if isinstance(sr, dict) else 0
                             if owner and self.game is not None:
-                                if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "name", "") or ""):
+                                if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""):
                                     if int(getattr(self.game, "turn", 0) or 0) == int(turn or 0):
                                         continue
                         except Exception:
@@ -2217,7 +2215,7 @@ class StratagemManager:
                         if root is None:
                             continue
                         try:
-                            uid = getattr(root, "_id", id(root))
+                            uid = get_entity_id(root)
                         except Exception:
                             raise
                         if uid in seen:
@@ -2315,7 +2313,7 @@ class StratagemManager:
                     if root is None:
                         continue
                     try:
-                        uid = getattr(root, "_id", id(root))
+                        uid = get_entity_id(root)
                     except Exception:
                         raise
                     if uid in seen:
@@ -2837,7 +2835,7 @@ class StratagemManager:
                                 if root is None:
                                     continue
                                 try:
-                                    uid = getattr(root, "_id", id(root))
+                                    uid = get_entity_id(root)
                                 except Exception:
                                     raise
                                 if uid in seen:
@@ -3252,7 +3250,7 @@ class StratagemManager:
                                 if root is None:
                                     continue
                                 try:
-                                    uid = getattr(root, "_id", id(root))
+                                    uid = get_entity_id(root)
                                 except Exception:
                                     raise
                                 if uid in seen:
@@ -3421,7 +3419,7 @@ class StratagemManager:
                     raise
                 if root is None:
                     continue
-                rid = id(root)
+                rid = get_entity_id(root)
                 if rid in seen:
                     continue
                 seen.add(rid)
@@ -3622,7 +3620,7 @@ class StratagemManager:
             if isinstance(sr, dict) and sr.get("battle_focus_flitting_shadows_no_overwatch"):
                 owner_name = str(sr.get("battle_focus_flitting_shadows_turn_owner", "") or "")
                 active_player = getattr(self.game, "get_current_player", lambda: None)()
-                active_name = str(getattr(active_player, "name", "") or "")
+                active_name = str(getattr(active_player, "id", "") or "")
                 if not owner_name or owner_name == active_name:
                     return
         except Exception:
@@ -4041,7 +4039,7 @@ class StratagemManager:
             if cand is None:
                 continue
             try:
-                uid = getattr(cand, "_id", id(cand))
+                uid = get_entity_id(cand)
             except Exception:
                 raise
             if uid in seen:
@@ -5389,7 +5387,7 @@ class StratagemManager:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["feigned_retreat_active"] = True
-                sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["feigned_retreat_turn_owner"] = str(getattr(self.player, "id", "") or "")
                 sr["feigned_retreat_turn"] = int(getattr(self.game, "turn", 0) or 0)
                 root.special_rules = sr
             except Exception:
@@ -5481,9 +5479,9 @@ class StratagemManager:
                 sr = getattr(root, "special_rules", None)
                 if not isinstance(sr, dict):
                     sr = {}
-                sr["fire_and_fade_no_charge_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["fire_and_fade_no_charge_turn_owner"] = str(getattr(self.player, "id", "") or "")
                 sr["fire_and_fade_no_charge_turn"] = int(getattr(self.game, "turn", 0) or 0)
-                sr["fire_and_fade_no_embark_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["fire_and_fade_no_embark_turn_owner"] = str(getattr(self.player, "id", "") or "")
                 sr["fire_and_fade_no_embark_turn"] = int(getattr(self.game, "turn", 0) or 0)
                 root.special_rules = sr
             except Exception:
@@ -5626,7 +5624,7 @@ class StratagemManager:
                 owner = str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") if isinstance(sr, dict) else ""
                 turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0) if isinstance(sr, dict) else 0
                 if owner and self.game is not None:
-                    if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "name", "") or ""):
+                    if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""):
                         if int(getattr(self.game, "turn", 0) or 0) == int(turn or 0):
                             print("WARN: Skyborne Sanctuary: unit cannot embark this turn (Fire and Fade)")
                             return False
@@ -6042,7 +6040,7 @@ class StratagemManager:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["daemonic_fury_lance_active"] = True
-                sr["daemonic_fury_lance_turn_owner"] = str(getattr(self.player, "name", "") or "")
+                sr["daemonic_fury_lance_turn_owner"] = str(getattr(self.player, "id", "") or "")
                 sr["daemonic_fury_lance_turn"] = int(getattr(self.game, "turn", 0) or 0)
                 if getattr(we_mgr, "is_blood_tithe_active", None) and we_mgr.is_blood_tithe_active("DAEMONIC_RAGE"):
                     sr["daemonic_fury_twin_linked_active"] = True
@@ -6298,8 +6296,7 @@ class StratagemManager:
 
             try:
                 from ..utility.event_bus import append_dice
-                pname = getattr(self.player, "name", "Player")
-                append_dice(pname, f"Daemontide return: {amount}")
+                append_dice(self.player, f"Daemontide return: {amount}")
             except Exception:
                 raise
             eff_cost = s.cp_cost

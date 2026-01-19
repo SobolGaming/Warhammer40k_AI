@@ -42,7 +42,7 @@ class TestAuraAdvanceChargeBonus(unittest.TestCase):
 
         game_map = _Map([receiver, source1, source2])
         game = SimpleNamespace(map=game_map)
-        player = SimpleNamespace(game=game)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         receiver._army = army
         source1._army = army

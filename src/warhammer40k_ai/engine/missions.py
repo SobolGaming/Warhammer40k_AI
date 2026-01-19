@@ -8,7 +8,8 @@ Coordinate system: (0,0) at top-left corner, (60,44) at bottom-right corner
 
 from typing import List, Dict, Tuple, Optional, Union
 from enum import Enum
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+import uuid
 from ..battlefield.map import ObjectivePoint, Objective, ObjectiveCategory
 import math
 from shapely.geometry import Point, Polygon as ShapelyPolygon
@@ -239,6 +240,11 @@ class MissionObjectiveMarker:
     z: float = 0.0
     control_radius: float = 3.0
     name: str = "Objective Marker"
+    marker_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+
+    @property
+    def id(self) -> str:
+        return self.marker_id
 
 
 class OfficialMission:

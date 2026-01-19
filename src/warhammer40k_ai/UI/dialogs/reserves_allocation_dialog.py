@@ -1,6 +1,8 @@
 import pygame
 from typing import List, Optional, Callable, Dict, Tuple
 
+from warhammer40k_ai.utility.entity_ids import get_entity_id
+
 from .base_dialog import (
     BaseDialog,
     PANEL_BORDER,
@@ -84,10 +86,7 @@ class ReservesAllocationDialog(BaseDialog):
     # Helpers
     # -------------------------------
     def _uid(self, unit) -> str:
-        try:
-            return str(getattr(unit, "_id", None) or id(unit))
-        except Exception:
-            return str(id(unit))
+        return get_entity_id(unit)
 
     def _must_start_in_reserves(self, unit) -> bool:
         try:

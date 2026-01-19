@@ -49,7 +49,7 @@ class DeploymentManager:
         """Execute the complete deployment sequence according to Warhammer 40k rules.
         
         Args:
-            decision_makers: Dict mapping player names to their DeploymentDecisionMaker instances
+            decision_makers: Dict mapping player ids to their DeploymentDecisionMaker instances
         """
         deployment_results = {
             'attacker': None,
@@ -61,11 +61,12 @@ class DeploymentManager:
         }
         
         logger.info("Starting Official Warhammer 40k Deployment Sequence")
+        players_by_id = {p.id: p for p in (self.game.players or []) if p is not None}
         
         # Step 1: Determine Attacker and Defender
         self.attacker, self.defender = self.determine_attacker_and_defender()
-        deployment_results['attacker'] = self.attacker.name
-        deployment_results['defender'] = self.defender.name
+        deployment_results['attacker'] = self.attacker.id
+        deployment_results['defender'] = self.defender.id
         logger.info(f"Attacker: {self.attacker.name}, Defender: {self.defender.name}")
         
         # Step 2: Use pre-configured deployment zones (ensures consistency)
@@ -75,50 +76,51 @@ class DeploymentManager:
             
             # Convert the game's deployment zones to the format expected by the deployment system
             available_zones = []
-            for player_name, zone in self.game.deployment_zones.items():
+            for player_id, zone in self.game.deployment_zones.items():
+                player_label = getattr(players_by_id.get(player_id), "name", player_id)
                 zone_copy = zone.copy()
-                zone_copy['name'] = f"{player_name}'s Zone"
+                zone_copy['name'] = f"{player_label}'s Zone"
                 available_zones.append(zone_copy)
             
             # Assign zones - defender chooses first
-            defender_decision_maker = decision_makers[self.defender.name]
+            defender_decision_maker = decision_makers[self.defender.id]
             chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
             
             # Find which zone was chosen and assign accordingly
             defender_zone = chosen_zone
             attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
             
-            deployment_results['deployment_zones'][self.defender.name] = defender_zone
-            deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
+            deployment_results['deployment_zones'][self.defender.id] = defender_zone
+            deployment_results['deployment_zones'][self.attacker.id] = attacker_zone
         else:
             # Default: create standard zones if none exist
             logger.warning("No pre-configured zones found, creating standard zones")
             available_zones = self.create_deployment_zones()
-            defender_decision_maker = decision_makers[self.defender.name]
+            defender_decision_maker = decision_makers[self.defender.id]
             chosen_zone = defender_decision_maker.choose_deployment_zone(available_zones)
             
             # Assign zones
             defender_zone = chosen_zone
             attacker_zone = next(zone for zone in available_zones if zone != chosen_zone)
             
-            deployment_results['deployment_zones'][self.defender.name] = defender_zone
-            deployment_results['deployment_zones'][self.attacker.name] = attacker_zone
+            deployment_results['deployment_zones'][self.defender.id] = defender_zone
+            deployment_results['deployment_zones'][self.attacker.id] = attacker_zone
             
             # Store deployment zones in the game for visualization
             self.game.deployment_zones = {
-                self.defender.name: defender_zone,
-                self.attacker.name: attacker_zone
+                self.defender.id: defender_zone,
+                self.attacker.id: attacker_zone
             }
         
         logger.info(f"{self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
         
         # Step 3: Declare Reserves & Strategic Reserves (simultaneously)
         defender_reserves = defender_decision_maker.declare_reserves(self.defender)
-        attacker_decision_maker = decision_makers[self.attacker.name]
+        attacker_decision_maker = decision_makers[self.attacker.id]
         attacker_reserves = attacker_decision_maker.declare_reserves(self.attacker)
         
-        deployment_results['reserves'][self.defender.name] = defender_reserves
-        deployment_results['reserves'][self.attacker.name] = attacker_reserves
+        deployment_results['reserves'][self.defender.id] = defender_reserves
+        deployment_results['reserves'][self.attacker.id] = attacker_reserves
         
         logger.info(f"Reserves declared - {self.defender.name}: {sum(1 for d in defender_reserves.values() if d != 'deploy')} units, "
                    f"{self.attacker.name}: {sum(1 for d in attacker_reserves.values() if d != 'deploy')} units")
@@ -128,7 +130,7 @@ class DeploymentManager:
         
         # Step 5: Determine First Turn
         first_turn_player = self.determine_first_turn()
-        deployment_results['first_turn_player'] = first_turn_player.name
+        deployment_results['first_turn_player'] = first_turn_player.id
         
         # Set the game's current player to the first turn player
         if first_turn_player == self.game.players[0]:
@@ -214,8 +216,8 @@ class DeploymentManager:
     def execute_alternating_deployment(self, deployment_results: dict, 
                                      decision_makers: Dict[str, DeploymentDecisionMaker]) -> None:
         """Execute alternating deployment starting with the defender."""
-        defender_zone = deployment_results['deployment_zones'][self.defender.name]
-        attacker_zone = deployment_results['deployment_zones'][self.attacker.name]
+        defender_zone = deployment_results['deployment_zones'][self.defender.id]
+        attacker_zone = deployment_results['deployment_zones'][self.attacker.id]
         
         def _is_attached_leader(u) -> bool:
             try:
@@ -227,13 +229,13 @@ class DeploymentManager:
         defender_units = [
             unit for unit in self.defender.get_army().units
             if (not _is_attached_leader(unit))
-            and deployment_results['reserves'][self.defender.name].get(unit.name, 'deploy') == 'deploy'
+            and deployment_results['reserves'][self.defender.id].get(unit.id, 'deploy') == 'deploy'
             and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]
         attacker_units = [
             unit for unit in self.attacker.get_army().units
             if (not _is_attached_leader(unit))
-            and deployment_results['reserves'][self.attacker.name].get(unit.name, 'deploy') == 'deploy'
+            and deployment_results['reserves'][self.attacker.id].get(unit.id, 'deploy') == 'deploy'
             and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]
         
@@ -248,7 +250,7 @@ class DeploymentManager:
         current_player = self.defender
         current_units = defender_units
         current_zone = defender_zone
-        current_decision_maker = decision_makers[self.defender.name]
+        current_decision_maker = decision_makers[self.defender.id]
         current_deployed = defender_deployed
 
         # Special rule: If a player sets up a TITANIC unit when it is their turn to set up a unit,
@@ -265,7 +267,7 @@ class DeploymentManager:
                 # Actually deploy the unit
                 self.deploy_unit(unit, position, current_zone)
                 current_deployed.append(unit)
-                deployment_order.append((current_player.name, unit.name, position))
+                deployment_order.append((current_player.id, unit.id, position))
                 
                 logger.info(f"{current_player.name} deploys {unit.name} at ({position[0]:.1f}, {position[1]:.1f})")
 
@@ -278,13 +280,13 @@ class DeploymentManager:
                 current_player = self.attacker
                 current_units = attacker_units
                 current_zone = attacker_zone  
-                current_decision_maker = decision_makers[self.attacker.name]
+                current_decision_maker = decision_makers[self.attacker.id]
                 current_deployed = attacker_deployed
             else:
                 current_player = self.defender
                 current_units = defender_units
                 current_zone = defender_zone
-                current_decision_maker = decision_makers[self.defender.name]
+                current_decision_maker = decision_makers[self.defender.id]
                 current_deployed = defender_deployed
 
             # Apply skip-turn rule if it would still allow the other player to deploy.
@@ -296,13 +298,13 @@ class DeploymentManager:
                     current_player = self.attacker
                     current_units = attacker_units
                     current_zone = attacker_zone  
-                    current_decision_maker = decision_makers[self.attacker.name]
+                    current_decision_maker = decision_makers[self.attacker.id]
                     current_deployed = attacker_deployed
                 else:
                     current_player = self.defender
                     current_units = defender_units
                     current_zone = defender_zone
-                    current_decision_maker = decision_makers[self.defender.name]
+                    current_decision_maker = decision_makers[self.defender.id]
                     current_deployed = defender_deployed
                 other_units_remaining = bool(attacker_units) if current_player == self.defender else bool(defender_units)
         
@@ -356,9 +358,10 @@ class DeploymentManager:
 
     def set_reserves_status(self, deployment_results: dict) -> None:
         """Set the reserve status for all units based on deployment decisions."""
-        for player_name in [self.attacker.name, self.defender.name]:
-            player = self.attacker if player_name == self.attacker.name else self.defender
-            reserves_decisions = deployment_results['reserves'].get(player_name, {})
+        for player in (self.attacker, self.defender):
+            if player is None:
+                continue
+            reserves_decisions = deployment_results['reserves'].get(player.id, {})
             
             for unit in player.get_army().units:
                 # Attached Leaders follow their Bodyguard's reserve decision.
@@ -367,7 +370,7 @@ class DeploymentManager:
                         continue
                 except Exception:
                     pass
-                reserve_decision = reserves_decisions.get(unit.name, 'deploy')
+                reserve_decision = reserves_decisions.get(unit.id, 'deploy')
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
                         if reserve_decision != "reserves":
@@ -522,7 +525,7 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
 
                 try:
                     if bool(getattr(unit, "must_start_in_reserves", lambda: False)()):
-                        reserves_decisions[unit.name] = 'reserves'
+                        reserves_decisions[unit.id] = 'reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
                         print(f"{unit.name} forced into Reserves (AIRCRAFT)")
@@ -541,22 +544,22 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                     choice = input(f"Choice for {unit.name} [1/2/3]: ").strip()
                     
                     if choice == '2':
-                        reserves_decisions[unit.name] = 'reserves'
+                        reserves_decisions[unit.id] = 'reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
                         print(f"{unit.name} placed in Standard Reserves")
                     elif choice == '3':
-                        reserves_decisions[unit.name] = 'strategic_reserves'
+                        reserves_decisions[unit.id] = 'strategic_reserves'
                         current_reserve_units += 1
                         current_reserve_points += unit.get_unit_cost()
                         print(f"{unit.name} placed in Strategic Reserves")
                     else:
-                        reserves_decisions[unit.name] = 'deploy'
+                        reserves_decisions[unit.id] = 'deploy'
                         print(f"{unit.name} will deploy normally")
                 elif can_use_reserves and not can_add_to_reserves:
                     print("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
                     choice = input(f"Choice for {unit.name} [1]: ").strip()
-                    reserves_decisions[unit.name] = 'deploy'
+                    reserves_decisions[unit.id] = 'deploy'
                     print(f"{unit.name} will deploy normally")
                 else:
                     if can_add_to_reserves:
@@ -564,17 +567,17 @@ class HumanDeploymentDecisionMaker(DeploymentDecisionMaker):
                         choice = input(f"Choice for {unit.name} [1/3]: ").strip()
                         
                         if choice == '3':
-                            reserves_decisions[unit.name] = 'strategic_reserves'
+                            reserves_decisions[unit.id] = 'strategic_reserves'
                             current_reserve_units += 1
                             current_reserve_points += unit.get_unit_cost()
                             print(f"{unit.name} placed in Strategic Reserves")
                         else:
-                            reserves_decisions[unit.name] = 'deploy'
+                            reserves_decisions[unit.id] = 'deploy'
                             print(f"{unit.name} will deploy normally")
                     else:
                         print("Cannot add to reserves (limits reached) - Options: (1) Deploy normally")
                         choice = input(f"Choice for {unit.name} [1]: ").strip()
-                        reserves_decisions[unit.name] = 'deploy'
+                        reserves_decisions[unit.id] = 'deploy'
                         print(f"{unit.name} will deploy normally")
                 
                 # Show current reserve status

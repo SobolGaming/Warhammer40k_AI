@@ -135,7 +135,7 @@ def test_charge_phase_bodyguard_loss_prompts_human(monkeypatch):
     leader.deployed = True
     leader.reserve_status = "deployed"
 
-    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, army=army)
+    player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, army=army)
     army.player = player
 
     game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))

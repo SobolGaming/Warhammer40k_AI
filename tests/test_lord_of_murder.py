@@ -55,7 +55,7 @@ class TestLordOfMurder(unittest.TestCase):
 
         game_map = _Map([u, friend])
         game = SimpleNamespace(map=game_map)
-        player = SimpleNamespace(game=game)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         u._army = army
         friend._army = army
@@ -109,7 +109,7 @@ class TestLordOfMurder(unittest.TestCase):
         friend = _U(abilities=[])
         game_map = _Map([u, friend])
         game = SimpleNamespace(map=game_map)
-        player = SimpleNamespace(game=game)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         u._army = army
         friend._army = army
@@ -121,5 +121,4 @@ class TestLordOfMurder(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

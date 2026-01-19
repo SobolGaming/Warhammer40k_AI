@@ -5,6 +5,7 @@ from typing import Optional, Tuple
 from ..utility.ability_support import ABILITY_ACTS_OF_FAITH, army_has_ability_id
 from ..utility.dice import get_roll, get_dice_roll
 from ..utility.event_bus import append_dice
+from ..utility.entity_ids import get_entity_id
 from ..utility.aura_utils import (
     unit_within_range_of_unit,
     distance_between_models_bases_3d,
@@ -58,10 +59,7 @@ class ActsOfFaithManager:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
-        try:
-            return str(getattr(root, "_id", None) or id(root))
-        except Exception:
-            return str(id(root))
+        return get_entity_id(root)
 
     @staticmethod
     def _phase_key(game) -> str:
@@ -74,7 +72,7 @@ class ActsOfFaithManager:
         except Exception:
             player = None
         try:
-            pid = str(getattr(player, "name", "") or getattr(player, "_id", "") or "")
+            pid = get_entity_id(player)
         except Exception:
             pid = ""
         try:
@@ -250,7 +248,7 @@ class ActsOfFaithManager:
             if rt not in {"advance", "charge", "hit", "wound", "save", "damage"}:
                 player = getattr(self.army, "player", None)
                 if player is not None:
-                    append_dice(player.name, f"Miracle die used ({roll_type}): {int(value)}")
+                    append_dice(player, f"Miracle die used ({roll_type}): {int(value)}")
         except Exception:
             pass
         return True
@@ -336,7 +334,7 @@ class ActsOfFaithManager:
                 note = f"Miracle die gained: {int(value)}"
                 if reason:
                     note = f"{note} ({reason})"
-                append_dice(player.name, note)
+                append_dice(player, note)
         except Exception:
             pass
         return int(value)

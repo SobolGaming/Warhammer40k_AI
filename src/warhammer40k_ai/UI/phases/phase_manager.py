@@ -1082,10 +1082,10 @@ class DeploymentPhaseHandler(BasePhaseHandler):
             
             # Validate deployment position
             current_deployment_player = self.game.get_current_deployment_player()
-            player_name = current_deployment_player.name if current_deployment_player else None
+            player_id = current_deployment_player.id if current_deployment_player else None
             
-            if player_name and not self.game.is_valid_deployment_position(
-                self.game_view.selected_unit, unit_x, unit_y, player_name):
+            if player_id and not self.game.is_valid_deployment_position(
+                self.game_view.selected_unit, unit_x, unit_y, player_id):
                 # Invalid position - reset and show error
                 if self.game_view.selected_unit.has_infiltrate():
                     print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")

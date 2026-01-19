@@ -73,7 +73,7 @@ class _GameStub:
 
 
 def _make_army():
-    player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
+    player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False)
     army = SimpleNamespace(faction_id="TS", units=[], player=player, _id="army-ts")
     mgr = CabalOfSorcerersManager(army)
     army.cabal_of_sorcerers = mgr
@@ -86,7 +86,7 @@ def test_cabal_channel_warp_mortals_only_when_channeled():
     caster = _UnitStub("Sorcerer", abilities=["Cabal of Sorcerers"], army=army)
     caster_model = SimpleNamespace(id="m1", is_alive=True, parent_unit=caster)
     caster.models = [caster_model]
-    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2")))
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
 
     game_map = _MapStub(enemies=[target], friendlies=[caster])
     game = _GameStub(player, game_map)
@@ -126,7 +126,7 @@ def test_destinys_ruin_reroll_ones():
     caster = _UnitStub("Sorcerer", abilities=["Cabal of Sorcerers"], army=army)
     caster_model = SimpleNamespace(id="m1", is_alive=True, parent_unit=caster)
     caster.models = [caster_model]
-    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2")))
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
 
     game_map = _MapStub(enemies=[target], friendlies=[caster])
     game = _GameStub(player, game_map)
@@ -163,7 +163,7 @@ def test_destinys_ruin_full_reroll():
     caster = _UnitStub("Sorcerer", abilities=["Cabal of Sorcerers"], army=army)
     caster_model = SimpleNamespace(id="m1", is_alive=True, parent_unit=caster)
     caster.models = [caster_model]
-    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2")))
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
 
     game_map = _MapStub(enemies=[target], friendlies=[caster])
     game = _GameStub(player, game_map)
@@ -200,7 +200,7 @@ def test_twist_of_fate_ap_bonus():
     caster = _UnitStub("Sorcerer", abilities=["Cabal of Sorcerers"], army=army)
     caster_model = SimpleNamespace(id="m1", is_alive=True, parent_unit=caster)
     caster.models = [caster_model]
-    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2")))
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
 
     game_map = _MapStub(enemies=[target], friendlies=[caster])
     game = _GameStub(player, game_map)
@@ -247,7 +247,7 @@ def test_temporal_surge_sets_no_charge():
         )
 
     assert res["success"] is True
-    assert friendly.special_rules.get("cabal_temporal_surge_no_charge_turn_owner") == "P1"
+    assert friendly.special_rules.get("cabal_temporal_surge_no_charge_turn_owner") == player.id
 
 
 def test_cabal_ritual_logs_outcome():
@@ -255,7 +255,7 @@ def test_cabal_ritual_logs_outcome():
     caster = _UnitStub("Sorcerer", abilities=["Cabal of Sorcerers"], army=army)
     caster_model = SimpleNamespace(id="m1", is_alive=True, parent_unit=caster)
     caster.models = [caster_model]
-    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2")))
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
 
     game_map = _MapStub(enemies=[target], friendlies=[caster])
     game = _GameStub(player, game_map)
@@ -271,7 +271,7 @@ def test_cabal_ritual_logs_outcome():
             channel_decision=False,
         )
 
-    actions = get_recent_actions("P1", limit=5)
-    dice = get_recent_dice("P1", limit=5)
+    actions = get_recent_actions(player, limit=5)
+    dice = get_recent_dice(player, limit=5)
     assert actions and "Cabal of Sorcerers" in actions[-1]
     assert dice and "Cabal of Sorcerers" in dice[-1]

@@ -72,8 +72,8 @@ def test_aircraft_start_in_reserves_and_promote_after_setup():
 
     deployment_results = {
         "reserves": {
-            p1.name: {aircraft.name: "deploy"},
-            p2.name: {},
+            p1.id: {aircraft.id: "deploy"},
+            p2.id: {},
         }
     }
 
@@ -98,8 +98,8 @@ def test_aircraft_not_counted_toward_strategic_cap():
     army.add_unit(filler_b)
 
     decisions = {
-        str(aircraft._id): "reserves",
-        str(ground._id): "strategic_reserves",
+        aircraft.id: "reserves",
+        ground.id: "strategic_reserves",
     }
     status = army.validate_reserves_decisions(decisions)
     assert status["valid"] is True

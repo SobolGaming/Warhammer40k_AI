@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_BATTLE_FOCUS, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 
 
 class BattleFocusManager:
@@ -61,10 +62,7 @@ class BattleFocusManager:
         return False
 
     def _unit_id(self, unit) -> str:
-        try:
-            return str(getattr(unit, "_id", None) or id(unit))
-        except Exception:
-            return str(id(unit))
+        return get_entity_id(unit)
 
     def _sync_phase(self, game) -> None:
         try:
@@ -568,7 +566,7 @@ class BattleFocusManager:
             current_player = getattr(game, "get_current_player", lambda: None)()
         except Exception:
             current_player = None
-        current_player_name = str(getattr(current_player, "name", "") or "")
+        current_player_name = str(getattr(current_player, "id", "") or "")
 
         if maneuver == self.MANEUVER_SWIFT:
             from ..utility.modifiers import Modifier, ModifierOp
@@ -627,7 +625,7 @@ class BattleFocusManager:
         pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
         if not pname:
             return
-        player_name = str(getattr(player, "name", "") or "")
+        player_name = str(getattr(player, "id", "") or "")
         try:
             units = list(getattr(self.army, "units", []) or [])
         except Exception:

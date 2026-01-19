@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_FOR_THE_GREATER_GOOD, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 
 
 class ForTheGreaterGoodManager:
@@ -60,10 +61,7 @@ class ForTheGreaterGoodManager:
             root = unit.get_attached_unit_root()
         except Exception:
             root = unit
-        try:
-            return str(getattr(root, "_id", None) or id(root))
-        except Exception:
-            return str(id(root))
+        return get_entity_id(root)
 
     @staticmethod
     def _unit_is_alive(unit) -> bool:

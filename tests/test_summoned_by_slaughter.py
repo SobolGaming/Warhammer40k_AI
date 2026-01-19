@@ -11,6 +11,7 @@ class _TestModel:
 class _TestUnit:
     def __init__(self, name, *, keywords=None):
         self.name = name
+        self._id = name
         self.keywords = list(keywords or [])
         self.faction_keywords = []
         self.special_rules = {}

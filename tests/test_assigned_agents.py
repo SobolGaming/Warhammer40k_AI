@@ -117,7 +117,7 @@ def test_assigned_agents_empty_transport_destroyed_round_one():
         faction_keywords=["AGENTS OF THE IMPERIUM", "IMPERIUM"],
     )
     army.add_unit(transport)
-    army.player = SimpleNamespace(game=SimpleNamespace(map=None))
+    army.player = SimpleNamespace(game=SimpleNamespace(map=None), name="P1", id="P1")
 
     army.on_battle_round_start(1)
 

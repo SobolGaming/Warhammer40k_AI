@@ -98,7 +98,7 @@ def test_warp_rifts_allows_6_horizontal_in_shadow_zone(monkeypatch):
     monkeypatch.setattr(
         game,
         "is_position_wholly_in_deployment_zone",
-        lambda _x, _y, _base, player_name: player_name == "P1",
+        lambda _x, _y, _base, player_id: player_id == game.players[0].id,
     )
     position = (20.0, 10.0, 0.0)
     assert game.can_place_unit_arriving_from_reserves(unit, position) is True
@@ -113,7 +113,7 @@ def test_warp_rifts_does_not_allow_6_with_dark_master_self(monkeypatch):
     monkeypatch.setattr(
         game,
         "is_position_wholly_in_deployment_zone",
-        lambda _x, _y, _base, _player_name: False,
+        lambda _x, _y, _base, _player_id: False,
     )
     position = (20.0, 10.0, 0.0)
     assert game.can_place_unit_arriving_from_reserves(unit, position) is False
@@ -124,7 +124,7 @@ def test_warp_rifts_allows_6_with_dark_master_other_unit(monkeypatch):
     monkeypatch.setattr(
         game,
         "is_position_wholly_in_deployment_zone",
-        lambda _x, _y, _base, _player_name: False,
+        lambda _x, _y, _base, _player_id: False,
     )
     position = (20.0, 10.0, 0.0)
     assert game.can_place_unit_arriving_from_reserves(unit, position) is True
@@ -139,7 +139,7 @@ def test_warp_rifts_does_not_allow_6_with_greater_daemon_self(monkeypatch):
     monkeypatch.setattr(
         game,
         "is_position_wholly_in_deployment_zone",
-        lambda _x, _y, _base, _player_name: False,
+        lambda _x, _y, _base, _player_id: False,
     )
     position = (20.0, 10.0, 0.0)
     assert game.can_place_unit_arriving_from_reserves(unit, position) is False
@@ -154,7 +154,7 @@ def test_warp_rifts_allows_6_with_greater_daemon_other_unit(monkeypatch):
     monkeypatch.setattr(
         game,
         "is_position_wholly_in_deployment_zone",
-        lambda _x, _y, _base, _player_name: False,
+        lambda _x, _y, _base, _player_id: False,
     )
     position = (20.0, 10.0, 0.0)
     assert game.can_place_unit_arriving_from_reserves(unit, position) is True

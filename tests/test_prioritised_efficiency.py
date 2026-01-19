@@ -14,12 +14,17 @@ class _Zone:
 class _Player:
     def __init__(self, name: str):
         self.name = name
+        self._id = f"player-{name}"
         self.control = SimpleNamespace(name="LOCAL")
         self.has_control = lambda: True
         self.army = None
 
     def get_army(self):
         return self.army
+
+    @property
+    def id(self):
+        return self._id
 
 
 class _Unit:
@@ -71,7 +76,7 @@ class _Game:
         return int(self.turn)
 
     def _objective_in_player_deployment(self, player, loc) -> bool:
-        zone = self.deployment_zones.get(player.name, {}).get("zone")
+        zone = self.deployment_zones.get(player.id, {}).get("zone")
         if not zone:
             return False
         return bool(zone.contains_point(loc.x, loc.y))
@@ -116,8 +121,8 @@ class TestPrioritisedEfficiency(unittest.TestCase):
         game_map = SimpleNamespace(objectives=[obj_home, obj_out1, obj_out2])
 
         zones = {
-            "P1": {"zone": _Zone(x_max=5.0)},
-            "P2": {"zone": _Zone(x_min=15.0)},
+            p1.id: {"zone": _Zone(x_max=5.0)},
+            p2.id: {"zone": _Zone(x_min=15.0)},
         }
         game = _Game([p1, p2], game_map, zones)
 

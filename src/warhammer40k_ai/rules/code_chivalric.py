@@ -6,6 +6,7 @@ from typing import Optional
 from ..utility.ability_support import ABILITY_CODE_CHIVALRIC, army_has_ability_id
 from ..utility.dice import get_roll
 from ..utility.modifiers import Modifier, ModifierOp
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -167,7 +168,7 @@ class CodeChivalricManager:
         except Exception:
             mid = None
         if not mid:
-            mid = str(id(model))
+            mid = get_entity_id(model)
         self.deed_target_model_id = str(mid)
         try:
             self.deed_target_model_name = str(getattr(model, "name", "") or "")
@@ -212,7 +213,7 @@ class CodeChivalricManager:
                 except Exception:
                     mid = None
                 if not mid:
-                    mid = str(id(model))
+                    mid = get_entity_id(model)
                 if mid in seen:
                     continue
                 seen.add(mid)
@@ -434,7 +435,7 @@ class CodeChivalricManager:
         except Exception:
             mid = None
         if not mid:
-            mid = str(id(target_model))
+            mid = get_entity_id(target_model)
         if str(mid) == str(self.deed_target_model_id):
             self.deed_target_destroyed = True
 

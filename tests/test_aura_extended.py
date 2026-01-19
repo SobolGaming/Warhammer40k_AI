@@ -63,7 +63,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
 
         game_map = _Map([attacker_unit, aura_source])
         game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         attacker_unit._army = army
         aura_source._army = army
@@ -115,7 +115,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         source = _Unit(abilities=[aura], oc=2)
         game_map = _Map([receiver, source])
         game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         receiver._army = army
         source._army = army
@@ -161,7 +161,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
         source2 = _Unit(abilities=[aura], oc=2)
         game_map = _Map([receiver, source1, source2])
         game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         receiver._army = army
         source1._army = army
@@ -219,7 +219,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
 
         game_map = _Map([attacker_unit, aura_source])
         game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         attacker_unit._army = army
         aura_source._army = army
@@ -284,7 +284,7 @@ class TestAuraExtendedShapes(unittest.TestCase):
 
         game_map = _Map([attacker_unit, aura_source1, aura_source2])
         game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         attacker_unit._army = army
         aura_source1._army = army
@@ -302,5 +302,4 @@ class TestAuraExtendedShapes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -140,7 +141,7 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             br = int(getattr(game, "turn", 0) or 0)
         except Exception:
             br = 0
-        return (br, id(player))
+        return (br, get_entity_id(player))
 
     def get_blood_tithe_abilities(self) -> tuple[BloodTitheAbility, ...]:
         return BLOOD_TITHE_ABILITIES

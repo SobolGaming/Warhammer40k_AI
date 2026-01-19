@@ -7,6 +7,7 @@ from warhammer40k_ai.roster.army import Army
 class _DummyPlayer:
     def __init__(self, name="Player"):
         self.name = name
+        self.id = f"player-{name}"
         self.control = SimpleNamespace(name="LOCAL")
         self.has_control = lambda: True
         self.game = None
@@ -24,6 +25,7 @@ class _DummyArmy(Army):
 class _DummyUnit:
     def __init__(self, name="Unit"):
         self.name = name
+        self.id = name
         self.special_rules = {}
         self._mods = []
         self._removed = []
@@ -161,6 +163,7 @@ class TestBattleFocus(unittest.TestCase):
         class _DummyPlayer:
             def __init__(self, name):
                 self.name = name
+                self.id = f"player-{name}"
                 self.command_points = 2
                 self._army = None
 
@@ -217,7 +220,7 @@ class TestBattleFocus(unittest.TestCase):
         moving_unit = _DummyUnit("Mover", moving_army)
         moving_unit.special_rules = {
             "battle_focus_flitting_shadows_no_overwatch": True,
-            "battle_focus_flitting_shadows_turn_owner": owner.name,
+            "battle_focus_flitting_shadows_turn_owner": owner.id,
         }
 
         shooter = _DummyUnit("Shooter", opponent_army)

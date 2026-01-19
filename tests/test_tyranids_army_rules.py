@@ -6,6 +6,7 @@ from unittest.mock import patch
 class _UnitStub:
     def __init__(self, *, name, models, keywords=None, faction_keywords=None, army=None, abilities=None):
         self.name = name
+        self._id = name
         self.models = list(models or [])
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
@@ -50,6 +51,7 @@ class _ArmyStub:
 class _PlayerStub:
     def __init__(self, name: str, army):
         self.name = name
+        self.id = name
         self.army = army
 
     def get_army(self):
@@ -303,7 +305,7 @@ class TestTyranidsArmyRules(unittest.TestCase):
     def test_shadow_in_the_warp_blocks_insane_bravery(self):
         from warhammer40k_ai.rules.stratagems import StratagemManager
 
-        player = SimpleNamespace()
+        player = SimpleNamespace(id="P1")
         game = SimpleNamespace(get_current_player=lambda: player, battle_shock_step_active=False)
         unit = SimpleNamespace(
             special_rules={},

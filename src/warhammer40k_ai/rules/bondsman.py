@@ -2,6 +2,7 @@ from __future__ import annotations
 
 
 from ..utility.ability_support import ABILITY_BONDSMAN, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 
 
 _BONDSMAN_EFFECTS = {
@@ -298,10 +299,7 @@ class BondsmanManager:
                         continue
                 except Exception:
                     continue
-                try:
-                    key = str(getattr(enemy, "_id", None) or id(enemy))
-                except Exception:
-                    key = str(id(enemy))
+                key = get_entity_id(enemy)
                 if key in affected:
                     continue
                 affected.add(key)

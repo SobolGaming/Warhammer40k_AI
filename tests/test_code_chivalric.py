@@ -36,6 +36,7 @@ def make_unit(name: str, *, keywords=None, faction_keywords=None, abilities=None
 class _PlayerStub:
     def __init__(self):
         self.name = "P1"
+        self.id = "P1"
         self.control = SimpleNamespace(name="REMOTE")
         self.has_control = lambda: False
         self.game = None
@@ -82,7 +83,7 @@ class TestCodeChivalric(unittest.TestCase):
         army = Army("Imperial Knights", "Detachment", points_limit=2000)
         army.faction_id = "QI"
         game = SimpleNamespace(event_system=EventSystem(), map=None, turn=1)
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
         army.player = player
 
         attacker_unit = make_unit(

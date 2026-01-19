@@ -90,7 +90,7 @@ class TestBeaconsOfRageAura(unittest.TestCase):
 
         game_map = _Map([attacker_unit, aura_source])
         game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None))
-        player = SimpleNamespace(game=game, name="P1")
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         attacker_unit._army = army
         aura_source._army = army
@@ -183,5 +183,4 @@ class TestBeaconsOfRageAura(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

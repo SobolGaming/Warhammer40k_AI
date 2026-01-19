@@ -97,7 +97,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", game=_make_game())
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
         army.emperors_children.pact_points = 3
 
         attacker_unit = _StubUnit("Attacker", army)
@@ -164,7 +164,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", game=_make_game())
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
         army.emperors_children.pact_points = 7
 
         attacker_unit = _StubUnit("Attacker", army)
@@ -212,7 +212,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
         army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", game=_make_game())
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
         army.emperors_children.pact_points = 5
 
         attacker_unit = _StubUnit("Attacker", army)
@@ -260,7 +260,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         army = Army("Emperor's Children", detachment_type="Rapid Evisceration")
         army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", game=_make_game())
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
         army.emperors_children.pact_points = 0
 
         attacker_unit = _StubUnit("Attacker", army, is_transport=True)
@@ -323,7 +323,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1")
+        army.player = SimpleNamespace(name="P1", id="P1")
 
         unit = _StubUnit("Champion", army, is_character=True)
         mods = [(-2, "Debuff"), (1, "Buff")]
@@ -362,7 +362,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
         army.faction_id = "EC"
-        army.player = SimpleNamespace(name="P1", game=_make_game())
+        army.player = SimpleNamespace(name="P1", id="P1", game=_make_game())
 
         attacker_unit = _StubUnit("Attacker", army)
         attacker_unit.special_rules = {
@@ -426,7 +426,7 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         with patch("random.choice", return_value=True):
             game._on_fight_unit_selected_emperors_children(unit=unit)
 
-        actions = get_recent_actions(player.name, limit=5)
+        actions = get_recent_actions(player, limit=5)
         self.assertTrue(any("Sensational Performance" in entry for entry in actions))
 
     def test_master_of_the_pageant_discount_and_usage(self):

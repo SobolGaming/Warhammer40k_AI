@@ -26,10 +26,12 @@ from warhammer40k_ai.engine.mission_cards import (
 
 class DummyArmy:
     def __init__(self):
+        self.id = None
         self.units = []
         self.player = None
     def set_player(self, p):
         self.player = p
+        self.id = f"army-{p.id}"
 
 
 def make_game():
@@ -39,8 +41,8 @@ def make_game():
     game = Game(bf, players=[p1, p2])
     # Minimal DZ half-split zones
     game.deployment_zones = {
-        p1.name: {"zone": types.SimpleNamespace(contains_point=lambda x, y: x < 10)},
-        p2.name: {"zone": types.SimpleNamespace(contains_point=lambda x, y: x > (bf.width - 10))},
+        p1.id: {"zone": types.SimpleNamespace(contains_point=lambda x, y: x < 10)},
+        p2.id: {"zone": types.SimpleNamespace(contains_point=lambda x, y: x > (bf.width - 10))},
     }
     p1.army.set_player(p1)
     p2.army.set_player(p2)
@@ -156,7 +158,7 @@ def test_extend_battle_lines():
     o_dz = Obj(); o_nml = Obj()
     for o, pos in [(o_dz, (5, 5)), (o_nml, (30, 10))]:
         loc = types.SimpleNamespace(x=pos[0], y=pos[1], removed=False, controlling_player=p1)
-        obj = types.SimpleNamespace(location=loc)
+        obj = types.SimpleNamespace(location=loc, _id=f"obj-{pos[0]}-{pos[1]}")
         obj.location.update_control = lambda g: None
         game.map.objectives.append(obj)
     res = card.score_at_end_of_turn(game, p1)
@@ -170,7 +172,7 @@ def test_storm_hostile_objective_captured_hostile():
     p1.active_secondaries = [card]
     # Create one objective initially controlled by opponent
     loc = types.SimpleNamespace(x=15, y=5, removed=False, controlling_player=p2)
-    obj = types.SimpleNamespace(location=loc)
+    obj = types.SimpleNamespace(location=loc, _id="obj-15-5")
     obj.location.update_control = lambda g: None
     game.map.objectives = [obj]
     card.on_draw(game, p1)
@@ -187,7 +189,7 @@ def test_storm_hostile_objective_no_opp_start_and_gained_control_br2():
     p1.set_secondary_deck([card])
     p1.active_secondaries = [card]
     loc = types.SimpleNamespace(x=15, y=5, removed=False, controlling_player=None)
-    obj = types.SimpleNamespace(location=loc)
+    obj = types.SimpleNamespace(location=loc, _id="obj-15-5")
     obj.location.update_control = lambda g: None
     game.map.objectives = [obj]
     card.on_draw(game, p1)
@@ -204,7 +206,7 @@ def test_defend_stronghold_br2_scores_in_dz():
     p1.set_secondary_deck([card])
     p1.active_secondaries = [card]
     loc = types.SimpleNamespace(x=5, y=5, removed=False, controlling_player=p1)
-    obj = types.SimpleNamespace(location=loc)
+    obj = types.SimpleNamespace(location=loc, _id="obj-5-5")
     obj.location.update_control = lambda g: None
     game.map.objectives = [obj]
     res = card.score_at_end_of_turn(game, p1)
@@ -320,7 +322,7 @@ def test_a_tempting_target():
     # Two NML objectives
     for pos in [(15, 5), (45, 5)]:
         loc = types.SimpleNamespace(x=pos[0], y=pos[1], removed=False)
-        obj = types.SimpleNamespace(location=loc)
+        obj = types.SimpleNamespace(location=loc, _id=f"obj-{pos[0]}-{pos[1]}")
         obj.location.update_control = lambda g: None
         game.map.objectives.append(obj)
     card.on_draw(game, p1)
@@ -371,7 +373,7 @@ def test_secure_no_mans_land():
     # One and two NML controlled
     for pos in [(15, 5), (45, 5)]:
         loc = types.SimpleNamespace(x=pos[0], y=pos[1], removed=False, controlling_player=p1)
-        obj = types.SimpleNamespace(location=loc)
+        obj = types.SimpleNamespace(location=loc, _id=f"obj-{pos[0]}-{pos[1]}")
         obj.location.update_control = lambda g: None
         game.map.objectives.append(obj)
     res = card.score_at_end_of_turn(game, p1)

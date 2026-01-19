@@ -70,8 +70,8 @@ def test_charge_end_mortal_wounds_per_model(monkeypatch):
     unit.deployed = True
     enemy.deployed = True
 
-    army = SimpleNamespace(player=SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
-    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
     unit.set_parent_army(army)
     enemy.set_parent_army(enemy_army)
 
@@ -115,8 +115,8 @@ def test_charge_end_mortal_wounds_table(monkeypatch):
     unit.deployed = True
     enemy.deployed = True
 
-    army = SimpleNamespace(player=SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
-    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
     unit.set_parent_army(army)
     enemy.set_parent_army(enemy_army)
 
@@ -161,8 +161,8 @@ def test_charge_end_mortal_wounds_prompts_for_human(monkeypatch):
     enemy1.deployed = True
     enemy2.deployed = True
 
-    army = SimpleNamespace(player=SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True))
-    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
+    army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True))
+    enemy_army = SimpleNamespace(player=SimpleNamespace(name="P2", id="P2", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False))
     unit.set_parent_army(army)
     enemy1.set_parent_army(enemy_army)
     enemy2.set_parent_army(enemy_army)

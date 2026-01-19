@@ -6,6 +6,7 @@ from types import SimpleNamespace
 class _Player:
     def __init__(self, name: str):
         self.name = name
+        self.id = f"player-{name}"
         self.control = SimpleNamespace(name="LOCAL")
         self.has_control = lambda: True
         self.army = None
@@ -20,6 +21,7 @@ class _Player:
 class _Army:
     def __init__(self, faction_id: str, player: _Player):
         self.faction_id = faction_id
+        self.id = f"army-{faction_id}-{player.id}"
         self.units = []
         self.player = player
 
@@ -37,6 +39,7 @@ class _CultUnit:
         from warhammer40k_ai.utility.model_base import Base, BaseType
 
         self.name = name
+        self._id = name
         self._army = army
         self.possible_abilities = [SimpleNamespace(name="Cult Ambush")]
         self.models = [

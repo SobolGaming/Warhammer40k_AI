@@ -8,6 +8,7 @@ class TestBelowStartingStrength(unittest.TestCase):
 
         u = Unit.__new__(Unit)
         u.name = "U"
+        u._id = "U"
         u.status_effects = []
         u.special_rules = {}
         u.stats = {}
@@ -56,6 +57,7 @@ class TestBelowStartingStrength(unittest.TestCase):
         class _Player:
             def __init__(self, army):
                 self._army = army
+                self.id = "P1"
                 self.active_secondaries = []
                 self.primary_mission = None
                 self.command_points = 0

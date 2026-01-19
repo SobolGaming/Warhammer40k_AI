@@ -8,6 +8,7 @@ from warhammer40k_ai.utility.ability_support import (
     army_has_ability_id,
     pact_restrictions_for_faction,
 )
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 import codecs
 import re
 import unicodedata
@@ -234,6 +235,10 @@ class Army:
         self._reset_rule_managers()
         if self.faction_id:
             self.configure_rule_managers(force=True)
+
+    @property
+    def id(self) -> str:
+        return self._id
 
     def __setattr__(self, name, value):
         object.__setattr__(self, name, value)
@@ -479,7 +484,7 @@ class Army:
         def _add(u: Optional[Unit]) -> None:
             if u is None:
                 return
-            uid = str(getattr(u, "_id", None) or id(u))
+            uid = get_entity_id(u)
             if uid in seen:
                 return
             seen.add(uid)
@@ -567,7 +572,7 @@ class Army:
         Validate reserves decisions against the 50% limits.
         
         Args:
-            reserves_decisions: Dict mapping unit names to reserve status ('deploy', 'reserves', 'strategic_reserves')
+            reserves_decisions: Dict mapping unit ids to reserve status ('deploy', 'reserves', 'strategic_reserves')
             
         Returns:
             dict: Validation result with 'valid' boolean and 'errors' list
@@ -585,8 +590,8 @@ class Army:
 
         roots = self._reserve_group_roots()
         for root in roots:
-            rid = str(getattr(root, "_id", None) or "")
-            decision = reserves_decisions.get(rid, reserves_decisions.get(getattr(root, "name", ""), "deploy"))
+            rid = get_entity_id(root)
+            decision = reserves_decisions.get(rid, "deploy")
             if _must_start_in_reserves(root):
                 if decision == "deploy":
                     errors.append(f"{getattr(root, 'name', 'Unit')} must start in Reserves (AIRCRAFT)")
@@ -624,7 +629,7 @@ class Army:
         This ensures the final reserves decisions comply with the 50% limits.
         
         Args:
-            reserves_decisions: Dict mapping unit names to reserve status
+            reserves_decisions: Dict mapping unit ids to reserve status
             
         Returns:
             dict: Modified reserves decisions that comply with limits
@@ -635,7 +640,7 @@ class Army:
         roots = self._reserve_group_roots()
 
         def _root_key(u: Unit) -> str:
-            return str(getattr(u, "_id", None) or getattr(u, "name", ""))
+            return get_entity_id(u)
 
         def _must_start_in_reserves(u: Unit) -> bool:
             fn = getattr(u, "must_start_in_reserves", None)
@@ -644,7 +649,7 @@ class Army:
         # Normalize: ensure every root has an entry (default deploy)
         for r in roots:
             k = _root_key(r)
-            if k not in modified and getattr(r, "name", "") not in modified:
+            if k not in modified:
                 modified[k] = "deploy"
 
         # Hard rule: Fortifications cannot be Strategic Reserves.
@@ -652,7 +657,7 @@ class Army:
             if not bool(getattr(r, "is_fortification", False)):
                 continue
             k = _root_key(r)
-            decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+            decision = modified.get(k, "deploy")
             if decision == "strategic_reserves":
                 modified[k] = "deploy"
 
@@ -661,7 +666,7 @@ class Army:
             if not _must_start_in_reserves(r):
                 continue
             k = _root_key(r)
-            decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+            decision = modified.get(k, "deploy")
             if decision != "reserves":
                 modified[k] = "reserves"
 
@@ -676,7 +681,7 @@ class Army:
                 strategic_roots = []
                 for r in roots:
                     k = _root_key(r)
-                    decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+                    decision = modified.get(k, "deploy")
                     if decision == "strategic_reserves" and not _must_start_in_reserves(r):
                         strategic_roots.append(r)
                 strategic_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
@@ -693,7 +698,7 @@ class Army:
             reserve_roots = []
             for r in roots:
                 k = _root_key(r)
-                decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+                decision = modified.get(k, "deploy")
                 if decision in ("reserves", "strategic_reserves") and not _must_start_in_reserves(r):
                     reserve_roots.append(r)
             reserve_roots.sort(key=lambda u: self._reserve_group_points(u), reverse=True)
@@ -710,7 +715,7 @@ class Army:
             reserve_roots = []
             for r in roots:
                 k = _root_key(r)
-                decision = modified.get(k, modified.get(getattr(r, "name", ""), "deploy"))
+                decision = modified.get(k, "deploy")
                 if decision in ("reserves", "strategic_reserves") and not _must_start_in_reserves(r):
                     reserve_roots.append(r)
             if not reserve_roots:
@@ -725,7 +730,7 @@ class Army:
         Get current reserves status and limits information.
         
         Args:
-            reserves_decisions: Dict mapping unit names to reserve status
+            reserves_decisions: Dict mapping unit ids to reserve status
             
         Returns:
             dict: Current reserves status and limits
@@ -743,8 +748,8 @@ class Army:
 
         roots = self._reserve_group_roots()
         for root in roots:
-            rid = str(getattr(root, "_id", None) or "")
-            decision = reserves_decisions.get(rid, reserves_decisions.get(getattr(root, "name", ""), "deploy"))
+            rid = get_entity_id(root)
+            decision = reserves_decisions.get(rid, "deploy")
             if _must_start_in_reserves(root):
                 decision = "reserves"
             if decision == "reserves":

@@ -7,7 +7,7 @@ class TestWaaagh(unittest.TestCase):
         from warhammer40k_ai.rules.waaagh import WaaaghManager
 
         game = SimpleNamespace(phase=SimpleNamespace(name="COMMAND_PHASE"), turn=1)
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, game=game)
         game.get_current_player = lambda: player
         army = SimpleNamespace(faction_id="ORK", units=[], player=player)
 
@@ -103,7 +103,7 @@ class TestWaaagh(unittest.TestCase):
         from warhammer40k_ai.rules.waaagh import WaaaghManager
 
         game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         game.get_current_player = lambda: player
         army = SimpleNamespace(player=player, faction_id="ORK", units=[])
 

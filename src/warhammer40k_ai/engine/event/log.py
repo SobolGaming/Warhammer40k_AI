@@ -1,30 +1,40 @@
 from collections import deque
 from typing import Dict, Deque, List
 
+from ...utility.entity_ids import get_entity_id
+
 _ACTIONS: Dict[str, Deque[str]] = {}
 _DICE: Dict[str, Deque[str]] = {}
 
 _MAX_ENTRIES = 200
 
-def _get_queue(store: Dict[str, Deque[str]], player_name: str) -> Deque[str]:
-    if player_name not in store:
-        store[player_name] = deque(maxlen=_MAX_ENTRIES)
-    return store[player_name]
+def _resolve_player_id(player_or_id: object) -> str:
+    if isinstance(player_or_id, str):
+        return player_or_id
+    return get_entity_id(player_or_id)
 
-def append_action(player_name: str, text: str) -> None:
-    q = _get_queue(_ACTIONS, player_name)
+
+def _get_queue(store: Dict[str, Deque[str]], player_id: str) -> Deque[str]:
+    if player_id not in store:
+        store[player_id] = deque(maxlen=_MAX_ENTRIES)
+    return store[player_id]
+
+def append_action(player_or_id: object, text: str) -> None:
+    player_id = _resolve_player_id(player_or_id)
+    q = _get_queue(_ACTIONS, player_id)
     q.append(text)
 
-def append_dice(player_name: str, text: str) -> None:
-    q = _get_queue(_DICE, player_name)
+def append_dice(player_or_id: object, text: str) -> None:
+    player_id = _resolve_player_id(player_or_id)
+    q = _get_queue(_DICE, player_id)
     q.append(text)
 
-def get_recent_actions(player_name: str, limit: int = 20) -> List[str]:
-    q = _get_queue(_ACTIONS, player_name)
+def get_recent_actions(player_or_id: object, limit: int = 20) -> List[str]:
+    player_id = _resolve_player_id(player_or_id)
+    q = _get_queue(_ACTIONS, player_id)
     return list(q)[-limit:]
 
-def get_recent_dice(player_name: str, limit: int = 20) -> List[str]:
-    q = _get_queue(_DICE, player_name)
+def get_recent_dice(player_or_id: object, limit: int = 20) -> List[str]:
+    player_id = _resolve_player_id(player_or_id)
+    q = _get_queue(_DICE, player_id)
     return list(q)[-limit:]
-
-

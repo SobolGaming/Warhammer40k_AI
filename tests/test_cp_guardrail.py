@@ -56,9 +56,11 @@ def test_command_phase_bonus_cp_is_subject_to_guardrail():
 
     # Fake a deployed alive unit that grants +1 bonus CP in your command phase.
     u = type("U", (), {})()
+    u._id = "u1"
     u.deployed = True
     u.reserve_status = "deployed"
     u.is_alive = lambda: True
+    u.is_attached_leader = False
     u.is_below_half_strength = lambda: False
     u.take_battle_shock_test = lambda *_args, **_kwargs: None
     u.special_rules = {"command_phase_bonus_cp": 1}

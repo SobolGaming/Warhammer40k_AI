@@ -6,6 +6,7 @@ import re
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_VOICE_OF_COMMAND, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 from ..utility.modifiers import Modifier, ModifierOp
 
 
@@ -327,9 +328,9 @@ class VoiceOfCommandManager:
             if root is None:
                 continue
             try:
-                uid = getattr(root, "_id", id(root))
+                uid = get_entity_id(root)
             except Exception:
-                uid = id(root)
+                uid = ""
             if uid in seen:
                 continue
             seen.add(uid)
@@ -419,7 +420,7 @@ class VoiceOfCommandManager:
                 "objective_control", Modifier(ModifierOp.ADD, 1, source=f"voice_of_command:{order_key}")
             )
 
-    def _apply_order_to_unit_and_attached(self, unit, order_key: str, owner_name: str, source_id: str) -> None:
+    def _apply_order_to_unit_and_attached(self, unit, order_key: str, owner_id: str, source_id: str) -> None:
         if unit is None:
             return
         units = [unit]
@@ -436,7 +437,7 @@ class VoiceOfCommandManager:
             if not isinstance(sr, dict):
                 sr = {}
             sr["voice_of_command_order_key"] = order_key
-            sr["voice_of_command_order_owner"] = owner_name
+            sr["voice_of_command_order_owner"] = owner_id
             sr["voice_of_command_order_source"] = source_id
             u.special_rules = sr
             self._apply_order_modifiers(u, order_key)
@@ -490,15 +491,15 @@ class VoiceOfCommandManager:
             pass
 
         try:
-            owner_name = str(getattr(getattr(self.army, "player", None), "name", "") or "")
+            owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
         except Exception:
-            owner_name = ""
+            owner_id = ""
         try:
-            source_id = str(getattr(officer_unit, "_id", "") or "")
+            source_id = get_entity_id(officer_unit)
         except Exception:
             source_id = ""
 
-        self._apply_order_to_unit_and_attached(target_unit, order_key, owner_name, source_id)
+        self._apply_order_to_unit_and_attached(target_unit, order_key, owner_id, source_id)
         return True
 
     def auto_issue_orders(self, game, player, *, phase_name: str = "", trigger: str = "") -> None:

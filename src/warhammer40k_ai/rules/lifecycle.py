@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..utility.entity_ids import get_entity_id
+
 
 class AbilityLifecycle:
     """
@@ -152,6 +154,6 @@ class AbilityLifecycle:
         if unit is None:
             return None
         try:
-            return str(getattr(unit, "_id", "") or "")
+            return get_entity_id(unit)
         except Exception:
             return None

@@ -94,11 +94,8 @@ class CabalOfSorcerersManager:
             from ..utility.event_bus import append_action, append_dice
         except Exception:
             return
-        try:
-            player_name = str(getattr(getattr(self.army, "player", None), "name", "") or "")
-        except Exception:
-            player_name = ""
-        if not player_name:
+        player = getattr(self.army, "player", None)
+        if player is None:
             return
 
         rolls = list(result.get("rolls") or [])
@@ -110,7 +107,7 @@ class CabalOfSorcerersManager:
         except Exception:
             warp_charge = 0
         append_dice(
-            player_name,
+            player,
             f"Cabal of Sorcerers: {ritual.name} roll {rolls_text} = {total} (WC {warp_charge}){channel_tag}",
         )
 
@@ -123,7 +120,7 @@ class CabalOfSorcerersManager:
         mw_self = int(result.get("mortal_wounds") or 0)
         mw_target = int(result.get("target_mortal_wounds") or 0)
         append_action(
-            player_name,
+            player,
             (
                 f"Cabal of Sorcerers: {caster_name} used {ritual.name} on {target_name}: "
                 f"{status}; mortals self {mw_self}, target {mw_target}"
@@ -630,7 +627,7 @@ class CabalOfSorcerersManager:
             if not isinstance(sr, dict):
                 sr = {}
             sr["cabal_temporal_surge_move_max"] = int(move_max or 0)
-            sr["cabal_temporal_surge_no_charge_turn_owner"] = str(getattr(getattr(self.army, "player", None), "name", "") or "")
+            sr["cabal_temporal_surge_no_charge_turn_owner"] = str(getattr(getattr(self.army, "player", None), "id", "") or "")
             sr["cabal_temporal_surge_no_charge_turn"] = int(getattr(game, "turn", 0) or 0)
             target_unit.special_rules = sr
             try:

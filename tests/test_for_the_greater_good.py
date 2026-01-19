@@ -133,7 +133,7 @@ class TestForTheGreaterGood(unittest.TestCase):
             map=None,
             is_shooting_phase=lambda: True,
         )
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         game.get_current_player = lambda: player
 
         army = SimpleNamespace(player=player, faction_id="TAU", units=[])

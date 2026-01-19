@@ -209,8 +209,8 @@ class InfoPane(pygame.sprite.Sprite):
                 y_offset += 20
                 
                 # Show deployment zone info
-                if hasattr(game, 'deployment_zones') and deployment_player.name in game.deployment_zones:
-                    zone = game.deployment_zones[deployment_player.name]
+                if hasattr(game, 'deployment_zones') and deployment_player.id in game.deployment_zones:
+                    zone = game.deployment_zones[deployment_player.id]
                     # Display bounds derived from mission polygons (no rectangular deployment zones)
                     try:
                         xs, ys = [], []

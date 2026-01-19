@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_CULT_AMBUSH, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d
 from ..utility.model_base import Base, BaseType
 
@@ -21,6 +22,10 @@ class CultAmbushMarker:
     y: float
     z: float = 0.0
     active: bool = True
+
+    @property
+    def id(self) -> str:
+        return self.marker_id
 
 
 class CultAmbushManager:
@@ -717,7 +722,7 @@ class CultAmbushManager:
             if player is not None:
                 ctx = {
                     "units": [getattr(u, "name", "") for u in units],
-                    "unit_ids": [str(getattr(u, "_id", "") or id(u)) for u in units],
+                    "unit_ids": [get_entity_id(u) for u in units],
                     "markers": [m.marker_id for m in markers],
                 }
                 choice = player._choose_optional_value("CULT_AMBUSH_REINFORCEMENTS", [], ctx)
@@ -727,7 +732,7 @@ class CultAmbushManager:
         if choice is None:
             return deployed
 
-        units_by_id = {str(getattr(u, "_id", "") or id(u)): u for u in units}
+        units_by_id = {get_entity_id(u): u for u in units}
         units_by_name = {str(getattr(u, "name", "") or "").strip().lower(): u for u in units}
         markers_by_id = {str(m.marker_id): m for m in markers}
 

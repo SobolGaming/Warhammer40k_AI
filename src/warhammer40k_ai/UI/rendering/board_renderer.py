@@ -6,15 +6,15 @@ from warhammer40k_ai.roster.player import Player
 from ..ui_constants import TILE_SIZE
 
 
-def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player, 
+def draw_deployment_zones(screen: pygame.Surface, deployment_zones: dict, player1: Player, player2: Player,
                          zoom_level: float, offset_x: int, offset_y: int) -> None:
     """Draw deployment zones with transparency and appropriate colors for each player."""
-    for player_name, zone in deployment_zones.items():
+    for player_id, zone in deployment_zones.items():
         # Determine player color with more vibrant colors during deployment
-        if player_name == player1.name:
+        if player_id == player1.id:
             color = (0, 255, 0, 160)  # More visible green for player 1
             border_color = (0, 200, 0)
-        elif player_name == player2.name:
+        elif player_id == player2.id:
             color = (255, 0, 0, 160)  # More visible red for player 2
             border_color = (200, 0, 0)
         else:

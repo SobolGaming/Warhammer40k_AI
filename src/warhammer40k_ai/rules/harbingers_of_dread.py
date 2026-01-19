@@ -280,6 +280,7 @@ class HarbingersOfDreadManager:
 
         try:
             from ..utility.aura_utils import unit_within_range_of_unit
+            from ..utility.entity_ids import get_entity_id
         except Exception:
             return set()
 
@@ -293,9 +294,9 @@ class HarbingersOfDreadManager:
             if enemy_army is None:
                 continue
             try:
-                key = str(getattr(enemy_army, "_id", "") or id(enemy_army))
+                key = get_entity_id(enemy_army)
             except Exception:
-                key = str(id(enemy_army))
+                key = ""
             if key in checked_armies:
                 continue
             checked_armies.add(key)

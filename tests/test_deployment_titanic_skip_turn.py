@@ -6,16 +6,19 @@ from warhammer40k_ai.roster.player import Player, PlayerControl
 
 class DummyArmy:
     def __init__(self):
+        self.id = None
         self.units = []
         self.player = None
 
     def set_player(self, p):
         self.player = p
+        self.id = f"army-{p.id}"
 
 
 class DummyUnit:
     def __init__(self, name: str, *, titanic: bool = False):
         self.name = name
+        self.id = name
         self.deployed = False
         self.reserve_status = "deployed"
         self.is_attached_leader = False

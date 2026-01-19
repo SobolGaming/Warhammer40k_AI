@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple
 
+from ..utility.entity_ids import get_entity_id
+
 
 @dataclass
 class ScoreResult:
@@ -218,7 +220,7 @@ class LinchpinPrimary(PrimaryMissionCard):
     def _get_home_objective(self, game, player):
         # Return any objective located within the player's deployment zone
         try:
-            zones = game.deployment_zones.get(player.name, {})
+            zones = game.deployment_zones.get(player.id, {})
             zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
             if not zone:
                 return None
@@ -396,7 +398,7 @@ class HiddenSuppliesPrimary(PrimaryMissionCard):
         # Count objectives you control not in your deployment
         def _in_my_dz(loc):
             try:
-                zones = game.deployment_zones.get(player.name, {})
+                zones = game.deployment_zones.get(player.id, {})
                 zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
                 return zone and hasattr(zone, 'contains_point') and zone.contains_point(loc.x, loc.y)
             except Exception:
@@ -453,7 +455,7 @@ class SupplyDropPrimary(PrimaryMissionCard):
     def _is_no_mans_land(self, game, loc) -> bool:
         try:
             for p in game.players:
-                zones = game.deployment_zones.get(p.name, {})
+                zones = game.deployment_zones.get(p.id, {})
                 zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
                 if zone and hasattr(zone, 'contains_point') and zone.contains_point(loc.x, loc.y):
                     return False
@@ -612,7 +614,7 @@ class TheRitualPrimary(PrimaryMissionCard):
 
     def _is_in_no_mans_land(self, game, loc) -> bool:
         for p in getattr(game, "players", []) or []:
-            zones = game.deployment_zones.get(p.name, {})
+            zones = game.deployment_zones.get(p.id, {})
             zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
             if zone and hasattr(zone, "contains_point") and zone.contains_point(loc.x, loc.y):
                 return False
@@ -678,7 +680,7 @@ class UnexplodedOrdnancePrimary(PrimaryMissionCard):
         if not opponents:
             return 0
         opp = opponents[0]
-        zones = game.deployment_zones.get(opp.name, {})
+        zones = game.deployment_zones.get(opp.id, {})
         zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
         if zone is None:
             return 0
@@ -857,7 +859,7 @@ class SabotageSecondary(SecondaryMissionCard):
             in_opponent_deployment = False
             try:
                 opponent = [p for p in game.players if p is not player][0]
-                zones = game.deployment_zones.get(opponent.name, {})
+                zones = game.deployment_zones.get(opponent.id, {})
                 zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
                 if zone and hasattr(zone, 'contains_point') and loc:
                     in_opponent_deployment = zone.contains_point(loc[0], loc[1])
@@ -900,7 +902,7 @@ class BehindEnemyLinesSecondary(SecondaryMissionCard):
         def _in_opponent_dz(unit):
             try:
                 opp = [p for p in game.players if p is not player][0]
-                zones = game.deployment_zones.get(opp.name, {})
+                zones = game.deployment_zones.get(opp.id, {})
                 zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
                 if not zone:
                     return False
@@ -964,7 +966,7 @@ class StormHostileObjectiveSecondary(SecondaryMissionCard):
                 continue
             if hasattr(loc, 'update_control'):
                 loc.update_control(game)
-            self.start_of_turn_control[id(obj)] = getattr(loc, 'controlling_player', None)
+            self.start_of_turn_control[get_entity_id(obj)] = getattr(loc, 'controlling_player', None)
 
     def score_at_end_of_turn(self, game, player) -> ScoreResult:
         # If baseline capture
@@ -977,7 +979,7 @@ class StormHostileObjectiveSecondary(SecondaryMissionCard):
                 continue
             if hasattr(loc, 'update_control'):
                 loc.update_control(game)
-            at_start = self.start_of_turn_control.get(id(obj), None)
+            at_start = self.start_of_turn_control.get(get_entity_id(obj), None)
             now = getattr(loc, 'controlling_player', None)
             if at_start is not None and at_start is not player:
                 if now is player:
@@ -1105,7 +1107,7 @@ class DefendStrongholdSecondary(SecondaryMissionCard):
             if getattr(loc, 'controlling_player', None) is player:
                 # In player's DZ?
                 try:
-                    zones = game.deployment_zones.get(player.name, {})
+                    zones = game.deployment_zones.get(player.id, {})
                     zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
                     if zone and hasattr(zone, 'contains_point') and zone.contains_point(loc.x, loc.y):
                         return ScoreResult(vp=3, achieved=True)
@@ -1201,7 +1203,7 @@ class EstablishLocusSecondary(SecondaryMissionCard):
                 center = False
             try:
                 opp = [p for p in game.players if p is not player][0]
-                zones = game.deployment_zones.get(opp.name, {})
+                zones = game.deployment_zones.get(opp.id, {})
                 zone = zones.get('zone') or zones.get('Attacker Zone') or zones.get('Defender Zone')
                 in_opponent_dz = zone and hasattr(zone, 'contains_point') and zone.contains_point(loc[0], loc[1])
             except Exception:
@@ -1478,7 +1480,7 @@ class DisplayOfMightSecondary(SecondaryMissionCard):
                         return False
                     in_any_dz = False
                     for p in game.players:
-                        zones = game.deployment_zones.get(p.name, {})
+                        zones = game.deployment_zones.get(p.id, {})
                         zone = zones.get('zone') or zones.get('Defender Zone') or zones.get('Attacker Zone')
                         if zone and hasattr(zone, 'contains_point') and zone.contains_point(pos[0], pos[1]):
                             in_any_dz = True
@@ -1541,7 +1543,7 @@ class ExtendBattleLinesSecondary(SecondaryMissionCard):
                 continue
             # In player's DZ?
             try:
-                pz = game.deployment_zones.get(player.name, {}).get('zone')
+                pz = game.deployment_zones.get(player.id, {}).get('zone')
                 if pz and hasattr(pz, 'contains_point') and pz.contains_point(loc.x, loc.y):
                     controls_dz = True
             except Exception:
@@ -1549,7 +1551,7 @@ class ExtendBattleLinesSecondary(SecondaryMissionCard):
             # In NML (not in either DZ)
             in_any_dz = False
             for p in game.players:
-                z = game.deployment_zones.get(p.name, {}).get('zone')
+                z = game.deployment_zones.get(p.id, {}).get('zone')
                 if z and hasattr(z, 'contains_point') and z.contains_point(loc.x, loc.y):
                     in_any_dz = True
                     break
@@ -1587,7 +1589,7 @@ class ATemptingTargetSecondary(SecondaryMissionCard):
                     continue
                 in_any_dz = False
                 for p in game.players:
-                    z = game.deployment_zones.get(p.name, {}).get('zone')
+                    z = game.deployment_zones.get(p.id, {}).get('zone')
                     if z and hasattr(z, 'contains_point') and z.contains_point(loc.x, loc.y):
                         in_any_dz = True
                         break
@@ -1709,7 +1711,7 @@ class SecureNoMansLandSecondary(SecondaryMissionCard):
     def score_at_end_of_turn(self, game, player) -> ScoreResult:
         def _in_nml(loc):
             for p in game.players:
-                z = game.deployment_zones.get(p.name, {}).get('zone')
+                z = game.deployment_zones.get(p.id, {}).get('zone')
                 if z and hasattr(z, 'contains_point') and z.contains_point(loc.x, loc.y):
                     return False
             return True

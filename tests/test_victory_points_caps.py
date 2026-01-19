@@ -7,11 +7,13 @@ from warhammer40k_ai.engine.mission_cards import CleanseSecondary
 
 class DummyArmy:
     def __init__(self):
+        self.id = None
         self.units = []
         self.player = None
 
     def set_player(self, p):
         self.player = p
+        self.id = f"army-{p.id}"
 
 
 def make_game():

@@ -5,6 +5,7 @@ from typing import Optional
 
 from ..utility.ability_support import ABILITY_NURGLES_GIFT, army_has_ability_id
 from ..utility.aura_effects import nurgles_gift_contagion_range
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -192,9 +193,9 @@ class NurglesGiftManager:
             if enemy_army is None:
                 continue
             try:
-                key = str(getattr(enemy_army, "_id", "") or id(enemy_army))
+                key = get_entity_id(enemy_army)
             except Exception:
-                key = str(id(enemy_army))
+                key = ""
             if key in checked_armies:
                 continue
             checked_armies.add(key)

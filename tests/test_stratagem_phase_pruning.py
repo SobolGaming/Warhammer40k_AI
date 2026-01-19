@@ -7,7 +7,7 @@ class TestStratagemPhasePruning(unittest.TestCase):
         from warhammer40k_ai.rules.stratagems import StratagemManager
 
         manager = StratagemManager.__new__(StratagemManager)
-        player = SimpleNamespace()
+        player = SimpleNamespace(id="P1")
         manager.player = player
         manager._pending_reactions = [
             {

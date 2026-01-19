@@ -153,12 +153,14 @@ def draw_bottom_logs_pane(self) -> None:
     x_cursor += box_w * 4
     strat_right_rect = pygame.Rect(x_cursor, y, width - x_cursor, height)  # Fill to end
 
-    p1_name = self.player1.name
-    p2_name = self.player2.name
-    p1_actions = get_recent_actions(p1_name, limit=50)
-    p1_dice = get_recent_dice(p1_name, limit=50)
-    p2_actions = get_recent_actions(p2_name, limit=50)
-    p2_dice = get_recent_dice(p2_name, limit=50)
+    p1 = self.player1
+    p2 = self.player2
+    p1_name = p1.name
+    p2_name = p2.name
+    p1_actions = get_recent_actions(p1, limit=50)
+    p1_dice = get_recent_dice(p1, limit=50)
+    p2_actions = get_recent_actions(p2, limit=50)
+    p2_dice = get_recent_dice(p2, limit=50)
 
     # Draw left/right rule buttons (stacked)
     half_h = max(1, height // 2)

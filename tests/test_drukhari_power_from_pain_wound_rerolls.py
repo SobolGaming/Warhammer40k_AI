@@ -19,6 +19,7 @@ class _GameStub:
 class _PlayerStub:
     def __init__(self, game):
         self.name = "P1"
+        self.id = "P1"
         self.control = SimpleNamespace(name="REMOTE")
         self.has_control = lambda: False
         self.game = game

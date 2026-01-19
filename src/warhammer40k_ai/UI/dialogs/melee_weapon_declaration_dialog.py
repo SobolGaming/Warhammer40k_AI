@@ -147,7 +147,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
             
             for weapon_info in model_weapons:
                 profile = weapon_info['profile']
-                profile_id = id(profile)
+                profile_id = profile.id
                 has_extra_attacks = profile.is_extra_attacks()
                 
                 if has_extra_attacks:
@@ -229,7 +229,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                 button_rect = pygame.Rect(20, button_y, self.width - 40, weapon_button_height - 5)
                 
                 profile = weapon_info['profile']
-                profile_id = id(profile)
+                profile_id = profile.id
                 has_extra_attacks = profile.is_extra_attacks()
                 
                 # Check if this weapon is selected for the current model

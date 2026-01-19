@@ -26,6 +26,7 @@ class DummyArmy:
 class DummyUnit:
     def __init__(self, name, *, models=None, toughness=4, keywords=None, parent_army=None):
         self.name = name
+        self._id = name
         self.models = list(models or [])
         self.toughness = toughness
         self.special_rules = {}

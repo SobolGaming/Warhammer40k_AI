@@ -268,7 +268,7 @@ class ShootingDeclarationDialog(BaseDialog):
         # Group weapons by profile
         weapon_groups = {}
         for weapon in individual_weapons:
-            profile_id = id(weapon['profile'])
+            profile_id = weapon['profile'].id
             if profile_id not in weapon_groups:
                 weapon_groups[profile_id] = {
                     'profile': weapon['profile'],
@@ -1249,16 +1249,17 @@ class ShootingDeclarationDialog(BaseDialog):
                 # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
                 try:
                     sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
-                    if id(self.selected_weapon) in sources:
-                        decl["firing_deck_source_models"] = list(sources[id(self.selected_weapon)] or [])
+                    weapon_id = getattr(self.selected_weapon, "id", None)
+                    if weapon_id and weapon_id in sources:
+                        decl["firing_deck_source_models"] = list(sources[weapon_id] or [])
                 except Exception:
                     pass
                 self.weapon_declarations.append(decl)
             print(f"INFO: {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} group (x{self.selected_weapon_group['count']})")
             try:
                 from ...utility.event_bus import append_action
-                pn = self.unit.get_parent_army().player.name
-                append_action(pn, f"{self.unit.name} targets {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} (x{self.selected_weapon_group['count']})")
+                player = self.unit.get_parent_army().player
+                append_action(player, f"{self.unit.name} targets {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} (x{self.selected_weapon_group['count']})")
             except Exception:
                 pass
         else:
@@ -1278,16 +1279,17 @@ class ShootingDeclarationDialog(BaseDialog):
             # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
             try:
                 sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
-                if id(self.selected_weapon) in sources:
-                    decl["firing_deck_source_models"] = list(sources[id(self.selected_weapon)] or [])
+                weapon_id = getattr(self.selected_weapon, "id", None)
+                if weapon_id and weapon_id in sources:
+                    decl["firing_deck_source_models"] = list(sources[weapon_id] or [])
             except Exception:
                 pass
             self.weapon_declarations.append(decl)
             print(f"ERROR: {self.unit.name} targeting {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance} (assigned to {assigned_model[0].name if assigned_model else 'no model'})")
             try:
                 from ...utility.event_bus import append_action
-                pn = self.unit.get_parent_army().player.name
-                append_action(pn, f"{self.unit.name} targets {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance}")
+                player = self.unit.get_parent_army().player
+                append_action(player, f"{self.unit.name} targets {clicked_unit.name} with {self.selected_weapon.parent_wargear.name} #{weapon_instance}")
             except Exception:
                 pass
         

@@ -14,6 +14,7 @@ from ..units.unit import Unit
 from ..units.model import Model
 from ..roster.player import Player
 from ..utility.calcs import clear_enemy_model_cache
+from ..utility.entity_ids import get_entity_id
 from .game import Game
 
 class FightStage(Enum):
@@ -224,7 +225,7 @@ class FightPhaseManager:
                 root = u
             if root is None:
                 continue
-            rid = id(root)
+            rid = get_entity_id(root)
             if rid in seen:
                 continue
             seen.add(rid)
@@ -387,7 +388,7 @@ class FightPhaseManager:
                 enemy_root = enemy_unit
             if enemy_root is None:
                 continue
-            rid = id(enemy_root)
+            rid = get_entity_id(enemy_root)
             if rid in seen:
                 continue
             seen.add(rid)

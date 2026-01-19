@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_GATE_OF_INFINITY, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 
 
 class GateOfInfinityManager:
@@ -156,9 +157,9 @@ class GateOfInfinityManager:
             if root is None:
                 continue
             try:
-                uid = getattr(root, "_id", id(root))
+                uid = get_entity_id(root)
             except Exception:
-                uid = id(root)
+                uid = ""
             if uid in seen:
                 continue
             seen.add(uid)

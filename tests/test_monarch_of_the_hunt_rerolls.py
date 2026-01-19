@@ -14,7 +14,7 @@ class TestMonarchOfTheHuntRerolls(unittest.TestCase):
             event_system=EventSystem(),
             map=SimpleNamespace(roll_reroll_provider=lambda **k: not k.get("success")),
         )
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = SimpleNamespace(player=player)
 
         class _Round:

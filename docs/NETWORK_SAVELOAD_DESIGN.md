@@ -209,7 +209,7 @@ This keeps AI and network clients identical to human UI behavior.
 
 ## Staged PR Plan
 
-PR1: IDs and registries
+PR1: IDs and registries (Completed)
 - Add stable IDs for all entities.
 - Replace name-based references in engine state with IDs.
 - Add deterministic ordering utilities.

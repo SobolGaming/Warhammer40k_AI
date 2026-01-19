@@ -1,11 +1,14 @@
 ﻿from typing import Union, Dict, List, Optional
 from enum import Enum, auto
 from collections import namedtuple
+import copy
+import uuid
 import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
 from warhammer40k_ai.utility.event_bus import append_dice, append_action
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from dataclasses import dataclass
 
 from typing import TYPE_CHECKING
@@ -56,6 +59,7 @@ class AttackCountInfo:
 
 class WargearProfile:
     def __init__(self, profile_name: str, wargear_data: Dict, parent_wargear: Optional['Wargear'] = None):
+        self._id = str(uuid.uuid4())
         self.name = profile_name
         self.parent_wargear = parent_wargear
         # Preserve raw strings for Core Rules "unmodifiable" characteristics (e.g. '-', 'N/A', '20+"').
@@ -74,6 +78,10 @@ class WargearProfile:
         self.damage = self._parse_attribute(wargear_data.get('D', ''))
         self.keywords = self._parse_keywords(wargear_data.get('description', ''))
         self._wounds_cannot_be_ignored_cached: Optional[bool] = None
+
+    @property
+    def id(self) -> str:
+        return self._id
     
     def _parse_range(self, range_string: str) -> Range:
         if "Melee" == range_string:
@@ -408,7 +416,7 @@ class WargearProfile:
             target_root = target.get_attached_unit_root()
         except Exception:
             target_root = target
-        target_id = getattr(target_root, "_id", None)
+        target_id = get_entity_id(target_root)
         closest = None
         target_dist = None
         seen = set()
@@ -419,10 +427,7 @@ class WargearProfile:
                 root = enemy
             if root is None:
                 continue
-            try:
-                rid = getattr(root, "_id", None) or id(root)
-            except Exception:
-                rid = id(root)
+            rid = get_entity_id(root)
             if rid in seen:
                 continue
             seen.add(rid)
@@ -569,7 +574,7 @@ class WargearProfile:
                     attacker_root = attacker_unit.get_attached_unit_root()
                 except Exception:
                     attacker_root = attacker_unit
-                attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                attacker_key = get_entity_id(attacker_root)
                 sr = getattr(target_root, "special_rules", None)
                 if isinstance(sr, dict):
                     spec = sr.get("armour_of_contempt_ap_worsen")
@@ -1019,7 +1024,7 @@ class WargearProfile:
         try:
             if attacker_unit is not None:
                 attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
-                attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                attacker_key = get_entity_id(attacker_root)
         except Exception:
             attacker_key = None
 
@@ -1430,7 +1435,7 @@ class WargearProfile:
             def _reroll_hazard():
                 new_roll = get_roll("D6")
                 try:
-                    append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hazardous re-roll: {new_roll} for {attacker.name}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hazardous re-roll: {new_roll} for {attacker.name}")
                 except Exception:
                     pass
                 return new_roll
@@ -1659,12 +1664,8 @@ class WargearProfile:
                 root.set_aspect_shrine_prompt_suppressed(True)
                 try:
                     from warhammer40k_ai.utility.event_bus import append_action
-                    pname = getattr(player, "name", "Player")
                     uname = getattr(root, "name", "Unit")
-                    append_action(
-                        pname,
-                        f"{uname}: Aspect Shrine Token prompt suppressed for this activation",
-                    )
+                    append_action(player, f"{uname}: Aspect Shrine Token prompt suppressed for this activation")
                 except Exception:
                     pass
             except Exception:
@@ -1676,22 +1677,17 @@ class WargearProfile:
                 if root.spend_aspect_shrine_token(1):
                     try:
                         from warhammer40k_ai.utility.event_bus import append_dice
-                        pname = getattr(player, "name", "Player")
                         rt = str(roll_type or "").strip().lower()
                         label = "roll"
                         if rt == "hit":
                             label = "Hit roll"
                         elif rt == "wound":
                             label = "Wound roll"
-                        append_dice(
-                            pname,
-                            f"{label} made {int(roll_value)}, Aspect Shrine Token used to change value to 6",
-                        )
+                        append_dice(player, f"{label} made {int(roll_value)}, Aspect Shrine Token used to change value to 6")
                     except Exception:
                         pass
                     try:
                         from warhammer40k_ai.utility.event_bus import append_action
-                        pname = getattr(player, "name", "Player")
                         uname = getattr(root, "name", "Unit")
                         rt = str(roll_type or "").strip().lower()
                         label = "roll"
@@ -1699,10 +1695,7 @@ class WargearProfile:
                             label = "Hit roll"
                         elif rt == "wound":
                             label = "Wound roll"
-                        append_action(
-                            pname,
-                            f"{uname}: Aspect Shrine Token used to change {label} {int(roll_value)} to 6",
-                        )
+                        append_action(player, f"{uname}: Aspect Shrine Token used to change {label} {int(roll_value)} to 6")
                     except Exception:
                         pass
                     return 6, "use"
@@ -1834,9 +1827,9 @@ class WargearProfile:
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
             try:
                 if miracle_used:
-                    append_dice(attacker.parent_unit.get_parent_army().player.name, f"Miracle die used for Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
                 else:
-                    append_dice(attacker.parent_unit.get_parent_army().player.name, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Overwatch Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
             except Exception:
                 pass
             hit_result['roll'] = dice_roll
@@ -1976,7 +1969,7 @@ class WargearProfile:
                     attacker_unit = getattr(attacker, "parent_unit", None)
                     if attacker_unit is not None:
                         attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
-                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                        attacker_key = get_entity_id(attacker_root)
                 except Exception:
                     attacker_key = None
             phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=troot)
@@ -2248,7 +2241,7 @@ class WargearProfile:
                                 sr["driven_by_ultimate_rage_hit_mod_signature"] = sig
                                 attacker_unit.special_rules = sr
                                 from ..utility.event_bus import append_action
-                                pn = attacker_unit.get_parent_army().player.name
+                                pn = attacker_unit.get_parent_army().player
                                 ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
                                 append_action(pn, f"Driven by Ultimate Rage: ignored negative Hit roll modifiers ({ignored_text}).")
                                 if kept_sources:
@@ -2280,7 +2273,7 @@ class WargearProfile:
             new_roll = get_roll("D6")
             try:
                 weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
+                append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
             except Exception:
                 pass
             return new_roll
@@ -2309,9 +2302,9 @@ class WargearProfile:
             # Use parent wargear name when available for log context.
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
             if miracle_used:
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Miracle die used for Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
             else:
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                append_dice(attacker.parent_unit.get_parent_army().player, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
         except Exception:
             pass
 
@@ -3641,7 +3634,6 @@ class WargearProfile:
                 army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
                 player = getattr(army, "player", None) if army is not None else None
                 game = getattr(player, "game", None) if player is not None else None
-                pname = str(getattr(player, "name", "") or "") if player is not None else ""
 
                 if self.is_harpooned():
                     attack_instance["harpooned_target"] = True
@@ -3653,8 +3645,8 @@ class WargearProfile:
                             no_overwatch=False,
                             game=game,
                         )
-                        if updated and pname:
-                            append_action(pname, f"{unit.name}: Harpooned hit on {target.name} (+2 charge)")
+                        if updated and player is not None:
+                            append_action(player, f"{unit.name}: Harpooned hit on {target.name} (+2 charge)")
                 if self.is_hooked():
                     attack_instance["hooked_target"] = True
                     hit_result["special_effects"].append("Hooked (charge bonus + no Overwatch)")
@@ -3665,9 +3657,9 @@ class WargearProfile:
                             no_overwatch=True,
                             game=game,
                         )
-                        if updated and pname:
+                        if updated and player is not None:
                             append_action(
-                                pname,
+                                player,
                                 f"{unit.name}: Hooked hit on {target.name} (+2 charge, no Overwatch)",
                             )
                 if self.is_impaled():
@@ -3680,8 +3672,8 @@ class WargearProfile:
                             no_overwatch=False,
                             game=game,
                         )
-                        if updated and pname:
-                            append_action(pname, f"{unit.name}: Impaled hit on {target.name} (+2 charge)")
+                        if updated and player is not None:
+                            append_action(player, f"{unit.name}: Impaled hit on {target.name} (+2 charge)")
                 if self.is_snagged():
                     attack_instance["snagged_target"] = True
                     hit_result["special_effects"].append("Snagged (charge bonus + no Overwatch)")
@@ -3692,9 +3684,9 @@ class WargearProfile:
                             no_overwatch=True,
                             game=game,
                         )
-                        if updated and pname:
+                        if updated and player is not None:
                             append_action(
-                                pname,
+                                player,
                                 f"{unit.name}: Snagged hit on {target.name} (+2 charge, no Overwatch)",
                             )
 
@@ -3846,7 +3838,7 @@ class WargearProfile:
             new_roll = get_roll("D6")
             try:
                 weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                append_dice(attacker.parent_unit.get_parent_army().player, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
             except Exception:
                 pass
             return new_roll
@@ -3895,7 +3887,7 @@ class WargearProfile:
                         else:
                             cur_turn = int(getattr(game, "turn", 0) or 0)
                             cur_player = getattr(game, "get_current_player", lambda: None)()
-                            cur_owner = str(getattr(cur_player, "name", "") or "")
+                            cur_owner = str(getattr(cur_player, "id", "") or "")
                             if owner and owner != cur_owner:
                                 daemonic_fury_lance = False
                             if turn and turn != cur_turn:
@@ -3920,7 +3912,7 @@ class WargearProfile:
                         else:
                             cur_turn = int(getattr(game, "turn", 0) or 0)
                             cur_player = getattr(game, "get_current_player", lambda: None)()
-                            cur_owner = str(getattr(cur_player, "name", "") or "")
+                            cur_owner = str(getattr(cur_player, "id", "") or "")
                             if owner and owner != cur_owner:
                                 goretrack_lance = False
                             if turn and turn != cur_turn:
@@ -4112,7 +4104,7 @@ class WargearProfile:
                     attacker_unit = getattr(attacker, "parent_unit", None)
                     if attacker_unit is not None:
                         attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
-                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                        attacker_key = get_entity_id(attacker_root)
                 except Exception:
                     attacker_key = None
             phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=troot)
@@ -4174,9 +4166,9 @@ class WargearProfile:
         try:
             weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
             if miracle_used:
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
             else:
-                append_dice(attacker.parent_unit.get_parent_army().player.name, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                append_dice(attacker.parent_unit.get_parent_army().player, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
         except Exception:
             pass
         if miracle_used:
@@ -5436,7 +5428,7 @@ class WargearProfile:
         def _reroll_save():
             new_roll = get_roll("D6")
             try:
-                append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save re-roll: {new_roll} (need {save_value}+) for {target_model.name}")
+                append_dice(target_model.parent_unit.get_parent_army().player, f"Save re-roll: {new_roll} (need {save_value}+) for {target_model.name}")
             except Exception:
                 pass
             return new_roll
@@ -5463,9 +5455,9 @@ class WargearProfile:
             dice_roll = get_roll("D6")
         try:
             if miracle_used:
-                append_dice(target_model.parent_unit.get_parent_army().player.name, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+                append_dice(target_model.parent_unit.get_parent_army().player, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
             else:
-                append_dice(target_model.parent_unit.get_parent_army().player.name, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+                append_dice(target_model.parent_unit.get_parent_army().player, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
         except Exception:
             pass
         save_result['roll'] = dice_roll
@@ -5590,7 +5582,7 @@ class WargearProfile:
                 return str(key)
         except Exception:
             pass
-        return str(id(target_unit))
+        return get_entity_id(target_unit)
 
     def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict, game_map: Optional['Map'] = None) -> Dict:
         """Damage application with detailed tracking"""
@@ -5889,7 +5881,7 @@ class WargearProfile:
                     attacker_unit = getattr(attacker, "parent_unit", None)
                     if attacker_unit is not None:
                         attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
-                        attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                        attacker_key = get_entity_id(attacker_root)
                 except Exception:
                     attacker_key = None
             phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_root)
@@ -6033,7 +6025,7 @@ class WargearProfile:
                 attacker_unit = getattr(attacker, "parent_unit", None)
                 if attacker_unit is not None:
                     attacker_root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
-                    attacker_key = str(getattr(attacker_root, "_id", None) or id(attacker_root))
+                    attacker_key = get_entity_id(attacker_root)
             except Exception:
                 attacker_key = None
             phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=t_root)
@@ -6745,10 +6737,22 @@ def _split_wargear_name(raw_name: str) -> tuple[str, str]:
 
 class Wargear:
     def __init__(self, wargear_data: Dict):
+        self._id = str(uuid.uuid4())
         raw_name = wargear_data.get('name', '') or ''
         self.name, profile_name = _split_wargear_name(raw_name)
         self.type = wargear_data.get('type', '')
         self.profiles = { profile_name: WargearProfile(profile_name, wargear_data, self) }
+
+    @property
+    def id(self) -> str:
+        return self._id
+
+    def clone(self) -> "Wargear":
+        cloned = copy.deepcopy(self)
+        cloned._id = str(uuid.uuid4())
+        for profile in cloned.profiles.values():
+            profile.parent_wargear = cloned
+        return cloned
     def add_profile(self, profile_name: str, wargear_data: Dict):
         self.profiles[profile_name] = WargearProfile(profile_name, wargear_data, self)
 

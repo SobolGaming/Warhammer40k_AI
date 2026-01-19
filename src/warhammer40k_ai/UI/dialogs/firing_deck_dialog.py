@@ -93,13 +93,13 @@ class FiringDeckDialog(BaseDialog):
         self.add_button("confirm", self.width - 280, self.height - 55, 120, 38, enabled=True)
         self.add_button("cancel", self.width - 150, self.height - 55, 120, 38, enabled=True)
 
-    def _selected_model_ids(self) -> Set[int]:
-        mids: Set[int] = set()
+    def _selected_model_ids(self) -> Set[str]:
+        mids: Set[str] = set()
         for idx in self.selected_indices:
             if 0 <= idx < len(self.entries):
                 m = self.entries[idx].get("model")
                 if m is not None:
-                    mids.add(id(m))
+                    mids.add(m.id)
         return mids
 
     def _handle_button_click(self, button_name: str) -> bool:
@@ -140,7 +140,7 @@ class FiringDeckDialog(BaseDialog):
             # Enforce: one weapon per embarked model
             entry = self.entries[idx]
             m = entry.get("model")
-            if m is not None and id(m) in self._selected_model_ids():
+            if m is not None and m.id in self._selected_model_ids():
                 print("ERROR: Firing Deck: that embarked model is already selected (one weapon per model).")
                 return True
 

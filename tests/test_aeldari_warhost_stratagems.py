@@ -207,8 +207,8 @@ class TestAeldariWarhostStratagems(unittest.TestCase):
         ok = p1.stratagems.use("FIRE AND FADE", unit=unit, phase_name="Shooting phase")
         self.assertTrue(ok)
         sr = unit.special_rules
-        self.assertEqual(sr.get("fire_and_fade_no_charge_turn_owner"), "P1")
-        self.assertEqual(sr.get("fire_and_fade_no_embark_turn_owner"), "P1")
+        self.assertEqual(sr.get("fire_and_fade_no_charge_turn_owner"), p1.id)
+        self.assertEqual(sr.get("fire_and_fade_no_embark_turn_owner"), p1.id)
 
     def test_lightning_fast_reactions_sets_active(self):
         game, p1, p2, army1, _army2 = _build_game()

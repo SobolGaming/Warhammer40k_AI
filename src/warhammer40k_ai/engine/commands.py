@@ -42,6 +42,10 @@ class GameCommand:
             "created_at": float(self.created_at or 0.0),
         }
 
+    @property
+    def id(self) -> str:
+        return self.command_id
+
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "GameCommand":
         return cls(

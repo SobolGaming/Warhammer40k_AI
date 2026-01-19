@@ -11,6 +11,7 @@ class _Ability:
 class _PlayerStub:
     def __init__(self, name="Player", *, is_human=True):
         self.name = name
+        self.id = name
         self.control = SimpleNamespace(name="LOCAL" if is_human else "REMOTE")
         self.has_control = lambda: is_human
         self.game = None
@@ -27,6 +28,7 @@ class _ArmyStub:
 class _UnitStub:
     def __init__(self, name="Unit", *, keywords=None, abilities=None, army=None):
         self.name = name
+        self._id = name
         self.keywords = list(keywords or [])
         self.faction_keywords = ["ASTRA MILITARUM"]
         self.possible_abilities = list(abilities or [])

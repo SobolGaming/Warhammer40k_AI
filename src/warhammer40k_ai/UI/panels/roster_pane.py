@@ -8,6 +8,7 @@ from typing import List, Optional, Tuple, Dict
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.roster.player import Player
 from warhammer40k_ai.engine.game import Game
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 # Import icon drawing functions from ui_utils to avoid circular imports
 from ..ui_utils import (
@@ -110,7 +111,7 @@ class RosterPane(pygame.sprite.Sprite):
             name_running: Dict[str, int] = {}
             for u in self.roster:
                 nm = getattr(u, 'name', '')
-                uid = getattr(u, '_id', None) or str(id(u))
+                uid = get_entity_id(u)
                 if name_counts.get(nm, 0) > 1:
                     name_running[nm] = name_running.get(nm, 0) + 1
                     self._unit_display_names[uid] = f"{nm} {name_running[nm]}"
@@ -131,7 +132,7 @@ class RosterPane(pygame.sprite.Sprite):
     def get_unit_display_name(self, unit: Unit) -> str:
         """Return a roster-specific display name, enumerating duplicates (e.g. 'Bloodletters 1')."""
         try:
-            uid = getattr(unit, '_id', None) or str(id(unit))
+            uid = get_entity_id(unit)
             return self._unit_display_names.get(uid, getattr(unit, 'name', 'Unit'))
         except Exception:
             return getattr(unit, 'name', 'Unit')

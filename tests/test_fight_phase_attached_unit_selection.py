@@ -10,9 +10,14 @@ class TestFightPhaseAttachedUnitSelection(unittest.TestCase):
         class _Unit:
             def __init__(self, name: str):
                 self.name = name
+                self._id = name
                 self.models = [object()]  # non-empty
                 self.attached_to = None
                 self.is_leader = False
+
+            @property
+            def id(self):
+                return self._id
 
             def is_alive(self):
                 return True
@@ -47,5 +52,4 @@ class TestFightPhaseAttachedUnitSelection(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

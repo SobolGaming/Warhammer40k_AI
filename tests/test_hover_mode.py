@@ -129,11 +129,11 @@ def test_aircraft_forced_into_reserves_when_not_hover():
 
     deployment_results = {
         "reserves": {
-            p1.name: {
-                forced_unit.name: "deploy",
-                hover_unit.name: "deploy",
+            p1.id: {
+                forced_unit.id: "deploy",
+                hover_unit.id: "deploy",
             },
-            p2.name: {},
+            p2.id: {},
         }
     }
 

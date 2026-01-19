@@ -1,4 +1,5 @@
 from typing import List, Optional, Tuple, Dict, Any
+import uuid
 from enum import Enum, auto
 from ..units.unit import Unit
 from ..units.model import Model
@@ -692,10 +693,15 @@ class TerrainFeature:
             bounding_box: 3D bounding box for spatial indexing
             traversal_rules: Rules for which units can traverse this terrain
         """
+        self._id = str(uuid.uuid4())
         self.terrain_type = terrain_type
         self.footprint = footprint
         self.bounding_box = bounding_box
         self.traversal_rules = traversal_rules or {}
+
+    @property
+    def id(self) -> str:
+        return self._id
 
     def point_in_bounds(self, position: Tuple[float, float, float]) -> bool:
         """Check if a 3D position is within the terrain's bounding box."""
@@ -2363,6 +2369,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
 
 class ObjectivePoint:
     def __init__(self, x: float, y: float, z: float = 0.0, control_radius: float = 3.0) -> None:
+        self._id = str(uuid.uuid4())
         self.x = x
         self.y = y
         self.z = z
@@ -2379,6 +2386,10 @@ class ObjectivePoint:
         # Sticky control tracking (e.g., Uphold the Honour of the Emperor)
         self.sticky_controller = None
         self.sticky_source = None
+
+    @property
+    def id(self) -> str:
+        return self._id
 
     def set_sticky_control(self, player, source: str | None = None) -> None:
         self.sticky_controller = player
@@ -2496,6 +2507,7 @@ class Objective:
         - conditions (callable): A function or lambda to check if the objective is achieved.
         - location (tuple): (x, y) coordinates for objectives on the map (optional).
         """
+        self._id = str(uuid.uuid4())
         self.name = name
         self.category = category
         self.points = points
@@ -2503,6 +2515,10 @@ class Objective:
         self.conditions = conditions
         self.location = location
         self.completed = False
+
+    @property
+    def id(self) -> str:
+        return self._id
 
     def check_completion(self, game_state: 'Game') -> bool:
         """Evaluate if the objective is completed based on game state."""

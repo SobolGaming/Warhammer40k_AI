@@ -384,14 +384,14 @@ class IndividualModelMovementDialog(BaseDialog):
             return None
 
         try:
-            player_name = model.parent_unit.get_parent_army().player.name
+            player = model.parent_unit.get_parent_army().player
         except Exception:
-            player_name = None
-        if not player_name:
+            player = None
+        if player is None:
             return None
 
         zone_info = getattr(game, "deployment_zones", {}) or {}
-        z = zone_info.get(player_name) if isinstance(zone_info, dict) else None
+        z = zone_info.get(player.id) if isinstance(zone_info, dict) else None
         mission_zones = (z or {}).get("mission_zones") if isinstance(z, dict) else None
         if not mission_zones:
             return None
@@ -760,10 +760,10 @@ class IndividualModelMovementDialog(BaseDialog):
                 return False
             # Determine player by unit ownership
             try:
-                player_name = model.parent_unit.get_parent_army().player.name
+                player_id = model.parent_unit.get_parent_army().player.id
             except Exception:
-                player_name = ''
-            validation = self._validate_deploy_like_placement(game, model, battlefield_x, battlefield_y, battlefield_z, player_name)
+                player_id = ''
+            validation = self._validate_deploy_like_placement(game, model, battlefield_x, battlefield_y, battlefield_z, player_id)
             if not validation['valid']:
                 try:
                     facing_deg = math.degrees(self.get_deploy_facing_radians())
@@ -864,11 +864,11 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Determine player by unit ownership
         try:
-            player_name = model.parent_unit.get_parent_army().player.name
+            player_id = model.parent_unit.get_parent_army().player.id
         except Exception:
-            player_name = ''
+            player_id = ''
 
-        validation = self._validate_deploy_like_placement(game, model, x, y, z, player_name)
+        validation = self._validate_deploy_like_placement(game, model, x, y, z, player_id)
         if not validation['valid']:
             try:
                 facing_deg = math.degrees(self.get_deploy_facing_radians())
@@ -928,7 +928,7 @@ class IndividualModelMovementDialog(BaseDialog):
             self.selected_model_index = None
             self.awaiting_battlefield_click = False
 
-    def _validate_deploy_like_placement(self, game, model, x: float, y: float, z: float, player_name: str) -> dict:
+    def _validate_deploy_like_placement(self, game, model, x: float, y: float, z: float, player_id: str) -> dict:
         """Validate deployment or custom placement for a single model."""
         if callable(self.placement_validator):
             try:
@@ -936,7 +936,7 @@ class IndividualModelMovementDialog(BaseDialog):
             except Exception:
                 return {"valid": False, "reason": "Custom placement validation failed"}
         try:
-            return game.is_valid_single_model_deployment(model, x, y, z, player_name)
+            return game.is_valid_single_model_deployment(model, x, y, z, player_id)
         except Exception:
             return {"valid": False, "reason": "Deployment validation failed"}
 
@@ -1227,8 +1227,8 @@ class IndividualModelMovementDialog(BaseDialog):
         print(f"INFO: {model.name} (Model #{model_index + 1}) moved from ({current_pos[0]:.1f}, {current_pos[1]:.1f}, {current_pos[2]:.1f}) to ({final_position[0]:.1f}, {final_position[1]:.1f}, {final_position[2]:.1f})")
         try:
             from ...utility.event_bus import append_action
-            pn = model.parent_unit.get_parent_army().player.name
-            append_action(pn, f"{model.name} moved to ({final_position[0]:.1f}, {final_position[1]:.1f}), {final_position[2]:.1f}")
+            player = model.parent_unit.get_parent_army().player
+            append_action(player, f"{model.name} moved to ({final_position[0]:.1f}, {final_position[1]:.1f}), {final_position[2]:.1f}")
         except Exception:
             pass
         return True

@@ -1,6 +1,8 @@
 import pygame
 from typing import Callable, List, Optional, Tuple
 
+from warhammer40k_ai.utility.entity_ids import get_entity_id
+
 from .base_dialog import BaseDialog, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_WARNING, BUTTON_SELECTED
 
 
@@ -247,7 +249,7 @@ class LeaderAttachmentDialog(BaseDialog):
             def _army_key(u):
                 try:
                     a = u.get_parent_army()
-                    return getattr(a, "_id", None) or str(id(a))
+                    return get_entity_id(a)
                 except Exception:
                     return "no_army"
 
@@ -262,7 +264,7 @@ class LeaderAttachmentDialog(BaseDialog):
             running = {}
             for u in self.army_units:
                 nm = getattr(u, "name", "")
-                uid = getattr(u, "_id", None) or str(id(u))
+                uid = get_entity_id(u)
                 key = (_army_key(u), nm)
                 if name_counts.get(key, 0) > 1:
                     running[key] = running.get(key, 0) + 1
@@ -274,7 +276,7 @@ class LeaderAttachmentDialog(BaseDialog):
 
     def _get_display_name(self, unit) -> str:
         try:
-            uid = getattr(unit, "_id", None) or str(id(unit))
+            uid = get_entity_id(unit)
             return self._unit_display_names.get(uid, getattr(unit, "name", "Unit"))
         except Exception:
             return getattr(unit, "name", "Unit")
@@ -353,5 +355,4 @@ class LeaderAttachmentDialog(BaseDialog):
         self._update_buttons()
         self.draw_button(screen, "done", "Done")
         self.draw_button(screen, "cancel", "Cancel")
-
 

@@ -149,7 +149,7 @@ class TestIconOfWarEnhancement(unittest.TestCase):
         self.assertEqual(mock_roll.call_count, 2)
         self.assertFalse(target.is_battle_shocked())
 
-        actions = get_recent_actions(player.name, limit=10)
+        actions = get_recent_actions(player, limit=10)
         self.assertTrue(any("Icon of War" in entry for entry in actions))
 
 

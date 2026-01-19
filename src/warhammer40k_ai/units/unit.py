@@ -21,6 +21,7 @@ from ..utility.calcs import (
 from ..utility.dice import get_roll, DiceCollection
 from ..utility.attack_roll_parser import AttackRollCondition, AttackRollRule, parse_attack_roll_text
 from .status_effects import StatusEffect, BattleShockEffect
+from ..utility.entity_ids import get_entity_id
 import uuid
 import copy
 import re
@@ -483,7 +484,7 @@ class Unit:
                                 sr["internal_rivalries_move_mod_signature"] = sig
                                 self.special_rules = sr
                                 from ..utility.event_bus import append_action
-                                pn = self.get_parent_army().player.name
+                                pn = self.get_parent_army().player
                                 ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
                                 msg = f"Internal Rivalries: ignored negative Move modifiers ({ignored_text})."
                                 append_action(pn, msg)
@@ -538,7 +539,7 @@ class Unit:
                                 sr["driven_by_ultimate_rage_move_mod_signature"] = sig
                                 self.special_rules = sr
                                 from ..utility.event_bus import append_action
-                                pn = self.get_parent_army().player.name
+                                pn = self.get_parent_army().player
                                 ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
                                 msg = f"Driven by Ultimate Rage: ignored negative Move modifiers ({ignored_text})."
                                 append_action(pn, msg)
@@ -2766,6 +2767,10 @@ class Unit:
                     best_len = len(name_norm)
         return best
 
+    @property
+    def id(self) -> str:
+        return self._id
+
     def _parse_unit_composition(self, unit_composition):
         """
         Parse `datasheets_unit_composition` entries.
@@ -4107,10 +4112,10 @@ class Unit:
                 if model_name:
                     if model_instance.name.lower() == model_name.lower():
                         if wargear_instance:
-                            model_instance.wargear.append(wargear_instance)
+                            model_instance.wargear.append(wargear_instance.clone())
                 else:
                     if wargear_instance:
-                        model_instance.wargear.append(wargear_instance)
+                        model_instance.wargear.append(wargear_instance.clone())
             if optional_wargear:
                 for ow in optional_wargear:
                     try:
@@ -4395,7 +4400,7 @@ class Unit:
                             roll = int(get_roll("D6"))
                             try:
                                 from ..utility.event_bus import append_dice
-                                pn = self.get_parent_army().player.name
+                                pn = self.get_parent_army().player
                                 append_dice(pn, f"Mindless Killing Machines roll: {roll} for {self.name}")
                             except Exception:
                                 pass
@@ -4557,7 +4562,7 @@ class Unit:
         trigger_roll = get_roll("D6")
         try:
             from ..utility.event_bus import append_dice
-            pn = self.get_parent_army().player.name
+            pn = self.get_parent_army().player
             append_dice(pn, f"Deadly Demise trigger: rolled {trigger_roll} (need 6)")
         except Exception:
             pass
@@ -7008,7 +7013,7 @@ class Unit:
         """
         if model is None:
             return None, None
-        cache_key = f"model_invulnerable_save:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -8070,7 +8075,7 @@ class Unit:
                     sr[key] = sig
                     self.special_rules = sr
                     from ..utility.event_bus import append_action
-                    pn = self.get_parent_army().player.name
+                    pn = self.get_parent_army().player
                     label = "Advance roll" if str(kind or "").strip().lower() == "advance" else "Charge roll"
                     ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
                     append_action(pn, f"Internal Rivalries: ignored negative {label} modifiers ({ignored_text}).")
@@ -8118,7 +8123,7 @@ class Unit:
                     sr[key] = sig
                     self.special_rules = sr
                     from ..utility.event_bus import append_action
-                    pn = self.get_parent_army().player.name
+                    pn = self.get_parent_army().player
                     label = "Advance roll" if str(kind or "").strip().lower() == "advance" else "Charge roll"
                     ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
                     append_action(pn, f"Driven by Ultimate Rage: ignored negative {label} modifiers ({ignored_text}).")
@@ -8256,10 +8261,7 @@ class Unit:
                 root = enemy_unit
             if root is None:
                 continue
-            try:
-                rid = getattr(root, "_id", None) or id(root)
-            except Exception:
-                rid = id(root)
+            rid = get_entity_id(root)
             if rid in seen:
                 continue
             seen.add(rid)
@@ -8494,7 +8496,7 @@ class Unit:
             self.special_rules = sr
 
         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
-        target_id = str(getattr(target_root, "_id", None) or id(target_root))
+        target_id = get_entity_id(target_root)
 
         hits = sr.get("wargear_charge_keyword_hits")
         if not isinstance(hits, dict):
@@ -8521,17 +8523,20 @@ class Unit:
         hits[target_id] = entry
         sr["wargear_charge_keyword_hits"] = hits
 
-        owner_name = ""
+        owner_id = ""
         if game is not None:
             getter = getattr(game, "get_current_player", None)
             if callable(getter):
                 current_player = getter()
-                owner_name = str(getattr(current_player, "name", "") or "")
-        if not owner_name:
+                if current_player is not None:
+                    owner_id = get_entity_id(current_player)
+        if not owner_id:
             army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
-            owner_name = str(getattr(getattr(army, "player", None), "name", "") or "")
-        if owner_name:
-            sr["wargear_charge_keyword_hits_turn_owner"] = owner_name
+            player = getattr(army, "player", None)
+            if player is not None:
+                owner_id = get_entity_id(player)
+        if owner_id:
+            sr["wargear_charge_keyword_hits_turn_owner"] = owner_id
         if game is not None:
             sr["wargear_charge_keyword_hits_turn"] = int(getattr(game, "turn", 0) or 0)
         return updated
@@ -8544,15 +8549,15 @@ class Unit:
         if not isinstance(hits, dict) or target_unit is None:
             return None
         if game is not None:
-            owner_name = str(sr.get("wargear_charge_keyword_hits_turn_owner", "") or "")
-            if owner_name:
+            owner_id = str(sr.get("wargear_charge_keyword_hits_turn_owner", "") or "")
+            if owner_id:
                 getter = getattr(game, "get_current_player", None)
                 if callable(getter):
                     current = getter()
-                    if current is None or str(getattr(current, "name", "") or "") != owner_name:
+                    if current is None or get_entity_id(current) != owner_id:
                         return None
         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
-        target_id = str(getattr(target_root, "_id", None) or id(target_root))
+        target_id = get_entity_id(target_root)
         entry = hits.get(target_id)
         if not isinstance(entry, dict):
             return None
@@ -8809,7 +8814,7 @@ class Unit:
                     self.round_state.advance_roll = fixed
                     try:
                         from ..utility.event_bus import append_dice
-                        pn = self.get_parent_army().player.name
+                        pn = self.get_parent_army().player
                         append_dice(pn, f"Advance roll fixed: {fixed} for {self.name}")
                     except Exception:
                         pass
@@ -8835,7 +8840,7 @@ class Unit:
                 advance_roll = get_roll("D6")
             try:
                 from ..utility.event_bus import append_dice
-                pn = self.get_parent_army().player.name
+                pn = self.get_parent_army().player
                 if miracle_used:
                     append_dice(pn, f"Miracle die used for Advance roll: {advance_roll} for {self.name}")
                 else:
@@ -8857,7 +8862,7 @@ class Unit:
                         self.round_state.advance_roll = new_roll
                         try:
                             from ..utility.event_bus import append_dice as _append
-                            _append(_player.name, f"Advance re-roll: {new_roll} for {self.name}")
+                            _append(_player, f"Advance re-roll: {new_roll} for {self.name}")
                         except Exception:
                             pass
                         print(f"{self.name} advance re-roll: {new_roll}")
@@ -9001,7 +9006,7 @@ class Unit:
         roll = int(get_roll("D6"))
         try:
             from ..utility.event_bus import append_dice
-            pn = self.get_parent_army().player.name
+            pn = self.get_parent_army().player
             append_dice(pn, f"Super-heavy Walker terrain roll: {roll} for {self.name}")
         except Exception:
             pass
@@ -9308,7 +9313,7 @@ class Unit:
                 self.round_state.advance_roll = advance_roll
                 try:
                     from ..utility.event_bus import append_dice
-                    pn = self.get_parent_army().player.name
+                    pn = self.get_parent_army().player
                     append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name}")
                 except Exception:
                     pass
@@ -9334,7 +9339,7 @@ class Unit:
                     advance_roll = get_roll("D6")
                 try:
                     from ..utility.event_bus import append_dice
-                    pn = self.get_parent_army().player.name
+                    pn = self.get_parent_army().player
                     if miracle_used:
                         append_dice(pn, f"Miracle die used for Advance roll: {advance_roll} for {self.name}")
                     else:
@@ -9350,7 +9355,7 @@ class Unit:
                         self.round_state.advance_roll = new_roll
                         try:
                             from ..utility.event_bus import append_dice as _append
-                            _append(_player.name, f"Advance re-roll: {new_roll} for {self.name}")
+                            _append(_player, f"Advance re-roll: {new_roll} for {self.name}")
                         except Exception:
                             pass
                         return new_roll
@@ -10032,7 +10037,7 @@ class Unit:
                     pass
                 try:
                     from ..utility.event_bus import append_action
-                    pn = self.get_parent_army().player.name
+                    pn = self.get_parent_army().player
                     src_names = [getattr(s, "name", "") for s in sources if getattr(s, "name", "")]
                     src_text = ", ".join(src_names) if src_names else "Overwhelming Wrath"
                     append_action(pn, f"Overwhelming Wrath: {self.name} failed a Leadership test and remains stationary ({src_text}).")
@@ -10462,7 +10467,7 @@ class Unit:
                 game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
                 if game is None:
                     return True
-                if owner and str(getattr(game.get_current_player(), "name", "") or "") == owner:
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
                     if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
                         return True
         except Exception:
@@ -10611,7 +10616,7 @@ class Unit:
                 game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
                 if game is None:
                     return True
-                if owner and str(getattr(game.get_current_player(), "name", "") or "") == owner:
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
                     if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
                         return True
         except Exception:
@@ -10657,7 +10662,7 @@ class Unit:
             target_root = target_unit.get_attached_unit_root()
         except Exception:
             target_root = target_unit
-        target_id = getattr(target_root, "_id", None)
+        target_id = get_entity_id(target_root)
         engaged_ids = getattr(self.round_state, "engaged_enemies_at_turn_start", None) or set()
         if target_id is not None and target_id in engaged_ids:
             return "Thrill Seekers: cannot target a unit engaged at start of turn"
@@ -10671,12 +10676,12 @@ class Unit:
             phase_charge_targets = None
         if isinstance(phase_targets, dict) and target_id is not None:
             attackers = phase_targets.get(target_id, set()) or set()
-            other_attackers = [a for a in attackers if a != getattr(self, "_id", None)]
+            other_attackers = [a for a in attackers if a != get_entity_id(self)]
             if other_attackers:
                 return "Thrill Seekers: target already selected by another unit this phase"
         if isinstance(phase_charge_targets, dict) and target_id is not None:
             chargers = phase_charge_targets.get(target_id, set()) or set()
-            other_chargers = [a for a in chargers if a != getattr(self, "_id", None)]
+            other_chargers = [a for a in chargers if a != get_entity_id(self)]
             if other_chargers:
                 return "Thrill Seekers: target already selected by another unit this phase"
         return None
@@ -10701,7 +10706,7 @@ class Unit:
             target_root = target_unit.get_attached_unit_root()
         except Exception:
             target_root = target_unit
-        target_id = getattr(target_root, "_id", None)
+        target_id = get_entity_id(target_root)
         engaged_ids = getattr(self.round_state, "engaged_enemies_at_turn_start", None) or set()
         if target_id is not None and target_id in engaged_ids:
             return "Sensational Performance: cannot target a unit engaged at start of turn"
@@ -11113,7 +11118,7 @@ class Unit:
             engaged = self._is_locked_in_combat(game_map)
 
             # Build per-model "has pistol decl" and "has other decl"
-            by_model: dict[int, dict[str, bool]] = {}
+            by_model: dict[str, dict[str, bool]] = {}
             for decl in weapon_declarations:
                 wp = decl.get("weapon_profile")
                 if wp is None:
@@ -11122,7 +11127,7 @@ class Unit:
                 for m in decl.get("models") or []:
                     if not getattr(m, "is_alive", False):
                         continue
-                    key = id(m)
+                    key = get_entity_id(m)
                     entry = by_model.setdefault(key, {"pistol": False, "other": False})
                     if is_pistol:
                         entry["pistol"] = True
@@ -11143,7 +11148,7 @@ class Unit:
                     if not getattr(m, "is_alive", False):
                         removed += 1
                         continue
-                    flags = by_model.get(id(m), {"pistol": False, "other": False})
+                    flags = by_model.get(get_entity_id(m), {"pistol": False, "other": False})
                     if is_vehicle_or_monster:
                         # VEHICLE/MONSTER are not subject to the pistol-vs-other exclusivity rule.
                         keep_models.append(m)
@@ -11190,9 +11195,10 @@ class Unit:
                 # De-dupe
                 seen = set()
                 for m in fd_models:
-                    if id(m) in seen:
+                    mid = get_entity_id(m)
+                    if mid in seen:
                         continue
-                    seen.add(id(m))
+                    seen.add(mid)
                     try:
                         setattr(m, "_shot_via_firing_deck_this_round", True)
                     except Exception:
@@ -11224,7 +11230,7 @@ class Unit:
                         t = decl.get("target_unit")
                         if t is None:
                             continue
-                        tid = id(t)
+                        tid = get_entity_id(t)
                         if tid in seen_targets:
                             continue
                         seen_targets.add(tid)
@@ -11245,7 +11251,7 @@ class Unit:
                 t = decl.get("target_unit")
                 if t is None:
                     continue
-                tid = id(t)
+                tid = get_entity_id(t)
                 if tid in seen_targets:
                     continue
                 seen_targets.add(tid)
@@ -11257,12 +11263,12 @@ class Unit:
             touched_targets = []
 
         attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
-        remaining_by_target: dict[int, dict] = {}
+        remaining_by_target: dict[str, dict] = {}
         for decl in weapon_declarations:
             t = decl.get("target_unit")
             if t is None:
                 continue
-            tid = id(t)
+            tid = get_entity_id(t)
             entry = remaining_by_target.get(tid)
             if entry is None:
                 remaining_by_target[tid] = {"unit": t, "count": 1}
@@ -11295,7 +11301,7 @@ class Unit:
                 )
                 successful_attacks += weapon_attacks
             finally:
-                tid = id(target_unit)
+                tid = get_entity_id(target_unit)
                 entry = remaining_by_target.get(tid)
                 if entry is not None:
                     entry["count"] = int(entry.get("count", 0) or 0) - 1
@@ -11319,7 +11325,7 @@ class Unit:
             print(f"{self.name} completed shooting with {successful_attacks} attacks executed")
             try:
                 from ..utility.event_bus import append_action
-                pn = self.get_parent_army().player.name
+                pn = self.get_parent_army().player
                 append_action(pn, f"{self.name} completed shooting: {successful_attacks} attacks")
             except Exception:
                 pass
@@ -11585,10 +11591,7 @@ class Unit:
                 root = enemy_unit
             if root is None:
                 continue
-            try:
-                rid = getattr(root, "_id", None) or id(root)
-            except Exception:
-                rid = id(root)
+            rid = get_entity_id(root)
             if rid in seen:
                 continue
             seen.add(rid)
@@ -11925,10 +11928,10 @@ class Unit:
                 if selected is not None:
                     active_profile = selected
                     army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
-                    pname = str(getattr(getattr(army, "player", None), "name", "") or "")
-                    if pname:
+                    player = getattr(army, "player", None)
+                    if player is not None:
                         from ..utility.event_bus import append_dice
-                        append_dice(pname, f"Bubblechukka rolled {roll}: using {selected.name}")
+                        append_dice(player, f"Bubblechukka rolled {roll}: using {selected.name}")
 
             # ONE SHOT: prevent repeated use (per model)
             if getattr(active_profile, "is_one_shot", lambda: False)():
@@ -12197,10 +12200,10 @@ class Unit:
                             want_reroll = False
                         try:
                             from ..utility.event_bus import append_action
-                            pn = getattr(player, "name", "")
+                            pn = player
                         except Exception:
                             append_action = None
-                            pn = ""
+                            pn = None
                         if want_reroll:
                             original_roll = roll_result
                             new_roll = get_roll(dice_expr)
@@ -12473,11 +12476,11 @@ class Unit:
             return 0
         if chosen_models is not None:
             to_return = []
-            seen_ids: set[int] = set()
+            seen_ids: set[str] = set()
             for model in list(chosen_models or []):
                 if model is None:
                     continue
-                mid = id(model)
+                mid = get_entity_id(model)
                 if mid in seen_ids:
                     continue
                 if model in destroyed:
@@ -12790,7 +12793,7 @@ class Unit:
             turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
             current_player = game.get_current_player()
             if owner and current_player is not None:
-                if current_player.name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                if current_player.id == owner and int(getattr(game, "turn", 0) or 0) == turn:
                     print(f"{self.name} cannot embark this turn (Fire and Fade)")
                     return
 
@@ -13094,12 +13097,12 @@ class Unit:
         except Exception:
             current_player = None
         try:
-            owner = str(getattr(current_player, "name", "") or "")
+            owner = str(getattr(current_player, "id", "") or "")
         except Exception:
             owner = ""
         if not owner:
             try:
-                owner = str(getattr(getattr(army, "player", None), "name", "") or "")
+                owner = str(getattr(getattr(army, "player", None), "id", "") or "")
             except Exception:
                 owner = ""
         try:
@@ -14993,7 +14996,7 @@ class Unit:
                 turn = int(sr.get("cabal_temporal_surge_no_charge_turn", 0) or 0)
                 if owner and game is not None:
                     try:
-                        if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
                             return False
                     except Exception:
                         return False
@@ -15007,7 +15010,7 @@ class Unit:
                 owner = str(sr.get("pain_swooping_descent_no_charge_turn_owner") or "")
                 turn = int(sr.get("pain_swooping_descent_no_charge_turn", 0) or 0)
                 if owner and game is not None:
-                    if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
                         return False
         except Exception:
             pass
@@ -15019,7 +15022,7 @@ class Unit:
                 owner = str(sr.get("fire_and_fade_no_charge_turn_owner") or "")
                 turn = int(sr.get("fire_and_fade_no_charge_turn", 0) or 0)
                 if owner and game is not None:
-                    if game.get_current_player().name == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
                         return False
         except Exception:
             pass
@@ -15527,7 +15530,7 @@ class Unit:
         - profile: WargearProfile selected
         - profile_name: profile name string (optional)
 
-        After this, `_firing_deck_virtual_sources[id(profile_clone)] = [source_model]` is populated
+        After this, `_firing_deck_virtual_sources[profile_clone.id] = [source_model]` is populated
         so shooting resolution can mark those embarked models as having shot.
         """
         import copy
@@ -15570,6 +15573,7 @@ class Unit:
 
             # Clone the profile so we can safely re-parent it without mutating the source model's weapon.
             pclone = copy.copy(src_profile)
+            pclone._id = str(uuid.uuid4())
             vname = f"{getattr(src_wargear, 'name', 'Weapon')} (Firing Deck)"
             vwg = _VirtualWargear(vname, pclone)
             pclone.parent_wargear = vwg
@@ -15583,7 +15587,7 @@ class Unit:
                     continue
 
             self._firing_deck_virtual_wargear.append(vwg)
-            self._firing_deck_virtual_sources[id(pclone)] = [src_model]
+            self._firing_deck_virtual_sources[pclone.id] = [src_model]
     
     def has_fight_first(self) -> bool:
         """Check if the unit has Fight First ability.
@@ -15951,7 +15955,7 @@ class Unit:
         """True if this model has the Furious Onslaught datasheet ability."""
         if model is None:
             return False
-        cache_key = f"furious_onslaught:{getattr(model, '_id', id(model))}"
+        cache_key = f"furious_onslaught:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return bool(self._ability_cache[cache_key])
 
@@ -15982,7 +15986,7 @@ class Unit:
         """
         if model is None:
             return None
-        cache_key = f"closest_enemy_hit_reroll_rule:{getattr(model, '_id', id(model))}"
+        cache_key = f"closest_enemy_hit_reroll_rule:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -16020,7 +16024,7 @@ class Unit:
         """
         if model is None:
             return None
-        cache_key = f"closest_monster_vehicle_reroll_rule:{getattr(model, '_id', id(model))}"
+        cache_key = f"closest_monster_vehicle_reroll_rule:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -16074,7 +16078,7 @@ class Unit:
         """
         if model is None:
             return 0
-        cache_key = f"two_melee_weapons_attacks_bonus:{getattr(model, '_id', id(model))}"
+        cache_key = f"two_melee_weapons_attacks_bonus:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             try:
                 return int(self._ability_cache[cache_key] or 0)
@@ -16312,7 +16316,7 @@ class Unit:
         """
         if model is None:
             return False, None
-        cache_key = f"model_reroll_wound_vs_character:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_reroll_wound_vs_character:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -16353,7 +16357,7 @@ class Unit:
         """
         if model is None:
             return False, None
-        cache_key = f"model_reroll_hit_vs_character:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_reroll_hit_vs_character:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -16397,7 +16401,7 @@ class Unit:
         atype = str(attack_type or "").strip().lower()
         if atype not in ("melee", "ranged"):
             atype = "any"
-        cache_key = f"model_hit_bonus_vs_fly:{getattr(model, '_id', id(model))}:{atype}"
+        cache_key = f"model_hit_bonus_vs_fly:{get_entity_id(model)}:{atype}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
@@ -16454,7 +16458,7 @@ class Unit:
     def _get_model_attack_roll_rules(self, model: Optional['Model'] = None) -> list[tuple['AttackRollRule', str]]:
         if model is None:
             return []
-        cache_key = f"model_attack_roll_rules:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_attack_roll_rules:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
@@ -16592,7 +16596,7 @@ class Unit:
         """
         if model is None:
             return []
-        cache_key = f"model_post_shoot_battleshock:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_post_shoot_battleshock:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
@@ -16635,7 +16639,7 @@ class Unit:
         """
         if model is None:
             return []
-        cache_key = f"model_post_shoot_suppression:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_post_shoot_suppression:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
@@ -16677,7 +16681,7 @@ class Unit:
         """
         if model is None:
             return []
-        cache_key = f"model_fight_phase_engagement_battleshock:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_fight_phase_engagement_battleshock:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
@@ -16720,7 +16724,7 @@ class Unit:
         """
         if model is None:
             return []
-        cache_key = f"model_fight_phase_end_mortal_wounds:{getattr(model, '_id', id(model))}"
+        cache_key = f"model_fight_phase_end_mortal_wounds:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return list(self._ability_cache[cache_key])
 
@@ -17805,7 +17809,7 @@ class Unit:
                         break
                 if within_nine:
                     try:
-                        owner = self.get_parent_army().player.name
+                        owner = self.get_parent_army().player.id
                     except Exception:
                         owner = ""
                     sr["pain_swooping_descent_no_charge_turn"] = int(turn or 0)

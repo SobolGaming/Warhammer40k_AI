@@ -47,7 +47,7 @@ def test_blood_gods_favour_grants_six_rerolls():
     from warhammer40k_ai.rules.blessings_of_khorne import BlessingsOfKhorneManager
     from warhammer40k_ai.rules.wrathful_presence import KEY_BLOOD_GODS_FAVOUR, set_active_wrathful_presence
 
-    player = SimpleNamespace(name="Player 1")
+    player = SimpleNamespace(name="Player 1", id="Player 1")
     game = SimpleNamespace(turn=2)
     player.game = game
     army = SimpleNamespace(player=player, units=[])
@@ -65,8 +65,8 @@ def test_overwhelming_wrath_blocks_fall_back_on_failed_leadership(monkeypatch):
     from warhammer40k_ai.units.unit import Unit
     from warhammer40k_ai.rules.wrathful_presence import KEY_OVERWHELMING_WRATH, set_active_wrathful_presence
 
-    player_a = SimpleNamespace(name="Player A")
-    player_b = SimpleNamespace(name="Player B")
+    player_a = SimpleNamespace(name="Player A", id="Player A")
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     game = SimpleNamespace(turn=2)
     player_a.game = game
     player_b.game = game
@@ -99,8 +99,8 @@ def test_driven_by_ultimate_rage_ignores_negative_hit_modifiers(monkeypatch):
     from warhammer40k_ai.units.wargear import WargearProfile
     from warhammer40k_ai.rules.wrathful_presence import KEY_DRIVEN_BY_ULTIMATE_RAGE, set_active_wrathful_presence
 
-    player_a = SimpleNamespace(name="Player A")
-    player_b = SimpleNamespace(name="Player B")
+    player_a = SimpleNamespace(name="Player A", id="Player A")
+    player_b = SimpleNamespace(name="Player B", id="Player B")
     game = SimpleNamespace(turn=2)
     player_a.game = game
     player_b.game = game

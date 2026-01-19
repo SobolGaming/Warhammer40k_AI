@@ -3,6 +3,7 @@
 from typing import Optional
 
 from ..utility.aura_utils import unit_within_range_of_unit
+from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
 
@@ -91,7 +92,7 @@ class EmperorsChildrenDetachmentManager(DetachmentManagerBase):
             current = getattr(game, "get_current_player", lambda: None)()
         except Exception:
             current = None
-        return (br, id(current))
+        return (br, get_entity_id(current))
 
     def _unit_on_battlefield(self, unit) -> bool:
         if unit is None:

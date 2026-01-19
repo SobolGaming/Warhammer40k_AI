@@ -1,6 +1,7 @@
 ﻿# This is the player that gets put onto a Battlefield and has an Army
 
 import logging
+import uuid
 from typing import Any
 from enum import Enum, auto
 from .army import Army
@@ -20,6 +21,7 @@ class PlayerControl(Enum):
 
 class Player:
     def __init__(self, name: str, control: PlayerControl = PlayerControl.LOCAL, army: Army = None):
+        self._id = str(uuid.uuid4())
         self.name = name
         if control not in (PlayerControl.LOCAL, PlayerControl.REMOTE):
             raise ValueError(f"Invalid player control: {control}")
@@ -62,6 +64,10 @@ class Player:
         # One-shot selection overrides for optional ability choices.
         self._next_optional_selections: dict[str, object] = {}
         #print(f"Player {self.name} created with army: {self.army}")
+
+    @property
+    def id(self) -> str:
+        return self._id
 
     def has_control(self) -> bool:
         return self.control == PlayerControl.LOCAL
@@ -201,14 +207,13 @@ class Player:
             self._record_cp_change(-amount, reason=reason or "Command Points spent", source=source or "spend")
             if str(source or "").strip().lower() == "stratagem" or "stratagem:" in str(reason or "").lower():
                 from ..utility.event_bus import append_action
-                pname = getattr(self, "name", "Player")
                 strat_name = ""
                 if "stratagem:" in str(reason or "").lower():
                     strat_name = str(reason).split(":", 1)[1].strip()
                 if strat_name:
-                    append_action(pname, f"Stratagem used: {strat_name} ({amount} CP)")
+                    append_action(self, f"Stratagem used: {strat_name} ({amount} CP)")
                 else:
-                    append_action(pname, f"Stratagem used ({amount} CP)")
+                    append_action(self, f"Stratagem used ({amount} CP)")
             return True
         return False
 

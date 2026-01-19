@@ -90,6 +90,7 @@ class _ArmyStub:
 class _PlayerStub:
     def __init__(self, name: str, army: _ArmyStub):
         self.name = name
+        self.id = name
         self.army = army
         self.game = None
 
@@ -101,7 +102,7 @@ class _GameStub:
     def _shadow_of_chaos_zones(self, player):
         return set()
 
-    def is_position_in_deployment_zone(self, x: float, y: float, player_name: str) -> bool:
+    def is_position_in_deployment_zone(self, x: float, y: float, player_id: str) -> bool:
         return False
 
 

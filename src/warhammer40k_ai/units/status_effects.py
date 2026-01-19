@@ -1,4 +1,5 @@
 from typing import Callable, TYPE_CHECKING
+import uuid
 from enum import Enum, auto
 if TYPE_CHECKING:
     from .unit import Unit
@@ -6,11 +7,16 @@ if TYPE_CHECKING:
 
 class StatusEffect:
     def __init__(self, name: str, turn_duration: int, phase_duration: int, apply_effect: Callable, remove_effect: Callable):
+        self._id = str(uuid.uuid4())
         self.name = name
         self.turn = turn_duration
         self.phase = phase_duration
         self.apply_effect = apply_effect  # Function to apply effect
         self.remove_effect = remove_effect  # Function to remove effect
+
+    @property
+    def id(self) -> str:
+        return self._id
     
     def check_expiration(self, unit: 'Unit', current_turn: int = None, current_phase: int = None):
         # If no current turn/phase provided, assume effect is still active

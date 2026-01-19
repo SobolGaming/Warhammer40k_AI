@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_SHADOW_IN_THE_WARP, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 
 
 class ShadowInTheWarpManager:
@@ -99,10 +100,7 @@ class ShadowInTheWarpManager:
         return bool(self._eligible_shadow_sources())
 
     def _unit_id(self, unit) -> str:
-        try:
-            return str(getattr(unit, "_id", None) or id(unit))
-        except Exception:
-            return str(id(unit))
+        return get_entity_id(unit)
 
     def _apply_shadow_test_modifier(self, unit, *, game=None, game_map=None) -> None:
         if unit is None:

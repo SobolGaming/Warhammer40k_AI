@@ -43,7 +43,7 @@ class TestAuraMeleeAttacksBonus(unittest.TestCase):
 
         game_map = _Map([attacker_unit, source1, source2])
         game = SimpleNamespace(map=game_map)
-        player = SimpleNamespace(game=game)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army = SimpleNamespace(player=player)
         attacker_unit._army = army
         source1._army = army
@@ -61,5 +61,4 @@ class TestAuraMeleeAttacksBonus(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
 

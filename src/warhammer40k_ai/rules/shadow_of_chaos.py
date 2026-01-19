@@ -216,12 +216,12 @@ class ShadowOfChaosManager:
             in_own = False
             in_enemy = False
             try:
-                in_own = game.is_position_in_deployment_zone(float(x), float(y), player.name)
+                in_own = game.is_position_in_deployment_zone(float(x), float(y), player.id)
             except Exception:
                 in_own = False
             try:
                 if opponent is not None:
-                    in_enemy = game.is_position_in_deployment_zone(float(x), float(y), opponent.name)
+                    in_enemy = game.is_position_in_deployment_zone(float(x), float(y), opponent.id)
             except Exception:
                 in_enemy = False
             zone = "own" if in_own else "enemy" if in_enemy else "nml"

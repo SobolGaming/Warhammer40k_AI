@@ -474,8 +474,7 @@ class PowerFromPainManager:
         roll = int(get_roll("D6"))
         try:
             from ..utility.event_bus import append_dice
-            pn = getattr(player, "name", "")
-            append_dice(pn, f"Pain Adept roll: {roll}")
+            append_dice(player, f"Pain Adept roll: {roll}")
         except Exception:
             pass
         if roll >= 4:
@@ -1042,7 +1041,7 @@ class PowerFromPainManager:
             from ..utility.event_bus import append_dice
             player = self._unit_owner(unit)
             if player is not None:
-                append_dice(player.name, f"Fleshcraft return: D3+1 = {amount}")
+                append_dice(player, f"Fleshcraft return: D3+1 = {amount}")
         except Exception:
             pass
         return self._return_destroyed_bodyguard_models(unit, amount=amount, game_map=getattr(game, "map", None))

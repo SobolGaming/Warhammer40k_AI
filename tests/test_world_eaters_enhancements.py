@@ -291,7 +291,7 @@ class TestWorldEatersEnhancements(unittest.TestCase):
 
         battlefield = Battlefield(width=44, height=30)
         game = Game(battlefield, players=[])
-        player = SimpleNamespace(game=game)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
         army.player = player
         mgr = BlessingsOfKhorneManager()
         mgr.on_battle_round_start(1)

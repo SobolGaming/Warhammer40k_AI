@@ -5,6 +5,7 @@ from types import SimpleNamespace
 class _PlayerStub:
     def __init__(self, name: str, control_name: str, choice=None):
         self.name = name
+        self.id = name
         self.control = SimpleNamespace(name=control_name)
         self.has_control = lambda: control_name == "LOCAL"
         self._choice = choice

@@ -47,6 +47,7 @@ class TestOathOfMoment(unittest.TestCase):
 
         player = SimpleNamespace(
             name="P1",
+            id="P1",
             control=SimpleNamespace(name="REMOTE"), has_control=lambda: False,
             _choose_optional_value=lambda *_a, **_k: None,
         )
@@ -82,7 +83,7 @@ class TestOathOfMoment(unittest.TestCase):
 
         # Minimal game/player/army wiring for roll_made publish calls
         game = SimpleNamespace(event_system=EventSystem(), map=None)
-        player = SimpleNamespace(name="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="LOCAL"), has_control=lambda: True, game=game)
         army = Army("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         army.player = player
@@ -223,7 +224,7 @@ class TestOathOfMoment(unittest.TestCase):
         embarked.embarked_in = object()
         available = _Unit("AvailableUnit")
 
-        player = SimpleNamespace(control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, _choose_optional_value=lambda *_a, **_k: None)
+        player = SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False, _choose_optional_value=lambda *_a, **_k: None)
         army = Army("Space Marines", "Gladius Task Force")
         army.faction_id = "SM"
         player.get_army = lambda: army
