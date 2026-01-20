@@ -6,9 +6,9 @@ movement validations used by Normal moves, Advances, Fall Back moves, Charges, a
 fight-phase moves.
 
 Related docs:
-- `docs/CHARGE_ROLL_MODIFIERS.md` (charge roll math and modifiers)
-- `docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md` (fight-phase move intent and UI flow)
-- `docs/RUINS_TERRAIN_SYSTEM.md` (ruins geometry and floor rules)
+- [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md): charge roll math and modifiers.
+- [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md): fight-phase move intent and UI flow.
+- [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md): ruins geometry and floor rules.
 
 Potential future split-outs (if this grows):
 - Charge movement
@@ -181,7 +181,7 @@ Key differences from Normal moves:
 - Allows ending in engagement range.
 - Uses `get_charge_movement_path()` and charge-specific validation rules.
 
-Charge roll behavior and modifiers are documented in `docs/CHARGE_ROLL_MODIFIERS.md`.
+Charge roll behavior and modifiers are documented in [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md).
 
 ```9595:9715:src/warhammer40k_ai/units/unit.py
     def charge_move(self, destination: Tuple[float, float, float], game_map: 'Map', target_unit: 'Unit' = None) -> bool:
@@ -214,7 +214,7 @@ the same pathfinding/validation system with different rule constraints:
   with possible overrides from rules.
 - Pivot costs are disabled for these moves to avoid rejecting valid 3" moves.
 
-See `docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md` for the workflow and UI details.
+See [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md) for the workflow and UI details.
 
 ### Terrain movement
 
@@ -224,7 +224,7 @@ Terrain is evaluated in `utility/calcs.py`:
 - `can_traverse_freely()` decides whether vertical cost is ignored.
 
 RUINS have special logic for wall traversal and floor selection. See
-`docs/RUINS_TERRAIN_SYSTEM.md` for the terrain system details.
+[Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md) for the terrain system details.
 
 ### Fly rules and vertical distance
 
