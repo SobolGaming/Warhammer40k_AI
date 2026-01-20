@@ -41,7 +41,7 @@ from ..utility.modifiers import Modifier, ModifierOp
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -794,6 +794,7 @@ def _deserialize_decision(data: dict) -> DecisionRequest:
         {
             "decision_id": data.get("decision_id"),
             "player_id": data.get("player_id"),
+            "decision_type": data.get("decision_type"),
             "prompt": data.get("prompt"),
             "options": options,
             "context": data.get("context", {}),

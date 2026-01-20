@@ -21,6 +21,7 @@ class FiringDeckDialog(BaseDialog):
         self.selected_indices: Set[int] = set()
         self.on_confirm: Optional[Callable[[List[Dict]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
 
         # Scrolling
         self.scroll_offset = 0
@@ -31,8 +32,10 @@ class FiringDeckDialog(BaseDialog):
         transport_unit,
         firing_deck_x: int,
         entries: List[Dict],
-        on_confirm: Callable[[List[Dict]], None],
+        on_confirm: Callable[[str, Dict], None],
         on_cancel: Optional[Callable[[], None]] = None,
+        *,
+        decision_request=None,
     ) -> None:
         self.transport_unit = transport_unit
         self.firing_deck_x = int(firing_deck_x or 0)
@@ -40,6 +43,7 @@ class FiringDeckDialog(BaseDialog):
         self.selected_indices = set()
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
+        self.decision_request = decision_request
         self.scroll_offset = 0
         super().show()
         self._create_buttons()
@@ -52,6 +56,7 @@ class FiringDeckDialog(BaseDialog):
         self.selected_indices = set()
         self.on_confirm = None
         self.on_cancel = None
+        self.decision_request = None
         self.scroll_offset = 0
         self.max_scroll = 0
 
@@ -110,12 +115,9 @@ class FiringDeckDialog(BaseDialog):
             return True
 
         if button_name == "confirm":
-            chosen: List[Dict] = []
-            for i in sorted(self.selected_indices):
-                if 0 <= i < len(self.entries):
-                    chosen.append(self.entries[i])
-            if self.on_confirm:
-                self.on_confirm(chosen)
+            option_id = self._option_id_for_action("confirm")
+            if option_id and self.on_confirm:
+                self.on_confirm(option_id, {"selected_entries": self._build_selected_payload()})
             self.hide()
             return True
 
@@ -148,6 +150,35 @@ class FiringDeckDialog(BaseDialog):
             return True
 
         return False
+
+    def _option_id_for_action(self, action: str) -> str:
+        from ..decision_ui_utils import option_id_for_action
+
+        return option_id_for_action(self.decision_request, action)
+
+    def _build_selected_payload(self) -> List[Dict]:
+        try:
+            from ...utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+        entries_payload: List[Dict] = []
+        for i in sorted(self.selected_indices):
+            if not (0 <= i < len(self.entries)):
+                continue
+            entry = self.entries[i]
+            model = entry.get("model")
+            wargear = entry.get("wargear")
+            profile_name = entry.get("profile_name")
+            if get_entity_id is None or model is None or wargear is None or not profile_name:
+                continue
+            entries_payload.append(
+                {
+                    "model_id": get_entity_id(model),
+                    "wargear_id": get_entity_id(wargear),
+                    "profile_name": str(profile_name),
+                }
+            )
+        return entries_payload
 
     def draw(self, screen: pygame.Surface) -> None:
         if not self.visible:

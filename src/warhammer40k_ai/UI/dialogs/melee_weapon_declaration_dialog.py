@@ -9,6 +9,7 @@ import pygame
 from typing import List, Dict, Optional, Callable
 from warhammer40k_ai.units.unit import Unit
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED, TEXT_PRIMARY, TEXT_SECONDARY
+from ...utility.entity_ids import get_entity_id
 
 # Enhanced Colors
 PANEL_BG = (50, 50, 50)
@@ -38,6 +39,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.target_unit = None
         self.eligible_models = None
         self.eligible_models_override = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
         
         # Model-based weapon declarations storage
         self.model_weapon_selections = {}  # {model_index: {weapon_profile_id: weapon_info}}
@@ -62,13 +65,19 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         
         # Fonts provided by BaseDialog: self.font_large/medium/small
     
-    def show(self, unit: Unit, callback: Callable, game_map=None, target_unit=None, *, eligible_models=None):
+    def show(self, unit: Unit, callback: Callable, game_map=None, target_unit=None, *, eligible_models=None, decision_request=None):
         """Show the melee weapon declaration dialog."""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
         self.target_unit = target_unit
         self.eligible_models_override = set(eligible_models) if eligible_models is not None else None
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
         # Preserve callback in BaseDialog for button handling
         super().show(callback)
         
@@ -91,6 +100,8 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         self.weapon_buttons = []
         self.selected_model_index = None
         self.expanded_weapon_groups.clear()  # Clear expansion state
+        self.decision_request = None
+        self._option_entries = []
     
     def _initialize_weapon_selection(self):
         """Initialize the model-based weapon selection interface."""
@@ -369,7 +380,7 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
         """Execute the declared melee attacks."""
         if self.callback:
             # Convert model-based selections to weapon declarations format
-            weapon_declarations = []
+            weapon_bundles = []
             
             for model_index, weapon_selections in self.model_weapon_selections.items():
                 if model_index >= len(self.unit.models):
@@ -381,12 +392,17 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                 
                 # Each model should have exactly one weapon selected (primary + any extra attacks)
                 for profile_id, weapon_info in weapon_selections.items():
-                    weapon_declarations.append({
-                        'model': model,
-                        'weapon_profile': weapon_info['profile'],
-                        'wargear': weapon_info['wargear'],
-                        'profile_name': weapon_info.get('profile_name', 'default')
-                    })
+                    wargear = weapon_info.get("wargear")
+                    profile_name = weapon_info.get("profile_name", "default")
+                    if wargear is None:
+                        continue
+                    weapon_bundles.append(
+                        {
+                            "model_id": get_entity_id(model),
+                            "wargear_id": get_entity_id(wargear),
+                            "profile_name": str(profile_name or "default"),
+                        }
+                    )
             
             # Validate that each alive model has at least one weapon selected
             total_models = len([m for m in self.unit.models if m.is_alive])
@@ -396,9 +412,10 @@ class MeleeWeaponDeclarationDialog(BaseDialog):
                 print(f"WARN: Warning: Only {models_with_weapons}/{total_models} models have weapon selections")
                 print(f"ERROR: Some models may not be able to attack")
             
-            print(f"INFO: Weapon selection completed with {len(weapon_declarations)} weapon declarations")
+            print(f"INFO: Weapon selection completed with {len(weapon_bundles)} weapon declarations")
             print(f"INFO: Covering {models_with_weapons}/{total_models} models")
-            self.callback(weapon_declarations)
+            option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+            self.callback(option_id, {"weapon_bundles": weapon_bundles})
         self.hide()
     
     def _is_click_in_dialog(self, mouse_pos):

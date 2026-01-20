@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+from typing import Iterable, List, Optional
+
+from .decisions import DecisionOption, DecisionRequest
+from .decision_kinds import (
+    DECISION_ATTACH_LEADER,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_DECLARE_RESERVES,
+    DECISION_SCOUT_MOVE,
+)
+from ..utility.entity_ids import get_entity_id
+
+
+def _iter_units(units: Iterable[object] | None) -> List[object]:
+    return [u for u in list(units or []) if u is not None]
+
+
+def _player_id_for_unit(unit: object) -> Optional[str]:
+    try:
+        army = unit.get_parent_army()
+    except Exception:
+        army = getattr(unit, "parent_army", None)
+    if army is None:
+        return None
+    try:
+        player = getattr(army, "player", None)
+    except Exception:
+        player = None
+    return getattr(player, "id", None) if player is not None else None
+
+
+def _leader_attachment_options(leader, bodyguards: List[object]) -> List[DecisionOption]:
+    leader_id = get_entity_id(leader)
+    options = [DecisionOption.create("Unattached", payload={"leader_id": leader_id, "bodyguard_id": None})]
+    current = getattr(leader, "attached_to", None)
+    for bg in bodyguards:
+        try:
+            if not leader.can_attach_to(bg):
+                continue
+        except Exception:
+            continue
+        if bg is not current:
+            try:
+                max_leaders = int(bg.max_attached_leaders())
+            except Exception:
+                max_leaders = 1
+            try:
+                current_leaders = list(getattr(bg, "attached_leaders", []) or [])
+            except Exception:
+                current_leaders = []
+            if len(current_leaders) >= max_leaders:
+                continue
+        label = str(getattr(bg, "name", "Bodyguard"))
+        options.append(
+            DecisionOption.create(
+                label,
+                payload={"leader_id": leader_id, "bodyguard_id": get_entity_id(bg)},
+            )
+        )
+    return options
+
+
+def build_leader_attachment_requests(game: object, units: Iterable[object]) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    leaders = [u for u in all_units if bool(getattr(u, "is_leader", False))]
+    bodyguards = [u for u in all_units if not bool(getattr(u, "is_leader", False))]
+    requests: List[DecisionRequest] = []
+    for leader in leaders:
+        options = _leader_attachment_options(leader, bodyguards)
+        prompt = f"Attach leader {getattr(leader, 'name', 'Leader')}"
+        request = DecisionRequest.create(
+            DECISION_ATTACH_LEADER,
+            prompt,
+            player_id=_player_id_for_unit(leader),
+            options=options,
+            context={"leader_id": get_entity_id(leader)},
+        )
+        requests.append(request)
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+    return requests
+
+
+def build_transport_assignment_requests(game: object, units: Iterable[object]) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    transports = [u for u in all_units if bool(getattr(u, "is_transport", False))]
+    requests: List[DecisionRequest] = []
+    for unit in all_units:
+        if bool(getattr(unit, "is_transport", False)):
+            continue
+        if bool(getattr(unit, "is_attached_leader", False)):
+            continue
+        if getattr(unit, "deployed", False):
+            continue
+        options = [
+            DecisionOption.create(
+                "No transport",
+                payload={"unit_id": get_entity_id(unit), "transport_id": None},
+            )
+        ]
+        for transport in transports:
+            try:
+                if not transport.can_transport(unit):
+                    continue
+            except Exception:
+                continue
+            label = str(getattr(transport, "name", "Transport"))
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"unit_id": get_entity_id(unit), "transport_id": get_entity_id(transport)},
+                )
+            )
+        if len(options) <= 1:
+            continue
+        prompt = f"Assign transport for {getattr(unit, 'name', 'Unit')}"
+        request = DecisionRequest.create(
+            DECISION_ASSIGN_TRANSPORT,
+            prompt,
+            player_id=_player_id_for_unit(unit),
+            options=options,
+            context={"unit_id": get_entity_id(unit)},
+        )
+        requests.append(request)
+        if hasattr(game, "request_decision"):
+            game.request_decision(request)
+    return requests
+
+
+def build_reserves_allocation_request(game: object, army: object) -> Optional[DecisionRequest]:
+    if army is None:
+        return None
+    player = getattr(army, "player", None)
+    player_id = getattr(player, "id", None) if player is not None else None
+    option = DecisionOption.create("Confirm reserves")
+    request = DecisionRequest.create(
+        DECISION_DECLARE_RESERVES,
+        "Allocate reserves for this army.",
+        player_id=player_id,
+        options=[option],
+        context={"army_id": get_entity_id(army)},
+    )
+    if hasattr(game, "request_decision"):
+        game.request_decision(request)
+    return request
+
+
+def build_scout_move_request(game: object, unit: object) -> Optional[DecisionRequest]:
+    if unit is None:
+        return None
+    unit_id = get_entity_id(unit)
+    options = [
+        DecisionOption.create(
+            "Scout move",
+            payload={"unit_id": unit_id, "action": "scout"},
+        ),
+        DecisionOption.create(
+            "Skip scout move",
+            payload={"unit_id": unit_id, "action": "skip"},
+        ),
+    ]
+    prompt = f"Scout move for {getattr(unit, 'name', 'Unit')}"
+    request = DecisionRequest.create(
+        DECISION_SCOUT_MOVE,
+        prompt,
+        player_id=_player_id_for_unit(unit),
+        options=options,
+        context={"unit_id": unit_id},
+    )
+    if hasattr(game, "request_decision"):
+        game.request_decision(request)
+    return request

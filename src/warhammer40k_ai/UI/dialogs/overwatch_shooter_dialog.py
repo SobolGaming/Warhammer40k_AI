@@ -1,5 +1,6 @@
 import pygame
 from typing import List, Optional, Callable, Any
+from types import SimpleNamespace
 
 from .base_dialog import BaseDialog, BUTTON_SELECTED
 
@@ -17,18 +18,23 @@ class OverwatchShooterDialog(BaseDialog):
         self._title: Optional[str] = None
         self._subtitle: Optional[str] = None
         self.list_rect = None
+        self.decision_request = None
+        self._option_entries: List[Any] = []
 
     def show(
         self,
         candidates: List[Any],
         enemy_unit: Any,
-        on_confirm: Callable[[Any], None],
+        on_confirm: Callable[[str], None],
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
         on_cancel: Optional[Callable[[], None]] = None,
+        *,
+        decision_request=None,
     ):
         super().show()
-        self.candidates = list(candidates)
+        self.decision_request = decision_request
+        self.candidates, self._option_entries = self._build_candidates(candidates)
         self.enemy_unit = enemy_unit
         self.selected_index = 0 if self.candidates else None
         self.on_confirm = on_confirm
@@ -48,6 +54,8 @@ class OverwatchShooterDialog(BaseDialog):
         self._subtitle = None
         self.buttons.clear()
         self.button_states.clear()
+        self.decision_request = None
+        self._option_entries = []
 
     def _create_buttons(self) -> None:
         self.buttons.clear()
@@ -58,9 +66,9 @@ class OverwatchShooterDialog(BaseDialog):
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == 'select':
             if self.selected_index is not None and 0 <= self.selected_index < len(self.candidates):
-                unit = self.candidates[self.selected_index]
-                if callable(self.on_confirm):
-                    self.on_confirm(unit)
+                opt = self._option_entries[self.selected_index] if self.selected_index < len(self._option_entries) else None
+                if callable(self.on_confirm) and opt is not None:
+                    self.on_confirm(opt.option_id)
             return True
         if button_name in ('cancel', 'close'):
             if callable(self.on_cancel):
@@ -98,11 +106,18 @@ class OverwatchShooterDialog(BaseDialog):
             row = pygame.Rect(list_x + 2, y + 2, list_w - 4, line_h - 4)
             pygame.draw.rect(screen, BUTTON_SELECTED if is_sel else (60, 60, 67), row)
             pygame.draw.rect(screen, (63, 63, 70), row, 1)
+            label = ""
             try:
-                name = getattr(unit, 'name', str(unit))
+                if self._option_entries and i < len(self._option_entries):
+                    label = str(getattr(self._option_entries[i], "label", "") or "")
             except Exception:
-                name = str(unit)
-            text = f"{name}"
+                label = ""
+            if not label:
+                try:
+                    label = getattr(unit, 'name', str(unit))
+                except Exception:
+                    label = str(unit)
+            text = f"{label}"
             surf = self.font_small.render(text, True, (255, 255, 255))
             screen.blit(surf, (row.x + 8, row.y + 4))
 
@@ -119,6 +134,35 @@ class OverwatchShooterDialog(BaseDialog):
                 self.selected_index = int(idx)
                 return True
         return False
+
+    def _build_candidates(self, candidates: List[Any]):
+        if self.decision_request is None:
+            return list(candidates or []), []
+        try:
+            from ...utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+        options = list(getattr(self.decision_request, "options", []) or [])
+        if not options:
+            return list(candidates or []), []
+        entries: List[Any] = []
+        mapped: List[Any] = []
+        unit_by_id = {}
+        if get_entity_id is not None:
+            for unit in list(candidates or []):
+                if unit is None:
+                    continue
+                unit_by_id[str(get_entity_id(unit))] = unit
+        for opt in options:
+            payload = dict(getattr(opt, "payload", {}) or {})
+            unit_id = str(payload.get("unit_id", payload.get("unit", "")) or "")
+            unit = unit_by_id.get(unit_id) if unit_id else None
+            if unit is None:
+                label = str(getattr(opt, "label", "") or payload.get("label") or "Option")
+                unit = SimpleNamespace(name=label)
+            mapped.append(unit)
+            entries.append(opt)
+        return mapped, entries
 
     def _handle_other_events(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.KEYDOWN:
@@ -137,8 +181,8 @@ class OverwatchShooterDialog(BaseDialog):
                     return True
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
                 if self.selected_index is not None and self.candidates:
-                    unit = self.candidates[self.selected_index]
-                    if callable(self.on_confirm):
-                        self.on_confirm(unit)
+                    opt = self._option_entries[self.selected_index] if self.selected_index < len(self._option_entries) else None
+                    if callable(self.on_confirm) and opt is not None:
+                        self.on_confirm(opt.option_id)
                     return True
         return False

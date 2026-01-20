@@ -16,8 +16,10 @@ class DaemonicAllegianceDialog(BaseDialog):
         self.options: List[Tuple[str, str]] = []
         self.selected_idx: Optional[int] = None
         self.unit_name: str = ""
-        self._on_confirm: Optional[Callable[[Tuple[str, str]], None]] = None
+        self._on_confirm: Optional[Callable[[str], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
 
         self.add_button("confirm", 10, self.height - 50, 160, 35)
         self.add_button("cancel", self.width - 160, self.height - 50, 140, 35)
@@ -25,15 +27,20 @@ class DaemonicAllegianceDialog(BaseDialog):
     def show(
         self,
         *,
-        options: List[Tuple[str, str]],
         unit_name: str = "",
-        on_confirm: Callable[[Tuple[str, str]], None],
+        on_confirm: Callable[[str], None],
         on_cancel: Optional[Callable[[], None]] = None,
+        decision_request=None,
     ):
         super().show()
         self.visible = True
-        self.options = list(options or [])
-        self.selected_idx = 0 if self.options else None
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+        self.selected_idx = 0 if self._option_entries else None
         self.unit_name = str(unit_name or "")
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
@@ -45,6 +52,8 @@ class DaemonicAllegianceDialog(BaseDialog):
         self.unit_name = ""
         self._on_confirm = None
         self._on_cancel = None
+        self.decision_request = None
+        self._option_entries = []
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
@@ -58,11 +67,11 @@ class DaemonicAllegianceDialog(BaseDialog):
         if button_name == "confirm":
             if self.selected_idx is None:
                 return True
-            if not (0 <= self.selected_idx < len(self.options)):
+            if not (0 <= self.selected_idx < len(self._option_entries)):
                 return True
             if self._on_confirm:
                 try:
-                    self._on_confirm(self.options[self.selected_idx])
+                    self._on_confirm(self._option_entries[self.selected_idx]["option_id"])
                 except Exception:
                     pass
             self.hide()
@@ -77,9 +86,9 @@ class DaemonicAllegianceDialog(BaseDialog):
         list_left = 15
         list_w = self.width - 30
         row_h = 70
-        if list_left <= rel_x <= list_left + list_w and list_top <= rel_y <= list_top + row_h * max(1, len(self.options)):
+        if list_left <= rel_x <= list_left + list_w and list_top <= rel_y <= list_top + row_h * max(1, len(self._option_entries)):
             idx = int((rel_y - list_top) // row_h)
-            if 0 <= idx < len(self.options):
+            if 0 <= idx < len(self._option_entries):
                 self.selected_idx = idx
                 return True
         return False
@@ -94,7 +103,7 @@ class DaemonicAllegianceDialog(BaseDialog):
                 return True
             if event.key == pygame.K_DOWN:
                 if self.selected_idx is not None:
-                    self.selected_idx = min(len(self.options) - 1, self.selected_idx + 1)
+                    self.selected_idx = min(len(self._option_entries) - 1, self.selected_idx + 1)
                 return True
         return True
 
@@ -118,7 +127,7 @@ class DaemonicAllegianceDialog(BaseDialog):
         list_x = self.x + 15
         list_y = self.y + self.title_bar_height + 35
         list_w = self.width - 30
-        for i, opt in enumerate(self.options):
+        for i, entry in enumerate(self._option_entries):
             r = pygame.Rect(list_x, list_y + i * row_h, list_w, row_h - 8)
             hovered = r.collidepoint(pygame.mouse.get_pos())
             selected = (self.selected_idx == i)
@@ -126,15 +135,9 @@ class DaemonicAllegianceDialog(BaseDialog):
             pygame.draw.rect(screen, bg, r, border_radius=8)
             pygame.draw.rect(screen, PANEL_BORDER, r, width=1, border_radius=8)
 
-            keyword = ""
-            wargear = ""
-            try:
-                if isinstance(opt, (list, tuple)) and len(opt) >= 2:
-                    keyword, wargear = str(opt[0]), str(opt[1])
-                else:
-                    keyword = str(opt)
-            except Exception:
-                keyword = str(opt)
+            keyword = entry.get("label", "")
+            payload = entry.get("payload", {})
+            wargear = payload.get("wargear", payload.get("wargear_name", ""))
 
             name_surf = self.font_medium.render(keyword, True, TEXT_PRIMARY)
             screen.blit(name_surf, (r.x + 10, r.y + 8))

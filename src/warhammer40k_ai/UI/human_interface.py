@@ -207,32 +207,39 @@ class HumanUIInterface:
             return bool(self.reserves_arrival_panel.handle_event(event))
         return False
 
-    def show_scout_dialog(self, unit, callback, game_map=None):
+    def show_scout_dialog(self, unit, callback, game_map=None, decision_request=None):
         """Show the scout move dialog for a unit."""
         # print(f"HumanUIInterface.show_scout_dialog called for {unit.name}")
-        self.scout_choice_dialog.show(unit, callback, game_map)
+        self.scout_choice_dialog.show(unit, callback, game_map, decision_request=decision_request)
         # print(f"DEBUG: Scout dialog show() completed, visible={self.scout_choice_dialog.visible}")
 
     def show_fight_unit_selection_dialog(
         self,
         stage_name: str,
         eligible_units: List['Unit'],
-        on_unit_selected: Callable[['Unit'], None],
+        on_unit_selected: Callable[[str], None],
         on_cancel: Callable[[], None] = None,
+        decision_request=None,
     ):
         """Show the fight unit selection dialog for a stage."""
         print(
             f"HumanUIInterface.show_fight_unit_selection_dialog called for {stage_name} "
             f"stage with {len(eligible_units)} units"
         )
-        self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel)
+        self.fight_unit_selection_dialog.show(stage_name, eligible_units, on_unit_selected, on_cancel, decision_request=decision_request)
 
-    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None, target_unit=None):
+    def show_melee_weapon_declaration_dialog(self, unit, callback, game_map=None, target_unit=None, decision_request=None):
         """Show the melee weapon declaration dialog for a unit."""
         print(f"HumanUIInterface.show_melee_weapon_declaration_dialog called for {unit.name}")
         # Delegate to the game view's dialog instance to avoid duplicates
         if hasattr(self, 'game_view') and hasattr(self.game_view, 'melee_weapon_declaration_dialog'):
-            self.game_view.melee_weapon_declaration_dialog.show(unit, callback, game_map, target_unit=target_unit)
+            self.game_view.melee_weapon_declaration_dialog.show(
+                unit,
+                callback,
+                game_map,
+                target_unit=target_unit,
+                decision_request=decision_request,
+            )
         else:
             print("ERROR: Error: melee_weapon_declaration_dialog not found on game_view")
             # Call callback with empty declarations to prevent hanging

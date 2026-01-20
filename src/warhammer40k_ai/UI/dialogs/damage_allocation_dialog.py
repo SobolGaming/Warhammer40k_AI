@@ -2,6 +2,7 @@ import pygame
 from typing import List, Optional, Callable, Any
 
 from .base_dialog import BaseDialog, BUTTON_BG, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY
+from ...utility.entity_ids import get_entity_id
 
 
 class DamageAllocationDialog(BaseDialog):
@@ -17,12 +18,15 @@ class DamageAllocationDialog(BaseDialog):
         self.title_text = "Allocate Damage"
         self.subtitle_text = ""
         self.instruction_text = ""
-        self.on_choice: Optional[Callable[[Optional[Any]], None]] = None
+        self.on_choice: Optional[Callable[[str], None]] = None
         self.scroll_offset = 0
         self.max_scroll = 0
         self.include_none = False
         self.none_label = "None"
         self.show_wargear = False
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._entry_models: List[tuple] = []
 
     def show(
         self,
@@ -32,20 +36,31 @@ class DamageAllocationDialog(BaseDialog):
         title: str,
         subtitle: str = "",
         instruction: str = "",
-        on_choice: Callable[[Optional[Any]], None],
+        on_choice: Callable[[str], None],
         include_none: bool = False,
         none_label: str = "None",
         show_wargear: bool = False,
+        decision_request=None,
     ) -> None:
         self.unit = unit
         self.models = list(models or [])
         self.include_none = bool(include_none)
         self.none_label = none_label or "None"
         self.show_wargear = bool(show_wargear)
-        if self.include_none:
-            self.entries = [None] + list(self.models)
-        else:
-            self.entries = list(self.models)
+        self.decision_request = decision_request
+        self._option_entries = []
+        self._entry_models = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+            model_by_id = {get_entity_id(m): m for m in list(self.models or [])}
+            for entry in self._option_entries:
+                payload = entry.get("payload", {})
+                model_id = payload.get("model_id", payload.get("model"))
+                model = model_by_id.get(str(model_id)) if model_id not in (None, "") else None
+                self._entry_models.append((entry, model))
+        self.entries = [m for _, m in self._entry_models]
         self.title_text = title or "Allocate Damage"
         self.subtitle_text = subtitle or ""
         self.instruction_text = instruction or ""
@@ -65,6 +80,9 @@ class DamageAllocationDialog(BaseDialog):
         self.include_none = False
         self.none_label = "None"
         self.show_wargear = False
+        self.decision_request = None
+        self._option_entries = []
+        self._entry_models = []
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -104,10 +122,10 @@ class DamageAllocationDialog(BaseDialog):
                 idx = int(button_name.split("_", 1)[1])
             except Exception:
                 return False
-            if 0 <= idx < len(self.entries):
-                chosen = self.entries[idx]
+            if 0 <= idx < len(self._entry_models):
+                entry, _model = self._entry_models[idx]
                 if self.on_choice:
-                    self.on_choice(chosen)
+                    self.on_choice(entry.get("option_id", ""))
                 self.hide()
                 return True
         return False
@@ -132,7 +150,7 @@ class DamageAllocationDialog(BaseDialog):
         hdr = self.font_small.render("Select a model:", True, TEXT_PRIMARY)
         screen.blit(hdr, (self.x + 20, self.y + self.title_bar_height + 60))
 
-        for i, m in enumerate(self.entries):
+        for i, (_entry, m) in enumerate(self._entry_models):
             btn = f"m_{i}"
             if btn not in self.buttons:
                 continue

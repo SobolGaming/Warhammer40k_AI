@@ -25,6 +25,9 @@ class RollRerollDialog(BaseDialog):
         self.keep_label = "Keep"
         self.reroll_label = "Re-roll"
         self._allow_reroll = True
+        self.decision_request = None
+        self._keep_option_id = ""
+        self._reroll_option_id = ""
 
     def show(
         self,
@@ -34,9 +37,10 @@ class RollRerollDialog(BaseDialog):
         roll_text: str = "",
         roll_border: Optional[str] = None,  # "fail" | "success" | None
         allow_reroll: bool = True,
-        callback: Callable[[bool], None],
+        callback: Callable[[str], None],
         keep_label: str = "Keep",
         reroll_label: str = "Re-roll",
+        decision_request=None,
     ):
         self.title = title or "Re-roll?"
         self.message = message or ""
@@ -51,6 +55,10 @@ class RollRerollDialog(BaseDialog):
         self._allow_reroll = bool(allow_reroll)
         self.keep_label = keep_label or "Keep"
         self.reroll_label = reroll_label or "Re-roll"
+        self.decision_request = decision_request
+        self._keep_option_id, self._reroll_option_id = self._extract_option_ids()
+        if self.decision_request is not None and not self._reroll_option_id:
+            self._allow_reroll = False
         super().show(callback=callback)
         self._create_buttons()
 
@@ -69,14 +77,14 @@ class RollRerollDialog(BaseDialog):
         if button_name == "keep":
             self.hide()
             if cb:
-                cb(False)
+                cb(self._keep_option_id)
             return True
         if button_name == "reroll":
             if not bool(self._allow_reroll):
                 return True
             self.hide()
             if cb:
-                cb(True)
+                cb(self._reroll_option_id)
             return True
         return False
 
@@ -134,4 +142,15 @@ class RollRerollDialog(BaseDialog):
         self.draw_button(screen, "keep", self.keep_label, text_color=TEXT_PRIMARY)
         self.draw_button(screen, "reroll", self.reroll_label, text_color=TEXT_PRIMARY)
 
-
+    def _extract_option_ids(self) -> Tuple[str, str]:
+        if self.decision_request is None:
+            return "", ""
+        keep_id = ""
+        reroll_id = ""
+        for opt in list(getattr(self.decision_request, "options", []) or []):
+            payload = dict(getattr(opt, "payload", {}) or {})
+            if bool(payload.get("reroll", False)):
+                reroll_id = opt.option_id
+            else:
+                keep_id = opt.option_id
+        return keep_id, reroll_id

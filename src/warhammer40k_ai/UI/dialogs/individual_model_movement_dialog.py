@@ -39,8 +39,9 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # UI elements
         self.model_buttons = []
+        self.decision_request = None
         
-    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None, target_unit=None, placement_validator: Optional[Callable] = None):
+    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None, target_unit=None, placement_validator: Optional[Callable] = None, decision_request=None):
         """Show the dialog for the given unit and movement type"""
 
         # Check if unit has already moved this round (prevent multiple movements)
@@ -52,6 +53,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Call parent show method
         super().show(callback)
+        self.decision_request = decision_request
 
         # Dialog-specific initialization
         # If this unit is an Attached unit (bodyguard + leader(s)), use a proxy with combined models.
@@ -161,9 +163,11 @@ class IndividualModelMovementDialog(BaseDialog):
         self.awaiting_battlefield_click = False
         self._deploy_facing_radians = None
         self.placement_validator = None
+        self._coherency_request = None
         # Hide nested dialogs as well
         if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog:
             self.floor_selection_dialog.hide()
+        self.decision_request = None
         
     def _create_model_buttons(self):
         """Create buttons for each model in the unit"""
@@ -1305,6 +1309,9 @@ class IndividualModelMovementDialog(BaseDialog):
     def _show_coherency_violation_dialog(self, non_coherent_models: list):
         """Show the coherency violation dialog"""
         from .coherency_violation_dialog import CoherencyViolationDialog
+        from ...engine.decision_kinds import DECISION_RESOLVE_COHERENCY
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
 
         # Create and show the coherency dialog
         coherency_dialog = CoherencyViolationDialog(self.screen_width, self.screen_height)
@@ -1314,21 +1321,62 @@ class IndividualModelMovementDialog(BaseDialog):
         if self.visible:
             existing_dialogs.append(self)
 
-        coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution, existing_dialogs)
+        unit_id = get_entity_id(self.unit)
+        request = DecisionRequest.create(
+            DECISION_RESOLVE_COHERENCY,
+            f"Resolve coherency for {getattr(self.unit, 'name', 'Unit')}",
+            player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None),
+            options=[DecisionOption.create("Confirm removals", payload={"unit_id": unit_id})],
+            context={"unit_id": unit_id},
+        )
+        try:
+            game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        if game is not None:
+            try:
+                game.request_decision(request)
+            except Exception:
+                pass
+        self._coherency_request = request
+        coherency_dialog.show(self.unit, non_coherent_models, self._on_coherency_resolution, existing_dialogs, decision_request=request)
 
         # Store reference to the dialog so it can be drawn and handled
         self.coherency_dialog = coherency_dialog
 
-    def _on_coherency_resolution(self, models_removed: bool):
+    def _on_coherency_resolution(self, option_id: str, removed_model_ids: list):
         """Called when coherency violation dialog is complete"""
-        if models_removed:
+        if removed_model_ids:
             print(f"INFO: Coherency violations resolved for {self.unit.name}")
         else:
             print(f"INFO: Coherency resolution cancelled for {self.unit.name}")
 
+        try:
+            from ...engine.command_kinds import CMD_RESOLVE_DECISION
+            from ...engine.commands import GameCommand
+            req = getattr(self, "_coherency_request", None)
+            if req is not None:
+                chosen_id = option_id or (req.options[0].option_id if req.options else "")
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": chosen_id,
+                    "result_payload": {"model_ids": list(removed_model_ids or [])},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                try:
+                    game = getattr(getattr(self.unit.get_parent_army(), "player", None), "game", None)
+                    if game is not None:
+                        game.apply_command(cmd)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
         # Clean up dialog reference
         if hasattr(self, 'coherency_dialog'):
             delattr(self, 'coherency_dialog')
+        if hasattr(self, "_coherency_request"):
+            self._coherency_request = None
 
         # Complete the movement
         self._finalize_movement_completion()

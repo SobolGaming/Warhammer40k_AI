@@ -11,8 +11,11 @@ class FrenzyChoiceDialog(BaseDialog):
         self.title = "Frenzy"
         self.message = ""
         self._options = {"shoot": True, "fight": True}
+        self.decision_request = None
+        self._option_ids = {"shoot": "", "fight": "", "skip": ""}
+        self._labels = {"shoot": "Shoot", "fight": "Fight", "skip": "Skip"}
 
-    def show(self, unit_name: str, attacker_name: str, options, callback):
+    def show(self, unit_name: str, attacker_name: str, options, callback, *, decision_request=None):
         self.title = "Frenzy"
         unit_label = unit_name or "Unit"
         attacker_label = attacker_name or "Enemy unit"
@@ -22,6 +25,18 @@ class FrenzyChoiceDialog(BaseDialog):
             "shoot": "shoot" in opt,
             "fight": "fight" in opt,
         }
+        self.decision_request = decision_request
+        self._option_ids = {"shoot": "", "fight": "", "skip": ""}
+        self._labels = {"shoot": "Shoot", "fight": "Fight", "skip": "Skip"}
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            for entry in option_entries(self.decision_request):
+                payload = entry.get("payload", {})
+                key = str(payload.get("action", payload.get("choice", entry.get("label", ""))) or "").lower()
+                if key in self._option_ids:
+                    self._option_ids[key] = entry.get("option_id", "")
+                    self._labels[key] = entry.get("label", self._labels[key]) or self._labels[key]
         super().show(callback=callback)
         self._create_buttons()
 
@@ -44,7 +59,7 @@ class FrenzyChoiceDialog(BaseDialog):
             cb = self.callback
             self.hide()
             if cb:
-                cb(button_name)
+                cb(self._option_ids.get(button_name, ""))
             return True
         return False
 
@@ -78,6 +93,12 @@ class FrenzyChoiceDialog(BaseDialog):
             screen.blit(msg, (self.x + 20, self.y + self.title_bar_height + 20))
 
         self._create_buttons()
-        self.draw_button(screen, "shoot", "Shoot", text_color=TEXT_PRIMARY if self._options.get("shoot", False) else TEXT_DISABLED)
-        self.draw_button(screen, "fight", "Fight", text_color=TEXT_PRIMARY if self._options.get("fight", False) else TEXT_DISABLED)
-        self.draw_button(screen, "skip", "Skip", text_color=TEXT_PRIMARY)
+        self.draw_button(screen, "shoot", self._labels["shoot"], text_color=TEXT_PRIMARY if self._options.get("shoot", False) else TEXT_DISABLED)
+        self.draw_button(screen, "fight", self._labels["fight"], text_color=TEXT_PRIMARY if self._options.get("fight", False) else TEXT_DISABLED)
+        self.draw_button(screen, "skip", self._labels["skip"], text_color=TEXT_PRIMARY)
+
+    def hide(self):
+        super().hide()
+        self.decision_request = None
+        self._option_ids = {"shoot": "", "fight": "", "skip": ""}
+        self._labels = {"shoot": "Shoot", "fight": "Fight", "skip": "Skip"}

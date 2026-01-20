@@ -3,6 +3,7 @@ from typing import List, Callable, Optional, Dict
 
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, TEXT_PRIMARY, TEXT_SECONDARY
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 class FightTargetSelectionDialog(BaseDialog):
@@ -14,17 +15,33 @@ class FightTargetSelectionDialog(BaseDialog):
         # State
         self.fighting_unit: Optional[Unit] = None
         self.eligible_targets: List[Unit] = []
-        self.on_target_selected: Optional[Callable[[Unit], None]] = None
+        self.on_target_selected: Optional[Callable[[str, List[str]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._entry_targets: List[tuple] = []
 
         # Button mapping: name -> Unit
         self._button_to_target: Dict[str, Unit] = {}
 
     def show(self, fighting_unit: Unit, eligible_targets: List[Unit],
-             on_target_selected: Callable[[Unit], None],
-             on_cancel: Optional[Callable[[], None]] = None) -> None:
+             on_target_selected: Callable[[str, List[str]], None],
+             on_cancel: Optional[Callable[[], None]] = None,
+             decision_request=None) -> None:
         self.fighting_unit = fighting_unit
         self.eligible_targets = eligible_targets
+        self.decision_request = decision_request
+        self._option_entries = []
+        self._entry_targets = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+            target_by_id = {get_entity_id(t): t for t in list(eligible_targets or [])}
+            for entry in self._option_entries:
+                payload = entry.get("payload", {})
+                target_id = str(payload.get("target_unit_id", payload.get("unit_id", payload.get("unit", ""))) or "")
+                self._entry_targets.append((entry, target_by_id.get(target_id)))
         self.on_target_selected = on_target_selected
         self.on_cancel = on_cancel
         super().show()
@@ -37,6 +54,9 @@ class FightTargetSelectionDialog(BaseDialog):
         self.on_target_selected = None
         self.on_cancel = None
         self._button_to_target.clear()
+        self.decision_request = None
+        self._option_entries = []
+        self._entry_targets = []
 
     def _create_buttons(self) -> None:
         # Clear any existing buttons
@@ -49,7 +69,7 @@ class FightTargetSelectionDialog(BaseDialog):
         button_spacing = 10
         start_y = (self.title_bar_height + 60)  # Below title/instructions
 
-        for i, target in enumerate(self.eligible_targets):
+        for i, (entry, target) in enumerate(self._entry_targets):
             rel_x = 20
             rel_y = start_y + i * (button_height + button_spacing)
             name = f"target_{i}"
@@ -71,8 +91,21 @@ class FightTargetSelectionDialog(BaseDialog):
 
         if button_name in self._button_to_target:
             target = self._button_to_target[button_name]
-            if self.on_target_selected:
-                self.on_target_selected(target)
+            idx = None
+            try:
+                idx = int(button_name.split("_", 1)[1])
+            except Exception:
+                idx = None
+            if self.on_target_selected and idx is not None and 0 <= idx < len(self._entry_targets):
+                entry, _unit = self._entry_targets[idx]
+                payload = entry.get("payload", {})
+                target_ids = payload.get("target_unit_ids")
+                if isinstance(target_ids, list):
+                    target_ids = [str(val) for val in target_ids if val is not None]
+                else:
+                    target_id = str(payload.get("target_unit_id", payload.get("unit_id", payload.get("unit", ""))) or "")
+                    target_ids = [target_id] if target_id else []
+                self.on_target_selected(entry.get("option_id", ""), target_ids)
             self.hide()
             return True
 
@@ -103,6 +136,13 @@ class FightTargetSelectionDialog(BaseDialog):
             # Button background with hover handled by BaseDialog.draw_button
             target = self._button_to_target.get(name)
             label = target.name if target else name
+            if target is None:
+                try:
+                    idx = int(name.split("_", 1)[1])
+                    entry, _unit = self._entry_targets[idx]
+                    label = str(entry.get("label", label) or label)
+                except Exception:
+                    pass
             # Draw the button
             self.draw_button(screen, name, label, color=BUTTON_BG)
 
@@ -115,5 +155,3 @@ class FightTargetSelectionDialog(BaseDialog):
 
         # Draw cancel button
         self.draw_button(screen, 'cancel', 'Cancel', color=BUTTON_BG)
-
-

@@ -14,8 +14,13 @@ class ExampleDialog(BaseDialog):
         
         # Dialog-specific state
         self.result = None
+        self.decision_request = None
+        self._ok_option_id = ""
+        self._cancel_option_id = ""
+        self._ok_label = "OK"
+        self._cancel_label = "Cancel"
         
-    def show(self, title: str, message: str, callback=None):
+    def show(self, title: str, message: str, callback=None, *, decision_request=None):
         """Show the dialog with a title and message"""
         # Call parent show method
         super().show(callback)
@@ -23,6 +28,23 @@ class ExampleDialog(BaseDialog):
         # Store dialog-specific data
         self.title = title
         self.message = message
+        self.decision_request = decision_request
+        self._ok_option_id = ""
+        self._cancel_option_id = ""
+        self._ok_label = "OK"
+        self._cancel_label = "Cancel"
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            for entry in option_entries(self.decision_request):
+                payload = entry.get("payload", {})
+                action = str(payload.get("action", entry.get("label", "")) or "").lower()
+                if action in ("ok", "confirm", "yes"):
+                    self._ok_option_id = entry.get("option_id", "")
+                    self._ok_label = entry.get("label", self._ok_label) or self._ok_label
+                elif action in ("cancel", "no", "skip"):
+                    self._cancel_option_id = entry.get("option_id", "")
+                    self._cancel_label = entry.get("label", self._cancel_label) or self._cancel_label
         
         # Create buttons using the base class button system
         self.add_button('ok', self.width - 160, self.height - 60, 70, 40)
@@ -33,13 +55,13 @@ class ExampleDialog(BaseDialog):
         if button_name == 'ok':
             self.result = 'ok'
             if self.callback:
-                self.callback('ok')
+                self.callback(self._ok_option_id)
             self.hide()
             return True
         elif button_name == 'cancel':
             self.result = 'cancel'
             if self.callback:
-                self.callback('cancel')
+                self.callback(self._cancel_option_id)
             self.hide()
             return True
         return False
@@ -59,8 +81,8 @@ class ExampleDialog(BaseDialog):
         self.draw_text_centered(screen, self.message, 150, self.font_medium)
         
         # Draw buttons using base class method
-        self.draw_button(screen, 'ok', "OK")
-        self.draw_button(screen, 'cancel', "Cancel")
+        self.draw_button(screen, 'ok', self._ok_label)
+        self.draw_button(screen, 'cancel', self._cancel_label)
 
 
 # Usage example (commented out to prevent import issues):

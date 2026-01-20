@@ -8754,6 +8754,38 @@ class Unit:
     def _auto_pass_dark_pacts_test(self) -> bool:
         return self._first_prince_of_chaos_active() and self._is_belakor()
 
+    def apply_dark_pacts_choice(self, game, *, choice: str, phase_name: str, trigger: str) -> bool:
+        trigger_norm = str(trigger or "").strip().lower()
+        if trigger_norm not in ("shooting", "fight"):
+            return False
+        if not self.can_use_dark_pacts():
+            return False
+        choice_norm = str(choice or "").strip().upper()
+        options = ("LETHAL HITS", "SUSTAINED HITS 1")
+        if choice_norm not in options:
+            return False
+        passed = True
+        if not self._auto_pass_dark_pacts_test():
+            try:
+                passed = bool(self.pass_leadership_check())
+            except Exception:
+                passed = False
+        if not passed:
+            try:
+                from ..utility.dice import DiceCollection
+                dmg_roll, _dice = DiceCollection.from_string("D3").roll_detailed()
+                self._apply_mortal_wounds_to_unit(self, int(dmg_roll or 0), game_map=getattr(game, "map", None))
+            except Exception:
+                pass
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["dark_pacts_active"] = True
+        sr["dark_pacts_choice"] = choice_norm
+        sr["dark_pacts_expires_phase"] = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
+        self.special_rules = sr
+        return True
+
     def maybe_trigger_dark_pacts(self, game, *, phase_name: str, trigger: str) -> None:
         trigger_norm = str(trigger or "").strip().lower()
         if trigger_norm not in ("shooting", "fight"):
@@ -8777,29 +8809,7 @@ class Unit:
         choice = player._choose_optional_value("DARK_PACTS_CHOICE", options, ctx)
         if not choice:
             return
-        choice_norm = str(choice).strip().upper()
-        if choice_norm not in options:
-            return
-        passed = True
-        if not self._auto_pass_dark_pacts_test():
-            try:
-                passed = bool(self.pass_leadership_check())
-            except Exception:
-                passed = False
-        if not passed:
-            try:
-                from ..utility.dice import DiceCollection
-                dmg_roll, _dice = DiceCollection.from_string("D3").roll_detailed()
-                self._apply_mortal_wounds_to_unit(self, int(dmg_roll or 0), game_map=getattr(game, "map", None))
-            except Exception:
-                pass
-        sr = getattr(self, "special_rules", None)
-        if not isinstance(sr, dict):
-            sr = {}
-        sr["dark_pacts_active"] = True
-        sr["dark_pacts_choice"] = choice_norm
-        sr["dark_pacts_expires_phase"] = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
-        self.special_rules = sr
+        self.apply_dark_pacts_choice(game, choice=str(choice), phase_name=phase_name, trigger=trigger)
 
     def prepare_advance(self) -> int:
         """Pre-roll advance dice for UI display. Returns the advance roll."""

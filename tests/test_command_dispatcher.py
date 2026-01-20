@@ -2,10 +2,13 @@ from warhammer40k_ai.engine.command_kinds import (
     CMD_ADVANCE_SETUP_PHASE,
     CMD_EXECUTE_SETUP_PHASE,
     CMD_NEXT_PHASE,
+    CMD_RESOLVE_DECISION,
     CMD_SELECT_MISSION,
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game, SetupPhase
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
@@ -91,3 +94,65 @@ def test_advance_setup_phase_returns_value():
     assert result.ok is True
     assert result.value is True
     assert game.setup_complete is True
+
+
+def test_resolve_decision_removes_request():
+    game = _make_game()
+    player_id = game.get_current_player().id
+    option = DecisionOption.create("Yes", payload={"value": True})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use ability?",
+        player_id=player_id,
+        options=[option],
+    )
+    game.request_decision(request)
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=player_id,
+        payload={"decision_id": request.decision_id, "option_id": option.option_id},
+    )
+    result = game.apply_command(cmd)
+    assert result.ok is True
+    assert game.decision_queue.peek() is None
+
+
+def test_resolve_decision_rejects_invalid_option():
+    game = _make_game()
+    player_id = game.get_current_player().id
+    option = DecisionOption.create("Yes", payload={"value": True})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use ability?",
+        player_id=player_id,
+        options=[option],
+    )
+    game.request_decision(request)
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id=player_id,
+        payload={"decision_id": request.decision_id, "option_id": "bad-option"},
+    )
+    result = game.apply_command(cmd)
+    assert result.ok is False
+    assert game.decision_queue.peek() is request
+
+
+def test_resolve_decision_rejects_wrong_player():
+    game = _make_game()
+    option = DecisionOption.create("Yes", payload={"value": True})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use ability?",
+        player_id=game.get_current_player().id,
+        options=[option],
+    )
+    game.request_decision(request)
+    cmd = GameCommand.create(
+        CMD_RESOLVE_DECISION,
+        player_id="other-player",
+        payload={"decision_id": request.decision_id, "option_id": option.option_id},
+    )
+    result = game.apply_command(cmd)
+    assert result.ok is False
+    assert game.decision_queue.peek() is request

@@ -17,6 +17,7 @@ class TransportDisembarkDialog(BaseDialog):
         self.confirm_label = "Disembark"
         self.cancel_label = "Cancel"
         self.show_cancel = True
+        self.decision_request = None
 
         self.scroll_offset = 0
         self.max_scroll = 0
@@ -31,6 +32,7 @@ class TransportDisembarkDialog(BaseDialog):
         confirm_label: str = "Disembark",
         cancel_label: str = "Cancel",
         show_cancel: bool = True,
+        decision_request=None,
     ) -> None:
         self.transport_unit = transport_unit
         self.passengers = list(passengers or [])
@@ -41,6 +43,7 @@ class TransportDisembarkDialog(BaseDialog):
         self.cancel_label = str(cancel_label or "Cancel")
         self.show_cancel = bool(show_cancel)
         self.scroll_offset = 0
+        self.decision_request = decision_request
         super().show()
         self._create_buttons()
 
@@ -56,6 +59,7 @@ class TransportDisembarkDialog(BaseDialog):
         self.show_cancel = True
         self.scroll_offset = 0
         self.max_scroll = 0
+        self.decision_request = None
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:

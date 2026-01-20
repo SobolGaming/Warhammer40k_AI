@@ -14,18 +14,20 @@ class TransportEmbarkDialog(BaseDialog):
         self.selected_indices: Set[int] = set()
         self.on_confirm: Optional[Callable[[List], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
 
         # Scrolling
         self.scroll_offset = 0
         self.max_scroll = 0
 
-    def show(self, transport_unit, candidates: List, on_confirm: Callable[[List], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(self, transport_unit, candidates: List, on_confirm: Callable[[List], None], on_cancel: Optional[Callable[[], None]] = None, decision_request=None) -> None:
         self.transport_unit = transport_unit
         self.candidates = list(candidates or [])
         self.selected_indices = set()
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
         self.scroll_offset = 0
+        self.decision_request = decision_request
         super().show()
         self._create_buttons()
 
@@ -38,6 +40,7 @@ class TransportEmbarkDialog(BaseDialog):
         self.on_cancel = None
         self.scroll_offset = 0
         self.max_scroll = 0
+        self.decision_request = None
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -155,4 +158,3 @@ class TransportEmbarkDialog(BaseDialog):
         # Buttons
         self.draw_button(screen, "confirm", "Embark")
         self.draw_button(screen, "cancel", "Cancel")
-

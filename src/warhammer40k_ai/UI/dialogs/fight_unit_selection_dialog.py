@@ -13,6 +13,7 @@ from typing import List, Optional, Callable
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.roster.player import Player
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, BUTTON_SELECTED, TEXT_PRIMARY, TEXT_SECONDARY
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 # Accent colors
 TEXT_ACCENT = (100, 149, 237)
@@ -30,8 +31,11 @@ class FightUnitSelectionDialog(BaseDialog):
         self.stage_name = ""  # "Fight First" or "Remaining Combatants"
         self.eligible_units: List[Unit] = []
         self.selected_unit: Optional[Unit] = None
-        self.on_unit_selected_callback: Optional[Callable[[Unit], None]] = None
+        self.on_unit_selected_callback: Optional[Callable[[str], None]] = None
         self.on_cancel_callback: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._entry_units: List[tuple] = []
 
         # UI state
         self.unit_button_infos = []  # [(button_name, unit)]
@@ -39,12 +43,25 @@ class FightUnitSelectionDialog(BaseDialog):
         self.max_scroll = 0
     
     def show(self, stage_name: str, eligible_units: List[Unit],
-             on_unit_selected: Callable[[Unit], None],
-             on_cancel: Callable[[], None] = None) -> None:
+             on_unit_selected: Callable[[str], None],
+             on_cancel: Callable[[], None] = None,
+             decision_request=None) -> None:
         """Show the fight unit selection dialog."""
         self.stage_name = stage_name
         self.eligible_units = eligible_units
         self.selected_unit = None
+        self.decision_request = decision_request
+        self._option_entries = []
+        self._entry_units = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+            unit_by_id = {get_entity_id(u): u for u in list(eligible_units or [])}
+            for entry in self._option_entries:
+                payload = entry.get("payload", {})
+                unit_id = str(payload.get("unit_id", payload.get("unit", "")) or "")
+                self._entry_units.append((entry, unit_by_id.get(unit_id)))
         self.on_unit_selected_callback = on_unit_selected
         self.on_cancel_callback = on_cancel
         super().show()
@@ -57,6 +74,9 @@ class FightUnitSelectionDialog(BaseDialog):
         """Hide the dialog."""
         super().hide()
         self.unit_button_infos = []
+        self.decision_request = None
+        self._option_entries = []
+        self._entry_units = []
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -85,11 +105,11 @@ class FightUnitSelectionDialog(BaseDialog):
                 idx = int(button_name.split("_")[1])
             except Exception:
                 return False
-            if 0 <= idx < len(self.eligible_units):
-                unit = self.eligible_units[idx]
+            if 0 <= idx < len(self._entry_units):
+                entry, unit = self._entry_units[idx]
                 self.selected_unit = unit
                 if self.on_unit_selected_callback:
-                    self.on_unit_selected_callback(unit)
+                    self.on_unit_selected_callback(entry.get("option_id", ""))
                 self.hide()
                 return True
         return False
@@ -108,17 +128,17 @@ class FightUnitSelectionDialog(BaseDialog):
         button_spacing = 12
         start_y_rel = 100  # Relative to dialog top (below title/desc)
 
-        for i, unit in enumerate(self.eligible_units):
+        for i, (entry, unit) in enumerate(self._entry_units):
             rel_y = start_y_rel + i * (button_height + button_spacing) - self.scroll_offset
             # Only add buttons that are potentially visible to keep rect count reasonable
             if rel_y + button_height < 80 or rel_y > self.height - 70:
                 # Still register for scrolling but skip rect add if far off-screen
-                self.unit_button_infos.append((f"unit_{i}", unit))
+                self.unit_button_infos.append((f"unit_{i}", entry, unit))
                 continue
             self.add_button(f"unit_{i}", 20, rel_y, button_width, button_height, enabled=True)
-            self.unit_button_infos.append((f"unit_{i}", unit))
+            self.unit_button_infos.append((f"unit_{i}", entry, unit))
 
-        total_height = len(self.eligible_units) * (button_height + button_spacing)
+        total_height = len(self._entry_units) * (button_height + button_spacing)
         available_height = self.height - 160
         self.max_scroll = max(0, total_height - available_height)
     
@@ -140,7 +160,7 @@ class FightUnitSelectionDialog(BaseDialog):
         self._update_buttons()
 
         # Render each visible unit entry
-        for i, (button_name, unit) in enumerate(self.unit_button_infos):
+        for i, (button_name, entry, unit) in enumerate(self.unit_button_infos):
             if button_name not in self.buttons:
                 continue
             btn_rect = self.buttons[button_name]
@@ -148,38 +168,44 @@ class FightUnitSelectionDialog(BaseDialog):
             pygame.draw.rect(screen, BUTTON_BG, btn_rect)
             pygame.draw.rect(screen, PANEL_BORDER, btn_rect, 2)
             # Unit name
-            unit_name_surface = self.font_medium.render(unit.name, True, TEXT_PRIMARY)
+            unit_label = str(entry.get("label", "") or "")
+            if unit is not None:
+                unit_label = unit.name
+            unit_name_surface = self.font_medium.render(unit_label or "Unit", True, TEXT_PRIMARY)
             screen.blit(unit_name_surface, (btn_rect.x + 10, btn_rect.y + 8))
 
             # Status/health
-            health_percent = unit.health_percent
-            if health_percent > 75:
-                health_color = SUCCESS_COLOR
-                health_text = "Healthy"
-            elif health_percent > 50:
-                health_color = TEXT_SECONDARY
-                health_text = "Wounded"
-            else:
-                health_color = DANGER_COLOR
-                health_text = "Heavily Wounded"
-            health_surface = self.font_small.render(f"Health: {health_percent:.0f}% ({health_text})", True, health_color)
-            screen.blit(health_surface, (btn_rect.x + 10, btn_rect.y + 34))
+            if unit is not None:
+                health_percent = unit.health_percent
+                if health_percent > 75:
+                    health_color = SUCCESS_COLOR
+                    health_text = "Healthy"
+                elif health_percent > 50:
+                    health_color = TEXT_SECONDARY
+                    health_text = "Wounded"
+                else:
+                    health_color = DANGER_COLOR
+                    health_text = "Heavily Wounded"
+                health_surface = self.font_small.render(f"Health: {health_percent:.0f}% ({health_text})", True, health_color)
+                screen.blit(health_surface, (btn_rect.x + 10, btn_rect.y + 34))
 
             # Fight First / Charged
-            ff_parts = []
-            if hasattr(unit, 'round_state') and getattr(unit.round_state, 'charged_this_round', False):
-                ff_parts.append("Charged this turn")
-            if hasattr(unit, 'has_fight_first') and unit.has_fight_first():
-                ff_parts.append("Has Fight First")
-            if ff_parts:
-                ff_surface = self.font_small.render(" | ".join(ff_parts), True, TEXT_SECONDARY)
-                screen.blit(ff_surface, (btn_rect.x + 10, btn_rect.y + 52))
+            if unit is not None:
+                ff_parts = []
+                if hasattr(unit, 'round_state') and getattr(unit.round_state, 'charged_this_round', False):
+                    ff_parts.append("Charged this turn")
+                if hasattr(unit, 'has_fight_first') and unit.has_fight_first():
+                    ff_parts.append("Has Fight First")
+                if ff_parts:
+                    ff_surface = self.font_small.render(" | ".join(ff_parts), True, TEXT_SECONDARY)
+                    screen.blit(ff_surface, (btn_rect.x + 10, btn_rect.y + 52))
 
             # Melee summary (concise)
-            melee_summary = self._get_unit_melee_summary(unit)
-            if melee_summary:
-                melee_surface = self.font_small.render(melee_summary, True, TEXT_SECONDARY)
-                screen.blit(melee_surface, (btn_rect.x + 10, btn_rect.y + 70))
+            if unit is not None:
+                melee_summary = self._get_unit_melee_summary(unit)
+                if melee_summary:
+                    melee_surface = self.font_small.render(melee_summary, True, TEXT_SECONDARY)
+                    screen.blit(melee_surface, (btn_rect.x + 10, btn_rect.y + 70))
 
         # Cancel button
         self.draw_button(screen, "cancel", "Cancel")

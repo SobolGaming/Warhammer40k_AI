@@ -253,7 +253,22 @@ class RosterPane(pygame.sprite.Sprite):
                                 pass
 
                         print(f"INFO: Opening per-model deployment dialog for {unit.name}")
-                        self.game_view.individual_model_movement_dialog.show(unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0)
+                        phase_manager = getattr(self.game_view, "phase_manager", None)
+                        if phase_manager is not None:
+                            phase_manager._request_move_unit_decision(
+                                unit,
+                                "deploy",
+                                on_deploy_complete,
+                                max_distance=0.0,
+                            )
+                        else:
+                            self.game_view.individual_model_movement_dialog.show(
+                                unit,
+                                'deploy',
+                                on_deploy_complete,
+                                self.game_view.game_map,
+                                max_distance=0.0,
+                            )
                         return
                     else:
                         # Normal unit selection (for deployed units or non-deployment phases)

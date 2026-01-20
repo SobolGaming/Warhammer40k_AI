@@ -236,15 +236,144 @@ class GameView:
         self.cabal_caster_dialog = None
         self.cabal_target_dialog = None
         # Stratagem interaction helpers
+        def _resolve_unit_selection_dialog(
+            *,
+            player,
+            candidates,
+            on_chosen,
+            decision_type: str,
+            prompt: str,
+            title: str | None = None,
+            subtitle: str | None = None,
+            enemy_unit=None,
+            dialog=None,
+            allow_skip: bool = True,
+        ):
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
+            from .decision_ui_utils import option_id_for_action
+
+            units = list(candidates or [])
+            if not units:
+                on_chosen(None)
+                return
+            dlg = dialog or self.overwatch_shooter_dialog
+            if dlg is None:
+                on_chosen(units[0] if units else None)
+                return
+
+            options = []
+            for unit in units:
+                try:
+                    label = str(getattr(unit, "name", "Unit") or "Unit")
+                except Exception:
+                    label = "Unit"
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={"unit_id": get_entity_id(unit)},
+                    )
+                )
+            if allow_skip:
+                options.append(DecisionOption.create("Skip", payload={"action": "skip"}))
+
+            ctx = {}
+            if enemy_unit is not None:
+                try:
+                    ctx["enemy_unit_id"] = get_entity_id(enemy_unit)
+                except Exception:
+                    pass
+
+            req = DecisionRequest.create(
+                decision_type,
+                prompt,
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.game.request_decision(req)
+
+            def _on_confirm(option_id: str):
+                value, apply = resolve_decision_value(self.game, req, option_id)
+                if apply is None or not getattr(apply, "ok", False):
+                    on_chosen(None)
+                else:
+                    on_chosen(value)
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if allow_skip:
+                    option_id = option_id_for_action(req, "skip")
+                    if option_id:
+                        resolve_decision_value(self.game, req, option_id, result_payload={"skipped": True})
+                on_chosen(None)
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                units,
+                enemy_unit,
+                _on_confirm,
+                title=title,
+                subtitle=subtitle,
+                on_cancel=_on_cancel,
+                decision_request=req,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        self._resolve_unit_selection_dialog = _resolve_unit_selection_dialog
+
         def _request_secondary_discard(player, game, on_chosen):
+            from ..engine.decision_kinds import DECISION_DISCARD_SECONDARY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+
             cards = list(getattr(player, 'active_secondaries', []) or [])
             if not cards:
                 on_chosen(None)
                 return
-            self.secondary_discard_dialog.show(cards, lambda chosen: (self.secondary_discard_dialog.hide(), on_chosen(chosen)))
+            options = []
+            for card in cards:
+                try:
+                    name = str(getattr(card, "name", "Secondary") or "Secondary")
+                except Exception:
+                    name = "Secondary"
+                options.append(DecisionOption.create(name, payload={"card_name": name}))
+            req = DecisionRequest.create(
+                DECISION_DISCARD_SECONDARY,
+                "Select a secondary to discard.",
+                player_id=getattr(player, "id", None),
+                options=options,
+            )
+            self.game.request_decision(req)
+
+            def _on_confirm(option_id: str):
+                value, _apply = resolve_decision_value(self.game, req, option_id)
+                on_chosen(value)
+                try:
+                    self.secondary_discard_dialog.hide()
+                except Exception:
+                    pass
+
+            self.secondary_discard_dialog.show(cards, _on_confirm, decision_request=req)
+            try:
+                self.dialog_manager.open(self.secondary_discard_dialog, modal=True)
+            except Exception:
+                pass
         self._request_secondary_discard = _request_secondary_discard
 
         def _request_overwatch_shooter(player, game, enemy_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             # Build candidate list as StratagemManager did, but UI-driven
             candidates = []
             for unit in player.get_army().units or []:
@@ -258,14 +387,24 @@ class GameView:
             if not candidates:
                 on_chosen(None)
                 return
-            # Show selection dialog for Overwatch shooter
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(candidates, enemy_unit, lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)))
-            else:
-                on_chosen(candidates[0])
+            enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit else "enemy unit"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Overwatch shooter.",
+                title="Select Overwatch Shooter",
+                subtitle=f"Choose a unit to fire at {enemy_name}",
+                enemy_unit=enemy_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_overwatch_shooter = _request_overwatch_shooter
 
         def _request_heroic_intervention_unit(player, game, enemy_unit, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 if enemy_unit is None:
@@ -301,20 +440,24 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit else "enemy unit"
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    enemy_unit,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Heroic Intervention Unit",
-                    subtitle=f"Charge into {enemy_name} (within 6\")",
-                )
-            else:
-                on_chosen(cand[0])
+            enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit else "enemy unit"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Heroic Intervention unit.",
+                title="Select Heroic Intervention Unit",
+                subtitle=f"Charge into {enemy_name} (within 6\")",
+                enemy_unit=enemy_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_heroic_intervention_unit = _request_heroic_intervention_unit
 
         def _request_rapid_ingress_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             # Candidates are the units in reserves that can arrive this battle round
             cand = list(candidates or [])
             if not cand:
@@ -326,19 +469,23 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Rapid Ingress Unit",
-                    subtitle="Choose a unit in Reserves to arrive now",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Rapid Ingress unit.",
+                title="Select Rapid Ingress Unit",
+                subtitle="Choose a unit in Reserves to arrive now",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_rapid_ingress_unit = _request_rapid_ingress_unit
 
         def _request_counter_offensive_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 try:
@@ -354,19 +501,23 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Counter-Offensive Unit",
-                    subtitle="Choose a unit to fight next",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Counter-Offensive unit.",
+                title="Select Counter-Offensive Unit",
+                subtitle="Choose a unit to fight next",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_counter_offensive_unit = _request_counter_offensive_unit
 
         def _request_hack_and_slash_unit(player, game, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = []
             try:
                 from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
@@ -400,36 +551,44 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Hack and Slash Unit",
-                    subtitle="Charged this turn; has not fought",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Hack and Slash unit.",
+                title="Select Hack and Slash Unit",
+                subtitle="Charged this turn; has not fought",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_hack_and_slash_unit = _request_hack_and_slash_unit
 
         def _request_frenzied_resilience_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Frenzied Resilience Unit",
-                    subtitle="Targeted by enemy in Fight phase",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Frenzied Resilience unit.",
+                title="Select Frenzied Resilience Unit",
+                subtitle="Targeted by enemy in Fight phase",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_frenzied_resilience_unit = _request_frenzied_resilience_unit
 
         def _request_murder_call_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 try:
@@ -504,19 +663,23 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Murder-Call Unit",
-                    subtitle="BLOOD LEGIONS not in Engagement Range",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Murder-Call unit.",
+                title="Select Murder-Call Unit",
+                subtitle="BLOOD LEGIONS not in Engagement Range",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_murder_call_unit = _request_murder_call_unit
 
         def _request_summoned_by_slaughter_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             def _is_bloodletters(u) -> bool:
                 if u is None:
                     return False
@@ -583,19 +746,23 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Summoned by Slaughter Unit",
-                    subtitle="Bloodletters unit in Reserves",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Summoned by Slaughter unit.",
+                title="Select Summoned by Slaughter Unit",
+                subtitle="Bloodletters unit in Reserves",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_summoned_by_slaughter_unit = _request_summoned_by_slaughter_unit
 
         def _request_daemonic_fury_targets(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 try:
@@ -715,31 +882,37 @@ class GameView:
                 if not we_candidates:
                     on_chosen(bl_unit, None)
                     return
-                if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                    self.overwatch_shooter_dialog.show(
-                        we_candidates,
-                        bl_unit,
-                        lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(bl_unit, unit)),
-                        title="Select Daemonic Fury World Eaters Unit",
-                        subtitle=f"Within 6\" of {getattr(bl_unit, 'name', 'unit')}",
-                    )
-                else:
-                    on_chosen(bl_unit, we_candidates[0])
-
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), _pick_world_eaters(unit)),
-                    title="Select Daemonic Fury Blood Legions Unit",
-                    subtitle="BLOOD LEGIONS unit in your army",
+                _resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=we_candidates,
+                    on_chosen=lambda unit: on_chosen(bl_unit, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Daemonic Fury World Eaters unit.",
+                    title="Select Daemonic Fury World Eaters Unit",
+                    subtitle=f"Within 6\" of {getattr(bl_unit, 'name', 'unit')}",
+                    enemy_unit=bl_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-            else:
-                _pick_world_eaters(cand[0])
+
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=_pick_world_eaters,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Daemonic Fury Blood Legions unit.",
+                title="Select Daemonic Fury Blood Legions Unit",
+                subtitle="BLOOD LEGIONS unit in your army",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
 
         self._request_daemonic_fury_targets = _request_daemonic_fury_targets
 
         def _request_daemontide_targets(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 try:
@@ -855,31 +1028,37 @@ class GameView:
                 if not bl_candidates:
                     on_chosen(we_unit, None)
                     return
-                if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                    self.overwatch_shooter_dialog.show(
-                        bl_candidates,
-                        we_unit,
-                        lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(we_unit, unit)),
-                        title="Select Daemontide Blood Legions Unit",
-                        subtitle=f"Within 6\" of {getattr(we_unit, 'name', 'unit')}",
-                    )
-                else:
-                    on_chosen(we_unit, bl_candidates[0])
-
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), _pick_blood_legions(unit)),
-                    title="Select Daemontide World Eaters Unit",
-                    subtitle="WORLD EATERS unit in your army",
+                _resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=bl_candidates,
+                    on_chosen=lambda unit: on_chosen(we_unit, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Daemontide Blood Legions unit.",
+                    title="Select Daemontide Blood Legions Unit",
+                    subtitle=f"Within 6\" of {getattr(we_unit, 'name', 'unit')}",
+                    enemy_unit=we_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-            else:
-                _pick_blood_legions(cand[0])
+
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=_pick_blood_legions,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Daemontide World Eaters unit.",
+                title="Select Daemontide World Eaters Unit",
+                subtitle="WORLD EATERS unit in your army",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
 
         self._request_daemontide_targets = _request_daemontide_targets
 
         def _request_blessing_of_burning_blood_unit(player, game, we_unit, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 on_chosen(None)
@@ -887,20 +1066,24 @@ class GameView:
             subtitle = "Select BLOOD LEGIONS unit"
             if we_unit is not None:
                 subtitle = f"Within 6\" of {getattr(we_unit, 'name', 'unit')}"
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    we_unit,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Blessing of Burning Blood Unit",
-                    subtitle=subtitle,
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Blessing of Burning Blood unit.",
+                title="Select Blessing of Burning Blood Unit",
+                subtitle=subtitle,
+                enemy_unit=we_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
 
         self._request_blessing_of_burning_blood_unit = _request_blessing_of_burning_blood_unit
 
         def _request_blitzing_firepower_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 mgr = getattr(player, "stratagems", None)
@@ -912,53 +1095,65 @@ class GameView:
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Blitzing Firepower Unit",
-                    subtitle="ASURYANI unit that has not shot",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Blitzing Firepower unit.",
+                title="Select Blitzing Firepower Unit",
+                subtitle="ASURYANI unit that has not shot",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_blitzing_firepower_unit = _request_blitzing_firepower_unit
 
         def _request_lightning_fast_reactions_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Lightning-Fast Reactions Unit",
-                    subtitle="Targeted by enemy this phase",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Lightning-Fast Reactions unit.",
+                title="Select Lightning-Fast Reactions Unit",
+                subtitle="Targeted by enemy this phase",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_lightning_fast_reactions_unit = _request_lightning_fast_reactions_unit
 
         def _request_webway_tunnel_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 on_chosen(None)
                 return
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), on_chosen(unit)),
-                    title="Select Webway Tunnel Unit",
-                    subtitle="ASURYANI INFANTRY within 9\" of an edge",
-                )
-            else:
-                on_chosen(cand[0])
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Webway Tunnel unit.",
+                title="Select Webway Tunnel Unit",
+                subtitle="ASURYANI INFANTRY within 9\" of an edge",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
         self._request_webway_tunnel_unit = _request_webway_tunnel_unit
 
         def _request_skyborne_sanctuary_targets(player, game, candidates, transport_candidates_by_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
             cand = list(candidates or [])
             if not cand:
                 on_chosen(None, None)
@@ -996,38 +1191,80 @@ class GameView:
                 if not transports:
                     on_chosen(unit, None)
                     return
-                if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                    self.overwatch_shooter_dialog.show(
-                        transports,
-                        unit,
-                        lambda t: (self.overwatch_shooter_dialog.hide(), on_chosen(unit, t)),
-                        title="Select Skyborne Sanctuary Transport",
-                        subtitle=f"Embark {getattr(unit, 'name', 'unit')} within 6\"",
-                    )
-                else:
-                    on_chosen(unit, transports[0])
-
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    None,
-                    lambda unit: (self.overwatch_shooter_dialog.hide(), _pick_transport(unit)),
-                    title="Select Skyborne Sanctuary Unit",
-                    subtitle="Not within Engagement Range and wholly within 6\"",
+                _resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=transports,
+                    on_chosen=lambda t: on_chosen(unit, t),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Skyborne Sanctuary transport.",
+                    title="Select Skyborne Sanctuary Transport",
+                    subtitle=f"Embark {getattr(unit, 'name', 'unit')} within 6\"",
+                    enemy_unit=unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-            else:
-                _pick_transport(cand[0])
+
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=_pick_transport,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Skyborne Sanctuary unit.",
+                title="Select Skyborne Sanctuary Unit",
+                subtitle="Not within Engagement Range and wholly within 6\"",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
 
         self._request_skyborne_sanctuary_targets = _request_skyborne_sanctuary_targets
 
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
-        def _request_yes_no(title: str, message: str, yes_label: str, no_label: str, on_chosen):
+        def _request_yes_no(
+            title: str,
+            message: str,
+            yes_label: str,
+            no_label: str,
+            on_chosen,
+            *,
+            player=None,
+            context: Optional[dict] = None,
+        ):
+            from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_command
+
+            options = [
+                DecisionOption.create(yes_label or "Yes", payload={"choice": True}),
+                DecisionOption.create(no_label or "No", payload={"choice": False}),
+            ]
+            ctx = dict(context or {})
+            ctx["message"] = message
+            req = DecisionRequest.create(
+                DECISION_CONFIRM_YES_NO,
+                title or "Confirm",
+                player_id=getattr(player, "id", None) if player is not None else (getattr(self.game.get_current_player(), "id", None) if self.game else None),
+                options=options,
+                context=ctx,
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+            choice_map = {opt.option_id: bool(opt.payload.get("choice", False)) for opt in options}
+
+            def _on_confirm(option_id: str):
+                if self.game is not None and option_id:
+                    resolve_decision_command(self.game, req, option_id)
+                on_chosen(choice_map.get(option_id, False))
+                try:
+                    self.yes_no_dialog.hide()
+                except Exception:
+                    pass
+
             self.yes_no_dialog.show(
                 title,
                 message,
-                lambda choice: (self.yes_no_dialog.hide(), on_chosen(bool(choice))),
-                yes_label=yes_label,
-                no_label=no_label,
+                _on_confirm,
+                decision_request=req,
             )
             try:
                 # Make it explicitly topmost
@@ -1035,8 +1272,13 @@ class GameView:
             except Exception:
                 pass
         self._request_yes_no = _request_yes_no
+        self.phase_manager._request_yes_no = self._request_yes_no
 
         def _request_overwatch_shooting(shooter_unit, enemy_unit, on_done):
+            from ..engine.decision_kinds import DECISION_DECLARE_SHOTS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+
             # Reuse ShootingDeclarationDialog for interactive weapon selection/targeting
             if not hasattr(self, 'shooting_declaration_dialog'):
                 from .dialogs import ShootingDeclarationDialog
@@ -1046,20 +1288,50 @@ class GameView:
                 self.shooting_declaration_dialog.force_single_target_unit = enemy_unit
             except Exception:
                 pass
-            def _cb(_):
-                # The dialog executes shooting internally; ask it whether the execution succeeded.
-                executed = bool(getattr(self.shooting_declaration_dialog, "last_execution_success", False))
+
+            try:
+                unit_id = get_entity_id(shooter_unit)
+            except Exception:
+                unit_id = ""
+            options = [
+                DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
+                DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+            ]
+            req = DecisionRequest.create(
+                DECISION_DECLARE_SHOTS,
+                f"Declare Overwatch shots for {getattr(shooter_unit, 'name', 'Unit')}",
+                player_id=getattr(getattr(shooter_unit.get_parent_army(), "player", None), "id", None),
+                options=options,
+                context={"unit_id": unit_id, "out_of_phase": True},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _cb(executed: bool):
                 try:
                     self.shooting_declaration_dialog.force_single_target_unit = None
                 except Exception:
                     pass
-                on_done(executed)
-            self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self, out_of_phase=True, allow_actions=False)
+                on_done(bool(executed))
+
+            self.shooting_declaration_dialog.show(
+                shooter_unit,
+                _cb,
+                self.game.map,
+                self,
+                out_of_phase=True,
+                allow_actions=False,
+                decision_request=req,
+            )
             # Ensure dialog is visible and receives events immediately
             self.shooting_declaration_dialog.visible = True
         self._request_overwatch_shooting = _request_overwatch_shooting
 
         def _request_frenzy_shooting(shooter_unit, enemy_unit, on_done):
+            from ..engine.decision_kinds import DECISION_DECLARE_SHOTS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+
             if not hasattr(self, 'shooting_declaration_dialog'):
                 from .dialogs import ShootingDeclarationDialog
                 self.shooting_declaration_dialog = ShootingDeclarationDialog(self.screen.get_width(), self.screen.get_height())
@@ -1067,14 +1339,41 @@ class GameView:
                 self.shooting_declaration_dialog.force_single_target_unit = enemy_unit
             except Exception:
                 pass
-            def _cb(_):
-                executed = bool(getattr(self.shooting_declaration_dialog, "last_execution_success", False))
+
+            try:
+                unit_id = get_entity_id(shooter_unit)
+            except Exception:
+                unit_id = ""
+            options = [
+                DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
+                DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+            ]
+            req = DecisionRequest.create(
+                DECISION_DECLARE_SHOTS,
+                f"Declare Frenzy shots for {getattr(shooter_unit, 'name', 'Unit')}",
+                player_id=getattr(getattr(shooter_unit.get_parent_army(), "player", None), "id", None),
+                options=options,
+                context={"unit_id": unit_id, "out_of_phase": True},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _cb(executed: bool):
                 try:
                     self.shooting_declaration_dialog.force_single_target_unit = None
                 except Exception:
                     pass
-                on_done(executed)
-            self.shooting_declaration_dialog.show(shooter_unit, _cb, self.game.map, self, out_of_phase=True, allow_actions=False)
+                on_done(bool(executed))
+
+            self.shooting_declaration_dialog.show(
+                shooter_unit,
+                _cb,
+                self.game.map,
+                self,
+                out_of_phase=True,
+                allow_actions=False,
+                decision_request=req,
+            )
             self.shooting_declaration_dialog.visible = True
         self._request_frenzy_shooting = _request_frenzy_shooting
 
@@ -1125,7 +1424,30 @@ class GameView:
                 reborn_in_blood_available=False,
             )
 
-            def _on_confirm(payload):
+            from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
+
+            army_id = get_entity_id(army) if army is not None else ""
+            options = [DecisionOption.create("Confirm", payload={"army_id": army_id})]
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_BLESSINGS,
+                "Select Blessings of Khorne.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={"army_id": army_id, "ctx": {}},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _on_confirm(option_id: str, payload: dict):
+                value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+                if apply_result is None or not getattr(apply_result, "ok", False):
+                    payload = {}
+                else:
+                    payload = dict(payload or {})
+                    payload["result"] = value
                 try:
                     from ..utility.event_bus import append_action
                     sel_keys = list(payload.get("selected_blessings") or payload.get("result", {}).get("activated") or [])
@@ -1157,6 +1479,13 @@ class GameView:
                 on_done(payload)
 
             def _on_cancel():
+                option_id = options[0].option_id if options else ""
+                resolve_decision_value(
+                    self.game,
+                    req,
+                    option_id,
+                    result_payload={"selected_blessings": [], "use_reborn": False},
+                )
                 on_done(None)
 
             self.blessings_of_khorne_dialog.show(
@@ -1165,8 +1494,8 @@ class GameView:
                 army=army,
                 ctx=ctx,
                 on_confirm=_on_confirm,
-                apply_choice=False,
                 on_cancel=_on_cancel,
+                decision_request=req,
             )
             try:
                 self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
@@ -1200,6 +1529,7 @@ class GameView:
         self._ftgg_flow_active = False
         self._cult_ambush_flow_active = False
         self._cult_ambush_marker_flow_active = False
+        self._voice_of_command_pending_order = None
 
         # Initialize shared UI state
         self._ui_hitboxes = {}
@@ -1766,12 +2096,9 @@ class GameView:
             # Continue queue
             self._process_next_optional_ability_prompt(player)
 
-        # Show modal yes/no
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
         except Exception:
-            # If UI wiring is missing, just skip
             _done(False)
 
     def _process_next_bodyguard_return_prompt(self, player):
@@ -1917,6 +2244,36 @@ class GameView:
 
         if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
             self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+        from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        options = [DecisionOption.create("None", payload={"model_id": None, "action": "skip"})]
+        for model in destroyed:
+            options.append(
+                DecisionOption.create(
+                    getattr(model, "name", "Model"),
+                    payload={"model_id": get_entity_id(model)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            "Select destroyed Bodyguard model to return.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"unit_id": get_entity_id(bodyguard), "selection_kind": "bodyguard_return"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                _done(None)
+                return
+            _done(value)
+
         dlg = self.damage_allocation_dialog
         try:
             dlg.show(
@@ -1925,10 +2282,11 @@ class GameView:
                 title=title,
                 subtitle=subtitle,
                 instruction=instruction,
-                on_choice=_done,
+                on_choice=_on_choice,
                 include_none=True,
                 none_label="None",
                 show_wargear=True,
+                decision_request=req,
             )
             self.dialog_manager.open(dlg, modal=True)
         except Exception:
@@ -2009,9 +2367,42 @@ class GameView:
             },
         ]
 
-        def _on_confirm(selected):
+        from ..engine.decision_kinds import DECISION_CHOOSE_DARK_PACT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from .decision_ui_utils import option_id_for_action
+
+        unit_id = get_entity_id(unit)
+        decision_options = []
+        for opt in list(options or []):
+            label = str(opt.get("label", "Choice"))
+            value = opt.get("value")
+            payload = {
+                "unit_id": unit_id,
+                "choice": value,
+                "summary": opt.get("summary", ""),
+                "phase_name": phase_name or "",
+                "trigger": trigger or "",
+            }
+            if value is None:
+                payload["action"] = "skip"
+            decision_options.append(DecisionOption.create(label, payload=payload))
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_DARK_PACT,
+            f"Select Dark Pact for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(player, "id", None),
+            options=decision_options,
+            context={"unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
             try:
-                value = selected.get("value")
                 if value:
                     player.set_next_optional_decision("DARK_PACTS", True)
                     player.set_next_optional_selection("DARK_PACTS_CHOICE", value)
@@ -2019,19 +2410,18 @@ class GameView:
                     player.set_next_optional_decision("DARK_PACTS", False)
             except Exception:
                 pass
-            try:
-                unit.maybe_trigger_dark_pacts(game, phase_name=phase_name, trigger=trigger or "")
-            except Exception:
-                pass
             self._dark_pacts_flow_active = False
             self._open_next_dark_pacts_prompt(game)
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._dark_pacts_flow_active = False
             self._open_next_dark_pacts_prompt(game)
 
         self._dark_pacts_flow_active = True
-        self.dark_pacts_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle)
+        self.dark_pacts_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, decision_request=req)
         try:
             self.dialog_manager.open(self.dark_pacts_dialog, modal=True)
         except Exception:
@@ -2146,13 +2536,55 @@ class GameView:
             self._end_voice_of_command_flow(game)
 
         subtitle = "Choose an officer to issue orders."
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from .decision_ui_utils import option_id_for_action
+
+        options = [
+            DecisionOption.create("Skip orders", payload={"action": "skip"}),
+        ]
+        for choice in choices:
+            unit = getattr(choice, "unit", None)
+            if unit is None:
+                continue
+            options.append(
+                DecisionOption.create(
+                    getattr(choice, "name", "Officer"),
+                    payload={"target_unit_id": get_entity_id(unit)},
+                )
+            )
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select an officer to issue orders.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"phase_name": phase_name or "", "trigger": trigger or ""},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
+                self._end_voice_of_command_flow(game)
+                return
+            self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, value)
+
+        def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
+            self._end_voice_of_command_flow(game)
+
         self.voice_of_command_officer_dialog.show(
             title="Voice of Command",
             header="Select an officer.",
             subtitle=subtitle,
-            choices=choices,
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.voice_of_command_officer_dialog, modal=True)
@@ -2196,38 +2628,77 @@ class GameView:
             return
 
         try:
-            options = mgr.get_available_orders(officer)
+            orders = mgr.get_available_orders(officer)
         except Exception:
             try:
                 from ..rules.voice_of_command import ORDER_LIST
-                options = list(ORDER_LIST or [])
+                orders = list(ORDER_LIST or [])
             except Exception:
-                options = []
-        skip_choice = SimpleNamespace(
-            key="SKIP",
-            name="Skip orders",
-            summary="Do not issue an order with this officer right now.",
-        )
-        options = [skip_choice] + list(options or [])
+                orders = []
 
-        def _on_confirm(choice):
-            key = str(getattr(choice, "key", "") or "").strip().upper()
-            if key == "SKIP":
+        from ..engine.decision_kinds import DECISION_ISSUE_ORDER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from .decision_ui_utils import option_id_for_action
+
+        officer_id = get_entity_id(officer)
+        army_id = get_entity_id(army) if army is not None else ""
+        decision_options = [
+            DecisionOption.create(
+                "Skip orders",
+                payload={"action": "skip", "officer_unit_id": officer_id, "army_id": army_id},
+            )
+        ]
+        for order in list(orders or []):
+            decision_options.append(
+                DecisionOption.create(
+                    getattr(order, "name", "Order"),
+                    payload={
+                        "officer_unit_id": officer_id,
+                        "order_key": getattr(order, "key", ""),
+                        "summary": getattr(order, "summary", ""),
+                        "army_id": army_id,
+                    },
+                )
+            )
+
+        req = DecisionRequest.create(
+            DECISION_ISSUE_ORDER,
+            f"Select order for {getattr(officer, 'name', 'Officer')}",
+            player_id=getattr(player, "id", None),
+            options=decision_options,
+            context={"officer_unit_id": officer_id, "army_id": army_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id and option_id == skip_id:
+                resolve_decision_value(self.game, req, option_id)
                 self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
                 return
-            self._open_voice_of_command_target_dialog(player, game, phase_name, trigger, officer, choice)
+            self._voice_of_command_pending_order = {
+                "request": req,
+                "option_id": option_id,
+                "officer": officer,
+            }
+            self._open_voice_of_command_target_dialog(player, game, phase_name, trigger, officer, None)
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
 
-        self.voice_of_command_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
+        self.voice_of_command_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=req)
         try:
             self.dialog_manager.open(self.voice_of_command_dialog, modal=True)
         except Exception:
             self._end_voice_of_command_flow(game)
 
     def _open_voice_of_command_target_dialog(self, player, game, phase_name, trigger, officer, order):
-        if officer is None or order is None:
+        if officer is None:
             self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
             return
         try:
@@ -2242,8 +2713,25 @@ class GameView:
             self._end_voice_of_command_flow(game)
             return
 
+        pending = getattr(self, "_voice_of_command_pending_order", None)
+        order_key = ""
+        order_label = "Order"
+        if isinstance(pending, dict):
+            req = pending.get("request")
+            option_id = pending.get("option_id")
+            if req is not None and option_id:
+                for opt in list(getattr(req, "options", []) or []):
+                    if opt.option_id == option_id:
+                        payload = dict(getattr(opt, "payload", {}) or {})
+                        order_key = str(payload.get("order_key", "") or "")
+                        order_label = str(getattr(opt, "label", "Order") or "Order")
+                        break
+        if not order_key and order is not None:
+            order_key = str(getattr(order, "key", "") or "")
+            order_label = str(getattr(order, "name", "Order") or "Order")
+
         try:
-            targets = list(mgr.get_eligible_targets(officer, game=game, order_key=getattr(order, "key", "")) or [])
+            targets = list(mgr.get_eligible_targets(officer, game=game, order_key=order_key) or [])
         except Exception:
             targets = []
         if not targets:
@@ -2261,20 +2749,54 @@ class GameView:
             self._end_voice_of_command_flow(game)
             return
 
-        order_name = getattr(order, "name", "Order")
+        order_name = order_label or getattr(order, "name", "Order")
         header = f"{getattr(officer, 'name', 'Officer')} issues {order_name}."
         subtitle = "Choose an eligible friendly unit within 6\"."
 
-        def _on_target(target_unit):
-            if target_unit is None:
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from .decision_ui_utils import option_id_for_action
+
+        target_options = [
+            DecisionOption.create("Cancel", payload={"action": "skip"}),
+        ]
+        for tgt in list(targets or []):
+            target_options.append(
+                DecisionOption.create(
+                    getattr(tgt, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(tgt)},
+                )
+            )
+        target_req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Voice of Command target.",
+            player_id=getattr(player, "id", None),
+            options=target_options,
+            context={"officer_unit_id": get_entity_id(officer), "order_key": order_key},
+        )
+        if self.game is not None:
+            self.game.request_decision(target_req)
+
+        def _resolve_issue_order(target_unit):
+            ok = False
+            pending_order = getattr(self, "_voice_of_command_pending_order", None)
+            req = pending_order.get("request") if isinstance(pending_order, dict) else None
+            option_id = pending_order.get("option_id") if isinstance(pending_order, dict) else None
+            if req is not None and option_id:
+                payload = {"target_unit_id": get_entity_id(target_unit)}
+                value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+                ok = bool(value) if apply_result is not None and getattr(apply_result, "ok", False) else False
+            return ok
+
+        def _on_target(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, target_req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                 self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
                 return
-            ok = False
-            try:
-                ok = bool(mgr.issue_order(game, officer, target_unit, getattr(order, "key", ""), phase_name=phase_name))
-            except Exception:
-                ok = False
+            ok = _resolve_issue_order(value)
             if ok:
+                target_unit = value
                 try:
                     from ..utility.event_bus import append_action
                     append_action(
@@ -2300,15 +2822,24 @@ class GameView:
                 self._open_voice_of_command_officer_dialog(player, game, phase_name, trigger)
 
         def _on_cancel():
+            skip_id = option_id_for_action(target_req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, target_req, skip_id)
+            pending_order = getattr(self, "_voice_of_command_pending_order", None)
+            if isinstance(pending_order, dict):
+                req = pending_order.get("request")
+                option_id = pending_order.get("option_id")
+                if req is not None and option_id:
+                    resolve_decision_value(self.game, req, option_id, result_payload={"action": "skip"})
             self._open_voice_of_command_order_dialog(player, game, phase_name, trigger, officer)
 
         self.voice_of_command_target_dialog.show(
             title=f"{order_name} Target",
             header=header,
             subtitle=subtitle,
-            choices=targets,
             on_confirm=_on_target,
             on_cancel=_on_cancel,
+            decision_request=target_req,
         )
         try:
             self.dialog_manager.open(self.voice_of_command_target_dialog, modal=True)
@@ -2409,21 +2940,44 @@ class GameView:
             self._finish_gate_of_infinity_flow(game)
             return
 
-        done_choice = SimpleNamespace(name="Done", _gate_done=True)
-        options = [done_choice] + list(eligible or [])
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        options = [
+            DecisionOption.create("Done", payload={"action": "skip"}),
+        ]
+        for unit in list(eligible or []):
+            options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(unit)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Gate of Infinity unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"ability": "gate_of_infinity", "remaining": int(remaining or 0)},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
 
         header = f"Select up to {remaining} unit{'s' if remaining != 1 else ''} to enter Strategic Reserves."
         subtitle = "Eligible units must be on the battlefield and not in Engagement Range."
 
-        def _on_confirm(choice):
-            if choice is None or bool(getattr(choice, "_gate_done", False)):
+        def _on_confirm(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                 self._finish_gate_of_infinity_flow(game)
                 return
-            unit = choice
+            unit = value
             try:
-                unit = choice.get_attached_unit_root()
+                unit = value.get_attached_unit_root()
             except Exception:
-                unit = choice
+                unit = value
             try:
                 mgr.send_units_to_strategic_reserves([unit], game=game)
             except Exception:
@@ -2446,16 +3000,21 @@ class GameView:
             new_eligible = [u for u in eligible if u is not unit]
             self._open_gate_of_infinity_dialog(player, game, new_eligible, remaining - 1)
 
+        from .decision_ui_utils import option_id_for_action
+
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id, result_payload={"skipped": True})
             self._finish_gate_of_infinity_flow(game)
 
         self.gate_of_infinity_dialog.show(
             title="Gate of Infinity",
             header=header,
             subtitle=subtitle,
-            choices=options,
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.gate_of_infinity_dialog, modal=True)
@@ -2571,8 +3130,7 @@ class GameView:
             self._open_next_opponent_turn_strategic_reserves_prompt(game)
 
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Yes", no_label="No")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Yes", "No", _done, player=player)
         except Exception:
             _done(False)
 
@@ -2625,39 +3183,55 @@ class GameView:
             return
 
         subtitle = f"{getattr(unit, 'name', 'Unit')} selected to fight."
-        options = [
-            {
-                "label": "Dacatarai Stance",
-                "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
-                "value": "DACATARAI",
-            },
-            {
-                "label": "Rendax Stance",
-                "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
-                "value": "RENDAX",
-            },
-        ]
+        from ..engine.decision_kinds import DECISION_CHOOSE_MARTIAL_KATAH
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload
 
-        def _on_confirm(selected):
-            try:
-                value = selected.get("value")
-                if value:
-                    unit.set_martial_katah_choice(value)
-            except Exception:
-                pass
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Dacatarai Stance",
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": "DACATARAI",
+                    "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
+                },
+            ),
+            DecisionOption.create(
+                "Rendax Stance",
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": "RENDAX",
+                    "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
+                },
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_MARTIAL_KATAH,
+            "Select Martial Ka'tah stance.",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            options=options,
+            context={"unit_id": unit_id},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             self._martial_katah_flow_active = False
             self._open_next_martial_katah_prompt(game)
 
         def _on_cancel():
-            try:
-                unit.set_martial_katah_choice("DACATARAI")
-            except Exception:
-                pass
+            default_id = option_id_for_payload(req, "choice_key", "DACATARAI")
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._martial_katah_flow_active = False
             self._open_next_martial_katah_prompt(game)
 
         self._martial_katah_flow_active = True
-        self.martial_katah_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle)
+        self.martial_katah_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, decision_request=req)
         try:
             self.dialog_manager.open(self.martial_katah_dialog, modal=True)
         except Exception:
@@ -2728,11 +3302,33 @@ class GameView:
 
         subtitle = f"Battle round {int(battle_round or getattr(game_ctx, 'turn', 0) or 0)}"
 
-        def _on_confirm(value: int):
-            try:
-                mgr.set_pledge_target(int(value), battle_round=int(battle_round or 0), max_value=max_value)
-            except Exception:
-                pass
+        from ..engine.decision_kinds import DECISION_CHOOSE_PLEDGE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload
+
+        army_id = get_entity_id(player.get_army()) if player is not None else ""
+        options = []
+        for value in range(1, max_value + 1):
+            options.append(
+                DecisionOption.create(
+                    f"{value}",
+                    payload={"pledge_value": int(value), "army_id": army_id},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_PLEDGE,
+            "Select pledge value.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"army_id": army_id, "battle_round": int(battle_round or 0), "max_value": max_value},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             self._emperors_children_pledge_flow_active = False
             try:
                 if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
@@ -2743,20 +3339,19 @@ class GameView:
             self._open_next_emperors_children_pledge_prompt(game_ctx)
 
         def _on_cancel():
-            try:
-                mgr.set_pledge_target(int(default_value), battle_round=int(battle_round or 0), max_value=max_value)
-            except Exception:
-                pass
+            default_id = option_id_for_payload(req, "pledge_value", int(default_value))
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._emperors_children_pledge_flow_active = False
             self._open_next_emperors_children_pledge_prompt(game_ctx)
 
         self._emperors_children_pledge_flow_active = True
         self.pledge_selection_dialog.show(
-            max_value=max_value,
             default_value=default_value,
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
             subtitle=subtitle,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.pledge_selection_dialog, modal=True)
@@ -2805,39 +3400,57 @@ class GameView:
             return
 
         subtitle = f"{getattr(unit, 'name', 'Unit')} selected to fight."
-        options = [
-            {
-                "label": "Lethal Hits",
-                "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
-                "value": "LETHAL",
-            },
-            {
-                "label": "Sustained Hits 1",
-                "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
-                "value": "SUSTAINED",
-            },
-        ]
+        from ..engine.decision_kinds import DECISION_CHOOSE_MARTIAL_KATAH
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload
 
-        def _on_confirm(selected):
-            try:
-                value = selected.get("value")
-                if value:
-                    unit.set_exquisite_swordsmanship_choice(value)
-            except Exception:
-                pass
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Lethal Hits",
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": "LETHAL",
+                    "selection_kind": "exquisite_swordsmanship",
+                    "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
+                },
+            ),
+            DecisionOption.create(
+                "Sustained Hits 1",
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": "SUSTAINED",
+                    "selection_kind": "exquisite_swordsmanship",
+                    "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
+                },
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_MARTIAL_KATAH,
+            "Select Exquisite Swordsmanship stance.",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+            options=options,
+            context={"unit_id": unit_id, "selection_kind": "exquisite_swordsmanship"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             self._emperors_children_exquisite_flow_active = False
             self._open_next_emperors_children_exquisite_prompt(game_ctx)
 
         def _on_cancel():
-            try:
-                unit.set_exquisite_swordsmanship_choice("LETHAL")
-            except Exception:
-                pass
+            default_id = option_id_for_payload(req, "choice_key", "LETHAL")
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._emperors_children_exquisite_flow_active = False
             self._open_next_emperors_children_exquisite_prompt(game_ctx)
 
         self._emperors_children_exquisite_flow_active = True
-        self.martial_katah_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, title="Exquisite Swordsmanship")
+        self.martial_katah_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, title="Exquisite Swordsmanship", decision_request=req)
         try:
             self.dialog_manager.open(self.martial_katah_dialog, modal=True)
         except Exception:
@@ -2993,43 +3606,74 @@ class GameView:
             self._open_next_blood_tithe_prompt(game_ctx)
             return
 
+        from ..engine.decision_kinds import DECISION_CHOOSE_BLOOD_TITHE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
         def _finish():
             self._blood_tithe_flow_active = False
             self._open_next_blood_tithe_prompt(game_ctx)
 
-        def _on_confirm(choice):
-            try:
-                key = getattr(choice, "key", None)
-                if key:
-                    manager.activate_blood_tithe(
-                        key,
-                        game=game_ctx,
-                        player=player,
-                        timing=timing,
-                        ignore_command_phase_limit=bool(ignore_limit),
-                    )
-            except Exception:
-                pass
-            try:
-                from ..utility.event_bus import append_action
-                ability_name = getattr(choice, "name", None) or str(choice)
-                append_action(player, f"Blood Tithe: {ability_name}")
-            except Exception:
-                pass
+        army_id = get_entity_id(player.get_army()) if player is not None else ""
+        options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+        option_labels = {}
+        for choice in option_list:
+            key = getattr(choice, "key", None) or getattr(choice, "choice_key", None)
+            if not key:
+                continue
+            label = getattr(choice, "name", None) or str(choice)
+            payload = {
+                "ability_key": str(key),
+                "army_id": army_id,
+                "timing": timing,
+                "cost": getattr(choice, "cost", None),
+                "summary": getattr(choice, "summary", ""),
+            }
+            opt = DecisionOption.create(label, payload=payload)
+            options.append(opt)
+            option_labels[opt.option_id] = label
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_BLOOD_TITHE,
+            "Select a Blood Tithe ability.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "army_id": army_id,
+                "timing": timing,
+                "ignore_command_phase_limit": bool(ignore_limit),
+            },
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is not None and getattr(apply_result, "ok", False) and value:
+                try:
+                    from ..utility.event_bus import append_action
+                    label = option_labels.get(option_id, "Blood Tithe")
+                    append_action(player, f"Blood Tithe: {label}")
+                except Exception:
+                    pass
             _finish()
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             _finish()
 
         self._blood_tithe_flow_active = True
         try:
             self.blood_tithe_dialog.show(
-                options=option_list,
                 points=points,
                 timing=timing,
                 source=source,
                 on_confirm=_on_confirm,
                 on_cancel=_on_cancel,
+                decision_request=req,
             )
             self.dialog_manager.open(self.blood_tithe_dialog, modal=True)
         except Exception:
@@ -3116,8 +3760,7 @@ class GameView:
 
         self._pain_flow_active = True
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
         except Exception:
             self._pain_flow_active = False
             self._open_next_pain_prompt(game_ctx)
@@ -3191,10 +3834,12 @@ class GameView:
                 _finish_and_next()
 
             try:
-                self.individual_model_movement_dialog.show(
-                    unit, "blood_surge", _move_done, game_ctx.map, max_distance
+                self.phase_manager._request_move_unit_decision(
+                    unit,
+                    "blood_surge",
+                    _move_done,
+                    max_distance=max_distance,
                 )
-                self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
             except Exception:
                 _finish_and_next()
 
@@ -3257,8 +3902,7 @@ class GameView:
                 _start_blood_surge_move()
 
             try:
-                self.yes_no_dialog.show(title2, msg2, _wrath_done, yes_label="Wrath", no_label="Normal")
-                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+                self._request_yes_no(title2, msg2, "Wrath", "Normal", _wrath_done, player=player)
             except Exception:
                 _start_blood_surge_move()
 
@@ -3273,8 +3917,7 @@ class GameView:
             _start_blood_surge_move()
             return
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Surge", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Surge", "Skip", _done, player=player)
         except Exception:
             _finish_and_next()
 
@@ -3356,10 +3999,12 @@ class GameView:
                 _finish_and_next()
 
             try:
-                self.individual_model_movement_dialog.show(
-                    unit, "loping_speed", _move_done, game_ctx.map, max_distance
+                self.phase_manager._request_move_unit_decision(
+                    unit,
+                    "loping_speed",
+                    _move_done,
+                    max_distance=max_distance,
                 )
-                self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
             except Exception:
                 _finish_and_next()
 
@@ -3371,8 +4016,7 @@ class GameView:
 
         self._loping_speed_flow_active = True
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Move", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Move", "Skip", _done, player=player)
         except Exception:
             _finish_and_next()
 
@@ -3415,11 +4059,47 @@ class GameView:
             return
 
         try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_FRENZY_TARGET
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
+            from .decision_ui_utils import option_id_for_action
+
+            unit_id = get_entity_id(unit)
+            options = [
+                DecisionOption.create("Shoot", payload={"action": "shoot", "unit_id": unit_id}),
+                DecisionOption.create("Fight", payload={"action": "fight", "unit_id": unit_id}),
+                DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+            ]
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_FRENZY_TARGET,
+                "Choose Frenzy response.",
+                player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+                options=options,
+                context={"unit_id": unit_id, "attacker_unit_id": get_entity_id(attacker_unit)},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _on_choice(option_id: str):
+                value, apply_result = resolve_decision_value(self.game, req, option_id)
+                if apply_result is None or not getattr(apply_result, "ok", False):
+                    return
+                choice = ""
+                if isinstance(value, dict):
+                    choice = str(value.get("action", "") or value.get("choice", "") or "").strip().lower()
+                if not choice:
+                    choice = str(value or "").strip().lower()
+                if not choice and option_id_for_action(req, "skip") == option_id:
+                    return
+                _resolve_choice(choice)
+
             self.frenzy_choice_dialog.show(
                 getattr(unit, "name", "Unit"),
                 getattr(attacker_unit, "name", "Enemy unit"),
                 opts,
-                lambda choice: _resolve_choice(str(choice or "").strip().lower()),
+                _on_choice,
+                decision_request=req,
             )
             self.dialog_manager.open(self.frenzy_choice_dialog, modal=True)
         except Exception:
@@ -3526,11 +4206,7 @@ class GameView:
             on_done()
 
         try:
-            if hasattr(self, "_request_yes_no"):
-                self._request_yes_no(title, msg, "Use", "Skip", _done)
-            else:
-                self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
-                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
         except Exception:
             _done(False)
 
@@ -3553,8 +4229,11 @@ class GameView:
                     max_distance = float(override)
             except Exception:
                 max_distance = 3.0
-            self.individual_model_movement_dialog.show(
-                unit, 'consolidate', lambda _completed: None, game_map, max_distance
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "consolidate",
+                lambda _completed: None,
+                max_distance=max_distance,
             )
 
         def _on_weapon_selection_complete(weapon_declarations):
@@ -3571,7 +4250,7 @@ class GameView:
             except Exception:
                 pass
             def _show_weapons():
-                self.melee_weapon_declaration_dialog.show(unit, _on_weapon_selection_complete, game_map, target_unit=attacker_unit)
+                self.phase_manager._request_melee_weapon_declarations(unit, attacker_unit, _on_weapon_selection_complete)
             self._maybe_prompt_fight_within_3(unit, attacker_unit, _show_weapons)
 
         max_distance = 3.0
@@ -3581,8 +4260,11 @@ class GameView:
                 max_distance = float(override)
         except Exception:
             max_distance = 3.0
-        self.individual_model_movement_dialog.show(
-            unit, 'pile_in', _on_pile_in_complete, game_map, max_distance
+        self.phase_manager._request_move_unit_decision(
+            unit,
+            "pile_in",
+            _on_pile_in_complete,
+            max_distance=max_distance,
         )
 
     # ---------------- Charge-end mortal wound prompts ----------------
@@ -3647,16 +4329,23 @@ class GameView:
 
         self._charge_mortal_wounds_flow_active = True
         try:
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    unit,
-                    _finish,
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=cand,
+                    on_chosen=_finish,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select charge mortal wounds target.",
                     title=title,
                     subtitle=subtitle,
-                    on_cancel=_on_cancel,
+                    enemy_unit=unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+            else:
+                _finish(cand[0] if cand else None)
         except Exception:
             self._charge_mortal_wounds_flow_active = False
             self._open_next_charge_mortal_wounds_prompt(game)
@@ -3734,6 +4423,37 @@ class GameView:
 
         if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
             self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        options = []
+        for model in cand:
+            options.append(
+                DecisionOption.create(
+                    getattr(model, "name", "Model"),
+                    payload={"model_id": get_entity_id(model)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            "Select Bodyguard model to destroy.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"unit_id": get_entity_id(bodyguard), "selection_kind": "bodyguard_loss"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                _finish(cand[0] if cand else None)
+                return
+            _finish(value)
+
         dlg = self.damage_allocation_dialog
         try:
             dlg.show(
@@ -3742,9 +4462,10 @@ class GameView:
                 title=title,
                 subtitle=subtitle,
                 instruction=instruction,
-                on_choice=_finish,
+                on_choice=_on_choice,
                 include_none=False,
                 show_wargear=True,
+                decision_request=req,
             )
             self.dialog_manager.open(dlg, modal=True)
         except Exception:
@@ -3820,16 +4541,23 @@ class GameView:
 
         self._fight_end_mortal_wounds_flow_active = True
         try:
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    unit,
-                    _finish,
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=cand,
+                    on_chosen=_finish,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select fight phase mortal wounds target.",
                     title=title,
                     subtitle=subtitle,
-                    on_cancel=_on_cancel,
+                    enemy_unit=unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+            else:
+                _finish(cand[0] if cand else None)
         except Exception:
             self._fight_end_mortal_wounds_flow_active = False
             self._open_next_fight_end_mortal_wounds_prompt(game)
@@ -3906,16 +4634,23 @@ class GameView:
 
         self._post_shoot_battleshock_flow_active = True
         try:
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    attacker_unit,
-                    _finish,
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=cand,
+                    on_chosen=_finish,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select post-shoot battleshock target.",
                     title=title,
                     subtitle=subtitle,
-                    on_cancel=_on_cancel,
+                    enemy_unit=attacker_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+            else:
+                _finish(cand[0] if cand else None)
         except Exception:
             self._post_shoot_battleshock_flow_active = False
             self._open_next_post_shoot_battleshock_prompt(game)
@@ -3992,16 +4727,23 @@ class GameView:
 
         self._post_shoot_suppress_flow_active = True
         try:
-            if hasattr(self, 'overwatch_shooter_dialog') and self.overwatch_shooter_dialog:
-                self.overwatch_shooter_dialog.show(
-                    cand,
-                    attacker_unit,
-                    _finish,
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=cand,
+                    on_chosen=_finish,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select suppression target.",
                     title=title,
                     subtitle=subtitle,
-                    on_cancel=_on_cancel,
+                    enemy_unit=attacker_unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
-                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+            else:
+                _finish(cand[0] if cand else None)
         except Exception:
             self._post_shoot_suppress_flow_active = False
             self._open_next_post_shoot_suppress_prompt(game)
@@ -4096,6 +4838,62 @@ class GameView:
             self._open_next_transport_reactive_disembark_prompt(game)
             return
 
+        from ..engine.decision_kinds import DECISION_DISEMBARK
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        transport_id = get_entity_id(transport)
+        pending = [
+            req for req in list(self.game.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_DISEMBARK
+            and str(getattr(req, "context", {}).get("transport_id", "")) == transport_id
+        ]
+        unit_requests = {}
+        if pending:
+            for req in pending:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "")) or ""
+                if unit_id:
+                    unit_requests[unit_id] = req
+        else:
+            for unit in eligible:
+                unit_id = get_entity_id(unit)
+                options = [
+                    DecisionOption.create(
+                        "Disembark",
+                        payload={"unit_id": unit_id, "transport_id": transport_id},
+                    ),
+                    DecisionOption.create(
+                        "Remain embarked",
+                        payload={"unit_id": unit_id, "transport_id": None},
+                    ),
+                ]
+                req = DecisionRequest.create(
+                    DECISION_DISEMBARK,
+                    f"Disembark {getattr(unit, 'name', 'Unit')}",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={"unit_id": unit_id, "transport_id": transport_id},
+                )
+                self.game.request_decision(req)
+                unit_requests[unit_id] = req
+
+        def _option_id(req, disembark: bool) -> str:
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if disembark and payload.get("transport_id") is not None:
+                    return opt.option_id
+                if not disembark and payload.get("transport_id") is None:
+                    return opt.option_id
+            return ""
+
+        option_ids = {}
+        for unit_id, req in unit_requests.items():
+            option_ids[unit_id] = {
+                "disembark": _option_id(req, True),
+                "remain": _option_id(req, False),
+            }
+
         self._transport_reactive_disembark_flow_active = True
 
         def _restore_positions(unit, positions):
@@ -4111,11 +4909,22 @@ class GameView:
 
         def _disembark_units(selected_units):
             if not selected_units:
+                for unit_id, req in unit_requests.items():
+                    remain_id = option_ids.get(unit_id, {}).get("remain", "")
+                    if remain_id:
+                        resolve_decision_value(self.game, req, remain_id)
                 self._transport_reactive_disembark_flow_active = False
                 self._open_next_transport_reactive_disembark_prompt(game)
                 return
 
             queue_units = list(selected_units)
+            selected_ids = {get_entity_id(u) for u in queue_units if u is not None}
+            for unit_id, req in unit_requests.items():
+                if unit_id in selected_ids:
+                    continue
+                remain_id = option_ids.get(unit_id, {}).get("remain", "")
+                if remain_id:
+                    resolve_decision_value(self.game, req, remain_id)
 
             def _open_next_unit():
                 if not queue_units:
@@ -4155,45 +4964,33 @@ class GameView:
                         return {"valid": False, "reason": "Disembark validation failed"}
 
                 def _on_complete(completed: bool):
-                    if completed:
-                        ok = False
-                        try:
-                            ok = unit.finalize_manual_disembark(
-                                game_map=self.game.map,
-                                transport_unit=transport,
-                                destroyed_transport=False,
-                                emergency=False,
-                                current_turn=self.game.turn,
-                            )
-                        except Exception:
-                            ok = False
-                        if not ok:
-                            _restore_positions(unit, original_positions)
-                    else:
+                    unit_id = get_entity_id(unit)
+                    req = unit_requests.get(unit_id)
+                    result_value = None
+                    if req is not None:
+                        if completed:
+                            payload = {"model_positions": self.phase_manager._serialize_unit_positions(unit)}
+                            option_id = option_ids.get(unit_id, {}).get("disembark", "")
+                            if option_id:
+                                result_value, _apply = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+                        else:
+                            option_id = option_ids.get(unit_id, {}).get("remain", "")
+                            if option_id:
+                                resolve_decision_value(self.game, req, option_id)
+                    if completed and not result_value:
+                        _restore_positions(unit, original_positions)
+                    if not completed:
                         _restore_positions(unit, original_positions)
                     _open_next_unit()
 
                 try:
-                    if not (hasattr(self, 'individual_model_movement_dialog') and self.individual_model_movement_dialog):
-                        from .dialogs.individual_model_movement_dialog import IndividualModelMovementDialog
-                        self.individual_model_movement_dialog = IndividualModelMovementDialog(
-                            self.game_view.screen.get_width(),
-                            self.game_view.screen.get_height(),
-                        )
-                except Exception:
-                    _open_next_unit()
-                    return
-
-                try:
-                    self.individual_model_movement_dialog.show(
+                    self.phase_manager._request_move_unit_decision(
                         unit,
                         "deploy",
                         _on_complete,
-                        self.game.map,
                         max_distance=0.0,
                         placement_validator=_placement_validator,
                     )
-                    self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
                 except Exception:
                     _restore_positions(unit, original_positions)
                     _open_next_unit()
@@ -4274,26 +5071,50 @@ class GameView:
 
         dlg = self.oath_of_moment_dialog
 
-        def _done(chosen_unit):
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        req_options = []
+        for enemy in options:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(enemy, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(enemy)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Oath of Moment target.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"ability": "oath_of_moment"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _done(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
+                self._oath_of_moment_flow_active = False
+                return
             try:
-                mgr.set_target(chosen_unit)
+                mgr.set_target(value)
             finally:
                 self._oath_of_moment_flow_active = False
 
         def _cancel():
-            try:
-                mgr.set_target(options[0])
-            finally:
-                self._oath_of_moment_flow_active = False
+            self._oath_of_moment_flow_active = False
 
         self._oath_of_moment_flow_active = True
         dlg.show(
             title=f"Oath of Moment - {getattr(player, 'name', 'Player')}",
             header="Choose an enemy unit to be your Oath of Moment target.",
             subtitle="Target lasts until your next Command phase.",
-            choices=options,
             on_confirm=_done,
             on_cancel=_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
@@ -4389,14 +5210,30 @@ class GameView:
             if not options:
                 _finish()
                 return
-            try:
-                choices = []
-                for model in options:
-                    unit_name = getattr(getattr(model, "parent_unit", None), "name", "")
-                    label = f"{getattr(model, 'name', '')} ({unit_name})" if unit_name else str(getattr(model, "name", ""))
-                    choices.append(SimpleNamespace(name=label, model=model))
-            except Exception:
-                choices = [SimpleNamespace(name=str(getattr(m, "name", "")), model=m) for m in options]
+            from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
+
+            req_options = []
+            for model in options:
+                unit_name = getattr(getattr(model, "parent_unit", None), "name", "")
+                label = f"{getattr(model, 'name', '')} ({unit_name})" if unit_name else str(getattr(model, "name", ""))
+                req_options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={"model_id": get_entity_id(model)},
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_SELECT_TARGET_MODEL,
+                "Select Code Chivalric target model.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"selection_kind": "code_chivalric_target"},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
 
             try:
                 from .dialogs import QuarrySelectionDialog
@@ -4409,27 +5246,24 @@ class GameView:
                 self.code_chivalric_target_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
             tdlg = self.code_chivalric_target_dialog
 
-            def _done(choice):
+            def _done(option_id: str):
                 try:
-                    model = getattr(choice, "model", None)
-                    if model is not None:
-                        mgr.set_deed_target_model(model)
+                    value, apply_result = resolve_decision_value(self.game, req, option_id)
+                    if apply_result is not None and getattr(apply_result, "ok", False) and value is not None:
+                        mgr.set_deed_target_model(value)
                 finally:
                     _finish()
 
             def _cancel():
-                try:
-                    mgr.set_deed_target_model(getattr(choices[0], "model", None))
-                finally:
-                    _finish()
+                _finish()
 
             tdlg.show(
                 title=f"Code Chivalric - {getattr(player, 'name', 'Player')}",
                 header="Choose an enemy CHARACTER model as your Oath target.",
                 subtitle="Lay Low the Tyrant",
-                choices=choices,
                 on_confirm=_done,
                 on_cancel=_cancel,
+                decision_request=req,
             )
             try:
                 self.dialog_manager.open(tdlg, modal=True)
@@ -4437,26 +5271,55 @@ class GameView:
                 _cancel()
 
         def _choose_quality():
-            options = list(CODE_CHIVALRIC_QUALITIES)
-            if roll_option is not None:
-                options = [roll_option] + options
+            from ..engine.decision_kinds import DECISION_CHOOSE_CHIVALRIC_OATH
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
 
-            def _on_quality(choice):
-                try:
-                    key = getattr(choice, "key", "")
-                except Exception:
-                    key = ""
-                try:
-                    if str(key).strip().upper() == "ROLL":
-                        res = mgr.roll_quality()
-                        quality = res.get("quality", None)
-                        if quality is not None:
-                            append_action(player, f"Code Chivalric Quality: {quality.name} (rolled {res.get('roll')})")
-                    else:
-                        mgr.select_quality(choice, random=False)
-                        append_action(player, f"Code Chivalric Quality: {choice.name}")
-                except Exception:
-                    pass
+            army_id = get_entity_id(player.get_army()) if player is not None else ""
+            req_options = []
+            option_labels = {}
+            if roll_option is not None:
+                opt = DecisionOption.create(
+                    getattr(roll_option, "name", "Roll D6 (random)"),
+                    payload={"choice_key": "ROLL", "random": True, "oath_kind": "quality"},
+                )
+                req_options.append(opt)
+                option_labels[opt.option_id] = opt.label
+            for quality in list(CODE_CHIVALRIC_QUALITIES or []):
+                key = getattr(quality, "key", None) or getattr(quality, "choice_key", None)
+                name = getattr(quality, "name", None) or str(quality)
+                summary = getattr(quality, "summary", "") or getattr(quality, "effect", "")
+                if not key:
+                    continue
+                opt = DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "oath_kind": "quality", "summary": summary, "army_id": army_id},
+                )
+                req_options.append(opt)
+                option_labels[opt.option_id] = name
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_CHIVALRIC_OATH,
+                "Select Code Chivalric Quality.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"oath_kind": "quality", "army_id": army_id},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _on_quality(option_id: str):
+                value, apply_result = resolve_decision_value(self.game, req, option_id)
+                if apply_result is not None and getattr(apply_result, "ok", False):
+                    try:
+                        if isinstance(value, dict) and value.get("quality") is not None:
+                            quality = value.get("quality")
+                            append_action(player, f"Code Chivalric Quality: {quality.name} (rolled {value.get('roll')})")
+                        else:
+                            label = option_labels.get(option_id, "Code Chivalric Quality")
+                            append_action(player, f"Code Chivalric Quality: {label}")
+                    except Exception:
+                        pass
                 if mgr.deed_requires_character_target() and not getattr(mgr, "deed_target_model_id", None):
                     _prompt_character_target()
                     return
@@ -4465,8 +5328,8 @@ class GameView:
             dlg.show(
                 title="Code Chivalric - Quality",
                 header="Choose a Quality for this battle.",
-                options=options,
                 on_confirm=_on_quality,
+                decision_request=req,
             )
             try:
                 self.dialog_manager.open(dlg, modal=True)
@@ -4477,33 +5340,62 @@ class GameView:
             if getattr(mgr, "selected_deed_key", None):
                 _choose_quality()
                 return
-            options = list(CODE_CHIVALRIC_DEEDS)
-            if roll_option is not None:
-                options = [roll_option] + options
+            from ..engine.decision_kinds import DECISION_CHOOSE_CHIVALRIC_OATH
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
 
-            def _on_deed(choice):
-                try:
-                    key = getattr(choice, "key", "")
-                except Exception:
-                    key = ""
-                try:
-                    if str(key).strip().upper() == "ROLL":
-                        res = mgr.roll_deed(game=game, player=player)
-                        deed = res.get("deed", None)
-                        if deed is not None:
-                            append_action(player, f"Code Chivalric Deed: {deed.name} (rolled {res.get('roll')})")
-                    else:
-                        mgr.select_deed(choice, random=False, game=game, player=player)
-                        append_action(player, f"Code Chivalric Deed: {choice.name}")
-                except Exception:
-                    pass
+            army_id = get_entity_id(player.get_army()) if player is not None else ""
+            req_options = []
+            option_labels = {}
+            if roll_option is not None:
+                opt = DecisionOption.create(
+                    getattr(roll_option, "name", "Roll D6 (random)"),
+                    payload={"choice_key": "ROLL", "random": True, "oath_kind": "deed"},
+                )
+                req_options.append(opt)
+                option_labels[opt.option_id] = opt.label
+            for deed in list(CODE_CHIVALRIC_DEEDS or []):
+                key = getattr(deed, "key", None) or getattr(deed, "choice_key", None)
+                name = getattr(deed, "name", None) or str(deed)
+                summary = getattr(deed, "summary", "") or getattr(deed, "effect", "")
+                if not key:
+                    continue
+                opt = DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "oath_kind": "deed", "summary": summary, "army_id": army_id},
+                )
+                req_options.append(opt)
+                option_labels[opt.option_id] = name
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_CHIVALRIC_OATH,
+                "Select Code Chivalric Deed.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"oath_kind": "deed", "army_id": army_id},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _on_deed(option_id: str):
+                value, apply_result = resolve_decision_value(self.game, req, option_id)
+                if apply_result is not None and getattr(apply_result, "ok", False):
+                    try:
+                        if isinstance(value, dict) and value.get("deed") is not None:
+                            deed = value.get("deed")
+                            append_action(player, f"Code Chivalric Deed: {deed.name} (rolled {value.get('roll')})")
+                        else:
+                            label = option_labels.get(option_id, "Code Chivalric Deed")
+                            append_action(player, f"Code Chivalric Deed: {label}")
+                    except Exception:
+                        pass
                 _choose_quality()
 
             dlg.show(
                 title="Code Chivalric - Deed",
                 header="Choose a Deed for this battle.",
-                options=options,
                 on_confirm=_on_deed,
+                decision_request=req,
             )
             try:
                 self.dialog_manager.open(dlg, modal=True)
@@ -4587,16 +5479,41 @@ class GameView:
             ability_names = []
         subtitle = ", ".join(ability_names) if ability_names else "Bondsman ability"
 
-        def _done(choice):
-            try:
-                mgr.apply_bondsman_effects(source_unit, choice)
-            except Exception:
-                pass
-            try:
-                from ..utility.event_bus import append_action
-                append_action(player, f"Bondsman: {source_unit.name} -> {getattr(choice, 'name', '')}")
-            except Exception:
-                pass
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        req_options = []
+        for target in targets:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(target, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(target)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Bondsman target.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"source_unit_id": get_entity_id(source_unit), "ability": "bondsman"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _done(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is not None and getattr(apply_result, "ok", False) and value is not None:
+                try:
+                    mgr.apply_bondsman_effects(source_unit, value)
+                except Exception:
+                    pass
+                try:
+                    from ..utility.event_bus import append_action
+                    append_action(player, f"Bondsman: {source_unit.name} -> {getattr(value, 'name', '')}")
+                except Exception:
+                    pass
             self._open_next_bondsman_prompt(game, player)
 
         def _cancel():
@@ -4606,9 +5523,9 @@ class GameView:
             title=f"Bondsman - {getattr(source_unit, 'name', 'Unit')}",
             header=f"Select an ARMIGER within 12\" of {getattr(source_unit, 'name', 'this model')}.",
             subtitle=subtitle,
-            choices=targets,
             on_confirm=_done,
             on_cancel=_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
@@ -4691,8 +5608,7 @@ class GameView:
 
         self._shadow_in_the_warp_flow_active = True
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
         except Exception:
             self._shadow_in_the_warp_flow_active = False
             self._open_next_shadow_in_the_warp_prompt(game)
@@ -4745,8 +5661,7 @@ class GameView:
 
         self._waaagh_flow_active = True
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Call", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Call", "Skip", _done, player=player)
         except Exception:
             self._waaagh_flow_active = False
 
@@ -4846,14 +5761,40 @@ class GameView:
                             return {"valid": True, "reason": "OK"}
                         return {"valid": False, "reason": "Must be more than 9\" from enemy units"}
 
-                    def _confirm(point):
+                    from ..engine.decision_kinds import DECISION_PICK_POINT
+                    from ..engine.decisions import DecisionOption, DecisionRequest
+                    from ..utility.decision_utils import resolve_decision_value
+                    from .decision_ui_utils import option_id_for_action
+
+                    options = [
+                        DecisionOption.create("Confirm", payload={"action": "confirm"}),
+                        DecisionOption.create("Skip", payload={"action": "skip"}),
+                    ]
+                    req = DecisionRequest.create(
+                        DECISION_PICK_POINT,
+                        "Select Cult Ambush marker point.",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={"unit_id": get_entity_id(unit)},
+                    )
+                    if self.game is not None:
+                        self.game.request_decision(req)
+
+                    def _confirm(option_id: str, point):
                         try:
-                            mgr.place_marker_at(game_ctx, point[0], point[1])
+                            payload = {"point": list(point)}
+                            value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+                            if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                                value = point
+                            mgr.place_marker_at(game_ctx, value[0], value[1])
                         finally:
                             self._cult_ambush_flow_active = False
                             self._open_next_cult_ambush_prompt(game_ctx)
 
                     def _cancel():
+                        skip_id = option_id_for_action(req, "skip")
+                        if skip_id:
+                            resolve_decision_value(self.game, req, skip_id, result_payload={"skipped": True})
                         self._cult_ambush_flow_active = False
                         self._open_next_cult_ambush_prompt(game_ctx)
 
@@ -4866,6 +5807,7 @@ class GameView:
                             validate_cb=_validate,
                             on_confirm=_confirm,
                             on_cancel=_cancel,
+                            decision_request=req,
                         )
                         self.dialog_manager.open(self.cult_ambush_point_dialog, modal=True)
                         return
@@ -4878,8 +5820,7 @@ class GameView:
 
         self._cult_ambush_flow_active = True
         try:
-            self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
         except Exception:
             self._cult_ambush_flow_active = False
             self._open_next_cult_ambush_prompt(game_ctx)
@@ -4931,8 +5872,29 @@ class GameView:
             self._open_next_cult_ambush_marker_prompt(game_ctx)
             return
 
-        skip_choice = SimpleNamespace(name="Skip (leave marker)", _skip_marker=True)
-        choices = list(units) + [skip_choice]
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
+        req_options = [DecisionOption.create("Skip (leave marker)", payload={"action": "skip"})]
+        for unit in units:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(unit)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Cult Ambush unit.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"marker_id": get_entity_id(marker) if marker is not None else None},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
 
         try:
             from .dialogs import QuarrySelectionDialog
@@ -4946,16 +5908,20 @@ class GameView:
         title = "Cult Ambush"
         subtitle = f"Marker at ({getattr(marker, 'x', 0.0):.1f}\", {getattr(marker, 'y', 0.0):.1f}\")"
 
-        def _on_confirm(choice):
+        def _on_confirm(option_id: str):
             try:
-                if getattr(choice, "_skip_marker", False):
+                value, apply_result = resolve_decision_value(self.game, req, option_id)
+                if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                     return
-                mgr.deploy_unit_from_marker(choice, marker, game=game_ctx)
+                mgr.deploy_unit_from_marker(value, marker, game=game_ctx)
             finally:
                 self._cult_ambush_marker_flow_active = False
                 self._open_next_cult_ambush_marker_prompt(game_ctx)
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._cult_ambush_marker_flow_active = False
             self._open_next_cult_ambush_marker_prompt(game_ctx)
 
@@ -4965,9 +5931,9 @@ class GameView:
                 title=title,
                 header="Select a unit to set up using this Cult Ambush marker.",
                 subtitle=subtitle,
-                choices=choices,
                 on_confirm=_on_confirm,
                 on_cancel=_on_cancel,
+                decision_request=req,
             )
             self.dialog_manager.open(self.cult_ambush_unit_dialog, modal=True)
         except Exception:
@@ -5043,11 +6009,39 @@ class GameView:
             self.ftgg_observer_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
         obs_dialog = self.ftgg_observer_dialog
 
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
+        obs_options = [DecisionOption.create("Cancel", payload={"action": "skip"})]
+        for obs in options:
+            obs_options.append(
+                DecisionOption.create(
+                    getattr(obs, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(obs)},
+                )
+            )
+        obs_req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select For the Greater Good observer.",
+            player_id=getattr(player, "id", None),
+            options=obs_options,
+            context={"ability": "for_the_greater_good", "step": "observer"},
+        )
+        if self.game is not None:
+            self.game.request_decision(obs_req)
+
         def _cancel_observer():
+            skip_id = option_id_for_action(obs_req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, obs_req, skip_id)
             self._ftgg_flow_active = False
 
-        def _on_observer(observer_unit):
-            if observer_unit is None:
+        def _on_observer(option_id: str):
+            observer_unit, apply_result = resolve_decision_value(self.game, obs_req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or observer_unit is None:
                 _cancel_observer()
                 return
             try:
@@ -5069,11 +6063,33 @@ class GameView:
                 self.ftgg_target_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
             tgt_dialog = self.ftgg_target_dialog
 
+            tgt_options = [DecisionOption.create("Cancel", payload={"action": "skip"})]
+            for target in targets:
+                tgt_options.append(
+                    DecisionOption.create(
+                        getattr(target, "name", "Unit"),
+                        payload={"target_unit_id": get_entity_id(target)},
+                    )
+                )
+            tgt_req = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Select For the Greater Good target.",
+                player_id=getattr(player, "id", None),
+                options=tgt_options,
+                context={"ability": "for_the_greater_good", "step": "target"},
+            )
+            if self.game is not None:
+                self.game.request_decision(tgt_req)
+
             def _cancel_target():
+                skip_id = option_id_for_action(tgt_req, "skip")
+                if skip_id:
+                    resolve_decision_value(self.game, tgt_req, skip_id)
                 self._ftgg_flow_active = False
 
-            def _on_target(target_unit):
-                if target_unit is None:
+            def _on_target(option_id: str):
+                target_unit, apply_result = resolve_decision_value(self.game, tgt_req, option_id)
+                if apply_result is None or not getattr(apply_result, "ok", False) or target_unit is None:
                     _cancel_target()
                     return
                 try:
@@ -5086,9 +6102,9 @@ class GameView:
                 title=f"For the Greater Good - {getattr(player, 'name', 'Player')}",
                 header=f"Choose a Spotted target for {getattr(observer_unit, 'name', 'Observer')}.",
                 subtitle="Each enemy unit can only be Spotted once per phase.",
-                choices=targets,
                 on_confirm=_on_target,
                 on_cancel=_cancel_target,
+                decision_request=tgt_req,
             )
             try:
                 self.dialog_manager.open(tgt_dialog, modal=True)
@@ -5099,9 +6115,9 @@ class GameView:
             title=f"For the Greater Good - {getattr(player, 'name', 'Player')}",
             header="Select an Observer unit.",
             subtitle="Cancel to stop selecting Observers for this phase.",
-            choices=options,
             on_confirm=_on_observer,
             on_cancel=_cancel_observer,
+            decision_request=obs_req,
         )
         try:
             self.dialog_manager.open(obs_dialog, modal=True)
@@ -5361,25 +6377,50 @@ class GameView:
 
             self._battle_focus_flow_active = True
             try:
-                self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Cancel")
-                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+                self._request_yes_no(title, msg, "Use", "Cancel", _done, player=player)
             except Exception:
                 self._battle_focus_flow_active = False
             return
 
         subtitle = f"{getattr(unit, 'name', 'unit')} - choose a maneuver (Tokens: {tokens})"
 
-        def _on_confirm(selected_label):
+        from ..engine.decision_kinds import DECISION_CHOOSE_ASPECT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
+        unit_id = get_entity_id(unit)
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+        for label, maneuver in options.items():
+            req_options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"choice": str(maneuver), "unit_id": unit_id},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_ASPECT,
+            "Select Battle Focus maneuver.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"unit_id": unit_id, "ability": "battle_focus"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
             self._battle_focus_flow_active = False
-            try:
-                self.battle_focus_dialog.hide()
-            except Exception:
-                pass
-            maneuver = options.get(selected_label)
-            if maneuver:
-                mgr.apply_maneuver(unit, maneuver, self.game)
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                return
+            if value:
+                mgr.apply_maneuver(unit, value, self.game)
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._battle_focus_flow_active = False
 
         self._battle_focus_flow_active = True
@@ -5390,6 +6431,7 @@ class GameView:
             title=title,
             subtitle=subtitle,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.battle_focus_dialog, modal=True)
@@ -5446,31 +6488,51 @@ class GameView:
 
             self._battle_focus_flow_active = True
             try:
-                self.yes_no_dialog.show(title, msg, _done, yes_label="Use", no_label="Skip")
-                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+                self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
             except Exception:
                 self._battle_focus_flow_active = False
                 on_done()
             return
 
-        label_to_option = {}
+        from ..engine.decision_kinds import DECISION_CHOOSE_ASPECT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
+        unit_id = get_entity_id(unit)
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
         for opt in options:
-            label_to_option[self._battle_focus_option_label(opt, mgr)] = opt
-        choices = list(label_to_option.keys())
+            label = self._battle_focus_option_label(opt, mgr)
+            req_options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"choice": str(opt), "unit_id": unit_id},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_ASPECT,
+            "Select Battle Focus maneuver.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"unit_id": unit_id, "ability": "battle_focus", "action": action},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+        choices = [opt.label for opt in req_options]
         subtitle = f"Choose an Agile Manoeuvre for {getattr(unit, 'name', 'unit')} (Tokens: {tokens})"
 
-        def _on_confirm(selected_label):
+        def _on_confirm(option_id: str):
             self._battle_focus_flow_active = False
-            try:
-                self.battle_focus_dialog.hide()
-            except Exception:
-                pass
-            opt = label_to_option.get(selected_label)
-            if opt:
-                mgr.apply_maneuver(unit, opt, self.game)
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is not None and getattr(apply_result, "ok", False) and value:
+                mgr.apply_maneuver(unit, value, self.game)
             on_done()
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._battle_focus_flow_active = False
             on_done()
 
@@ -5482,6 +6544,7 @@ class GameView:
             title=title,
             subtitle=subtitle,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.battle_focus_dialog, modal=True)
@@ -5539,8 +6602,7 @@ class GameView:
 
         self._battle_focus_flow_active = True
         try:
-            self.yes_no_dialog.show("Battle Focus", msg, _done, yes_label="Use", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no("Battle Focus", msg, "Use", "Skip", _done, player=player)
         except Exception:
             self._battle_focus_flow_active = False
             on_done()
@@ -5594,8 +6656,7 @@ class GameView:
 
         self._battle_focus_flow_active = True
         try:
-            self.yes_no_dialog.show("Battle Focus", msg, _done, yes_label="Use", no_label="Skip")
-            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            self._request_yes_no("Battle Focus", msg, "Use", "Skip", _done, player=player)
         except Exception:
             self._battle_focus_flow_active = False
             on_done()
@@ -5616,8 +6677,11 @@ class GameView:
             self._battle_focus_flow_active = False
 
         try:
-            self.individual_model_movement_dialog.show(
-                unit, "reactive", _done, self.game.map, max_distance
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "reactive",
+                _done,
+                max_distance=max_distance,
             )
         except Exception:
             self._battle_focus_flow_active = False
@@ -5648,17 +6712,42 @@ class GameView:
         enemy_name = getattr(moving_unit, "name", "enemy unit")
         subtitle = f"Enemy unit fell back: {enemy_name}. Select a unit to move."
 
-        def _on_confirm(selected_unit):
-            try:
-                self.battle_focus_dialog.hide()
-            except Exception:
-                pass
-            if selected_unit is None:
+        from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+        for unit in cand:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"unit_id": get_entity_id(unit)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_SELECT_OVERWATCH_SHOOTER,
+            "Select Battle Focus reactive unit.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"ability": "battle_focus", "maneuver": "opportunity"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
+                self._battle_focus_flow_active = False
                 return
-            mgr.apply_reactive_maneuver(selected_unit, mgr.MANEUVER_OPPORTUNITY, self.game)
-            self._open_battle_focus_reactive_move(selected_unit)
+            mgr.apply_reactive_maneuver(value, mgr.MANEUVER_OPPORTUNITY, self.game)
+            self._open_battle_focus_reactive_move(value)
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._battle_focus_flow_active = False
 
         self._battle_focus_flow_active = True
@@ -5669,6 +6758,7 @@ class GameView:
             title="Battle Focus: Opportunity Seized",
             subtitle=subtitle,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.battle_focus_dialog, modal=True)
@@ -5698,9 +6788,14 @@ class GameView:
         if mgr is None:
             return
 
-        label_to_unit = {}
-        choices = []
+        from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
+
         used = set()
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
         for unit in cand:
             try:
                 hits = int((hits_by_unit or {}).get(unit, 0) or 0)
@@ -5713,34 +6808,48 @@ class GameView:
                 label = f"{base} [{idx}]"
                 idx += 1
             used.add(label)
-            label_to_unit[label] = unit
-            choices.append(label)
+            req_options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"unit_id": get_entity_id(unit)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_SELECT_OVERWATCH_SHOOTER,
+            "Select Battle Focus unit to fade back.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"ability": "battle_focus", "maneuver": "fade_back"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
 
         attacker_name = getattr(attacker_unit, "name", "attacker")
         subtitle = f"{attacker_name} scored hits. Select a unit to move."
 
-        def _on_confirm(selected_label):
-            try:
-                self.battle_focus_dialog.hide()
-            except Exception:
-                pass
-            unit = label_to_unit.get(selected_label)
-            if unit is None:
+        def _on_confirm(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
+                self._battle_focus_flow_active = False
                 return
-            mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, self.game)
-            self._open_battle_focus_reactive_move(unit)
+            mgr.apply_reactive_maneuver(value, mgr.MANEUVER_FADE_BACK, self.game)
+            self._open_battle_focus_reactive_move(value)
 
         def _on_cancel():
+            skip_id = option_id_for_action(req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
             self._battle_focus_flow_active = False
 
         self._battle_focus_flow_active = True
         self.battle_focus_dialog.show(
-            choices,
+            cand,
             attacker_unit,
             _on_confirm,
             title="Battle Focus: Fade Back",
             subtitle=subtitle,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.battle_focus_dialog, modal=True)
@@ -5771,10 +6880,12 @@ class GameView:
             pass
 
         try:
-            self.individual_model_movement_dialog.show(
-                unit, "reactive", _done, self.game.map, max_dist
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "reactive",
+                _done,
+                max_distance=max_dist,
             )
-            self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
         except Exception:
             return
 
@@ -5802,10 +6913,12 @@ class GameView:
             pass
 
         try:
-            self.individual_model_movement_dialog.show(
-                unit, "reactive", _done, self.game.map, max_dist
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "reactive",
+                _done,
+                max_distance=max_dist,
             )
-            self.dialog_manager.open(self.individual_model_movement_dialog, modal=True)
         except Exception:
             return
 
@@ -5952,18 +7065,11 @@ class GameView:
         if not casters:
             return
 
-        # Build display options for caster models.
-        options = []
-        used = set()
-        for unit, model in casters:
-            label = f"{getattr(unit, 'name', 'Unit')} - {getattr(model, 'name', 'Model')}"
-            base = label
-            idx = 2
-            while label in used:
-                label = f"{base} [{idx}]"
-                idx += 1
-            used.add(label)
-            options.append(SimpleNamespace(name=label, unit=unit, model=model))
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CHOOSE_RITUALS, DECISION_SELECT_TARGET_MODEL
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_action
 
         if self.cabal_caster_dialog is None:
             try:
@@ -5978,12 +7084,37 @@ class GameView:
         def _cancel_flow():
             self._cabal_flow_active = False
 
-        def _on_caster(chosen):
-            if chosen is None:
+        caster_options = [DecisionOption.create("Cancel", payload={"action": "skip"})]
+        caster_map = {}
+        used = set()
+        for unit, model in casters:
+            label = f"{getattr(unit, 'name', 'Unit')} - {getattr(model, 'name', 'Model')}"
+            base = label
+            idx = 2
+            while label in used:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used.add(label)
+            opt = DecisionOption.create(label, payload={"model_id": get_entity_id(model)})
+            caster_options.append(opt)
+            caster_map[opt.option_id] = (unit, model)
+        caster_req = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            "Select Cabal caster.",
+            player_id=getattr(player, "id", None),
+            options=caster_options,
+            context={"ability": "cabal", "step": "caster"},
+        )
+        if self.game is not None:
+            self.game.request_decision(caster_req)
+
+        def _on_caster(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, caster_req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                 _cancel_flow()
                 return
-            caster_unit = getattr(chosen, "unit", None)
-            caster_model = getattr(chosen, "model", None)
+            caster_model = value
+            caster_unit = getattr(caster_model, "parent_unit", None) or caster_map.get(option_id, (None, None))[0]
             rituals = list(mgr.get_available_rituals() or [])
             if not rituals:
                 _cancel_flow()
@@ -6001,8 +7132,34 @@ class GameView:
                 return
 
             subtitle = f"{getattr(caster_unit, 'name', 'Unit')} - choose a ritual"
+            ritual_options = [DecisionOption.create("Cancel", payload={"action": "skip"})]
+            ritual_by_option = {}
+            for ritual in rituals:
+                payload = {
+                    "ritual_key": getattr(ritual, "key", None),
+                    "caster_model_id": get_entity_id(caster_model),
+                    "warp_charge": getattr(ritual, "warp_charge", None),
+                    "summary": getattr(ritual, "summary", "") or getattr(ritual, "effect", ""),
+                }
+                opt = DecisionOption.create(getattr(ritual, "name", "Ritual"), payload=payload)
+                ritual_options.append(opt)
+                ritual_by_option[opt.option_id] = ritual
+            ritual_req = DecisionRequest.create(
+                DECISION_CHOOSE_RITUALS,
+                "Select Cabal ritual.",
+                player_id=getattr(player, "id", None),
+                options=ritual_options,
+                context={"army_id": get_entity_id(player.get_army()) if player is not None else ""},
+            )
+            if self.game is not None:
+                self.game.request_decision(ritual_req)
 
-            def _on_ritual(ritual):
+            def _on_ritual(option_id: str):
+                if option_id_for_action(ritual_req, "skip") == option_id:
+                    resolve_decision_value(self.game, ritual_req, option_id)
+                    _cancel_flow()
+                    return
+                ritual = ritual_by_option.get(option_id)
                 if ritual is None:
                     _cancel_flow()
                     return
@@ -6010,6 +7167,7 @@ class GameView:
                 game_map = getattr(self.game, "map", None)
                 targets = list(mgr.get_eligible_targets(ritual, caster_model, game_map) or [])
                 if not targets:
+                    resolve_decision_value(self.game, ritual_req, option_id_for_action(ritual_req, "skip") or option_id)
                     _cancel_flow()
                     return
 
@@ -6026,9 +7184,27 @@ class GameView:
 
                 target_title = f"{ritual.name} Target"
                 target_header = "Choose a target unit."
+                target_options = [DecisionOption.create("Cancel", payload={"action": "skip"})]
+                for tgt in targets:
+                    target_options.append(
+                        DecisionOption.create(
+                            getattr(tgt, "name", "Unit"),
+                            payload={"target_unit_id": get_entity_id(tgt)},
+                        )
+                    )
+                target_req = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Select Cabal ritual target.",
+                    player_id=getattr(player, "id", None),
+                    options=target_options,
+                    context={"ritual_key": getattr(ritual, "key", None)},
+                )
+                if self.game is not None:
+                    self.game.request_decision(target_req)
 
-                def _on_target(target_unit):
-                    if target_unit is None:
+                def _on_target(target_option_id: str):
+                    target_unit, apply_result = resolve_decision_value(self.game, target_req, target_option_id)
+                    if apply_result is None or not getattr(apply_result, "ok", False) or target_unit is None:
                         _cancel_flow()
                         return
                     r1 = int(get_roll("D6") or 0)
@@ -6042,55 +7218,72 @@ class GameView:
 
                     def _on_channel(choice: bool):
                         try:
-                            mgr.attempt_ritual(
+                            resolve_decision_value(
                                 self.game,
-                                caster_model=caster_model,
-                                ritual_key=ritual.key,
-                                target_unit=target_unit,
-                                rolls=[r1, r2],
-                                channel_decision=choice,
+                                ritual_req,
+                                option_id,
+                                result_payload={
+                                    "target_unit_id": get_entity_id(target_unit),
+                                    "rolls": [r1, r2],
+                                    "channel_decision": choice,
+                                    "caster_model_id": get_entity_id(caster_model),
+                                },
                             )
                         finally:
                             self._cabal_flow_active = False
 
-                    self.yes_no_dialog.show("Cabal of Sorcerers", msg, _on_channel, yes_label="Channel", no_label="No")
-                    try:
-                        self.dialog_manager.open(self.yes_no_dialog, modal=True)
-                    except Exception:
-                        self._cabal_flow_active = False
+                    self._request_yes_no("Cabal of Sorcerers", msg, "Channel", "No", _on_channel, player=player)
+
+                def _on_target_cancel():
+                    skip_id = option_id_for_action(target_req, "skip")
+                    if skip_id:
+                        resolve_decision_value(self.game, target_req, skip_id)
+                    _cancel_flow()
 
                 self.cabal_target_dialog.show(
                     title=target_title,
                     header=target_header,
                     subtitle="Select a valid unit within 24\" and visible.",
-                    choices=targets,
                     on_confirm=_on_target,
-                    on_cancel=_cancel_flow,
+                    on_cancel=_on_target_cancel,
+                    decision_request=target_req,
                 )
                 try:
                     self.dialog_manager.open(self.cabal_target_dialog, modal=True)
                 except Exception:
                     _cancel_flow()
 
+            def _on_ritual_cancel():
+                skip_id = option_id_for_action(ritual_req, "skip")
+                if skip_id:
+                    resolve_decision_value(self.game, ritual_req, skip_id)
+                _cancel_flow()
+
             self.cabal_ritual_dialog.show(
-                options=rituals,
                 on_confirm=_on_ritual,
-                on_cancel=_cancel_flow,
+                on_cancel=_on_ritual_cancel,
                 subtitle=subtitle,
+                decision_request=ritual_req,
             )
             try:
                 self.dialog_manager.open(self.cabal_ritual_dialog, modal=True)
             except Exception:
                 _cancel_flow()
 
+        def _on_caster_cancel():
+            skip_id = option_id_for_action(caster_req, "skip")
+            if skip_id:
+                resolve_decision_value(self.game, caster_req, skip_id)
+            _cancel_flow()
+
         self._cabal_flow_active = True
         self.cabal_caster_dialog.show(
             title="Cabal of Sorcerers",
             header="Choose a model to manifest a ritual.",
             subtitle="Each model and ritual can be used once per turn.",
-            choices=options,
             on_confirm=_on_caster,
-            on_cancel=_cancel_flow,
+            on_cancel=_on_caster_cancel,
+            decision_request=caster_req,
         )
         try:
             self.dialog_manager.open(self.cabal_caster_dialog, modal=True)
@@ -6160,9 +7353,9 @@ class GameView:
         dlg = self.roll_reroll_dialog
         choice_holder = {"choice": False, "done": False}
 
-        def _on_choice(chosen: bool):
-            choice_holder["choice"] = bool(chosen)
-            choice_holder["done"] = True
+        from ..engine.decision_kinds import DECISION_REROLL_ROLL
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
 
         allow_reroll = True
         try:
@@ -6170,6 +7363,35 @@ class GameView:
                 allow_reroll = bool(_kwargs.get("allow_reroll", True))
         except Exception:
             allow_reroll = True
+
+        unit_id = ""
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            unit_id = ""
+        options = [DecisionOption.create("Keep", payload={"reroll": False})]
+        if allow_reroll:
+            options.append(DecisionOption.create("Re-roll", payload={"reroll": True}))
+        req = DecisionRequest.create(
+            DECISION_REROLL_ROLL,
+            title or "Re-roll?",
+            player_id=getattr(player, "id", None) if player is not None else None,
+            options=options,
+            context={
+                "roll_type": rt,
+                "roll_value": value,
+                "unit_id": unit_id,
+            },
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = False
+            choice_holder["choice"] = bool(value)
+            choice_holder["done"] = True
 
         dlg.show(
             title=title,
@@ -6180,6 +7402,7 @@ class GameView:
             callback=_on_choice,
             keep_label="Keep",
             reroll_label="Re-roll",
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
@@ -6270,8 +7493,36 @@ class GameView:
         dlg = self.aspect_shrine_prompt_dialog
         choice_holder = {"choice": "skip", "done": False}
 
-        def _on_choice(chosen: str):
-            choice_holder["choice"] = chosen
+        from ..engine.decision_kinds import DECISION_CHOOSE_ASPECT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        unit_id = ""
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            unit_id = ""
+        options = [
+            DecisionOption.create("Use", payload={"choice": "use"}),
+            DecisionOption.create("Don't Use", payload={"choice": "skip"}),
+            DecisionOption.create("Don't Use for this Unit", payload={"choice": "suppress"}),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_ASPECT,
+            title or "Aspect Shrine Token",
+            player_id=getattr(player, "id", None) if player is not None else None,
+            options=options,
+            context={"unit_id": unit_id, "roll_type": rt, "roll_value": roll_val},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = "skip"
+            choice_holder["choice"] = value
             choice_holder["done"] = True
 
         dlg.show(
@@ -6279,6 +7530,7 @@ class GameView:
             message=msg,
             roll_text=roll_text,
             callback=_on_choice,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
@@ -6708,7 +7960,30 @@ class GameView:
             reborn_in_blood_available=reborn_available,
         )
 
-        def _on_confirm(payload):
+        from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(army)
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_BLESSINGS,
+            "Select Blessings of Khorne.",
+            player_id=getattr(player, "id", None),
+            options=[DecisionOption.create("Confirm", payload={"army_id": army_id})],
+            context={"army_id": army_id, "ctx": {}},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str, payload: dict):
+            value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                payload = dict(payload or {})
+                payload["result"] = {}
+            else:
+                payload = dict(payload or {})
+                payload["result"] = value
             try:
                 from ..utility.event_bus import append_action
                 sel_keys = list(payload.get("selected_blessings") or payload.get("result", {}).get("activated") or [])
@@ -6747,7 +8022,14 @@ class GameView:
             # Continue prompting any other human WE player
             self._open_next_blessings_prompt(battle_round)
 
-        self.blessings_of_khorne_dialog.show(player=player, game=self.game, army=army, ctx=ctx, on_confirm=_on_confirm)
+        self.blessings_of_khorne_dialog.show(
+            player=player,
+            game=self.game,
+            army=army,
+            ctx=ctx,
+            on_confirm=_on_confirm,
+            decision_request=req,
+        )
         try:
             self.dialog_manager.open(self.blessings_of_khorne_dialog, modal=True)
         except Exception:
@@ -6782,12 +8064,38 @@ class GameView:
         except Exception:
             options = []
 
-        def _on_confirm(vow):
-            try:
-                if not getattr(mgr, "active_vow_key", None):
-                    mgr.active_vow_key = getattr(vow, "key", None)
-            except Exception:
-                pass
+        from ..engine.decision_kinds import DECISION_CHOOSE_VOW
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload
+
+        army_id = get_entity_id(army)
+        req_options = []
+        for vow in options:
+            key = getattr(vow, "key", None)
+            name = getattr(vow, "name", None) or str(vow)
+            summary = getattr(vow, "summary", "") or getattr(vow, "effect", "")
+            if not key:
+                continue
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_VOW,
+            "Select Templar Vow.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             try:
                 if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
                     if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
@@ -6797,14 +8105,13 @@ class GameView:
             self._open_next_templar_vows_prompt()
 
         def _on_cancel():
-            try:
-                if not getattr(mgr, "active_vow_key", None) and options:
-                    mgr.active_vow_key = getattr(options[0], "key", None)
-            except Exception:
-                pass
+            default_key = getattr(options[0], "key", None) if options else None
+            default_id = option_id_for_payload(req, "choice_key", default_key)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._open_next_templar_vows_prompt()
 
-        self.templar_vows_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
+        self.templar_vows_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=req)
         try:
             self.dialog_manager.open(self.templar_vows_dialog, modal=True)
         except Exception:
@@ -6845,35 +8152,54 @@ class GameView:
             self._open_next_harbingers_prompt(battle_round)
             return
 
-        try:
-            from types import SimpleNamespace
-            roll_option = SimpleNamespace(
-                key="ROLL",
-                name="Roll 2D6 (randomly select two)",
-                summary="Apply both results; duplicates have no additional effect.",
-            )
-        except Exception:
-            roll_option = None
+        from ..engine.decision_kinds import DECISION_CHOOSE_HARBINGER
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload, first_option_id
 
         try:
             options = list(mgr.get_available_dread_abilities())
         except Exception:
             options = []
-        if roll_option is not None:
-            options = [roll_option] + options
 
-        def _on_confirm(choice):
-            try:
-                key = getattr(choice, "key", "")
-            except Exception:
-                key = ""
-            try:
-                if str(key).strip().upper() == "ROLL":
-                    mgr.roll_dread_abilities(battle_round=battle_round)
-                else:
-                    mgr.select_dread_ability(choice, battle_round=battle_round)
-            except Exception:
-                pass
+        army_id = get_entity_id(army)
+        req_options = [
+            DecisionOption.create(
+                "Roll 2D6 (randomly select two)",
+                payload={
+                    "choice_key": "ROLL",
+                    "random": True,
+                    "summary": "Apply both results; duplicates have no additional effect.",
+                    "army_id": army_id,
+                },
+            )
+        ]
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_HARBINGER,
+            "Select Harbingers of Dread.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             try:
                 if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
                     if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
@@ -6883,13 +8209,12 @@ class GameView:
             self._open_next_harbingers_prompt(battle_round)
 
         def _on_cancel():
-            try:
-                mgr.roll_dread_abilities(battle_round=battle_round)
-            except Exception:
-                pass
+            default_id = option_id_for_payload(req, "choice_key", "ROLL") or first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._open_next_harbingers_prompt(battle_round)
 
-        self.harbingers_of_dread_dialog.show(options=options, on_confirm=_on_confirm, on_cancel=_on_cancel)
+        self.harbingers_of_dread_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=req)
         try:
             self.dialog_manager.open(self.harbingers_of_dread_dialog, modal=True)
         except Exception:
@@ -6933,14 +8258,53 @@ class GameView:
         except Exception:
             options = []
 
-        def _on_confirm(choice):
+        from ..engine.decision_kinds import DECISION_CHOOSE_DOCTRINA
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(army)
+        req_options = []
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            self._open_next_doctrina_prompt(battle_round)
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_DOCTRINA,
+            "Select Doctrina Imperative.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             try:
-                mgr.select_imperative(choice, battle_round=battle_round)
+                choice_label = ""
+                for opt in list(getattr(req, "options", []) or []):
+                    if opt.option_id == option_id:
+                        choice_label = str(getattr(opt, "label", "") or "")
+                        break
             except Exception:
-                pass
+                choice_label = ""
             try:
                 from ..utility.event_bus import append_action
-                append_action(player, f"Doctrina Imperatives: {choice.name} (Battle Round {battle_round})")
+                if choice_label:
+                    append_action(player, f"Doctrina Imperatives: {choice_label} (Battle Round {battle_round})")
             except Exception:
                 pass
             try:
@@ -6951,7 +8315,7 @@ class GameView:
                 pass
             self._open_next_doctrina_prompt(battle_round)
 
-        self.doctrina_imperatives_dialog.show(options=options, on_confirm=_on_confirm)
+        self.doctrina_imperatives_dialog.show(on_confirm=_on_confirm, decision_request=req)
         try:
             self.dialog_manager.open(self.doctrina_imperatives_dialog, modal=True)
         except Exception:
@@ -6993,29 +8357,57 @@ class GameView:
             self._open_next_shadow_form_prompt()
             return
 
-        options = list(SHADOW_FORM_OPTIONS)
+        from ..engine.decision_kinds import DECISION_CHOOSE_SHADOW_FORM
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import first_option_id
 
-        def _on_confirm(opt):
-            try:
-                set_active_shadow_form(unit, getattr(opt, "key", None), battle_round=int(br or 0))
-            except Exception:
-                pass
+        options = list(SHADOW_FORM_OPTIONS)
+        unit_id = get_entity_id(unit)
+        req_options = []
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+                )
+            )
+        if not req_options:
+            self._open_next_shadow_form_prompt()
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_SHADOW_FORM,
+            "Select Shadow Form.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"unit_id": unit_id, "battle_round": br},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             self._open_next_shadow_form_prompt()
 
         def _on_cancel():
-            try:
-                if options:
-                    set_active_shadow_form(unit, getattr(options[0], "key", None), battle_round=int(br or 0))
-            except Exception:
-                pass
+            default_id = first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._open_next_shadow_form_prompt()
 
         self.shadow_form_dialog.show(
-            options=options,
             unit_name=getattr(unit, "name", ""),
             battle_round=br,
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.shadow_form_dialog, modal=True)
@@ -7062,35 +8454,71 @@ class GameView:
             self._open_next_wrathful_presence_prompt()
             return
 
-        options = list(WRATHFUL_PRESENCE_OPTIONS)
+        from ..engine.decision_kinds import DECISION_CHOOSE_WRATHFUL_PRESENCE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import first_option_id
 
-        def _on_confirm(opt):
+        options = list(WRATHFUL_PRESENCE_OPTIONS)
+        unit_id = get_entity_id(unit)
+        req_options = []
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+                )
+            )
+        if not req_options:
+            self._open_next_wrathful_presence_prompt()
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_WRATHFUL_PRESENCE,
+            "Select Wrathful Presence.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"unit_id": unit_id, "battle_round": br},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             try:
-                set_active_wrathful_presence(unit, getattr(opt, "key", None), battle_round=int(br or 0))
+                choice_label = ""
+                for opt in list(getattr(req, "options", []) or []):
+                    if opt.option_id == option_id:
+                        choice_label = str(getattr(opt, "label", "") or "")
+                        break
             except Exception:
-                pass
+                choice_label = ""
             try:
                 from ..utility.event_bus import append_action
-                if opt is not None:
-                    append_action(player, f"Wrathful Presence: {getattr(opt, 'name', '')} (Battle Round {br})")
+                if choice_label:
+                    append_action(player, f"Wrathful Presence: {choice_label} (Battle Round {br})")
             except Exception:
                 pass
             self._open_next_wrathful_presence_prompt()
 
         def _on_cancel():
-            try:
-                if options:
-                    set_active_wrathful_presence(unit, getattr(options[0], "key", None), battle_round=int(br or 0))
-            except Exception:
-                pass
+            default_id = first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._open_next_wrathful_presence_prompt()
 
         self.wrathful_presence_dialog.show(
-            options=options,
             unit_name=getattr(unit, "name", ""),
             battle_round=br,
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.wrathful_presence_dialog, modal=True)
@@ -7141,12 +8569,45 @@ class GameView:
             self._open_next_daemonic_allegiance_prompt(game)
             return
 
-        def _on_confirm(opt):
-            try:
-                keyword = opt[0] if isinstance(opt, (list, tuple)) else str(opt)
-                unit.apply_daemonic_allegiance_selection(keyword)
-            except Exception:
-                pass
+        from ..engine.decision_kinds import DECISION_CHOOSE_DAEMONIC_ALLEGIANCE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import first_option_id
+
+        unit_id = get_entity_id(unit)
+        req_options = []
+        for opt in options:
+            if isinstance(opt, (list, tuple)):
+                keyword = str(opt[0]) if opt else ""
+                wargear = str(opt[1]) if len(opt) > 1 else ""
+            else:
+                keyword = str(opt)
+                wargear = ""
+            if not keyword:
+                continue
+            req_options.append(
+                DecisionOption.create(
+                    keyword,
+                    payload={"keyword": keyword, "wargear_name": wargear, "unit_id": unit_id},
+                )
+            )
+        if not req_options:
+            self._open_next_daemonic_allegiance_prompt(game)
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
+            f"Select Daemonic Allegiance for {getattr(unit, 'name', 'Unit')}.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"unit_id": unit_id},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             try:
                 from ..utility.event_bus import append_action
                 append_action(player, f"Daemonic Allegiance: {getattr(unit, 'daemonic_allegiance', '')} ({unit.name})")
@@ -7155,18 +8616,16 @@ class GameView:
             self._open_next_daemonic_allegiance_prompt(game)
 
         def _on_cancel():
-            try:
-                if options:
-                    unit.apply_daemonic_allegiance_selection(options[0][0])
-            except Exception:
-                pass
+            default_id = first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._open_next_daemonic_allegiance_prompt(game)
 
         self.daemonic_allegiance_dialog.show(
-            options=options,
             unit_name=getattr(unit, "name", ""),
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(self.daemonic_allegiance_dialog, modal=True)
@@ -7182,6 +8641,10 @@ class GameView:
             from .dialogs import PrecisionAllocationDialog
         except Exception:
             return None
+        from ..engine.decision_kinds import DECISION_SELECT_PRECISION_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
 
         # Create (or reuse) dialog instance
         if not hasattr(self, "precision_allocation_dialog") or self.precision_allocation_dialog is None:
@@ -7190,8 +8653,11 @@ class GameView:
         dlg = self.precision_allocation_dialog
         choice_holder = {"choice": None, "done": False}
 
-        def _on_choice(chosen):
-            choice_holder["choice"] = chosen
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            choice_holder["choice"] = value
             choice_holder["done"] = True
 
         # Weapon label
@@ -7200,7 +8666,24 @@ class GameView:
         except Exception:
             wname = "Weapon"
 
-        dlg.show(attacker_model, target_unit, wname, list(character_models or []), on_choice=_on_choice)
+        attacker_id = get_entity_id(attacker_model)
+        target_id = get_entity_id(target_unit)
+        options = [
+            DecisionOption.create("Bodyguard (normal allocation)", payload={"model_id": None, "action": "bodyguard"}),
+        ]
+        for model in list(character_models or []):
+            options.append(DecisionOption.create(getattr(model, "name", "CHARACTER"), payload={"model_id": get_entity_id(model)}))
+        req = DecisionRequest.create(
+            DECISION_SELECT_PRECISION_TARGET,
+            "Select PRECISION allocation target.",
+            player_id=getattr(getattr(attacker_model.parent_unit.get_parent_army(), "player", None), "id", None) if attacker_model else None,
+            options=options,
+            context={"attacker_model_id": attacker_id, "target_unit_id": target_id},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        dlg.show(attacker_model, target_unit, wname, list(character_models or []), on_choice=_on_choice, decision_request=req)
         try:
             self.dialog_manager.open(dlg, modal=True)
         except Exception:
@@ -7228,17 +8711,24 @@ class GameView:
                     pass
             clock.tick(60)
 
+        if not choice_holder["done"]:
+            default_option = options[0].option_id if options else ""
+            value, apply_result = resolve_decision_value(self.game, req, default_option)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                return None
+            return value
+
         return choice_holder["choice"]
 
-    def _damage_allocation_provider(self, target_unit, eligible_models, ctx):
-        """
-        Blocking modal prompt for defender damage allocation.
-        Returns: selected model, or None to fall back to deterministic engine choice.
-        """
+    def _prompt_damage_allocation_decision(self, *, unit, eligible_models, title, subtitle, instruction, ctx, show_wargear: bool = False):
         try:
             from .dialogs import DamageAllocationDialog
         except Exception:
             return None
+        from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
 
         if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
             self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
@@ -7246,10 +8736,79 @@ class GameView:
         dlg = self.damage_allocation_dialog
         choice_holder = {"choice": None, "done": False}
 
-        def _on_choice(chosen):
-            choice_holder["choice"] = chosen
+        options = [DecisionOption.create("Auto allocation", payload={"model_id": None})]
+        for model in list(eligible_models or []):
+            label = getattr(model, "name", "Model")
+            options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+
+        context = dict(ctx or {})
+        context["unit_id"] = get_entity_id(unit)
+        req = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            title or "Allocate Damage",
+            player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None) if unit is not None else None,
+            options=options,
+            context=context,
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            choice_holder["choice"] = value
             choice_holder["done"] = True
 
+        dlg.show(
+            unit,
+            list(eligible_models or []),
+            title=title or "Allocate Damage",
+            subtitle=subtitle or "",
+            instruction=instruction or "",
+            on_choice=_on_choice,
+            show_wargear=bool(show_wargear),
+            decision_request=req,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return None
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        if not choice_holder["done"] and options:
+            default_option = options[0].option_id
+            value, apply_result = resolve_decision_value(self.game, req, default_option)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                return None
+            return value
+
+        return choice_holder["choice"]
+
+    def _damage_allocation_provider(self, target_unit, eligible_models, ctx):
+        """
+        Blocking modal prompt for defender damage allocation.
+        Returns: selected model, or None to fall back to deterministic engine choice.
+        """
         reason = ""
         try:
             reason = (ctx or {}).get("reason", "") or "Allocate Damage"
@@ -7267,61 +8826,20 @@ class GameView:
             subtitle = f"{subtitle} (from {attacker} - {weapon})"
         instruction = "If a model is already wounded, you must continue allocating to a wounded eligible model."
 
-        dlg.show(
-            target_unit,
-            list(eligible_models or []),
+        return self._prompt_damage_allocation_decision(
+            unit=target_unit,
+            eligible_models=list(eligible_models or []),
             title=reason,
             subtitle=subtitle,
             instruction=instruction,
-            on_choice=_on_choice,
+            ctx=ctx,
         )
-        try:
-            self.dialog_manager.open(dlg, modal=True)
-        except Exception:
-            pass
-
-        clock = pygame.time.Clock()
-        while dlg.visible and not choice_holder["done"]:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return None
-                try:
-                    self.dialog_manager.handle_event(event)
-                except Exception:
-                    pass
-            try:
-                self.draw()
-            except Exception:
-                try:
-                    dlg.draw(self.screen)
-                    pygame.display.update()
-                except Exception:
-                    pass
-            clock.tick(60)
-
-        return choice_holder["choice"]
 
     def _hazardous_allocation_provider(self, attacker_unit_root, eligible_models, ctx):
         """
         Blocking modal prompt for selecting the model that suffers a failed HAZARDOUS test.
         Returns: selected model, or None to fall back to deterministic engine choice.
         """
-        try:
-            from .dialogs import DamageAllocationDialog
-        except Exception:
-            return None
-
-        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
-            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
-
-        dlg = self.damage_allocation_dialog
-        choice_holder = {"choice": None, "done": False}
-
-        def _on_choice(chosen):
-            choice_holder["choice"] = chosen
-            choice_holder["done"] = True
-
         subtitle = getattr(attacker_unit_root, "name", "Unit")
         instruction = "HAZARDOUS priority: wounded eligible model; otherwise non-Character; otherwise Character."
         title = "HAZARDOUS - Select Model"
@@ -7329,62 +8847,20 @@ class GameView:
             title = (ctx or {}).get("reason", "") or title
         except Exception:
             pass
-
-        dlg.show(
-            attacker_unit_root,
-            list(eligible_models or []),
+        return self._prompt_damage_allocation_decision(
+            unit=attacker_unit_root,
+            eligible_models=list(eligible_models or []),
             title=title,
             subtitle=subtitle,
             instruction=instruction,
-            on_choice=_on_choice,
+            ctx=ctx,
         )
-        try:
-            self.dialog_manager.open(dlg, modal=True)
-        except Exception:
-            pass
-
-        clock = pygame.time.Clock()
-        while dlg.visible and not choice_holder["done"]:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return None
-                try:
-                    self.dialog_manager.handle_event(event)
-                except Exception:
-                    pass
-            try:
-                self.draw()
-            except Exception:
-                try:
-                    dlg.draw(self.screen)
-                    pygame.display.update()
-                except Exception:
-                    pass
-            clock.tick(60)
-
-        return choice_holder["choice"]
 
     def _reanimation_allocation_provider(self, target_unit_root, eligible_models, ctx):
         """
         Blocking modal prompt for Reanimation Protocols model selection.
         Returns: selected model, or None to fall back to deterministic engine choice.
         """
-        try:
-            from .dialogs import DamageAllocationDialog
-        except Exception:
-            return None
-
-        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
-            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
-
-        dlg = self.damage_allocation_dialog
-        choice_holder = {"choice": None, "done": False}
-
-        def _on_choice(chosen):
-            choice_holder["choice"] = chosen
-            choice_holder["done"] = True
-
         reason = ""
         instruction = ""
         try:
@@ -7395,42 +8871,15 @@ class GameView:
             instruction = "Select a model for Reanimation Protocols."
 
         subtitle = getattr(target_unit_root, "name", "Unit")
-
-        dlg.show(
-            target_unit_root,
-            list(eligible_models or []),
+        return self._prompt_damage_allocation_decision(
+            unit=target_unit_root,
+            eligible_models=list(eligible_models or []),
             title=reason,
             subtitle=subtitle,
             instruction=instruction,
-            on_choice=_on_choice,
+            ctx=ctx,
             show_wargear=True,
         )
-        try:
-            self.dialog_manager.open(dlg, modal=True)
-        except Exception:
-            pass
-
-        clock = pygame.time.Clock()
-        while dlg.visible and not choice_holder["done"]:
-            for event in pygame.event.get():
-                if event.type == pygame.QUIT:
-                    pygame.quit()
-                    return None
-                try:
-                    self.dialog_manager.handle_event(event)
-                except Exception:
-                    pass
-            try:
-                self.draw()
-            except Exception:
-                try:
-                    dlg.draw(self.screen)
-                    pygame.display.update()
-                except Exception:
-                    pass
-            clock.tick(60)
-
-        return choice_holder["choice"]
 
     def resize_layout(self, screen_width: int, screen_height: int) -> None:
         """Handle window resize: recompute pane sizes and positions based on new screen size."""
@@ -8198,19 +9647,13 @@ class GameView:
                 print(f"{unit.name} Heroic Intervention charge movement failed or skipped")
 
         try:
-            if hasattr(self, "individual_model_movement_dialog") and self.individual_model_movement_dialog:
-                self.individual_model_movement_dialog.show(
-                    unit,
-                    "charge",
-                    on_charge_movement_complete,
-                    self.game.map,
-                    max_charge_distance,
-                    enemy_unit,
-                )
-            else:
-                print("Heroic Intervention: no movement dialog available")
-                self._heroic_flow_active = False
-                return
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "charge",
+                on_charge_movement_complete,
+                max_distance=max_charge_distance,
+                target_unit=enemy_unit,
+            )
         except Exception:
             self._heroic_flow_active = False
             print("Heroic Intervention: failed to open charge movement dialog")
@@ -8441,18 +9884,13 @@ class GameView:
                 print(f"Could not use stratagem: {name}")
 
         try:
-            if hasattr(self, "individual_model_movement_dialog") and self.individual_model_movement_dialog:
-                self.individual_model_movement_dialog.show(
-                    unit,
-                    "deploy",
-                    _on_complete,
-                    self.game.map,
-                    max_distance=0.0,
-                    placement_validator=_placement_validator,
-                )
-            else:
-                self._summoned_by_slaughter_flow_active = False
-                print("Summoned by Slaughter: placement dialog unavailable")
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "deploy",
+                _on_complete,
+                max_distance=0.0,
+                placement_validator=_placement_validator,
+            )
         except Exception:
             self._summoned_by_slaughter_flow_active = False
             print("Summoned by Slaughter: failed to open placement dialog")

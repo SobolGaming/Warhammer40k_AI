@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pygame
 from abc import ABC, abstractmethod
-from typing import Protocol, List, Dict, Tuple
+from typing import Protocol, List, Dict, Tuple, Optional
 
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
@@ -122,21 +122,37 @@ class SetupPhaseHandler(BasePhaseHandler):
     def _show_mission_selection_dialog(self):
         """Show the mission selection dialog for SELECT_MISSION_OBJECTIVES phase."""
         from ..dialogs import MissionSelectionDialog, MissionSelectionModal
-        
+        from ...utility.decision_utils import resolve_decision_command
+        from ...engine.decision_kinds import DECISION_CHOOSE_MISSION
+
+        def _pending_request():
+            for req in list(self.game.decision_queue.list() or []):
+                if getattr(req, "decision_type", None) == DECISION_CHOOSE_MISSION:
+                    return req
+            return None
+
+        req = _pending_request()
+        if req is None:
+            req = self.game.request_mission_selection()
+
         # Create mission selection dialog
         inner = MissionSelectionDialog(
             self.game_view.screen.get_width(),
-            self.game_view.screen.get_height()
+            self.game_view.screen.get_height(),
         )
 
         modal = MissionSelectionModal(inner)
         self.game_view.mission_selection_dialog = modal  # keep reference for debugging
 
         def _apply_result(result: dict) -> None:
-            combination = result["combination"]
-            layout = result["layout"]
-            self.game.set_selected_mission(combination, layout)
-            print(f"Mission selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {layout}")
+            combination = result.get("combination") or {}
+            layout = result.get("layout")
+            option_id = result.get("option_id", "")
+            if not option_id:
+                print("ERROR: Mission selection option not found in decision options")
+                return
+            resolve_decision_command(self.game, req, option_id, result_payload={"layout": layout})
+            print(f"Mission selected: {combination.get('id')} - {combination.get('primary')} / {combination.get('deployment')} / Layout {layout}")
 
             # Execute the phase and advance
             self.game.execute_current_setup_phase()
@@ -144,10 +160,16 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         def _cancel() -> None:
             print("Mission selection cancelled - using default")
+            if req.options:
+                default_opt = req.options[0]
+                combo = dict(getattr(default_opt, "payload", {}) or {}).get("combination", {})
+                layouts = list(combo.get("layouts", []) or [])
+                layout = layouts[0] if layouts else 1
+                resolve_decision_command(self.game, req, default_opt.option_id, result_payload={"layout": layout})
             self.game.execute_current_setup_phase()
             self.game.advance_setup_phase()
 
-        modal.show(on_confirm=_apply_result, on_cancel=_cancel)
+        modal.show(on_confirm=_apply_result, on_cancel=_cancel, decision_request=req)
         # Push to modal stack
         try:
             self.game_view.dialog_manager.open(modal, modal=True)
@@ -159,6 +181,10 @@ class SetupPhaseHandler(BasePhaseHandler):
     def _show_leader_attachment_dialog(self):
         """Show the leader attachment dialog for DECLARE_BATTLE_FORMATIONS phase."""
         from ..dialogs import LeaderAttachmentDialog
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_ATTACH_LEADER
+        from ...engine.decision_requests import build_leader_attachment_requests
 
         dialog = LeaderAttachmentDialog(
             self.game_view.screen.get_width(),
@@ -168,7 +194,18 @@ class SetupPhaseHandler(BasePhaseHandler):
         # Store dialog in game view for event handling
         self.game_view.leader_attachment_dialog = dialog
 
-        def _on_done():
+        def _on_done(selected_option_ids):
+            for leader_id, option_id in (selected_option_ids or {}).items():
+                req = leader_requests.get(leader_id)
+                if req is None:
+                    continue
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
             # Apply/validate leader attachments, then proceed to transport assignments (then execute/advance)
             try:
                 for p in self.game.players:
@@ -202,7 +239,25 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        dialog.show(all_units, on_confirm=_on_done, on_cancel=_on_cancel)
+        pending = {
+            str(getattr(req, "context", {}).get("leader_id", "")): req
+            for req in list(self.game.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_ATTACH_LEADER
+        }
+        if pending:
+            leader_requests = pending
+        else:
+            requests = build_leader_attachment_requests(self.game, all_units)
+            leader_requests = {
+                str(getattr(req, "context", {}).get("leader_id", "")): req for req in requests
+            }
+
+        dialog.show(
+            all_units,
+            leader_requests=leader_requests,
+            on_confirm=_on_done,
+            on_cancel=_on_cancel,
+        )
         dialog.visible = True
         try:
             self.game_view.dialog_manager.open(dialog, modal=True)
@@ -214,6 +269,10 @@ class SetupPhaseHandler(BasePhaseHandler):
     def _show_transport_assignment_dialog(self):
         """Show the transport assignment dialog for DECLARE_BATTLE_FORMATIONS phase."""
         from ..dialogs import TransportAssignmentDialog
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_ASSIGN_TRANSPORT
+        from ...engine.decision_requests import build_transport_assignment_requests
 
         dialog = TransportAssignmentDialog(
             self.game_view.screen.get_width(),
@@ -231,23 +290,18 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        def _apply(assignments):
-            # assignments: {transport_unit: [passenger_units]}
-            # Clear any previous start-embarked assignments
-            for u in list(all_units):
-                if getattr(u, "is_transport", False):
+        def _apply(selected_option_ids):
+            for unit_id, option_id in (selected_option_ids or {}).items():
+                req = unit_requests.get(unit_id)
+                if req is None:
                     continue
-                if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
-                    try:
-                        t = u.embarked_in
-                        if t is not None:
-                            t.remove_passenger(u)
-                    except Exception:
-                        pass
-            # Apply new
-            for transport, passengers in (assignments or {}).items():
-                for pu in list(passengers or []):
-                    pu.embark(transport, game_map=self.game.map)
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
 
             # Execute the phase and advance
             self.game.execute_current_setup_phase()
@@ -255,10 +309,39 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         def _skip():
             # Execute the phase and advance without changing transport assignments
+            for unit_id, req in (unit_requests or {}).items():
+                default_id = ""
+                for opt in list(getattr(req, "options", []) or []):
+                    payload = dict(getattr(opt, "payload", {}) or {})
+                    if payload.get("transport_id") is None:
+                        default_id = opt.option_id
+                        break
+                if not default_id:
+                    continue
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": default_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
             self.game.execute_current_setup_phase()
             self.game.advance_setup_phase()
 
-        dialog.show(all_units, on_confirm=_apply, on_cancel=_skip)
+        pending = {
+            str(getattr(req, "context", {}).get("unit_id", "")): req
+            for req in list(self.game.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_ASSIGN_TRANSPORT
+        }
+        if pending:
+            unit_requests = pending
+        else:
+            requests = build_transport_assignment_requests(self.game, all_units)
+            unit_requests = {
+                str(getattr(req, "context", {}).get("unit_id", "")): req for req in requests
+            }
+
+        dialog.show(all_units, unit_requests=unit_requests, on_confirm=_apply, on_cancel=_skip)
         dialog.visible = True
         try:
             self.game_view.dialog_manager.open(dialog, modal=True)
@@ -433,126 +516,15 @@ class SetupPhaseHandler(BasePhaseHandler):
                     pass
 
             def _apply_transport_assignments(army, units, assignments) -> bool:
-                # Clear any previous start-embarked assignments for this army
-                for u in list(units):
-                    if getattr(u, "is_transport", False):
-                        continue
-                    if getattr(u, "embarked_in", None) is not None and (not getattr(u, "deployed", False)):
-                        try:
-                            t = u.embarked_in
-                            if t is not None:
-                                t.remove_passenger(u)
-                        except Exception:
-                            pass
-
-                for transport, passengers in (assignments or {}).items():
-                    for pu in list(passengers or []):
-                        pu.embark(transport, game_map=self.game.map)
-                        pu.deployed = True
-                        for l in list(getattr(pu, "attached_leaders", []) or []):
-                            try:
-                                l.deployed = True
-                            except Exception:
-                                pass
-                return True
-
-            def _apply_reserves(army, decisions: Dict[str, str]) -> bool:
-                try:
-                    roots = []
-                    try:
-                        roots = list(getattr(army, "_reserve_group_roots")() or [])
-                    except Exception:
-                        roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
-
-                    for root in roots:
-                        rid = str(getattr(root, "_id", None) or "")
-                        decision = decisions.get(rid, "deploy")
-                        try:
-                            if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
-                                if decision != "reserves":
-                                    print(f"{root.name} must start in Reserves (AIRCRAFT)")
-                                decision = "reserves"
-                        except Exception:
-                            pass
-                        started = decision in ("reserves", "strategic_reserves")
-                        if decision == "deploy":
-                            root.set_reserve_status("deployed")
-                            root.deployed = False
-                        elif decision == "reserves":
-                            root.set_reserve_status("reserves")
-                            root.deployed = True
-                        elif decision == "strategic_reserves":
-                            root.set_reserve_status("strategic_reserves")
-                            root.deployed = True
-                        else:
-                            root.set_reserve_status("deployed")
-                            root.deployed = False
-
-                        # AIRCRAFT TRANSPORT rule: passengers must also start in Reserves
-                        try:
-                            is_transport = bool(getattr(root, "is_transport", False))
-                            must_reserves = bool(getattr(root, "must_start_in_reserves", lambda: False)())
-                        except Exception:
-                            is_transport = False
-                            must_reserves = False
-                        if is_transport and must_reserves and decision in ("reserves", "strategic_reserves"):
-                            try:
-                                passengers = list(getattr(root, "transport_passengers", []) or [])
-                            except Exception:
-                                passengers = []
-                            for p in passengers:
-                                try:
-                                    p.set_reserve_status("reserves")
-                                except Exception:
-                                    try:
-                                        p.reserve_status = "reserves"
-                                    except Exception:
-                                        pass
-                                try:
-                                    p.deployed = True
-                                except Exception:
-                                    pass
-                                try:
-                                    setattr(p, "_started_in_reserves", True)
-                                except Exception:
-                                    pass
-                                try:
-                                    for l in list(getattr(p, "attached_leaders", []) or []):
-                                        setattr(l, "_started_in_reserves", True)
-                                except Exception:
-                                    pass
-
-                        try:
-                            members = list(getattr(army, "_reserve_group_members")(root) or [])
-                        except Exception:
-                            members = [root]
-                        # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
-                        for m in members:
-                            try:
-                                setattr(m, "_started_in_reserves", bool(started))
-                            except Exception:
-                                pass
-                        for m in members:
-                            if m is root:
-                                continue
-                            try:
-                                m.set_reserve_status(getattr(root, "reserve_status", "deployed"))
-                            except Exception:
-                                try:
-                                    m.reserve_status = getattr(root, "reserve_status", "deployed")
-                                except Exception:
-                                    pass
-                            try:
-                                m.deployed = True
-                            except Exception:
-                                pass
-                except Exception:
-                    return False
-                return True
+                return bool(self.game.apply_transport_assignments(army, units, assignments))
 
             def _show_leaders():
                 # Step 1: Leaders (both at once)
                 from ..dialogs import LeaderAttachmentDialog
+                from ...engine.command_kinds import CMD_RESOLVE_DECISION
+                from ...engine.commands import GameCommand
+                from ...engine.decision_kinds import DECISION_ATTACH_LEADER
+                from ...engine.decision_requests import build_leader_attachment_requests
                 left_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 right_leaders = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 left_leaders.title = f"Attach Leaders - {p_left.name}"
@@ -570,7 +542,18 @@ class SetupPhaseHandler(BasePhaseHandler):
                         modal.hide()
                         _show_transports()
 
-                def _left_done():
+                def _left_done(selected_option_ids):
+                    for leader_id, option_id in (selected_option_ids or {}).items():
+                        req = l_requests.get(leader_id)
+                        if req is None:
+                            continue
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": option_id,
+                            "result_payload": {},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        self.game.apply_command(cmd)
                     try:
                         a_left.validate_leaders()
                     except Exception as e:
@@ -580,7 +563,18 @@ class SetupPhaseHandler(BasePhaseHandler):
                     modal.left_done = True
                     _maybe_advance_from_leaders()
 
-                def _right_done():
+                def _right_done(selected_option_ids):
+                    for leader_id, option_id in (selected_option_ids or {}).items():
+                        req = r_requests.get(leader_id)
+                        if req is None:
+                            continue
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": option_id,
+                            "result_payload": {},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        self.game.apply_command(cmd)
                     try:
                         a_right.validate_leaders()
                     except Exception as e:
@@ -590,8 +584,37 @@ class SetupPhaseHandler(BasePhaseHandler):
                     modal.right_done = True
                     _maybe_advance_from_leaders()
 
-                left_leaders.show(_army_units(p_left), on_confirm=_left_done, on_cancel=lambda: None)
-                right_leaders.show(_army_units(p_right), on_confirm=_right_done, on_cancel=lambda: None)
+                pending = {
+                    str(getattr(req, "context", {}).get("leader_id", "")): req
+                    for req in list(self.game.decision_queue.list() or [])
+                    if getattr(req, "decision_type", None) == DECISION_ATTACH_LEADER
+                }
+                l_units = _army_units(p_left)
+                r_units = _army_units(p_right)
+                from ...utility.entity_ids import get_entity_id
+                l_ids = {get_entity_id(u) for u in l_units}
+                r_ids = {get_entity_id(u) for u in r_units}
+                l_requests = {lid: req for lid, req in pending.items() if lid in l_ids}
+                r_requests = {rid: req for rid, req in pending.items() if rid in r_ids}
+                if not l_requests:
+                    l_reqs = build_leader_attachment_requests(self.game, l_units)
+                    l_requests = {str(getattr(req, "context", {}).get("leader_id", "")): req for req in l_reqs}
+                if not r_requests:
+                    r_reqs = build_leader_attachment_requests(self.game, r_units)
+                    r_requests = {str(getattr(req, "context", {}).get("leader_id", "")): req for req in r_reqs}
+
+                left_leaders.show(
+                    l_units,
+                    leader_requests=l_requests,
+                    on_confirm=_left_done,
+                    on_cancel=lambda: None,
+                )
+                right_leaders.show(
+                    r_units,
+                    leader_requests=r_requests,
+                    on_confirm=_right_done,
+                    on_cancel=lambda: None,
+                )
 
                 modal.show()
                 try:
@@ -601,6 +624,10 @@ class SetupPhaseHandler(BasePhaseHandler):
 
             def _show_transports():
                 from ..dialogs import TransportAssignmentDialog
+                from ...engine.command_kinds import CMD_RESOLVE_DECISION
+                from ...engine.commands import GameCommand
+                from ...engine.decision_kinds import DECISION_ASSIGN_TRANSPORT
+                from ...engine.decision_requests import build_transport_assignment_requests
                 ldlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 rdlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 ldlg.title = f"Transports - {p_left.name}"
@@ -621,22 +648,56 @@ class SetupPhaseHandler(BasePhaseHandler):
                         m.hide()
                         _show_reserves()
 
-                def _l_done(assignments):
-                    if not _apply_transport_assignments(a_left, units_l, assignments):
-                        print(f"  {p_left.name} transport assignment failed")
-                        return
+                def _l_done(selected_option_ids):
+                    for unit_id, option_id in (selected_option_ids or {}).items():
+                        req = l_requests.get(unit_id)
+                        if req is None:
+                            continue
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": option_id,
+                            "result_payload": {},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        self.game.apply_command(cmd)
                     m.left_done = True
                     _maybe_advance()
 
-                def _r_done(assignments):
-                    if not _apply_transport_assignments(a_right, units_r, assignments):
-                        print(f"  {p_right.name} transport assignment failed")
-                        return
+                def _r_done(selected_option_ids):
+                    for unit_id, option_id in (selected_option_ids or {}).items():
+                        req = r_requests.get(unit_id)
+                        if req is None:
+                            continue
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": option_id,
+                            "result_payload": {},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        self.game.apply_command(cmd)
                     m.right_done = True
                     _maybe_advance()
 
-                ldlg.show(units_l, on_confirm=_l_done, on_cancel=lambda: None)
-                rdlg.show(units_r, on_confirm=_r_done, on_cancel=lambda: None)
+                pending = {
+                    str(getattr(req, "context", {}).get("unit_id", "")): req
+                    for req in list(self.game.decision_queue.list() or [])
+                    if getattr(req, "decision_type", None) == DECISION_ASSIGN_TRANSPORT
+                }
+                from ...utility.entity_ids import get_entity_id
+
+                l_ids = {get_entity_id(u) for u in units_l}
+                r_ids = {get_entity_id(u) for u in units_r}
+                l_requests = {uid: req for uid, req in pending.items() if uid in l_ids}
+                r_requests = {uid: req for uid, req in pending.items() if uid in r_ids}
+                if not l_requests:
+                    l_reqs = build_transport_assignment_requests(self.game, units_l)
+                    l_requests = {str(getattr(req, "context", {}).get("unit_id", "")): req for req in l_reqs}
+                if not r_requests:
+                    r_reqs = build_transport_assignment_requests(self.game, units_r)
+                    r_requests = {str(getattr(req, "context", {}).get("unit_id", "")): req for req in r_reqs}
+
+                ldlg.show(units_l, unit_requests=l_requests, on_confirm=_l_done, on_cancel=lambda: None)
+                rdlg.show(units_r, unit_requests=r_requests, on_confirm=_r_done, on_cancel=lambda: None)
                 m.show()
                 try:
                     self.game_view.dialog_manager.open(m, modal=True)
@@ -645,6 +706,9 @@ class SetupPhaseHandler(BasePhaseHandler):
 
             def _show_reserves():
                 from ..dialogs import ReservesAllocationDialog
+                from ...engine.decision_kinds import DECISION_DECLARE_RESERVES
+                from ...engine.decision_requests import build_reserves_allocation_request
+                from ...utility.decision_utils import resolve_decision_command
                 ldlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 rdlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
                 ldlg.title = f"Allocate Reserves - {p_left.name}"
@@ -664,22 +728,31 @@ class SetupPhaseHandler(BasePhaseHandler):
                         except Exception:
                             pass
 
-                def _l_done(decisions):
-                    if not _apply_reserves(a_left, decisions):
-                        print(f"  {p_left.name} reserves allocation failed")
-                        return
+                def _l_done(option_id, buckets):
+                    if l_request is not None:
+                        resolve_decision_command(self.game, l_request, option_id, result_payload={"unit_ids_by_bucket": buckets})
                     m.left_done = True
                     _maybe_advance()
 
-                def _r_done(decisions):
-                    if not _apply_reserves(a_right, decisions):
-                        print(f"  {p_right.name} reserves allocation failed")
-                        return
+                def _r_done(option_id, buckets):
+                    if r_request is not None:
+                        resolve_decision_command(self.game, r_request, option_id, result_payload={"unit_ids_by_bucket": buckets})
                     m.right_done = True
                     _maybe_advance()
 
-                ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None)
-                rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None)
+                pending = [
+                    req for req in list(self.game.decision_queue.list() or [])
+                    if getattr(req, "decision_type", None) == DECISION_DECLARE_RESERVES
+                ]
+                l_request = next((req for req in pending if req.player_id == p_left.id), None)
+                r_request = next((req for req in pending if req.player_id == p_right.id), None)
+                if l_request is None:
+                    l_request = build_reserves_allocation_request(self.game, a_left)
+                if r_request is None:
+                    r_request = build_reserves_allocation_request(self.game, a_right)
+
+                ldlg.show(a_left, on_confirm=_l_done, on_cancel=lambda: None, decision_request=l_request)
+                rdlg.show(a_right, on_confirm=_r_done, on_cancel=lambda: None, decision_request=r_request)
                 m.show()
                 try:
                     self.game_view.dialog_manager.open(m, modal=True)
@@ -722,22 +795,51 @@ class SetupPhaseHandler(BasePhaseHandler):
                     return
 
                 from ..dialogs import NurglesGiftPlagueDialog
+                from ...engine.decision_kinds import DECISION_CHOOSE_PLAGUE
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.decision_utils import resolve_decision_value
+                from ...utility.entity_ids import get_entity_id
+                from ..decision_ui_utils import first_option_id
+
                 try:
                     from ...rules.nurgles_gift import DEFAULT_PLAGUES
                     options = list(DEFAULT_PLAGUES)
                 except Exception:
                     options = []
 
-                def _apply_choice(army, plague):
-                    if army is None:
-                        return
-                    try:
-                        mgr = getattr(army, "nurgles_gift", None)
-                    except Exception:
-                        mgr = None
-                    if mgr is None or getattr(mgr, "active_plague_key", None):
-                        return
-                    mgr.active_plague_key = getattr(plague, "key", None)
+                def _plague_request(player, army):
+                    army_id = get_entity_id(army)
+                    pending = [
+                        req for req in list(self.game.decision_queue.list() or [])
+                        if getattr(req, "decision_type", None) == DECISION_CHOOSE_PLAGUE
+                        and str(getattr(req, "context", {}).get("army_id", "")) == army_id
+                    ]
+                    if pending:
+                        return pending[0]
+                    req_options = []
+                    for plague in options:
+                        key = getattr(plague, "key", None)
+                        if not key:
+                            continue
+                        name = getattr(plague, "name", None) or str(plague)
+                        summary = getattr(plague, "summary", "") or getattr(plague, "effect", "")
+                        req_options.append(
+                            DecisionOption.create(
+                                name,
+                                payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                            )
+                        )
+                    if not req_options:
+                        return None
+                    req = DecisionRequest.create(
+                        DECISION_CHOOSE_PLAGUE,
+                        "Select Nurgle's Gift plague.",
+                        player_id=getattr(player, "id", None),
+                        options=req_options,
+                        context={"army_id": army_id},
+                    )
+                    self.game.request_decision(req)
+                    return req
 
                 if needs_left and needs_right:
                     ldlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
@@ -753,34 +855,42 @@ class SetupPhaseHandler(BasePhaseHandler):
                             m.hide()
                             _show_leaders()
 
-                    def _l_done(plague):
-                        _apply_choice(a_left, plague)
+                    l_request = _plague_request(p_left, a_left)
+                    r_request = _plague_request(p_right, a_right)
+                    if l_request is None or r_request is None:
+                        _show_leaders()
+                        return
+
+                    def _l_done(option_id: str):
+                        resolve_decision_value(self.game, l_request, option_id)
                         _refresh_army_rule_panel(p_left)
                         m.left_done = True
                         _maybe_advance()
 
-                    def _r_done(plague):
-                        _apply_choice(a_right, plague)
+                    def _r_done(option_id: str):
+                        resolve_decision_value(self.game, r_request, option_id)
                         _refresh_army_rule_panel(p_right)
                         m.right_done = True
                         _maybe_advance()
 
                     def _l_cancel():
-                        if options:
-                            _apply_choice(a_left, options[0])
+                        default_id = first_option_id(l_request)
+                        if default_id:
+                            resolve_decision_value(self.game, l_request, default_id)
                             _refresh_army_rule_panel(p_left)
                         m.left_done = True
                         _maybe_advance()
 
                     def _r_cancel():
-                        if options:
-                            _apply_choice(a_right, options[0])
+                        default_id = first_option_id(r_request)
+                        if default_id:
+                            resolve_decision_value(self.game, r_request, default_id)
                             _refresh_army_rule_panel(p_right)
                         m.right_done = True
                         _maybe_advance()
 
-                    ldlg.show(options=options, on_confirm=_l_done, on_cancel=_l_cancel)
-                    rdlg.show(options=options, on_confirm=_r_done, on_cancel=_r_cancel)
+                    ldlg.show(on_confirm=_l_done, on_cancel=_l_cancel, decision_request=l_request)
+                    rdlg.show(on_confirm=_r_done, on_cancel=_r_cancel, decision_request=r_request)
                     m.show()
                     try:
                         self.game_view.dialog_manager.open(m, modal=True)
@@ -798,18 +908,24 @@ class SetupPhaseHandler(BasePhaseHandler):
                     target_player = p_right
                     target_army = a_right
 
-                def _done(plague):
-                    _apply_choice(target_army, plague)
+                target_request = _plague_request(target_player, target_army)
+                if target_request is None:
+                    _show_leaders()
+                    return
+
+                def _done(option_id: str):
+                    resolve_decision_value(self.game, target_request, option_id)
                     _refresh_army_rule_panel(target_player)
                     _show_leaders()
 
                 def _cancel():
-                    if options:
-                        _apply_choice(target_army, options[0])
+                    default_id = first_option_id(target_request)
+                    if default_id:
+                        resolve_decision_value(self.game, target_request, default_id)
                         _refresh_army_rule_panel(target_player)
                     _show_leaders()
 
-                dlg.show(options=options, on_confirm=_done, on_cancel=_cancel)
+                dlg.show(on_confirm=_done, on_cancel=_cancel, decision_request=target_request)
                 try:
                     self.game_view.dialog_manager.open(dlg, modal=True)
                 except Exception:
@@ -983,8 +1099,11 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                     pass
 
             print(f"[DeploymentPhaseHandler] Opening per-model deployment dialog for {self.game_view.selected_unit.name}")
-            self.game_view.individual_model_movement_dialog.show(
-                self.game_view.selected_unit, 'deploy', on_deploy_complete, self.game_view.game_map, max_distance=0.0
+            self._request_move_unit_decision(
+                self.game_view.selected_unit,
+                "deploy",
+                on_deploy_complete,
+                max_distance=0.0,
             )
 
             # Immediately forward this battlefield click to place the first model
@@ -1230,11 +1349,76 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _handle_movement_phase_selection(self, unit) -> None:
         """Handle unit selection during movement phase"""
         # Movement validation is handled by the game logic
-        
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.movement_utils import compute_embark_candidates
+        from ...utility.entity_ids import get_entity_id
+
+        def _pending_request():
+            for req in list(self.game.decision_queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_SELECT_MOVEMENT_ACTION:
+                    continue
+                if str(getattr(req, "context", {}).get("unit_id", "")) == get_entity_id(unit):
+                    return req
+            return None
+
+        req = _pending_request()
+        if req is None:
+            from warhammer40k_ai.units.unit import MovementAction
+
+            engagement_state = unit.get_engagement_state(self.game.map)
+            available = unit.get_available_move_actions(engagement_state.value)
+            action_map = {
+                "move": MovementAction.MOVE.value,
+                "advance": MovementAction.ADVANCE.value,
+                "fall_back": MovementAction.FALL_BACK.value,
+                "stationary": MovementAction.REMAIN_STATIONARY.value,
+            }
+            actions = [name for name, val in action_map.items() if val in available]
+            if getattr(unit, "is_transport", False):
+                if compute_embark_candidates(unit, self.game.map):
+                    actions.append("embark")
+                if list(getattr(unit, "transport_passengers", []) or []):
+                    actions.append("disembark")
+
+            options = [
+                DecisionOption.create(
+                    action,
+                    payload={"unit_id": get_entity_id(unit), "action_type": action},
+                )
+                for action in actions
+            ]
+            req = DecisionRequest.create(
+                DECISION_SELECT_MOVEMENT_ACTION,
+                f"Select movement action for {getattr(unit, 'name', 'Unit')}",
+                player_id=getattr(self.game.get_current_player(), "id", None),
+                options=options,
+                context={"unit_id": get_entity_id(unit)},
+            )
+            self.game.request_decision(req)
+
+        def _option_for_action(action: str) -> str:
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action_type", "") or "").lower() == action:
+                    return opt.option_id
+            return ""
+
         def on_movement_choice(choice):
+            option_id = _option_for_action(choice)
+            if option_id:
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
             self._handle_movement_choice(unit, choice)
-        
-        self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map)
+
+        self.game_view.movement_choice_dialog.show(unit, on_movement_choice, self.game.map, decision_request=req)
     
     def _handle_shooting_phase_selection(self, unit) -> None:
         """Handle unit selection during shooting phase"""
@@ -1299,9 +1483,38 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         def _show_shooting_dialog():
             # Show shooting declaration dialog
-            def on_shooting_complete(_declarations):
+            def on_shooting_complete(_executed: bool):
                 self._clear_shooting_selection()
-            self.game_view.shooting_declaration_dialog.show(unit, on_shooting_complete, self.game.map, self.game_view)
+            from ...engine.decision_kinds import DECISION_DECLARE_SHOTS
+            from ...engine.decisions import DecisionOption, DecisionRequest
+            from ...utility.entity_ids import get_entity_id
+
+            unit_id = get_entity_id(unit)
+            options = [
+                DecisionOption.create(
+                    "Execute shooting",
+                    payload={"unit_id": unit_id, "action": "confirm"},
+                ),
+                DecisionOption.create(
+                    "Skip shooting",
+                    payload={"unit_id": unit_id, "action": "skip"},
+                ),
+            ]
+            req = DecisionRequest.create(
+                DECISION_DECLARE_SHOTS,
+                f"Declare shots for {getattr(unit, 'name', 'Unit')}",
+                player_id=getattr(self.game.get_current_player(), "id", None),
+                options=options,
+                context={"unit_id": unit_id, "out_of_phase": False},
+            )
+            self.game.request_decision(req)
+            self.game_view.shooting_declaration_dialog.show(
+                unit,
+                on_shooting_complete,
+                self.game.map,
+                self.game_view,
+                decision_request=req,
+            )
 
         # Firing Deck X (Transport): allow selecting embarked weapons to be treated as the transport's weapons.
         try:
@@ -1361,20 +1574,78 @@ class BattlePhaseHandler(BasePhaseHandler):
                     )
 
                 def _on_confirm(chosen_entries):
-                    try:
-                        unit.apply_firing_deck_virtual_wargear(chosen_entries)
-                    except Exception:
-                        pass
+                    from ...engine.decision_kinds import DECISION_DECLARE_FIRING_DECK
+                    from ...engine.decisions import DecisionOption, DecisionRequest
+                    from ...utility.decision_utils import resolve_decision_value
+                    from ...utility.entity_ids import get_entity_id
+
+                    transport_id = get_entity_id(unit)
+                    options = [
+                        DecisionOption.create(
+                            "Confirm firing deck",
+                            payload={"transport_id": transport_id, "action": "confirm"},
+                        ),
+                        DecisionOption.create(
+                            "Skip firing deck",
+                            payload={"transport_id": transport_id, "action": "skip"},
+                        ),
+                    ]
+                    req = DecisionRequest.create(
+                        DECISION_DECLARE_FIRING_DECK,
+                        f"Declare firing deck for {getattr(unit, 'name', 'Transport')}",
+                        player_id=getattr(self.game.get_current_player(), "id", None),
+                        options=options,
+                        context={"transport_id": transport_id},
+                    )
+                    self.game.request_decision(req)
+                    resolve_decision_value(
+                        self.game,
+                        req,
+                        options[0].option_id,
+                        result_payload={"selected_entries": chosen_entries},
+                    )
                     _show_shooting_dialog()
 
                 def _on_cancel():
-                    try:
-                        unit.clear_firing_deck_virtual_wargear()
-                    except Exception:
-                        pass
+                    from ...engine.decision_kinds import DECISION_DECLARE_FIRING_DECK
+                    from ...engine.decisions import DecisionOption, DecisionRequest
+                    from ...utility.decision_utils import resolve_decision_value
+                    from ...utility.entity_ids import get_entity_id
+
+                    transport_id = get_entity_id(unit)
+                    options = [
+                        DecisionOption.create(
+                            "Confirm firing deck",
+                            payload={"transport_id": transport_id, "action": "confirm"},
+                        ),
+                        DecisionOption.create(
+                            "Skip firing deck",
+                            payload={"transport_id": transport_id, "action": "skip"},
+                        ),
+                    ]
+                    req = DecisionRequest.create(
+                        DECISION_DECLARE_FIRING_DECK,
+                        f"Declare firing deck for {getattr(unit, 'name', 'Transport')}",
+                        player_id=getattr(self.game.get_current_player(), "id", None),
+                        options=options,
+                        context={"transport_id": transport_id},
+                    )
+                    self.game.request_decision(req)
+                    resolve_decision_value(
+                        self.game,
+                        req,
+                        options[1].option_id,
+                        result_payload={"selected_entries": []},
+                    )
                     _show_shooting_dialog()
 
-                self.game_view.firing_deck_dialog.show(unit, fd_x, entries, _on_confirm, _on_cancel)
+                self.game_view.firing_deck_dialog.show(
+                    unit,
+                    fd_x,
+                    entries,
+                    _on_confirm,
+                    _on_cancel,
+                )
                 return
 
         _show_shooting_dialog()
@@ -1392,14 +1663,78 @@ class BattlePhaseHandler(BasePhaseHandler):
             return
         
         # Show charge declaration dialog
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_DECLARE_CHARGE
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        def _pending_request():
+            for req in list(self.game.decision_queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_DECLARE_CHARGE:
+                    continue
+                if str(getattr(req, "context", {}).get("unit_id", "")) == get_entity_id(unit):
+                    return req
+            return None
+
+        req = _pending_request()
+        if req is None:
+            options = []
+            enemy_units = [u for u in self.game.map.get_enemy_units(unit) if u.is_alive()]
+            try:
+                enemy_units.sort(key=lambda t: self.game.map.get_distance_between_units(unit, t))
+            except Exception:
+                pass
+            for target in enemy_units:
+                valid = False
+                try:
+                    valid = bool(unit.can_declare_charge_against(target, self.game))
+                except Exception:
+                    valid = False
+                label = getattr(target, "name", "Target")
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "unit_id": get_entity_id(unit),
+                            "target_unit_id": get_entity_id(target),
+                            "valid": valid,
+                        },
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_DECLARE_CHARGE,
+                f"Declare charge for {getattr(unit, 'name', 'Unit')}",
+                player_id=getattr(self.game.get_current_player(), "id", None),
+                options=options,
+                context={"unit_id": get_entity_id(unit)},
+            )
+            self.game.request_decision(req)
+
+        def _option_id_for_target(target_unit) -> str:
+            tid = get_entity_id(target_unit)
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("target_unit_id", "")) == tid:
+                    return opt.option_id
+            return ""
+
         def on_charge_declaration(charging_unit, target_unit):
             def _after_battle_focus():
                 # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
                 declared = None
-                try:
-                    declared = self.game.declare_charge(charging_unit, target_unit)
-                except Exception:
-                    declared = None
+                option_id = _option_id_for_target(target_unit)
+                if option_id:
+                    payload = {
+                        "decision_id": req.decision_id,
+                        "option_id": option_id,
+                        "result_payload": {},
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                    cmd_result = self.game.apply_command(cmd)
+                    apply_result = getattr(cmd_result, "value", None)
+                    if apply_result is not None and getattr(apply_result, "ok", False):
+                        declared = getattr(apply_result, "value", None)
                 if not declared:
                     return
 
@@ -1413,6 +1748,34 @@ class BattlePhaseHandler(BasePhaseHandler):
 
                 # Open individual model movement dialog for charge movement
                 def on_charge_movement_complete(completed: bool):
+                    from ...engine.command_kinds import CMD_RESOLVE_DECISION
+                    from ...engine.commands import GameCommand
+                    from ...utility.entity_ids import get_entity_id
+
+                    payload = {"skipped": not completed}
+                    if completed:
+                        model_positions = []
+                        for model in list(getattr(charging_unit, "models", []) or []):
+                            if not getattr(model, "is_alive", True):
+                                continue
+                            loc = model.get_location()
+                            if not loc:
+                                continue
+                            model_positions.append(
+                                {
+                                    "model_id": get_entity_id(model),
+                                    "position": [float(loc[0]), float(loc[1]), float(loc[2])],
+                                    "facing": float(getattr(model.model_base, "facing", 0.0)),
+                                }
+                            )
+                        payload["model_positions"] = model_positions
+                    cmd_payload = {
+                        "decision_id": move_request.decision_id,
+                        "option_id": move_request.options[0].option_id if move_request.options else "",
+                        "result_payload": payload,
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=move_request.player_id, payload=cmd_payload)
+                    self.game.apply_command(cmd)
                     if completed:
                         # Check if the charge actually achieved engagement range
                         enemy_units = self.game.map.get_enemy_units(charging_unit)
@@ -1431,14 +1794,45 @@ class BattlePhaseHandler(BasePhaseHandler):
                         print(f"{charging_unit.name} charge movement failed or skipped")
                         # Do not set charged_this_round = True for failed charges
 
+                from ...engine.decision_kinds import DECISION_MOVE_UNIT
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.entity_ids import get_entity_id
+
+                unit_id = get_entity_id(charging_unit)
+                move_request = DecisionRequest.create(
+                    DECISION_MOVE_UNIT,
+                    f"Charge move {getattr(charging_unit, 'name', 'Unit')}",
+                    player_id=getattr(self.game.get_current_player(), "id", None),
+                    options=[
+                        DecisionOption.create(
+                            "Confirm charge move",
+                            payload={"unit_id": unit_id, "movement_type": "charge"},
+                        )
+                    ],
+                    context={"unit_id": unit_id, "movement_type": "charge", "max_distance": max_charge_distance},
+                )
+                self.game.request_decision(move_request)
+
                 self.game_view.individual_model_movement_dialog.show(
-                    charging_unit, 'charge', on_charge_movement_complete, self.game.map, max_charge_distance, target_unit
+                    charging_unit,
+                    'charge',
+                    on_charge_movement_complete,
+                    self.game.map,
+                    max_charge_distance,
+                    target_unit,
+                    decision_request=move_request,
                 )
 
             self.game_view._maybe_prompt_battle_focus_charge(charging_unit, target_unit, _after_battle_focus)
             return True  # Charge declaration selection complete
 
-        self.game_view.charge_declaration_dialog.show(unit, on_charge_declaration, self.game.map, self.game_view)
+        self.game_view.charge_declaration_dialog.show(
+            unit,
+            on_charge_declaration,
+            self.game.map,
+            self.game_view,
+            decision_request=req,
+        )
     
     def _handle_fight_phase_selection(self, unit) -> None:
         """Handle unit selection during fight phase"""
@@ -1490,9 +1884,31 @@ class BattlePhaseHandler(BasePhaseHandler):
             if active_player.has_control():
                 print(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
                 print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
+                from ...engine.decision_kinds import DECISION_SELECT_FIGHTER
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.decision_utils import resolve_decision_value
+                from ...utility.entity_ids import get_entity_id
+
+                options = []
+                for unit in list(eligible_units or []):
+                    unit_id = get_entity_id(unit)
+                    label = getattr(unit, "name", "Unit")
+                    options.append(DecisionOption.create(label, payload={"unit_id": unit_id}))
+                req = DecisionRequest.create(
+                    DECISION_SELECT_FIGHTER,
+                    f"Select unit to fight ({stage.value})",
+                    player_id=getattr(active_player, "id", None),
+                    options=options,
+                )
+                self.game.request_decision(req)
                 # Show fight unit selection dialog
                 if hasattr(self.game_view, 'ui_interface') and self.game_view.ui_interface:
-                    def on_unit_selected(selected_unit):
+                    def on_unit_selected(option_id):
+                        value, apply_result = resolve_decision_value(self.game, req, option_id)
+                        if value is None or not getattr(apply_result, "ok", False):
+                            print("ERROR: Failed to resolve fight unit selection decision")
+                            return
+                        selected_unit = value
                         print(f"DEBUG: Unit selected callback called for {selected_unit.name}")
                         def _after_battle_focus():
                             self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
@@ -1502,7 +1918,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         print("Fight unit selection cancelled")
 
                     self.game_view.ui_interface.show_fight_unit_selection_dialog(
-                        stage.value, eligible_units, on_unit_selected, on_cancel
+                        stage.value, eligible_units, on_unit_selected, on_cancel, decision_request=req
                     )
             else:
                 print(f"Waiting for remote unit selection: {active_player.name}")
@@ -1512,15 +1928,79 @@ class BattlePhaseHandler(BasePhaseHandler):
             if active_player.has_control():
                 print(f"INFO: {active_player.name} must select targets for {fighting_unit.name}")
                 print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
+                from ...engine.decision_kinds import DECISION_SELECT_FIGHT_TARGETS
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.decision_utils import resolve_decision_value
+                from ...utility.entity_ids import get_entity_id
 
-                if len(eligible_targets) == 1:
-                    # Single target - auto-select
-                    target_unit = eligible_targets[0]
-                    print(f"INFO: Auto-selecting single target: {target_unit.name}")
-                    self._start_comprehensive_fight_sequence(fighting_unit, [target_unit], current_player, opponent_player)
-                else:
-                    print("INFO: Multiple targets available - opening target allocation")
-                    self._start_comprehensive_fight_sequence(fighting_unit, eligible_targets, current_player, opponent_player)
+                target_ids = []
+                options = []
+                for target in list(eligible_targets or []):
+                    target_id = get_entity_id(target)
+                    target_ids.append(target_id)
+                    label = getattr(target, "name", "Target")
+                    options.append(
+                        DecisionOption.create(
+                            label,
+                            payload={"target_unit_id": target_id},
+                        )
+                    )
+                if len(target_ids) > 1:
+                    options.append(
+                        DecisionOption.create(
+                            "All engaged targets",
+                            payload={"target_unit_ids": list(target_ids), "action": "all"},
+                        )
+                    )
+
+                req = DecisionRequest.create(
+                    DECISION_SELECT_FIGHT_TARGETS,
+                    f"Select targets for {getattr(fighting_unit, 'name', 'Unit')}",
+                    player_id=getattr(active_player, "id", None),
+                    options=options,
+                    context={"unit_id": get_entity_id(fighting_unit)},
+                )
+                self.game.request_decision(req)
+
+                def _resolve_targets(option_id: str, selected_ids: List[str]):
+                    payload = {"target_unit_ids": list(selected_ids or [])}
+                    value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+                    if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                        value = [t for t in list(eligible_targets or []) if t is not None]
+                    if not value:
+                        value = [t for t in list(eligible_targets or []) if t is not None]
+                    self._start_comprehensive_fight_sequence(fighting_unit, list(value), current_player, opponent_player)
+
+                if len(target_ids) <= 1:
+                    option_id = options[0].option_id if options else ""
+                    print("INFO: Auto-selecting single target")
+                    _resolve_targets(option_id, target_ids)
+                    return
+
+                def on_target_selected(option_id: str, selected_ids: List[str]):
+                    _resolve_targets(option_id, selected_ids)
+
+                def on_cancel():
+                    fallback = target_ids
+                    option_id = ""
+                    for opt in options:
+                        payload = dict(getattr(opt, "payload", {}) or {})
+                        if payload.get("action") == "all":
+                            option_id = opt.option_id
+                            fallback = list(payload.get("target_unit_ids") or target_ids)
+                            break
+                    if not option_id and options:
+                        option_id = options[0].option_id
+                        fallback = [target_ids[0]] if target_ids else []
+                    _resolve_targets(option_id, fallback)
+
+                self.game_view.fight_target_selection_dialog.show(
+                    fighting_unit,
+                    eligible_targets,
+                    on_target_selected,
+                    on_cancel,
+                    decision_request=req,
+                )
             else:
                 print(f"Waiting for remote target selection: {active_player.name}")
                 return
@@ -1548,17 +2028,18 @@ class BattlePhaseHandler(BasePhaseHandler):
             except Exception:
                 max_distance = 3.0
 
-            self.game_view.individual_model_movement_dialog.show(
-                unit, movement_type, callback, self.game.map, max_distance
+            self._request_move_unit_decision(
+                unit,
+                movement_type,
+                callback,
+                max_distance=max_distance,
             )
 
         def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
             """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
             print(f"{unit.name} needs to select melee weapons against {target_unit.name}")
             def _show_weapons():
-                self.game_view.melee_weapon_declaration_dialog.show(
-                    unit, callback, self.game.map, target_unit=target_unit
-                )
+                self._request_melee_weapon_declarations(unit, target_unit, callback)
             if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
                 self.game_view._maybe_prompt_fight_within_3(unit, target_unit, _show_weapons)
             else:
@@ -1572,6 +2053,157 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Start the fight phase
         self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
+
+    def _serialize_unit_positions(self, unit: Unit) -> List[dict]:
+        from ...utility.entity_ids import get_entity_id
+
+        try:
+            models = list(unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(unit, "models", []) or [])
+        entries: List[dict] = []
+        for model in models:
+            try:
+                if not getattr(model, "is_alive", True):
+                    continue
+            except Exception:
+                pass
+            base = getattr(model, "model_base", None)
+            if base is None:
+                continue
+            try:
+                x = float(getattr(base, "x", 0.0))
+                y = float(getattr(base, "y", 0.0))
+                z = float(getattr(base, "z", 0.0))
+                facing = float(getattr(base, "facing", 0.0))
+            except Exception:
+                continue
+            entries.append(
+                {
+                    "model_id": get_entity_id(model),
+                    "position": [x, y, z],
+                    "facing": facing,
+                }
+            )
+        return entries
+
+    def _request_move_unit_decision(
+        self,
+        unit: Unit,
+        movement_type: str,
+        callback,
+        *,
+        max_distance: float | None = None,
+        target_unit=None,
+        placement_validator=None,
+    ) -> None:
+        from ...engine.decision_kinds import DECISION_MOVE_UNIT
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_command
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_ui_utils import option_id_for_action, first_option_id
+
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit_id, "movement_type": movement_type, "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": unit_id, "movement_type": movement_type, "action": "skip"},
+            ),
+        ]
+        player_id = None
+        try:
+            player_id = unit.get_parent_army().player.id
+        except Exception:
+            player_id = None
+        req = DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
+            player_id=player_id,
+            options=options,
+            context={"unit_id": unit_id, "movement_type": movement_type},
+        )
+        self.game.request_decision(req)
+        confirm_id = first_option_id(req)
+        skip_id = option_id_for_action(req, "skip") or confirm_id
+
+        def _on_move_complete(completed: bool):
+            if completed:
+                payload = {"model_positions": self._serialize_unit_positions(unit)}
+                resolve_decision_command(self.game, req, confirm_id, result_payload=payload)
+            else:
+                resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
+            if callable(callback):
+                callback(completed)
+
+        self.game_view.individual_model_movement_dialog.show(
+            unit,
+            movement_type,
+            _on_move_complete,
+            self.game.map,
+            max_distance,
+            target_unit=target_unit,
+            placement_validator=placement_validator,
+            decision_request=req,
+        )
+        try:
+            self.game_view.dialog_manager.open(self.game_view.individual_model_movement_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _request_melee_weapon_declarations(
+        self,
+        unit: Unit,
+        target_unit: Optional[Unit],
+        on_complete,
+        *,
+        eligible_models=None,
+    ) -> None:
+        from ...engine.decision_kinds import DECISION_DECLARE_MELEE_WEAPONS
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_value
+        from ...utility.entity_ids import get_entity_id
+
+        unit_id = get_entity_id(unit)
+        options = [DecisionOption.create("Confirm", payload={"unit_id": unit_id})]
+        context = {"unit_id": unit_id}
+        if target_unit is not None:
+            context["target_unit_id"] = get_entity_id(target_unit)
+        player_id = None
+        try:
+            player_id = unit.get_parent_army().player.id
+        except Exception:
+            player_id = None
+        req = DecisionRequest.create(
+            DECISION_DECLARE_MELEE_WEAPONS,
+            f"Declare melee weapons for {getattr(unit, 'name', 'Unit')}",
+            player_id=player_id,
+            options=options,
+            context=context,
+        )
+        self.game.request_decision(req)
+
+        def _on_confirm(option_id: str, payload: dict):
+            value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+            if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                value = []
+            on_complete(value)
+            try:
+                self.game_view.melee_weapon_declaration_dialog.hide()
+            except Exception:
+                pass
+
+        self.game_view.melee_weapon_declaration_dialog.show(
+            unit,
+            _on_confirm,
+            self.game.map,
+            target_unit=target_unit,
+            eligible_models=eligible_models,
+            decision_request=req,
+        )
     
     def _start_comprehensive_fight_sequence(self, fighting_unit: Unit, target_units: List[Unit], current_player: Player, opponent_player: Player):
         """Start the comprehensive fight sequence following proper Warhammer 40k rules."""
@@ -1602,8 +2234,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                 max_distance = float(override)
         except Exception:
             max_distance = 3.0
-        self.game_view.individual_model_movement_dialog.show(
-            fighting_unit, 'pile_in', on_pile_in_complete, self.game.map, max_distance
+        self._request_move_unit_decision(
+            fighting_unit,
+            "pile_in",
+            on_pile_in_complete,
+            max_distance=max_distance,
         )
 
     def _start_multi_target_weapon_allocation_phase(
@@ -1643,11 +2278,10 @@ class BattlePhaseHandler(BasePhaseHandler):
             )
 
         def _show_weapons():
-            self.game_view.melee_weapon_declaration_dialog.show(
+            self._request_melee_weapon_declarations(
                 fighting_unit,
+                None,
                 on_weapon_allocation_complete,
-                self.game.map,
-                target_unit=None,
                 eligible_models=eligible_models,
             )
 
@@ -1682,14 +2316,39 @@ class BattlePhaseHandler(BasePhaseHandler):
             print("INFO: Weapon target allocation cancelled")
             self.fight_phase_manager._switch_active_player(current_player, opponent_player)
 
+        from ...engine.decision_kinds import DECISION_ALLOCATE_MELEE_TARGETS
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_value
+        from ...utility.entity_ids import get_entity_id
+
+        unit_id = get_entity_id(fighting_unit)
+        options = [DecisionOption.create("Confirm", payload={"unit_id": unit_id})]
+        req = DecisionRequest.create(
+            DECISION_ALLOCATE_MELEE_TARGETS,
+            f"Allocate melee targets for {getattr(fighting_unit, 'name', 'Unit')}",
+            player_id=getattr(current_player, "id", None),
+            options=options,
+            context={"unit_id": unit_id},
+        )
+        self.game.request_decision(req)
+
+        def _on_confirm(option_id: str, payload: dict):
+            value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
+            if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                on_allocation_cancel()
+                return
+            on_allocation_confirm(value)
+
         self.game_view.melee_weapon_target_allocation_dialog.show(
             fighting_unit,
             target_units,
             weapon_declarations,
-            on_allocation_confirm,
+            _on_confirm,
             self.game.map,
-            on_allocation_cancel,
+            game=self.game,
+            on_cancel=on_allocation_cancel,
             split_dialog=self.game_view.melee_attack_split_dialog,
+            decision_request=req,
         )
 
     def _start_multi_target_attack_resolution(
@@ -1764,11 +2423,10 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Show melee weapon declaration dialog for weapon allocation
         def _show_weapons():
-            self.game_view.melee_weapon_declaration_dialog.show(
+            self._request_melee_weapon_declarations(
                 fighting_unit,
+                target_unit,
                 on_weapon_allocation_complete,
-                self.game.map,
-                target_unit=target_unit,
                 eligible_models=eligible_models,
             )
         if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
@@ -1800,12 +2458,41 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         if has_mixed_attributes:
             print(f"INFO: Mixed attributes detected - defender selects wound allocation")
-            
-            def on_wound_model_selected(selected_model):
-                print(f"INFO: Wound allocation: {selected_model.name} selected to receive wounds")
-                # Store the wound allocation target
-                for decl in weapon_declarations:
-                    decl['wound_target'] = selected_model
+
+            from ...engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+            from ...engine.decisions import DecisionOption, DecisionRequest
+            from ...utility.decision_utils import resolve_decision_value
+            from ...utility.entity_ids import get_entity_id
+
+            try:
+                candidates = list(target_unit.get_models_for_wound_allocation() or [])
+            except Exception:
+                candidates = [m for m in getattr(target_unit, "models", []) if getattr(m, "is_alive", False)]
+
+            options = [DecisionOption.create("Auto allocation", payload={"model_id": None})]
+            for model in list(candidates or []):
+                label = getattr(model, "name", "Model")
+                options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+
+            req = DecisionRequest.create(
+                DECISION_SELECT_TARGET_MODEL,
+                f"Select wound allocation for {getattr(target_unit, 'name', 'Unit')}",
+                player_id=getattr(opponent_player, "id", None),
+                options=options,
+                context={"unit_id": get_entity_id(target_unit)},
+            )
+            self.game.request_decision(req)
+
+            def _apply_selection(option_id: str):
+                value, apply_result = resolve_decision_value(self.game, req, option_id)
+                if apply_result is None or not getattr(apply_result, "ok", False):
+                    value = None
+                if value is not None:
+                    print(f"INFO: Wound allocation: {getattr(value, 'name', 'model')} selected to receive wounds")
+                    for decl in weapon_declarations:
+                        decl['wound_target'] = value
+                else:
+                    print("INFO: Wound allocation: using automatic allocation")
                 self._start_attack_resolution_phase(
                     fighting_unit,
                     target_unit,
@@ -1815,22 +2502,23 @@ class BattlePhaseHandler(BasePhaseHandler):
                     on_complete=on_complete,
                     skip_consolidate=skip_consolidate,
                 )
-            
+
+            auto_option_id = options[0].option_id if options else ""
+
+            def on_wound_model_selected(option_id: str):
+                _apply_selection(option_id)
+
             def on_wound_cancelled():
-                print("INFO: Wound allocation cancelled - using automatic allocation")
-                self._start_attack_resolution_phase(
-                    fighting_unit,
-                    target_unit,
-                    weapon_declarations,
-                    current_player,
-                    opponent_player,
-                    on_complete=on_complete,
-                    skip_consolidate=skip_consolidate,
-                )
-            
+                _apply_selection(auto_option_id)
+
             self.game_view.target_model_selection_dialog.show(
-                fighting_unit, target_unit, weapon_declarations, "wound_allocation",
-                on_wound_model_selected, on_wound_cancelled
+                fighting_unit,
+                target_unit,
+                weapon_declarations,
+                "wound_allocation",
+                on_wound_model_selected,
+                on_wound_cancelled,
+                decision_request=req,
             )
             
         else:
@@ -1897,8 +2585,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                 max_distance = float(override)
         except Exception:
             max_distance = 3.0
-        self.game_view.individual_model_movement_dialog.show(
-            fighting_unit, 'consolidate', on_consolidate_complete, self.game.map, max_distance
+        self._request_move_unit_decision(
+            fighting_unit,
+            "consolidate",
+            on_consolidate_complete,
+            max_distance=max_distance,
         )
     
     def _resolve_sequential_attacks(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List):
@@ -2222,8 +2913,55 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.movement_action = None
                 self.game_view.selected_model_for_movement = None
             else:
+                from ...engine.decision_kinds import DECISION_MOVE_UNIT
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...utility.entity_ids import get_entity_id
+
+                unit_id = get_entity_id(unit)
+                move_request = DecisionRequest.create(
+                    DECISION_MOVE_UNIT,
+                    f"Move {getattr(unit, 'name', 'Unit')}",
+                    player_id=getattr(self.game.get_current_player(), "id", None),
+                    options=[
+                        DecisionOption.create(
+                            "Confirm move",
+                            payload={"unit_id": unit_id, "movement_type": choice},
+                        )
+                    ],
+                    context={"unit_id": unit_id, "movement_type": choice, "max_distance": max_distance},
+                )
+                self.game.request_decision(move_request)
+
                 # Open individual model movement dialog
                 def on_movement_complete(completed: bool):
+                    from ...engine.command_kinds import CMD_RESOLVE_DECISION
+                    from ...engine.commands import GameCommand
+                    from ...utility.entity_ids import get_entity_id
+
+                    payload = {"skipped": not completed}
+                    if completed:
+                        model_positions = []
+                        for model in list(getattr(unit, "models", []) or []):
+                            if not getattr(model, "is_alive", True):
+                                continue
+                            loc = model.get_location()
+                            if not loc:
+                                continue
+                            model_positions.append(
+                                {
+                                    "model_id": get_entity_id(model),
+                                    "position": [float(loc[0]), float(loc[1]), float(loc[2])],
+                                    "facing": float(getattr(model.model_base, "facing", 0.0)),
+                                }
+                            )
+                        payload["model_positions"] = model_positions
+                    cmd_payload = {
+                        "decision_id": move_request.decision_id,
+                        "option_id": move_request.options[0].option_id if move_request.options else "",
+                        "result_payload": payload,
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=move_request.player_id, payload=cmd_payload)
+                    self.game.apply_command(cmd)
                     if completed:
                         print(f"{unit.name} {choice} movement completed")
                     else:
@@ -2234,7 +2972,12 @@ class BattlePhaseHandler(BasePhaseHandler):
                     self.game_view.selected_model_for_movement = None
 
                 self.game_view.individual_model_movement_dialog.show(
-                    unit, choice, on_movement_complete, self.game.map, max_distance
+                    unit,
+                    choice,
+                    on_movement_complete,
+                    self.game.map,
+                    max_distance,
+                    decision_request=move_request,
                 )
 
         if choice in ("move", "advance", "fall_back"):
@@ -2245,35 +2988,15 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _show_transport_embark_dialog(self, transport_unit) -> None:
         """Show a dialog listing only valid units that can embark into the selected transport."""
         from ..dialogs import TransportEmbarkDialog
+        from ...utility.movement_utils import compute_embark_candidates
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_EMBARK
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
 
         # Compute candidates using the same checks as the dialog (but here so it stays correct even if dialog not refreshed)
-        candidates = []
-        if transport_unit.models and transport_unit.models[0].is_alive:
-            from ...utility.aura_utils import distance_between_models_bases_3d
-            t_model = transport_unit.models[0]
-            for u in list(getattr(self.game.map, "units", []) or []):
-                if u is None or u == transport_unit:
-                    continue
-                if not u.is_alive():
-                    continue
-                if u.get_parent_army() != transport_unit.get_parent_army():
-                    continue
-                if not transport_unit.can_transport(u):
-                    continue
-                if getattr(u.round_state, "remained_stationary_this_round", False):
-                    continue
-                if getattr(u.round_state, "disembarked_this_round", False):
-                    continue
-                ok = True
-                for m in u.models:
-                    if not m.is_alive:
-                        continue
-                    if float(distance_between_models_bases_3d(m, t_model)) > 3.0 + 1e-6:
-                        ok = False
-                        break
-                if not ok:
-                    continue
-                candidates.append(u)
+        candidates = compute_embark_candidates(transport_unit, self.game.map)
 
         if not hasattr(self.game_view, "transport_embark_dialog"):
             self.game_view.transport_embark_dialog = TransportEmbarkDialog(
@@ -2281,17 +3004,92 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.screen.get_height(),
             )
 
-        def _confirm(selected_units):
-            if not selected_units:
-                return
-            for u in selected_units:
-                u.embark(transport_unit, game_map=self.game.map)
+        pending = [
+            req for req in list(self.game.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_EMBARK
+            and str(getattr(req, "context", {}).get("transport_id", "")) == get_entity_id(transport_unit)
+        ]
+        unit_requests = {}
+        if pending:
+            for req in pending:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", ""))
+                if unit_id:
+                    unit_requests[unit_id] = req
+        else:
+            for unit in candidates:
+                unit_id = get_entity_id(unit)
+                options = [
+                    DecisionOption.create(
+                        "Embark",
+                        payload={"unit_id": unit_id, "transport_id": get_entity_id(transport_unit)},
+                    ),
+                    DecisionOption.create(
+                        "Do not embark",
+                        payload={"unit_id": unit_id, "transport_id": None},
+                    ),
+                ]
+                req = DecisionRequest.create(
+                    DECISION_EMBARK,
+                    f"Embark {getattr(unit, 'name', 'Unit')}",
+                    player_id=getattr(self.game.get_current_player(), "id", None),
+                    options=options,
+                    context={"unit_id": unit_id, "transport_id": get_entity_id(transport_unit)},
+                )
+                self.game.request_decision(req)
+                unit_requests[unit_id] = req
 
-        self.game_view.transport_embark_dialog.show(transport_unit, candidates, _confirm)
+        req_candidates = []
+        for unit in candidates:
+            if get_entity_id(unit) in unit_requests:
+                req_candidates.append(unit)
+
+        def _option_id(req, embark: bool) -> str:
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if embark and payload.get("transport_id") is not None:
+                    return opt.option_id
+                if not embark and payload.get("transport_id") is None:
+                    return opt.option_id
+            return ""
+
+        def _confirm(selected_units):
+            selected_ids = {get_entity_id(u) for u in list(selected_units or [])}
+            for unit_id, req in unit_requests.items():
+                embark = unit_id in selected_ids
+                option_id = _option_id(req, embark)
+                if not option_id:
+                    continue
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
+
+        def _cancel():
+            for unit_id, req in unit_requests.items():
+                option_id = _option_id(req, False)
+                if not option_id:
+                    continue
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
+
+        self.game_view.transport_embark_dialog.show(transport_unit, req_candidates, _confirm, _cancel)
 
     def _show_transport_disembark_dialog(self, transport_unit) -> None:
         """Show a dialog to pick which embarked unit(s) to disembark from this transport."""
         from ..dialogs import TransportDisembarkDialog
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_DISEMBARK
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
 
         passengers = list(getattr(transport_unit, "transport_passengers", []) or [])
         if not passengers:
@@ -2304,17 +3102,78 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.screen.get_height(),
             )
 
-        def _confirm(selected_units):
-            if not selected_units:
-                return
-            # Disembark sequentially to respect space/collisions
-            for u in selected_units:
-                try:
-                    u.disembark(game_map=self.game.map, transport_unit=transport_unit, destroyed_transport=False, emergency=False, current_turn=self.game.turn)
-                except Exception as e:
-                    print(f"ERROR: Disembark failed: {e}")
+        pending = [
+            req for req in list(self.game.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_DISEMBARK
+            and str(getattr(req, "context", {}).get("transport_id", "")) == get_entity_id(transport_unit)
+        ]
+        unit_requests = {}
+        if pending:
+            for req in pending:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", ""))
+                if unit_id:
+                    unit_requests[unit_id] = req
+        else:
+            for unit in passengers:
+                unit_id = get_entity_id(unit)
+                options = [
+                    DecisionOption.create(
+                        "Disembark",
+                        payload={"unit_id": unit_id, "transport_id": get_entity_id(transport_unit)},
+                    ),
+                    DecisionOption.create(
+                        "Remain embarked",
+                        payload={"unit_id": unit_id, "transport_id": None},
+                    ),
+                ]
+                req = DecisionRequest.create(
+                    DECISION_DISEMBARK,
+                    f"Disembark {getattr(unit, 'name', 'Unit')}",
+                    player_id=getattr(self.game.get_current_player(), "id", None),
+                    options=options,
+                    context={"unit_id": unit_id, "transport_id": get_entity_id(transport_unit)},
+                )
+                self.game.request_decision(req)
+                unit_requests[unit_id] = req
 
-        self.game_view.transport_disembark_dialog.show(transport_unit, passengers, _confirm)
+        def _option_id(req, disembark: bool) -> str:
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if disembark and payload.get("transport_id") is not None:
+                    return opt.option_id
+                if not disembark and payload.get("transport_id") is None:
+                    return opt.option_id
+            return ""
+
+        def _confirm(selected_units):
+            selected_ids = {get_entity_id(u) for u in list(selected_units or [])}
+            for unit_id, req in unit_requests.items():
+                disembark = unit_id in selected_ids
+                option_id = _option_id(req, disembark)
+                if not option_id:
+                    continue
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
+
+        def _cancel():
+            for unit_id, req in unit_requests.items():
+                option_id = _option_id(req, False)
+                if not option_id:
+                    continue
+                payload = {
+                    "decision_id": req.decision_id,
+                    "option_id": option_id,
+                    "result_payload": {},
+                }
+                cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                self.game.apply_command(cmd)
+
+        self.game_view.transport_disembark_dialog.show(transport_unit, passengers, _confirm, _cancel)
     
     def _handle_battlefield_action(self, x: int, y: int) -> bool:
         """Handle battlefield actions based on current battle phase"""
@@ -2388,14 +3247,65 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self.game_view.screen.get_width(), 
                 self.game_view.screen.get_height()
             )
-        
-        def on_weapon_choice(weapon_profile):
+
+        from ...engine.decision_kinds import DECISION_SELECT_WEAPON
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_value
+        from ...utility.entity_ids import get_entity_id
+        from ..dialogs.weapon_choice_dialog import collect_available_weapons
+
+        available_weapons = collect_available_weapons(unit)
+        options = []
+        unit_id = get_entity_id(unit)
+        for info in available_weapons:
+            wargear = info.get("wargear")
+            profile_name = info.get("profile_name")
+            if wargear is None or not profile_name:
+                continue
+            try:
+                wname = str(getattr(wargear, "name", "Weapon") or "Weapon")
+            except Exception:
+                wname = "Weapon"
+            label = wname
+            if len(getattr(wargear, "profiles", {}) or {}) > 1:
+                label = f"{label} ({profile_name})"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "unit_id": unit_id,
+                        "wargear_id": get_entity_id(wargear),
+                        "profile_name": str(profile_name),
+                    },
+                )
+            )
+        if not options:
+            return
+        req = DecisionRequest.create(
+            DECISION_SELECT_WEAPON,
+            f"Select weapon for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(self.game.get_current_player(), "id", None),
+            options=options,
+            context={"unit_id": unit_id},
+        )
+        self.game.request_decision(req)
+
+        def on_weapon_choice(option_id: str):
+            value, _apply = resolve_decision_value(self.game, req, option_id)
+            weapon_profile = None
+            if isinstance(value, dict):
+                wargear_id = value.get("wargear_id")
+                profile_name = value.get("profile_name")
+                registry = getattr(self.game, "entity_registry", None)
+                wargear = registry.get(str(wargear_id), kind="wargear") if registry is not None else None
+                if wargear is not None:
+                    weapon_profile = getattr(wargear, "profiles", {}).get(str(profile_name))
             self.game_view.selected_weapon_profile = weapon_profile
             # Clear any previous shooting selection state
             if hasattr(self.game_view, 'selected_shooting_models'):
                 self.game_view.selected_shooting_models = []
         
-        self.game_view.weapon_choice_dialog.show(unit, on_weapon_choice, self.game.map)
+        self.game_view.weapon_choice_dialog.show(unit, on_weapon_choice, self.game.map, decision_request=req)
     
     def _clear_shooting_selection(self):
         """Clear shooting selection state"""
@@ -2881,6 +3791,43 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
     def _show_scout_dialog(self, unit):
         # print(f"DEBUG: _show_scout_dialog called for {unit.name}")
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decision_kinds import DECISION_SCOUT_MOVE
+        from ...engine.decision_requests import build_scout_move_request
+        from ...utility.entity_ids import get_entity_id
+
+        def _pending_request():
+            for req in list(self.game_view.game.decision_queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_SCOUT_MOVE:
+                    continue
+                if str(getattr(req, "context", {}).get("unit_id", "")) == get_entity_id(unit):
+                    return req
+            return None
+
+        req = _pending_request()
+        if req is None:
+            req = build_scout_move_request(self.game_view.game, unit)
+
+        def _option_for_action(action: str) -> str:
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action", "") or "").lower() == action:
+                    return opt.option_id
+            return ""
+
+        def _send_decision(action: str, payload: dict) -> None:
+            option_id = _option_for_action(action)
+            if not option_id:
+                return
+            cmd_payload = {
+                "decision_id": req.decision_id,
+                "option_id": option_id,
+                "result_payload": payload,
+            }
+            cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=cmd_payload)
+            self.game_view.game.apply_command(cmd)
+
         def on_scout_choice(choice):
             # print(f"DEBUG: Scout choice for {unit.name}: {choice}")
             if choice == 'scout':
@@ -2890,10 +3837,24 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     # print(f"DEBUG: Setting scout_move_made=True for {unit.name}")
                     if completed:
                         print(f"OK: {unit.name} scout movement completed")
-                        unit.scout_move_made = True
+                        model_positions = []
+                        for model in list(getattr(unit, "models", []) or []):
+                            if not getattr(model, "is_alive", True):
+                                continue
+                            loc = model.get_location()
+                            if not loc:
+                                continue
+                            model_positions.append(
+                                {
+                                    "model_id": get_entity_id(model),
+                                    "position": [float(loc[0]), float(loc[1]), float(loc[2])],
+                                    "facing": float(getattr(model.model_base, "facing", 0.0)),
+                                }
+                            )
+                        _send_decision("scout", {"model_positions": model_positions})
                     else:
                         print(f"INFO:  {unit.name} scout movement skipped")
-                        unit.scout_move_made = True
+                        _send_decision("skip", {})
                     # print(f"DEBUG: Calling _next_scout_unit() to proceed to next unit")
                     self._next_scout_unit()
 
@@ -2901,7 +3862,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     unit, 'scout', on_scout_movement_complete, self.game_view.game.map, self.scout_distance
                 )
             elif choice == 'skip':
-                unit.scout_move_made = True
+                _send_decision("skip", {})
                 print(f"OK: {unit.name} scout move skipped")
                 self._next_scout_unit()
             elif choice == 'defer':
@@ -2935,7 +3896,12 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
                 self._next_scout_unit()
         # print(f"DEBUG: About to call ui_interface.show_scout_dialog for {unit.name}")
-        self.game_view.ui_interface.show_scout_dialog(unit, on_scout_choice, self.game_view.game.map)
+        self.game_view.ui_interface.show_scout_dialog(
+            unit,
+            on_scout_choice,
+            self.game_view.game.map,
+            decision_request=req,
+        )
         # print(f"DEBUG: ui_interface.show_scout_dialog completed for {unit.name}")
         # print(f"DEBUG: Scout dialog visible: {self.game_view.ui_interface.scout_choice_dialog.visible}")
 

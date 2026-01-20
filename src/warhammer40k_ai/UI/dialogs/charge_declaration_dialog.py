@@ -31,6 +31,7 @@ class ChargeDeclarationDialog(BaseDialog):
         self.callback = None
         self.game_map = None
         self.game_view = None
+        self.decision_request = None
         
         # Fonts are provided by BaseDialog (font_large, font_medium, font_small)
         
@@ -58,12 +59,13 @@ class ChargeDeclarationDialog(BaseDialog):
         
         self.hovered_button = None
     
-    def show(self, unit, callback, game_map=None, game_view=None):
+    def show(self, unit, callback, game_map=None, game_view=None, decision_request=None):
         """Show the charge declaration dialog for the given unit"""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
         self.game_view = game_view
+        self.decision_request = decision_request
         # IMPORTANT: pass callback so BaseDialog.callback is preserved
         super().show(callback)
         
@@ -117,35 +119,58 @@ class ChargeDeclarationDialog(BaseDialog):
         self.selected_target = None
         self.scroll_offset = 0
         self.hovered_target = -1
+        self.decision_request = None
     
     def _update_available_targets(self):
         """Update the list of available targets"""
         if not self.game_map or not self.unit:
             return
-        
+
+        if self.decision_request is not None and self.game_view is not None:
+            registry = getattr(self.game_view.game, "entity_registry", None)
+            options = list(getattr(self.decision_request, "options", []) or [])
+            seen = set()
+            self.valid_targets = []
+            self.invalid_targets = []
+            for opt in options:
+                payload = dict(getattr(opt, "payload", {}) or {})
+                target_id = str(payload.get("target_unit_id", "") or "")
+                if not target_id or target_id in seen:
+                    continue
+                seen.add(target_id)
+                target = registry.get(target_id, kind="unit") if registry is not None else None
+                if target is None:
+                    continue
+                if bool(payload.get("valid", True)):
+                    self.valid_targets.append(target)
+                else:
+                    self.invalid_targets.append(target)
+            self.available_targets = self.valid_targets + self.invalid_targets
+            return
+
         # Get all enemy units
         enemy_units = self.game_map.get_enemy_units(self.unit)
-        
+
         # Filter out dead units
         enemy_units = [unit for unit in enemy_units if unit.is_alive()]
-        
+
         # Separate valid and invalid targets
         self.valid_targets = []
         self.invalid_targets = []
-        
+
         for target in enemy_units:
             if self.unit.can_declare_charge_against(target, self.game_view.game):
                 self.valid_targets.append(target)
             else:
                 self.invalid_targets.append(target)
-        
+
         # Combine for display
         self.available_targets = self.valid_targets + self.invalid_targets
-        
+
         # Sort targets by distance (closest first)
         def get_distance_to_target(target):
             return self.game_map.get_distance_between_units(self.unit, target)
-        
+
         self.valid_targets.sort(key=get_distance_to_target)
         self.available_targets = self.valid_targets + self.invalid_targets
     

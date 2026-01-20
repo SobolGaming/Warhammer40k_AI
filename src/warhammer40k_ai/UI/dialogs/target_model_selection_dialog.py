@@ -3,6 +3,7 @@ from typing import List, Callable, Optional, Dict
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, TEXT_PRIMARY, TEXT_SECONDARY
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 class TargetModelSelectionDialog(BaseDialog):
     """Dialog for selecting specific models to target in melee combat."""
@@ -15,15 +16,18 @@ class TargetModelSelectionDialog(BaseDialog):
         self.target_unit: Optional[Unit] = None
         self.weapon_declarations: List = []
         self.selection_type: str = ""  # "precision" or "wound_allocation"
-        self.on_model_selected: Optional[Callable[[Model], None]] = None
+        self.on_model_selected: Optional[Callable[[str], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
 
         # Button mapping: name -> Model
         self._button_to_model: Dict[str, Model] = {}
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._entry_models: List[tuple] = []
 
     def show(self, attacking_unit: Unit, target_unit: Unit, weapon_declarations: List,
-             selection_type: str, on_model_selected: Callable[[Model], None],
-             on_cancel: Optional[Callable[[], None]] = None) -> None:
+             selection_type: str, on_model_selected: Callable[[str], None],
+             on_cancel: Optional[Callable[[], None]] = None, decision_request=None) -> None:
         """
         Show the target model selection dialog.
         
@@ -41,6 +45,24 @@ class TargetModelSelectionDialog(BaseDialog):
         self.selection_type = selection_type
         self.on_model_selected = on_model_selected
         self.on_cancel = on_cancel
+        self.decision_request = decision_request
+        self._option_entries = []
+        self._entry_models = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+            eligible_models = self._get_eligible_models()
+            model_by_id = {get_entity_id(m): m for m in list(eligible_models or [])}
+            for entry in self._option_entries:
+                payload = entry.get("payload", {})
+                model_id = payload.get("model_id", payload.get("model"))
+                if model_id in (None, ""):
+                    self._entry_models.append((entry, None))
+                    continue
+                model = model_by_id.get(str(model_id))
+                if model is not None:
+                    self._entry_models.append((entry, model))
         super().show()
         self._create_buttons()
 
@@ -53,6 +75,9 @@ class TargetModelSelectionDialog(BaseDialog):
         self.on_model_selected = None
         self.on_cancel = None
         self._button_to_model.clear()
+        self.decision_request = None
+        self._option_entries = []
+        self._entry_models = []
 
     def _create_buttons(self) -> None:
         # Clear any existing buttons
@@ -68,14 +93,12 @@ class TargetModelSelectionDialog(BaseDialog):
         button_spacing = 10
         start_y = self.title_bar_height + 80  # Below title/instructions
 
-        eligible_models = self._get_eligible_models()
-
-        for i, model in enumerate(eligible_models):
+        for i, (entry, model) in enumerate(self._entry_models):
             rel_x = 20
             rel_y = start_y + i * (button_height + button_spacing)
             name = f"model_{i}"
             self.add_button(name, rel_x, rel_y, button_width, button_height, enabled=True)
-            self._button_to_model[name] = model
+            self._button_to_model[name] = (entry, model)
 
         # Cancel button (bottom-right)
         cancel_width, cancel_height = 120, 40
@@ -153,9 +176,13 @@ class TargetModelSelectionDialog(BaseDialog):
             return True
 
         if button_name in self._button_to_model:
-            model = self._button_to_model[button_name]
-            if self.on_model_selected:
-                self.on_model_selected(model)
+            try:
+                idx = int(button_name.split("_", 1)[1])
+            except Exception:
+                idx = None
+            if self.on_model_selected and idx is not None and 0 <= idx < len(self._entry_models):
+                entry, _model = self._entry_models[idx]
+                self.on_model_selected(entry.get("option_id", ""))
             self.hide()
             return True
 
@@ -196,31 +223,36 @@ class TargetModelSelectionDialog(BaseDialog):
             if name == 'cancel':
                 continue
             
-            model = self._button_to_model.get(name)
-            if not model:
+            entry_model = self._button_to_model.get(name)
+            if not entry_model:
                 continue
+            entry, model = entry_model
 
             # Model name and info
-            model_name = getattr(model, 'name', f"Model {model.id}")
+            if model is None:
+                model_name = str(entry.get("label", "Auto-allocate") or "Auto-allocate")
+            else:
+                model_name = getattr(model, 'name', f"Model {model.id}")
             
             # Draw the button
             self.draw_button(screen, name, model_name, color=BUTTON_BG)
 
             # Model stats and status
-            wounds_text = f"W: {model.wounds}/{model._base_wounds}"
-            stats_text = f"T: {model.toughness} | Sv: {model.save}+ | {wounds_text}"
-            
-            # Color wounded models differently
-            text_color = (255, 100, 100) if model.wounds < model._base_wounds else TEXT_SECONDARY
-            
-            stats_surface = self.font_small.render(stats_text, True, text_color)
-            screen.blit(stats_surface, (rect.x + 12, rect.y + 25))
+            if model is not None:
+                wounds_text = f"W: {model.wounds}/{model._base_wounds}"
+                stats_text = f"T: {model.toughness} | Sv: {model.save}+ | {wounds_text}"
+                
+                # Color wounded models differently
+                text_color = (255, 100, 100) if model.wounds < model._base_wounds else TEXT_SECONDARY
+                
+                stats_surface = self.font_small.render(stats_text, True, text_color)
+                screen.blit(stats_surface, (rect.x + 12, rect.y + 25))
 
-            # Keywords (if CHARACTER)
-            keywords = getattr(model, 'keywords', []) or []
-            if 'CHARACTER' in [kw.upper() for kw in keywords]:
-                char_surface = self.font_small.render("[CHARACTER]", True, (255, 215, 0))  # Gold
-                screen.blit(char_surface, (rect.x + 12, rect.y + 45))
+                # Keywords (if CHARACTER)
+                keywords = getattr(model, 'keywords', []) or []
+                if 'CHARACTER' in [kw.upper() for kw in keywords]:
+                    char_surface = self.font_small.render("[CHARACTER]", True, (255, 215, 0))  # Gold
+                    screen.blit(char_surface, (rect.x + 12, rect.y + 45))
 
         # Draw cancel button
         self.draw_button(screen, 'cancel', 'Cancel', color=BUTTON_BG)

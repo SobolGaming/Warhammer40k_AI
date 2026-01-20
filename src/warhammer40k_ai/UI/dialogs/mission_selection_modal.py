@@ -18,13 +18,18 @@ class MissionSelectionModal:
         self.visible = False
         self._on_confirm: Optional[Callable[[dict], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
+        self._decision_request = None
 
-    def show(self, on_confirm: Callable[[dict], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(self, *, on_confirm: Callable[[dict], None], on_cancel: Optional[Callable[[], None]] = None, decision_request=None) -> None:
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
+        self._decision_request = decision_request
         self.visible = True
         try:
-            self._inner.visible = True
+            if hasattr(self._inner, "show"):
+                self._inner.show(decision_request=decision_request)
+            else:
+                self._inner.visible = True
         except Exception:
             pass
 
@@ -36,6 +41,7 @@ class MissionSelectionModal:
             pass
         self._on_confirm = None
         self._on_cancel = None
+        self._decision_request = None
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -68,5 +74,4 @@ class MissionSelectionModal:
             self._inner.draw(screen)
         except Exception:
             pass
-
 

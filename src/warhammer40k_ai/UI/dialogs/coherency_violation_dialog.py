@@ -23,7 +23,10 @@ class CoherencyViolationDialog(BaseDialog):
         self.unit = None
         self.non_coherent_models = []
         self.models_to_remove = []
+        self.removed_model_ids = []
         self.callback = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
         
         # UI elements
         self.model_buttons = []
@@ -31,7 +34,7 @@ class CoherencyViolationDialog(BaseDialog):
         self.font_medium = get_ui_font(24, bold=True)
         self.font_small = get_ui_font(20, bold=False)
         
-    def show(self, unit: Unit, non_coherent_models: List[int], callback: Callable[[bool], None], existing_dialogs: List = None):
+    def show(self, unit: Unit, non_coherent_models: List[int], callback: Callable[[str, List[str]], None], existing_dialogs: List = None, *, decision_request=None):
         """
         Show the coherency violation dialog.
 
@@ -50,7 +53,14 @@ class CoherencyViolationDialog(BaseDialog):
         self.unit = unit
         self.non_coherent_models = non_coherent_models.copy()  # Keep for reference but don't restrict selection
         self.models_to_remove = []
+        self.removed_model_ids = []
         self.callback = callback
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
 
         self._create_model_buttons()
         self._create_dialog_buttons()
@@ -69,7 +79,10 @@ class CoherencyViolationDialog(BaseDialog):
         self.unit = None
         self.non_coherent_models = []
         self.models_to_remove = []
+        self.removed_model_ids = []
         self.model_buttons = []
+        self.decision_request = None
+        self._option_entries = []
         
     def _create_model_buttons(self):
         """Create buttons for each model in the unit"""
@@ -185,6 +198,7 @@ class CoherencyViolationDialog(BaseDialog):
             return
 
         # Remove selected models
+        removed_ids = []
         for model_index in sorted(selected_models, reverse=True):
             if model_index < len(self.unit.models):
                 model = self.unit.models[model_index]
@@ -193,6 +207,11 @@ class CoherencyViolationDialog(BaseDialog):
                 model.wounds = 0
                 # Call die() method to properly remove the model from the unit
                 model.die()
+                try:
+                    removed_ids.append(model._id)
+                except Exception:
+                    pass
+        self.removed_model_ids = removed_ids
 
         # Re-run coherency validation to see if the issue is resolved
         self._recheck_coherency_after_removal()
@@ -242,7 +261,8 @@ class CoherencyViolationDialog(BaseDialog):
             print(f"INFO: {self.unit.name} coherency violations resolved")
         
         if self.callback:
-            self.callback(True)
+            option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+            self.callback(option_id, list(self.removed_model_ids or []))
         self.hide()
     
     def draw(self, screen: pygame.Surface):
