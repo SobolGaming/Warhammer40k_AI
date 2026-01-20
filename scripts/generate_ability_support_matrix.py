@@ -302,6 +302,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
         "precision": "Allows allocating a successful wound to a visible CHARACTER in an Attached unit.",
         "psychic": "Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.",
+        "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
         # Ork-specific keywords
         "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",
         "dead choppy": "+1 Attacks for each additional dread klaw equipped.",
@@ -1030,6 +1031,7 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Super-heavy War Engine": ("Supported", "Move-through models (excl. TITANIC), engagement pass-through, tall-terrain Battle-shock check."),
         "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
         "Flip Belt": ("Supported", "Ignore vertical distance for Move/Advance/Fall Back/Charge movement."),
+        "Conversion": ("Supported", "Conversion keyword supported: 4+ successful hits become critical hits beyond the Conversion distance."),
     }
     return {_norm(name): val for name, val in raw.items()}
 
