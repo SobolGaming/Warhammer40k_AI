@@ -1,4 +1,4 @@
-﻿from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Tuple, TYPE_CHECKING
 import html
 import re
 import logging
@@ -6000,7 +6000,13 @@ class Game:
 
         return load_game_snapshot(snapshot)
 
-    def declare_charge(self, charging_unit: 'Unit', target_unit: 'Unit', *, out_of_turn: bool = False) -> dict | None:
+    def declare_charge(
+        self,
+        charging_unit: 'Unit',
+        target_units: list['Unit'],
+        *,
+        out_of_turn: bool = False,
+    ) -> dict | None:
         """
         Single source of truth for charge declaration bookkeeping + rolling:
 
@@ -6013,28 +6019,42 @@ class Game:
         out_of_turn: allow declaring a charge outside the active player's turn (no attempted_charge_this_round mark).
 
         Returns a dict:
-          { "base_roll": int, "dice": list[int], "reroll_used": bool }
+          { "base_roll": int, "dice": list[int], "reroll_used": bool, "target_unit_ids": list[str] }
         or None if the charge cannot be declared.
         """
-        if not charging_unit.can_declare_charge_against(target_unit, self, out_of_turn=out_of_turn):
+        targets = list(target_units or [])
+        if not targets:
             return None
+        if not charging_unit.can_declare_charge(self, out_of_turn=out_of_turn):
+            return None
+        for tgt in targets:
+            if tgt is None:
+                return None
+            if not charging_unit.can_declare_charge_against(tgt, self, out_of_turn=True):
+                return None
 
         if not hasattr(self, "event_system") or not hasattr(self.event_system, "publish"):
             raise RuntimeError("Event system missing for charge_declared event.")
-        self.event_system.publish("charge_declared", unit=charging_unit, target_unit=target_unit)
+        self.event_system.publish("charge_declared", unit=charging_unit, target_units=list(targets))
 
         army = charging_unit.get_parent_army()
         mgr = getattr(army, "battle_focus", None) if army is not None else None
         if mgr is not None:
-            mgr.maybe_trigger_charge_maneuver(charging_unit, target_unit, self)
+            mgr.maybe_trigger_charge_maneuver(charging_unit, targets[0], self)
 
         self._record_engaged_enemies_at_turn_start(self.get_current_player())
 
         # Mark as attempted immediately (prevents multiple declarations).
         if not out_of_turn:
             charging_unit.round_state.attempted_charge_this_round = True
+        charging_unit.round_state.charge_target_ids = {get_entity_id(t) for t in targets}
+        for tgt in targets:
+            tgt_id = get_entity_id(tgt)
+            chargers = self.phase_charge_targets.get(tgt_id, set()) or set()
+            chargers.add(get_entity_id(charging_unit))
+            self.phase_charge_targets[tgt_id] = chargers
 
-        spec = self._get_charge_roll_spec(charging_unit, target_unit=target_unit)
+        spec = self._get_charge_roll_spec(charging_unit, target_unit=targets[0])
         from ..utility import dice as dice_mod
         base_roll = None
         dice = None
@@ -6059,10 +6079,10 @@ class Game:
         # Optional rule-based reroll (e.g. "No Prey Can Evade").
         reroll_used = False
         can_rule_reroll = bool(
-            charging_unit.can_reroll_charge_roll(target_unit=target_unit, game_map=self.map, game=self)
+            charging_unit.can_reroll_charge_roll(target_unit=targets[0], game_map=self.map, game=self)
         )
         mgr = getattr(army, "templar_vows", None) if army is not None else None
-        if mgr is not None and mgr.can_reroll_charge_against(charging_unit, target_unit):
+        if mgr is not None and mgr.can_reroll_charge_against(charging_unit, targets[0]):
             can_rule_reroll = True
 
         # Always prompt humans via provider if available; provider will disable the reroll button if not allowed.
@@ -6144,6 +6164,7 @@ class Game:
             "miracle_used": bool(miracle_used),
             "kept_indices": list(getattr(roll_result, "kept_indices", []) or []),
             "dropped_indices": list(getattr(roll_result, "dropped_indices", []) or []),
+            "target_unit_ids": [get_entity_id(t) for t in targets],
         }
 
     def roll_blood_surge_distance(self, unit: 'Unit') -> int:
@@ -6234,7 +6255,7 @@ class Game:
         out_of_turn: allow charges outside the active player's turn.
         count_as_charged: if False, do not apply the charge bonus (e.g., Heroic Intervention).
         """
-        declared = self.declare_charge(charging_unit, target_unit, out_of_turn=out_of_turn)
+        declared = self.declare_charge(charging_unit, [target_unit], out_of_turn=out_of_turn)
         if not declared:
             return False
 
@@ -6522,29 +6543,14 @@ class Game:
         for unit in player.get_army().units:
             if not unit.is_alive() or not unit.deployed:
                 continue
-            
-            # Check if unit has already attempted a charge this round
-            if unit.round_state.attempted_charge_this_round:
+            if not unit.can_declare_charge(self):
                 continue
-            
-            # Check if unit advanced this round (unless special abilities allow charging after advance)
-            if unit.round_state.advanced_this_round and not unit.can_charge_after_advance():
-                continue
-            
-            # Check if unit fell back this round (unless special abilities allow charging after fall back)
-            if unit.round_state.fell_back_this_round and not unit.can_charge_after_fall_back():
-                continue
-            
-            # Check if unit is already in engagement range
+
             enemy_units = self.get_enemy_units(player)
-            is_engaged = any(self.map.is_within_engagement_range(unit, enemy) 
-                           for enemy in enemy_units if enemy.is_alive())
-            if is_engaged:
-                continue
-            
-            # Check if there are any valid charge targets
-            has_valid_targets = any(unit.can_declare_charge_against(target, self) 
-                                  for target in enemy_units if target.is_alive())
+            has_valid_targets = any(
+                unit.can_declare_charge_against(target, self)
+                for target in enemy_units if target.is_alive()
+            )
             if has_valid_targets:
                 eligible_units.append(unit)
         

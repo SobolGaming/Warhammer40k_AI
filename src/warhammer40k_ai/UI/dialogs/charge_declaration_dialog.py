@@ -45,6 +45,7 @@ class ChargeDeclarationDialog(BaseDialog):
         self.max_scroll = 0
         self.hovered_target = -1
         self.selected_target = None
+        self.selected_targets = set()
         
         # Button rectangles - made wider
         button_width = 140  # Increased from 120
@@ -71,6 +72,7 @@ class ChargeDeclarationDialog(BaseDialog):
         
         # Clear previous state
         self.selected_target = None
+        self.selected_targets = set()
         self.scroll_offset = 0
         self.hovered_target = -1
         
@@ -117,6 +119,7 @@ class ChargeDeclarationDialog(BaseDialog):
         self.valid_targets = []
         self.invalid_targets = []
         self.selected_target = None
+        self.selected_targets = set()
         self.scroll_offset = 0
         self.hovered_target = -1
         self.decision_request = None
@@ -179,41 +182,17 @@ class ChargeDeclarationDialog(BaseDialog):
         if not self.unit:
             print(f"ERROR: Charge eligibility check failed: No unit selected")
             return False
-
-        # Check if unit has already charged this round
-        if self.unit.round_state.attempted_charge_this_round:
-            print(f"ERROR: {self.unit.name} charge eligibility: Already attempted charge this round")
+        try:
+            game = getattr(self.game_view, "game", None)
+        except Exception:
+            game = None
+        if game is None:
+            print(f"ERROR: Charge eligibility check failed: No game context")
             return False
-
-        # Check if unit advanced this round (unless special abilities allow charging after advance)
-        if self.unit.round_state.advanced_this_round:
-            can_charge_after_advance = self.unit.can_charge_after_advance()
-            print(f"INFO: {self.unit.name} advanced this round. Can charge after advance: {can_charge_after_advance}")
-            if not can_charge_after_advance:
-                print(f"ERROR: {self.unit.name} charge eligibility: Advanced this round and cannot charge after advancing")
-                return False
-
-        # Check if unit fell back this round (unless special abilities allow charging after fall back)
-        if self.unit.round_state.fell_back_this_round:
-            can_charge_after_fall_back = self.unit.can_charge_after_fall_back()
-            print(f"INFO: {self.unit.name} fell back this round. Can charge after fall back: {can_charge_after_fall_back}")
-            if not can_charge_after_fall_back:
-                print(f"ERROR: {self.unit.name} charge eligibility: Fell back this round and cannot charge")
-                return False
-
-        # Check if unit is already in engagement range
-        if self.game_map:
-            enemy_units = self.game_map.get_enemy_units(self.unit)
-            is_engaged = any(self.game_map.is_within_engagement_range(self.unit, enemy)
-                           for enemy in enemy_units if enemy.is_alive())
-            if is_engaged:
-                engaged_enemies = [enemy.name for enemy in enemy_units
-                                 if enemy.is_alive() and self.game_map.is_within_engagement_range(self.unit, enemy)]
-                print(f"ERROR: {self.unit.name} charge eligibility: Already in engagement range of {', '.join(engaged_enemies)}")
-                return False
-
-        print(f"INFO: {self.unit.name} is eligible to charge")
-        return True
+        eligible = bool(self.unit.can_declare_charge(game))
+        if not eligible:
+            print(f"ERROR: {self.unit.name} is not eligible to charge")
+        return eligible
 
     def _get_charge_modifiers(self, target):
         if not self.unit or not self.game_view:
@@ -265,6 +244,13 @@ class ChargeDeclarationDialog(BaseDialog):
         # Check if unit has already charged
         if self.unit.round_state.attempted_charge_this_round:
             return {"valid": False, "reason": "Unit has already attempted a charge this round"}
+
+        try:
+            game = getattr(self.game_view, "game", None)
+        except Exception:
+            game = None
+        if game is None or not self.unit.can_declare_charge(game):
+            return {"valid": False, "reason": "Unit is not eligible to charge"}
         
         # Check if unit advanced this round
         if self.unit.round_state.advanced_this_round:
@@ -276,8 +262,13 @@ class ChargeDeclarationDialog(BaseDialog):
             if not self.unit.can_charge_after_fall_back():
                 return {"valid": False, "reason": "Unit fell back and cannot charge"}
         
-        # Check if unit is already in engagement range
-        if self.game_map.is_within_engagement_range(self.unit, target):
+        # Check if unit is already in engagement range of any enemy
+        try:
+            enemy_units = self.game_map.get_enemy_units(self.unit)
+        except Exception:
+            enemy_units = []
+        if any(self.game_map.is_within_engagement_range(self.unit, enemy)
+               for enemy in enemy_units if enemy.is_alive()):
             return {"valid": False, "reason": "Unit is already in engagement range"}
         
         # Check distance
@@ -312,7 +303,7 @@ class ChargeDeclarationDialog(BaseDialog):
             self.scroll_offset = max(0, min(self.max_scroll, self.scroll_offset + (30 if event.button == 5 else -30)))
             return True
         # ENTER to execute
-        if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and self.selected_target:
+        if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN and self.selected_targets:
             self._execute_charge()
             return True
         return False
@@ -346,8 +337,12 @@ class ChargeDeclarationDialog(BaseDialog):
             if target_rect.collidepoint(mouse_pos):
                 # Only allow selection of valid targets
                 if target in self.valid_targets:
-                    self.selected_target = target
-                    print(f"INFO: Selected charge target: {target.name}")
+                    if target in self.selected_targets:
+                        self.selected_targets.remove(target)
+                        print(f"INFO: Deselected charge target: {target.name}")
+                    else:
+                        self.selected_targets.add(target)
+                        print(f"INFO: Selected charge target: {target.name}")
                 else:
                     print(f"ERROR: Cannot charge {target.name} - invalid target")
                 return True
@@ -356,16 +351,17 @@ class ChargeDeclarationDialog(BaseDialog):
     
     def _execute_charge(self):
         """Execute the charge declaration"""
-        if not self.selected_target or not self.callback:
+        if not self.selected_targets or not self.callback:
             return
-        
+        targets = list(self.selected_targets)
         # Execute the charge
-        success = self.callback(self.unit, self.selected_target)
+        success = self.callback(self.unit, targets)
         
         if success:
-            print(f"INFO: Charge declared: {self.unit.name} charges {self.selected_target.name}")
+            target_names = ", ".join(getattr(t, "name", "Target") for t in targets)
+            print(f"INFO: Charge declared: {self.unit.name} charges {target_names}")
         else:
-            print(f"ERROR: Charge failed: {self.unit.name} could not charge {self.selected_target.name}")
+            print(f"ERROR: Charge failed: {self.unit.name} could not charge selected targets")
         
         self.hide()
     
@@ -373,7 +369,7 @@ class ChargeDeclarationDialog(BaseDialog):
         """Update hover states"""
         # Update button hover
         self.hovered_button = None
-        if self.declare_button.collidepoint(mouse_pos) and self.selected_target:
+        if self.declare_button.collidepoint(mouse_pos) and self.selected_targets:
             self.hovered_button = 'declare'
         elif self.cancel_button.collidepoint(mouse_pos):
             self.hovered_button = 'cancel'
@@ -427,7 +423,7 @@ class ChargeDeclarationDialog(BaseDialog):
         
         # Draw buttons (enable/disable declare based on selection)
         if 'declare' in self.button_states:
-            self.button_states['declare']['enabled'] = bool(self.selected_target)
+            self.button_states['declare']['enabled'] = bool(self.selected_targets)
         self.draw_button(screen, 'declare', 'Declare Charge')
         self.draw_button(screen, 'cancel', 'Cancel')
     
@@ -454,9 +450,12 @@ class ChargeDeclarationDialog(BaseDialog):
             screen.blit(status_surface, (self.x + 20, info_y))
         
         # Charge distance
-        if self.selected_target is not None:
-            max_distance = self._get_max_charge_distance(self.selected_target)
-            modifiers = self._get_charge_modifiers(self.selected_target)
+        if self.selected_targets:
+            targets = list(self.selected_targets)
+            max_distance = min(self._get_max_charge_distance(t) for t in targets)
+            modifiers = []
+            for t in targets:
+                modifiers.extend(self._get_charge_modifiers(t))
             mod_text = self._format_charge_modifiers(modifiers)
             charge_text = f"Max Charge Distance: {max_distance:.1f}\""
             if mod_text:
@@ -524,12 +523,13 @@ class ChargeDeclarationDialog(BaseDialog):
             target_rect = pygame.Rect(list_x, list_y + i * target_height, list_width, target_height)
 
             # Determine target color based on validity
+            is_selected = target in self.selected_targets
             if target in self.valid_targets:
-                bg_color = (40, 60, 40) if target == self.selected_target else (30, 45, 30)
-                border_color = VALID_TARGET_COLOR if target == self.selected_target else (0, 150, 0)
+                bg_color = (40, 60, 40) if is_selected else (30, 45, 30)
+                border_color = VALID_TARGET_COLOR if is_selected else (0, 150, 0)
             else:
-                bg_color = (60, 40, 40) if target == self.selected_target else (45, 30, 30)
-                border_color = INVALID_TARGET_COLOR if target == self.selected_target else (150, 0, 0)
+                bg_color = (60, 40, 40) if is_selected else (45, 30, 30)
+                border_color = INVALID_TARGET_COLOR if is_selected else (150, 0, 0)
 
             # Highlight hovered target
             global_idx = start_idx + i
@@ -582,8 +582,9 @@ class ChargeDeclarationDialog(BaseDialog):
     def _handle_button_click(self, button_name: str) -> bool:
         """Satisfy BaseDialog requirement; map to local buttons if needed."""
         if button_name == 'declare':
-            if self.selected_target:
-                print(f"DEBUG: Declare pressed with selected target: {self.selected_target.name}")
+            if self.selected_targets:
+                names = ", ".join(getattr(t, "name", "Target") for t in self.selected_targets)
+                print(f"DEBUG: Declare pressed with selected targets: {names}")
                 self._execute_charge()
                 return True
             else:

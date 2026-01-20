@@ -9595,7 +9595,7 @@ class GameView:
 
         declared = None
         try:
-            declared = self.game.declare_charge(unit, enemy_unit, out_of_turn=True)
+            declared = self.game.declare_charge(unit, [enemy_unit], out_of_turn=True)
         except Exception:
             declared = None
         if not declared:

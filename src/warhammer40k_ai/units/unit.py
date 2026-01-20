@@ -66,6 +66,7 @@ class UnitRoundState:
     action_locked_until_turn_end: bool = False  # Cannot shoot or declare charge while true (except titanic character rule handled at call site)
     fought_this_phase: bool = False  # Used by timing-sensitive rules (e.g., Total Carnage)
     engaged_enemies_at_turn_start: Optional[set] = None  # Track engaged enemy unit ids at start of controlling player's turn
+    charge_target_ids: Optional[set] = None  # Track declared charge target unit ids
 
 
 class MovementAction(Enum):
@@ -9625,7 +9626,13 @@ class Unit:
             pass
         return True
 
-    def charge_move(self, destination: Tuple[float, float, float], game_map: 'Map', target_unit: 'Unit' = None) -> bool:
+    def charge_move(
+        self,
+        destination: Tuple[float, float, float],
+        game_map: 'Map',
+        target_unit: 'Unit' = None,
+        target_units: Optional[list['Unit']] = None,
+    ) -> bool:
         """Special movement for charge actions that allows moving into engagement range.
         
         Unlike normal movement, charge movement:
@@ -9693,16 +9700,20 @@ class Unit:
             game_map,
         )
         
-        # Find enemy models to charge towards
-        if target_unit and target_unit.is_alive():
-            # Charge toward specific target unit
-            all_enemy_models = [model for model in target_unit.models if model.is_alive]
-            print(f"{self.name} charging specifically toward {target_unit.name} ({len(all_enemy_models)} models)")
-            if not all_enemy_models:
-                print(f"{self.name} cannot charge - no alive models in target unit {target_unit.name}")
-                return False
-        else:
-            print(f"ERROR: {self.name} cannot charge without a target unit.")
+        targets = list(target_units or [])
+        if not targets and target_unit is not None:
+            targets = [target_unit]
+        if not targets:
+            print(f"ERROR: {self.name} cannot charge without target units.")
+            return False
+        if any(t is None or not t.is_alive() for t in targets):
+            print(f"ERROR: {self.name} cannot charge - one or more targets are invalid.")
+            return False
+        # Charge toward specific target unit (primary)
+        all_enemy_models = [model for model in targets[0].models if model.is_alive]
+        print(f"{self.name} charging specifically toward {targets[0].name} ({len(all_enemy_models)} models)")
+        if not all_enemy_models:
+            print(f"{self.name} cannot charge - no alive models in target unit {targets[0].name}")
             return False
         
         successful_moves = 0
@@ -9730,7 +9741,9 @@ class Unit:
             # Use charge-aware pathfinding for single model (can navigate around obstacles and into engagement range)
             from ..utility.calcs import get_charge_movement_path
 
-            pathfinding_result = get_charge_movement_path(model, destination, max_charge_distance, game_map, target_unit)
+            pathfinding_result = get_charge_movement_path(
+                model, destination, max_charge_distance, game_map, targets[0], target_units=targets
+            )
             
             if not pathfinding_result or not pathfinding_result.get('valid'):
                 print(f"{self.name} cannot charge to destination - pathfinding failed (obstacles in way)")
@@ -9785,7 +9798,9 @@ class Unit:
                     # Use charge-aware pathfinding for charge movement
                     from ..utility.calcs import get_charge_movement_path
 
-                    pathfinding_result = get_charge_movement_path(model, model_destination, max_charge_distance, game_map, target_unit)
+                    pathfinding_result = get_charge_movement_path(
+                        model, model_destination, max_charge_distance, game_map, targets[0], target_units=targets
+                    )
 
                     if pathfinding_result and pathfinding_result.get('valid'):
                         shortest_path = pathfinding_result['path']
@@ -9944,6 +9959,15 @@ class Unit:
         except Exception as e:
             # If coherency validation itself fails, fail-fast rather than silently allowing illegal states.
             raise
+
+        # Charge targets validation (must engage all targets, avoid non-targets)
+        ok, reason = self.validate_charge_end_state(targets, game_map)
+        if not ok:
+            print(f"{self.name} charge move rejected: {reason}")
+            for i, original_pos in enumerate(original_model_positions):
+                if i < len(self.models):
+                    self.models[i].set_location(*original_pos)
+            return False
         
         # Get final position for feedback from first model
         if self.models and self.models[0].is_alive:
@@ -15021,10 +15045,11 @@ class Unit:
         if not self.is_alive() or not target_unit.is_alive():
             return False
 
-        # AIRCRAFT cannot declare charges; only FLY units can charge AIRCRAFT.
+        if not self._can_declare_charge_base(game, out_of_turn=out_of_turn):
+            return False
+
+        # Only FLY units can charge AIRCRAFT.
         try:
-            if bool(getattr(self, "is_aircraft", False)):
-                return False
             if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(self, "is_flying", False)):
                 return False
         except Exception:
@@ -15069,34 +15094,9 @@ class Unit:
         except Exception:
             pass
             
-        # Check if unit has already attempted a charge this round (successful or failed)
-        if self.round_state.attempted_charge_this_round and not out_of_turn:
-            return False
-            
-        if self.round_state.advanced_this_round and not self.can_charge_after_advance():
-            return False
-
-        # Transport disembark restrictions (10th ed core + Assault Ramp/Vehicle overrides)
-        if getattr(self.round_state, "disembarked_cannot_charge", False):
-            return False
-        if getattr(self.round_state, "disembarked_from_destroyed_transport", False):
-            return False
-            
-        if self.round_state.fell_back_this_round and not self.can_charge_after_fall_back():
-            return False
-
         if self._thrill_seekers_restriction_reason(target_unit, game):
             return False
         
-        # Check if unit arrived from reserves this turn and has special charge restrictions
-        if self.arrived_from_reserves_this_turn and not self.can_charge_after_arriving_from_reserves():
-            return False
-            
-        # CRITICAL: Units already within engagement range cannot declare charges
-        # They are already considered to be "in combat"
-        if game.map.is_within_engagement_range(self, target_unit):
-            return False
-            
         # Check if target is within maximum charge range (2D6 = max 12")
         distance = game.map.get_distance_between_units(self, target_unit)
         max_distance = self.max_charge_distance
@@ -15112,6 +15112,92 @@ class Unit:
             return False
             
         return True
+
+    def _can_declare_charge_base(self, game: 'Game', *, out_of_turn: bool = False) -> bool:
+        if not self.is_alive():
+            return False
+        if bool(getattr(self, "is_aircraft", False)):
+            return False
+        if self.round_state.attempted_charge_this_round and not out_of_turn:
+            return False
+        if self.round_state.advanced_this_round and not self.can_charge_after_advance():
+            return False
+        if getattr(self.round_state, "disembarked_cannot_charge", False):
+            return False
+        if getattr(self.round_state, "disembarked_from_destroyed_transport", False):
+            return False
+        if self.round_state.fell_back_this_round and not self.can_charge_after_fall_back():
+            return False
+        if getattr(self.round_state, 'action_locked_until_turn_end', False):
+            return False
+        if self.arrived_from_reserves_this_turn and not self.can_charge_after_arriving_from_reserves():
+            return False
+
+        # Units within Engagement Range of any enemy cannot declare charges.
+        try:
+            game_map = getattr(game, "map", None)
+        except Exception:
+            game_map = None
+        if game_map is not None:
+            try:
+                enemy_units = list(game_map.get_enemy_units(self) or [])
+            except Exception:
+                enemy_units = []
+            for enemy in enemy_units:
+                if not getattr(enemy, "is_alive", False):
+                    continue
+                if game_map.is_within_engagement_range(self, enemy):
+                    return False
+        return True
+
+    def can_declare_charge(self, game: 'Game', *, out_of_turn: bool = False) -> bool:
+        """Check if this unit is eligible to declare any charge this phase."""
+        if not self._can_declare_charge_base(game, out_of_turn=out_of_turn):
+            return False
+        try:
+            game_map = getattr(game, "map", None)
+        except Exception:
+            game_map = None
+        if game_map is None:
+            return False
+        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        if not enemy_units:
+            return False
+        max_distance = float(getattr(self, "max_charge_distance", 0) or 0)
+        getter = getattr(game, "get_max_charge_distance", None)
+        if callable(getter):
+            max_distance = float(getter(self, target_unit=None))
+        for enemy in enemy_units:
+            try:
+                if game_map.get_distance_between_units(self, enemy) <= max_distance:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def validate_charge_end_state(self, target_units: list['Unit'], game_map: 'Map') -> tuple[bool, str]:
+        """Validate charge end position against declared targets and non-targets."""
+        if not target_units:
+            return False, "Charge requires at least one target"
+        target_ids = {get_entity_id(u) for u in list(target_units or []) if u is not None}
+        missing = []
+        for target in target_units:
+            if target is None or not getattr(target, "is_alive", False):
+                missing.append(getattr(target, "name", "Unknown"))
+                continue
+            if not game_map.is_within_engagement_range(self, target):
+                missing.append(getattr(target, "name", "Unknown"))
+        if missing:
+            return False, f"Charge must end within Engagement Range of all targets (missing: {', '.join(missing)})"
+        # Cannot end within Engagement Range of non-target enemy units.
+        for enemy in list(game_map.get_enemy_units(self) or []):
+            if enemy is None or not getattr(enemy, "is_alive", False):
+                continue
+            if get_entity_id(enemy) in target_ids:
+                continue
+            if game_map.is_within_engagement_range(self, enemy):
+                return False, f"Charge cannot end within Engagement Range of non-target unit {enemy.name}"
+        return True, ""
 
     def get_threat_value(self) -> float:
         """Calculate the total threat value of this unit."""

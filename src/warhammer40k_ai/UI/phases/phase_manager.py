@@ -1719,16 +1719,19 @@ class BattlePhaseHandler(BasePhaseHandler):
                     return opt.option_id
             return ""
 
-        def on_charge_declaration(charging_unit, target_unit):
+        def on_charge_declaration(charging_unit, target_units):
+            targets = list(target_units or [])
+            if not targets:
+                return False
+            option_id = _option_id_for_target(targets[0])
             def _after_battle_focus():
                 # Single code path: delegate all charge declaration bookkeeping + rolling to Game.
                 declared = None
-                option_id = _option_id_for_target(target_unit)
                 if option_id:
                     payload = {
                         "decision_id": req.decision_id,
                         "option_id": option_id,
-                        "result_payload": {},
+                        "result_payload": {"target_unit_ids": [get_entity_id(t) for t in targets]},
                     }
                     cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
                     cmd_result = self.game.apply_command(cmd)
@@ -1739,11 +1742,14 @@ class BattlePhaseHandler(BasePhaseHandler):
                     return
 
                 base_roll = int(declared.get("base_roll", 0) or 0)
-                modifiers = []
                 getter = getattr(self.game, "get_charge_roll_modifiers", None)
+                mod_totals = []
                 if callable(getter):
-                    modifiers = list(getter(charging_unit, target_unit=target_unit) or [])
-                mod_total = sum(int(val) for val, _source in modifiers if isinstance(val, (int, float)))
+                    for tgt in targets:
+                        mods = list(getter(charging_unit, target_unit=tgt) or [])
+                        mod_total = sum(int(val) for val, _source in mods if isinstance(val, (int, float)))
+                        mod_totals.append(mod_total)
+                mod_total = min(mod_totals) if mod_totals else 0
                 max_charge_distance = max(0, base_roll + mod_total)
 
                 # Open individual model movement dialog for charge movement
@@ -1777,19 +1783,13 @@ class BattlePhaseHandler(BasePhaseHandler):
                     cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=move_request.player_id, payload=cmd_payload)
                     self.game.apply_command(cmd)
                     if completed:
-                        # Check if the charge actually achieved engagement range
-                        enemy_units = self.game.map.get_enemy_units(charging_unit)
-                        in_engagement_range = any(
-                            self.game.map.is_within_engagement_range(charging_unit, enemy_unit)
-                            for enemy_unit in enemy_units if enemy_unit.is_alive()
-                        )
-
-                        if in_engagement_range:
-                            print(f"{charging_unit.name} charge successful - achieved engagement range")
+                        ok, reason = charging_unit.validate_charge_end_state(targets, self.game.map)
+                        if ok:
+                            print(f"{charging_unit.name} charge successful - achieved engagement range for all targets")
                             charging_unit.round_state.charged_this_round = True
                         else:
-                            print(f"{charging_unit.name} charge failed - did not achieve engagement range")
-                            # Do not set charged_this_round = True for failed charges
+                            print(f"{charging_unit.name} charge failed - {reason}")
+                            charging_unit.round_state.charged_this_round = False
                     else:
                         print(f"{charging_unit.name} charge movement failed or skipped")
                         # Do not set charged_this_round = True for failed charges
@@ -1819,11 +1819,12 @@ class BattlePhaseHandler(BasePhaseHandler):
                     on_charge_movement_complete,
                     self.game.map,
                     max_charge_distance,
-                    target_unit,
+                    targets,
                     decision_request=move_request,
                 )
 
-            self.game_view._maybe_prompt_battle_focus_charge(charging_unit, target_unit, _after_battle_focus)
+            primary_target = targets[0] if targets else None
+            self.game_view._maybe_prompt_battle_focus_charge(charging_unit, primary_target, _after_battle_focus)
             return True  # Charge declaration selection complete
 
         self.game_view.charge_declaration_dialog.show(

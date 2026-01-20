@@ -15,6 +15,8 @@ from shapely.affinity import translate, rotate
 from shapely.ops import unary_union
 from shapely import STRtree
 
+from ..utility.entity_ids import get_entity_id
+
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from warhammer40k_ai.battlefield.map import TerrainFeature
@@ -794,7 +796,7 @@ class MovementType(Enum):
 
 def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], movement_type: MovementType,
                        max_distance: float, game_map: 'Map', target_unit: 'Unit' = None,
-                       moved_models_in_unit: set = None) -> dict:
+                       target_units: Optional[list['Unit']] = None, moved_models_in_unit: set = None) -> dict:
     """
     Unified pathfinding system that handles all movement types through different
     STRTree configurations and validation rules.
@@ -876,7 +878,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
     collision_trees = build_collision_trees(moving_unit, movement_type, game_map, model, moved_models_in_unit, max_distance)
 
     # Get validation rules for this movement type
-    validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit)
+    validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit, target_units=target_units)
     if movement_type == MovementType.BLOOD_SURGE:
         try:
             validation_rules["blood_surge_max_distance"] = float(max_distance)
@@ -889,7 +891,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
     # preserving 'allow_engagement_range_movement'.
     if movement_type == MovementType.CHARGE and target_unit is not None:
         unit_already_engaged = game_map.is_within_engagement_range(moving_unit, target_unit)
-        if unit_already_engaged:
+        if unit_already_engaged and validation_rules.get('must_end_in_engagement_range', False):
             # Disable strict end-in-engagement requirement for this model's move
             validation_rules['must_end_in_engagement_range'] = False
             validation_rules['allow_engagement_range_movement'] = True
@@ -1185,7 +1187,13 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
 
 
 
-def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None, *, moving_unit: 'Unit' = None) -> dict:
+def get_validation_rules(
+    movement_type: MovementType,
+    target_unit: 'Unit' = None,
+    *,
+    moving_unit: 'Unit' = None,
+    target_units: Optional[list['Unit']] = None,
+) -> dict:
     """
     Get validation rules for specific movement types.
 
@@ -1211,19 +1219,27 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
 
     # Add movement-specific rules
     if movement_type == MovementType.CHARGE:
+        targets = list(target_units or [])
+        if not targets and target_unit is not None:
+            targets = [target_unit]
         base_rules.update({
-            'must_end_in_engagement_range': True,
-            'target_unit': target_unit,  # Required for charge validation
+            'must_end_in_engagement_range': False,
+            'target_unit': targets[0] if targets else target_unit,  # Legacy single-target consumers
+            'charge_target_units': targets,
+            'charge_target_unit_ids': {get_entity_id(t) for t in targets if t is not None},
             'allow_engagement_range_movement': True,  # Can move through engagement range
-            'allow_base_to_base_contact': True,  # Can end in base-to-base contact with target
+            'allow_base_to_base_contact': True,  # Can end in base-to-base contact with target(s)
         })
         try:
-            if target_unit is not None and bool(getattr(target_unit, "is_aircraft", False)):
-                can_fly = bool(moving_unit is not None and getattr(moving_unit, "is_flying", False))
-                if can_fly:
-                    base_rules['allow_end_in_engagement_range_of_aircraft'] = True
+            can_fly = bool(moving_unit is not None and getattr(moving_unit, "is_flying", False))
         except Exception:
-            pass
+            can_fly = False
+        if can_fly:
+            try:
+                if any(bool(getattr(t, "is_aircraft", False)) for t in targets if t is not None):
+                    base_rules['allow_end_in_engagement_range_of_aircraft'] = True
+            except Exception:
+                pass
 
     elif movement_type == MovementType.PILE_IN:
         from .constants import PILE_IN_DISTANCE
@@ -2009,7 +2025,7 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
             potential_hits = query_spatial_index(collision_trees['enemy_models'], test_shape)
             actual_hits = []
 
-            # Track if we've already allowed base-to-base contact with target unit
+            # Track if we've already allowed base-to-base contact with target unit(s)
             allowed_target_contact = False
 
             for hit_shape in potential_hits:
@@ -2017,28 +2033,33 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                     if test_shape.intersects(hit_shape):
                         # For charges, allow base-to-base contact with target unit
                         if validation_rules.get('allow_base_to_base_contact', False) and is_final_position and not allowed_target_contact:
-                            target_unit = validation_rules.get('target_unit')
-                            if target_unit:
-                                # Check if this hit is from the target unit by checking spatial proximity
+                            target_units = list(validation_rules.get('charge_target_units', []) or [])
+                            if not target_units:
+                                target_unit = validation_rules.get('target_unit')
+                                if target_unit is not None:
+                                    target_units = [target_unit]
+                            if target_units:
+                                # Check if this hit is from any target unit by checking spatial proximity
                                 # Since we're at the final position and it's a charge, any enemy model
-                                # that's very close is likely the target unit
-                                for enemy_model in target_unit.models:
-                                    if enemy_model.is_alive:
-                                        # Calculate edge-to-edge distance to this enemy model
-                                        from ..utility.model_base import Base
-                                        temp_base = Base(model.model_base.base_type, model.model_base.radius)
-                                        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
-                                        
-                                        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
-                                        horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
-                                        vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
-                                        
-                                        # For base-to-base contact, we want edge-to-edge distance to be very close to 0
-                                        # but not negative (which would indicate overlap)
-                                        if (horizontal_distance >= 0.0 and horizontal_distance < 0.1 and 
-                                            vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
-                                            allowed_target_contact = True
-                                            continue
+                                # that's very close is likely a target unit
+                                for tu in target_units:
+                                    for enemy_model in tu.models:
+                                        if enemy_model.is_alive:
+                                            # Calculate edge-to-edge distance to this enemy model
+                                            from ..utility.model_base import Base
+                                            temp_base = Base(model.model_base.base_type, model.model_base.radius)
+                                            temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+
+                                            from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+                                            horizontal_distance = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                                            vertical_distance = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
+
+                                            # For base-to-base contact, we want edge-to-edge distance to be very close to 0
+                                            # but not negative (which would indicate overlap)
+                                            if (horizontal_distance >= 0.0 and horizontal_distance < 0.1 and 
+                                                vertical_distance <= ENGAGEMENT_RANGE_VERTICAL):
+                                                allowed_target_contact = True
+                                                continue
                         if not allowed_target_contact:
                             actual_hits.append(hit_shape)
                 except Exception:
@@ -2060,9 +2081,15 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                 try:
                     if test_shape.intersects(hit_shape):
                         if validation_rules.get('allow_base_to_base_contact', False) and not allowed_target_contact:
-                            target_unit = validation_rules.get('target_unit')
-                            if target_unit and bool(getattr(target_unit, "is_aircraft", False)):
-                                for enemy_model in target_unit.models:
+                            target_units = list(validation_rules.get('charge_target_units', []) or [])
+                            if not target_units:
+                                target_unit = validation_rules.get('target_unit')
+                                if target_unit is not None:
+                                    target_units = [target_unit]
+                            for tu in target_units:
+                                if not bool(getattr(tu, "is_aircraft", False)):
+                                    continue
+                                for enemy_model in tu.models:
                                     if enemy_model.is_alive:
                                         from ..utility.model_base import Base
                                         temp_base = Base(model.model_base.base_type, model.model_base.radius)
@@ -2148,6 +2175,32 @@ def is_position_valid_unified_detailed(position: Tuple[float, float, float], mod
                         vert = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
                         if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
                             return {'valid': False, 'reason': 'Position within engagement range of enemy aircraft'}
+
+    # Charge: cannot end within Engagement Range of non-target enemies.
+    charge_target_ids = set(validation_rules.get('charge_target_unit_ids', set()) or set())
+    if charge_target_ids and is_final_position and game_map is not None:
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        from ..utility.model_base import Base
+        temp_base = Base(model.model_base.base_type, model.model_base.radius)
+        temp_base.x, temp_base.y, temp_base.z = position[0], position[1], position[2]
+        try:
+            temp_base.set_facing(float(getattr(model.model_base, "facing", 0.0) or 0.0))
+        except Exception:
+            pass
+        for unit in list(getattr(game_map, "units", []) or []):
+            if unit is None:
+                continue
+            if unit.faction == model.parent_unit.faction or not unit.is_alive() or not unit.deployed:
+                continue
+            if get_entity_id(unit) in charge_target_ids:
+                continue
+            for enemy_model in getattr(unit, "models", []) or []:
+                if not getattr(enemy_model, "is_alive", False):
+                    continue
+                horiz = float(horizontal_distance_between_bases_2d(temp_base, enemy_model.model_base))
+                vert = float(vertical_distance_between_bases(temp_base, enemy_model.model_base))
+                if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                    return {'valid': False, 'reason': 'Position within engagement range of non-target enemy unit'}
 
     # Check charge-specific rules (only apply to final positions)
     if validation_rules.get('must_end_in_engagement_range', False) and is_final_position:
@@ -4079,6 +4132,7 @@ def get_charge_movement_path(
     max_distance: float,
     game_map: 'Map',
     target_unit: Optional['Unit'] = None,
+    target_units: Optional[list['Unit']] = None,
 ) -> dict:
     """
     Get a CHARGE movement path preview using the unified pathfinding system.
@@ -4098,6 +4152,7 @@ def get_charge_movement_path(
         max_distance=max_distance,
         game_map=game_map,
         target_unit=target_unit,
+        target_units=target_units,
     )
 
 

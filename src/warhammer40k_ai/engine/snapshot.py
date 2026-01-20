@@ -123,6 +123,7 @@ _UNIT_ROUND_FIELDS = [
     "action_locked_until_turn_end",
     "fought_this_phase",
     "engaged_enemies_at_turn_start",
+    "charge_target_ids",
 ]
 
 

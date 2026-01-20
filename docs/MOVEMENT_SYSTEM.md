@@ -183,8 +183,9 @@ AIRCRAFT movement uses a dedicated path (see `Unit._aircraft_normal_move()`):
 
 Charge movement is handled by `Unit.charge_move()` and uses charge-aware pathfinding.
 Key differences from Normal moves:
-- Requires a target unit.
-- Requires ending in engagement range.
+- Requires one or more declared target units (multi-target charges are supported).
+- The unit must end in Engagement Range of every declared target unit.
+- The unit cannot end within Engagement Range of any non-target enemy units.
 - Uses `get_charge_movement_path()` and charge-specific validation rules.
 
 Charge roll behavior and modifiers are documented in [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md).

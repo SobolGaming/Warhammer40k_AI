@@ -21,7 +21,8 @@ class IndividualModelMovementDialog(BaseDialog):
         self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge', 'reactive', 'loping_speed'
         self.game_map = None
         self.max_distance = 0.0
-        self.target_unit = None  # Target unit for charge movement
+        self.target_unit = None  # Target unit for charge movement (single)
+        self.target_units = None  # Target units for multi-target charge
         
         # Model movement tracking
         self.model_movements = {}  # {model_index: {'path': [...], 'completed': bool}}
@@ -81,7 +82,12 @@ class IndividualModelMovementDialog(BaseDialog):
         self.movement_type = movement_type
         self.game_map = game_map
         self.max_distance = max_distance or unit.movement
-        self.target_unit = target_unit
+        if movement_type == "charge" and isinstance(target_unit, (list, tuple, set)):
+            self.target_units = list(target_unit)
+            self.target_unit = self.target_units[0] if self.target_units else None
+        else:
+            self.target_units = None
+            self.target_unit = target_unit
         self.placement_validator = placement_validator
 
         # Reset movement tracking
@@ -163,6 +169,7 @@ class IndividualModelMovementDialog(BaseDialog):
         self.game_map = None
         self.max_distance = 0.0
         self.target_unit = None
+        self.target_units = None
         self.model_movements = {}
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
@@ -1248,6 +1255,7 @@ class IndividualModelMovementDialog(BaseDialog):
             max_distance=self.max_distance,
             game_map=self.game_map,
             target_unit=self.target_unit,
+            target_units=self.target_units,
             moved_models_in_unit=moved_models_in_unit
         )
 
@@ -1361,9 +1369,14 @@ class IndividualModelMovementDialog(BaseDialog):
             print(f"ERROR: Cannot complete {self.movement_type}: {self.unit.name} would not be in coherency "
                   f"(non-coherent models: {non_coherent_models}). Reposition models and try again.")
             return
-        else:
-            # No coherency violations, complete normally
-            self._finalize_movement_completion()
+        if self.movement_type == "charge":
+            targets = list(self.target_units or ([] if self.target_unit is None else [self.target_unit]))
+            ok, reason = self.unit.validate_charge_end_state(targets, self.game_map)
+            if not ok:
+                print(f"ERROR: Cannot complete charge: {reason}")
+                return
+        # No coherency violations, complete normally
+        self._finalize_movement_completion()
 
     def _show_coherency_violation_dialog(self, non_coherent_models: list):
         """Show the coherency violation dialog"""
