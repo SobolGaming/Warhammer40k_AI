@@ -5,6 +5,7 @@ import logging
 import copy
 import math
 from .event.system import EventSystem
+from .event_log import DeterministicEventLog
 from ..battlefield.map import Map, Objective
 from .mission_cards import PrimaryMissionCard, SecondaryMissionCard
 from ..roster.player import Player
@@ -24,6 +25,7 @@ from .command_kinds import (
 from .decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from .decision_kinds import DECISION_CHOOSE_MISSION
 from .random_source import RandomSource
+from .ref_codec import encode_refs
 from ..rules.lifecycle import AbilityLifecycle
 from ..rules.registry import RuleRegistry
 from ..rules.providers.default_rules import build_default_rule_providers
@@ -33,6 +35,7 @@ from ..utility.dice import DiceCollection, get_roll
 from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
 from ..utility.entity_registry import EntityRegistry, rebuild_registry_from_game
+from ..utility.game_context import game_context
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,8 @@ class Game:
         self.current_player_index = 0
         self.map = Map(battlefield.width, battlefield.height)
         self.event_system = EventSystem()
+        self.event_log = DeterministicEventLog()
+        self.event_log.attach(self)
         self.objectives = []
         self.commands = []
         self.command_queue: list[GameCommand] = []
@@ -3363,7 +3368,25 @@ class Game:
         """Validate and apply a command; returns CommandResult."""
         from .command_dispatcher import dispatch_command
 
-        return dispatch_command(self, command)
+        with game_context(self):
+            result = dispatch_command(self, command)
+        event_log = getattr(self, "event_log", None)
+        if event_log is not None and command is not None:
+            payload = {
+                "command_id": getattr(command, "command_id", ""),
+                "kind": getattr(command, "kind", ""),
+                "player_id": getattr(command, "player_id", None),
+                "payload": encode_refs(getattr(command, "payload", {}) or {}),
+                "metadata": encode_refs(getattr(command, "metadata", {}) or {}),
+            }
+            event_type = "command_applied" if getattr(result, "ok", False) else "command_rejected"
+            event_log.record(
+                event_type,
+                actor_id=payload.get("player_id"),
+                payload=payload,
+                validate_payload=False,
+            )
+        return result
 
     def process_command_queue(self, *, limit: int | None = None):
         """Process queued commands in order; returns list of CommandResult."""
@@ -3551,8 +3574,8 @@ class Game:
         if request is None:
             return None
         from .decision_dispatcher import dispatch_decision
-
-        apply_result = dispatch_decision(self, request, result)
+        with game_context(self):
+            apply_result = dispatch_decision(self, request, result)
         if apply_result.ok:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
@@ -4931,6 +4954,28 @@ class Game:
             card=card,
             details=details,
             timing=timing,
+        )
+
+        details_payload = details
+        if isinstance(details, list):
+            details_payload = [str(d) for d in details]
+        elif details is not None:
+            details_payload = str(details)
+        card_name = getattr(card, "name", None) if card is not None else None
+        self.event_system.publish(
+            "vp_awarded",
+            player=player,
+            source=str(source_key),
+            requested_vp=int(requested_vp or 0),
+            awarded_vp=int(to_add),
+            total_vp=int(getattr(player, "score", 0) or 0),
+            vp_primary=int(getattr(player, "vp_primary", 0) or 0),
+            vp_secondary=int(getattr(player, "vp_secondary", 0) or 0),
+            vp_battle_ready=int(getattr(player, "vp_battle_ready", 0) or 0),
+            card_name=card_name,
+            timing=str(timing) if timing is not None else None,
+            phase=self._current_phase_label(),
+            details=details_payload,
         )
 
         return int(to_add)

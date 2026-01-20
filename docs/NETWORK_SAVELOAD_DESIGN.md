@@ -26,6 +26,7 @@ Status: Draft
 ## Determinism Rules
 
 - All randomness flows through a single RandomSource; snapshot includes full RNG state.
+- Dice rolls and rerolls are also recorded as deterministic events for replay and audit.
 - All ordering over collections is deterministic (stable ID ordering).
 - Coordinates are serialized in fixed-point units (1/1000 inch for positions/lengths; 1/10000 radians for facing).
 - Derived/cached values are never serialized; they are recomputed on load.
@@ -60,7 +61,7 @@ Top-level:
 - models: wounds, alive, position, base, wargear state
 - effects: aura effects, temporary modifiers, timers
 - decisions: pending DecisionRequests
-- events: optional tail of event log since last snapshot
+- events: event log tail since last snapshot (currently full log)
 - rng_state
 
 Snapshot gating:
@@ -69,17 +70,23 @@ Snapshot gating:
 
 ## Event Log Schema
 
-Events are serialized state transitions. Examples:
-- unit_moved, unit_shot, unit_charged
-- dice_rolled (with results)
-- stratagem_used
-- decision_resolved
-- model_destroyed, unit_destroyed
+Events are serialized state transitions and random outcomes. Examples:
+- command_applied, command_rejected
+- decision_requested, decision_resolved
+- dice_roll, roll_made, roll_rerolled
+- unit_move_started, unit_move_ended
+- model_destroyed, model_destroyed_before_removal, unit_destroyed
+- phase_start, phase_end, battle_round_started
+- objective_control_changed
+- vp_awarded, vp_capped
 
 Events include:
-- event_id, type, timestamp, actor_id
+- event_id (monotonic int), type, actor_id
 - deterministic payload (IDs + parameters)
 - optional derived text for UI display (not used for state)
+
+Note: The deterministic event log is separate from the UI EventSystem; UI-only signals
+are not persisted or replayed.
 
 ## Command Schema
 
@@ -246,10 +253,10 @@ PR4: Dialog integration (Completed)
 - Ensure UI uses the decision options payload.
 - Add headless controller path for all dialogs.
 
-PR5: Event log and replay
-- Emit events for every mutation.
-- Persist event tail alongside snapshot.
-- Add replay tests for determinism.
+PR5: Event log and replay (Completed)
+- Emit deterministic events for commands, decisions, dice rolls/rerolls, movement, and destruction.
+- Persist event log tail alongside snapshot and restore on load.
+- Provide replay helper to run commands against a snapshot + event tail; add tests.
 
 PR6: Network transport
 - Add server/client message types (Snapshot, Command, Event, Error, Resync).

@@ -26,12 +26,20 @@ class RerollTracker:
     def get_result(self, roll_id: int) -> Any:
         return self.results.get(int(roll_id))
 
-    def wrap(self, roll_id: int, fn: Callable[[], Any]) -> Callable[[], Any]:
+    def wrap(
+        self,
+        roll_id: int,
+        fn: Callable[[], Any],
+        *,
+        on_record: Callable[[int, Any], None] | None = None,
+    ) -> Callable[[], Any]:
         def _wrapped():
             if self.is_used(roll_id):
                 return self.get_result(roll_id)
             result = fn()
             self.mark_used(roll_id, result)
+            if callable(on_record):
+                on_record(roll_id, result)
             return result
         return _wrapped
 
@@ -59,8 +67,14 @@ def prepare_reroll_event(
     locked = bool(reroll_used)
     if tracker is not None:
         roll_id = tracker.new_roll_id()
-        reroll_cb = tracker.wrap(roll_id, reroll_fn)
+        event_log = getattr(game, "event_log", None)
+        def _record(roll_id: int, result: Any) -> None:
+            if event_log is None:
+                return
+            event_log.record("roll_rerolled", payload={"roll_id": roll_id, "result": result})
+        reroll_cb = tracker.wrap(roll_id, reroll_fn, on_record=_record)
         if reroll_used:
             tracker.mark_used(roll_id, used_result)
+            _record(roll_id, used_result)
         locked = locked or tracker.is_used(roll_id)
     return roll_id, reroll_cb, locked

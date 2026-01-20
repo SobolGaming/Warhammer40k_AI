@@ -2427,6 +2427,9 @@ class ObjectivePoint:
 
     def update_control(self, game_state: 'Game') -> None:
         # Determine which player controls the objective based on base overlap
+        prev_controller = self.controlling_player
+        prev_sticky = self.sticky_controller
+        prev_removed = bool(getattr(self, "removed", False))
         player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
         
         from shapely.geometry import Point
@@ -2507,6 +2510,22 @@ class ObjectivePoint:
             else:
                 # Retain control even if tied or empty.
                 self.controlling_player = sticky_owner
+
+        if (
+            prev_controller is not self.controlling_player
+            or prev_sticky is not self.sticky_controller
+            or prev_removed != bool(getattr(self, "removed", False))
+        ):
+            event_system = getattr(game_state, "event_system", None)
+            if event_system is not None and hasattr(event_system, "publish"):
+                event_system.publish(
+                    "objective_control_changed",
+                    objective=self,
+                    previous_controller=prev_controller,
+                    controller=self.controlling_player,
+                    sticky_controller=self.sticky_controller,
+                    removed=bool(getattr(self, "removed", False)),
+                )
         
         # Debug output
         oc_summary = {player.name: oc for player, oc in player_oc.items() if oc > 0}

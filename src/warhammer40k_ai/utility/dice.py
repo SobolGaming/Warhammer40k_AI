@@ -4,11 +4,32 @@ from typing import Union
 
 # Utility Library for Dice Roll random values
 from . import RNG
+from .game_context import get_active_game, get_roll_context
 
 # get result of a random dice roll, defaults to D6
 
 
 def get_dice_roll(size: int = 6) -> int:
+    game = get_active_game()
+    if game is not None:
+        event_log = getattr(game, "event_log", None)
+        if event_log is not None:
+            if getattr(event_log, "mode", "record") == "replay":
+                event = event_log.consume("dice_roll")
+                value = int(event.payload.get("value", 0) or 0)
+                return value
+            roll_context = get_roll_context()
+            value = int(getattr(game, "random_source").randint(1, size))
+            event_log.record(
+                "dice_roll",
+                payload={
+                    "die_faces": int(size),
+                    "value": int(value),
+                    "context": roll_context,
+                },
+            )
+            return value
+        return int(getattr(game, "random_source").randint(1, size))
     return RNG.randint(1, size)
 
 @dataclass

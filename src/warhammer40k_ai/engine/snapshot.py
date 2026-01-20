@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib
 import inspect
 from dataclasses import is_dataclass
 from enum import Enum
@@ -14,6 +13,7 @@ from .decisions import DecisionQueue, DecisionRequest
 from .game import Game
 from .mission_cards import MissionCard, PrimaryMissionCard, SecondaryMissionCard
 from .phase import BattleRoundPhases, SetupPhase
+from .ref_codec import decode_refs, encode_refs, serialize_modifier, deserialize_modifier
 from ..battlefield.map import (
     BarricadeTerrain,
     CraterTerrain,
@@ -37,26 +37,12 @@ from ..units.wargear import Wargear
 from ..utility.calcs import clear_enemy_model_cache
 from ..utility.entity_ids import get_entity_id
 from ..utility.entity_registry import EntityRegistry
-from ..utility.modifiers import Modifier, ModifierOp
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
-
-_ENTITY_KIND_BY_TYPE = {
-    Player: "player",
-    Army: "army",
-    Unit: "unit",
-    Model: "model",
-    Wargear: "wargear",
-    Objective: "objective",
-    ObjectivePoint: "objective_marker",
-    TerrainFeature: "terrain",
-    DecisionRequest: "decision",
-    GameCommand: "command",
-}
 
 _UNIT_STATE_EXCLUDE = {
     "_datasheet",
@@ -176,97 +162,6 @@ def _deserialize_polygon(data: dict | None) -> Polygon | None:
     return Polygon(exterior, interiors)
 
 
-def _serialize_modifier(mod: Modifier) -> dict:
-    return {"op": mod.op.name, "value": int(mod.value), "source": str(mod.source or "")}
-
-
-def _deserialize_modifier(data: dict) -> Modifier:
-    return Modifier(
-        op=ModifierOp[str(data.get("op"))],
-        value=int(data.get("value", 0)),
-        source=str(data.get("source", "") or ""),
-    )
-
-
-def _encode_entity_ref(value: object) -> dict | None:
-    for cls, kind in _ENTITY_KIND_BY_TYPE.items():
-        if isinstance(value, cls):
-            return {"__ref__": {"kind": kind, "id": get_entity_id(value)}}
-    return None
-
-
-def _encode_refs(value: Any) -> Any:
-    if value is None or isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, Enum):
-        return {
-            "__enum__": {
-                "type": f"{value.__class__.__module__}.{value.__class__.__name__}",
-                "name": value.name,
-            }
-        }
-    ref = _encode_entity_ref(value)
-    if ref is not None:
-        return ref
-    if isinstance(value, Modifier):
-        return {"__modifier__": _serialize_modifier(value)}
-    if isinstance(value, dict):
-        encoded: dict = {}
-        for key, val in value.items():
-            if isinstance(key, (str, int)):
-                out_key = str(key)
-            else:
-                key_ref = _encode_entity_ref(key)
-                out_key = key_ref["__ref__"]["id"] if key_ref else str(key)
-            encoded[out_key] = _encode_refs(val)
-        return encoded
-    if isinstance(value, (list, tuple, set)):
-        items = [_encode_refs(v) for v in list(value)]
-        if isinstance(value, set):
-            try:
-                return sorted(items, key=lambda item: str(item))
-            except Exception:
-                return items
-        return items
-    if is_dataclass(value):
-        return _encode_refs(value.__dict__)
-    raise TypeError(f"Unsupported snapshot value type: {type(value).__name__}")
-
-
-def _decode_refs(value: Any, registry: EntityRegistry) -> Any:
-    if isinstance(value, dict):
-        if "__ref__" in value:
-            ref = value["__ref__"] or {}
-            kind = ref.get("kind")
-            entity_id = ref.get("id")
-            resolved = registry.get(entity_id, kind=kind)
-            if resolved is None:
-                raise KeyError(f"Unknown ref {kind}:{entity_id}")
-            return resolved
-        if "__enum__" in value:
-            enum_info = value["__enum__"] or {}
-            enum_path = enum_info.get("type")
-            enum_name = enum_info.get("name")
-            if not enum_path or not enum_name:
-                raise KeyError("Invalid enum reference payload.")
-            module_path, _, class_name = enum_path.rpartition(".")
-            if not module_path or not class_name:
-                raise KeyError(f"Invalid enum type path: {enum_path}")
-            enum_module = importlib.import_module(module_path)
-            enum_cls = getattr(enum_module, class_name, None)
-            if enum_cls is None:
-                raise KeyError(f"Enum class not found: {enum_path}")
-            return enum_cls[str(enum_name)]
-        if "__modifier__" in value:
-            return _deserialize_modifier(value["__modifier__"] or {})
-        decoded: dict = {}
-        for key, val in value.items():
-            decoded[key] = _decode_refs(val, registry)
-        return decoded
-    if isinstance(value, list):
-        return [_decode_refs(v, registry) for v in value]
-    return value
-
 
 def _serialize_rng_state(state: Any) -> Any:
     if isinstance(state, tuple):
@@ -368,7 +263,7 @@ def _serialize_model(model: Model) -> dict:
             if wg is not None
         ],
         "once_per_battle_used": sorted(list(getattr(model, "_once_per_battle_used", set()) or set())),
-        "temporary_effects": _encode_refs(getattr(model, "_temporary_effects", {}) or {}),
+        "temporary_effects": encode_refs(getattr(model, "_temporary_effects", {}) or {}),
         "last_move_path": last_path,
         "shot_via_firing_deck_this_round": bool(getattr(model, "_shot_via_firing_deck_this_round", False)),
     }
@@ -458,12 +353,12 @@ def _serialize_round_state(unit: Unit) -> dict:
     rs = getattr(unit, "round_state", None)
     for key in _UNIT_ROUND_FIELDS:
         state[key] = getattr(rs, key, None)
-    return _encode_refs(state)
+    return encode_refs(state)
 
 
 def _apply_round_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
     rs = UnitRoundState()
-    decoded = _decode_refs(data, registry)
+    decoded = decode_refs(data, registry)
     for key in _UNIT_ROUND_FIELDS:
         if key in decoded:
             setattr(rs, key, decoded[key])
@@ -478,11 +373,11 @@ def _serialize_unit(unit: Unit) -> dict:
             continue
         if callable(value):
             continue
-        state[key] = _encode_refs(value)
+        state[key] = encode_refs(value)
 
     modifiers = {}
     for char_name, mods in (getattr(unit, "_characteristic_modifiers", {}) or {}).items():
-        modifiers[char_name] = [_serialize_modifier(m) for m in list(mods or [])]
+        modifiers[char_name] = [serialize_modifier(m) for m in list(mods or [])]
 
     return {
         "id": get_entity_id(unit),
@@ -507,7 +402,7 @@ def _serialize_unit(unit: Unit) -> dict:
 def _apply_unit_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
     unit._id = str(data.get("id") or unit._id)
     state = data.get("state", {}) or {}
-    decoded_state = _decode_refs(state, registry)
+    decoded_state = decode_refs(state, registry)
     for key, value in decoded_state.items():
         if key in _UNIT_STATE_EXCLUDE:
             continue
@@ -515,7 +410,7 @@ def _apply_unit_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
 
     modifiers = {}
     for char_name, mods in (data.get("characteristic_modifiers", {}) or {}).items():
-        modifiers[char_name] = [_deserialize_modifier(m) for m in list(mods or [])]
+        modifiers[char_name] = [deserialize_modifier(m) for m in list(mods or [])]
     unit._characteristic_modifiers = modifiers
 
 
@@ -592,7 +487,7 @@ def _serialize_terrain_feature(feature: TerrainFeature) -> dict:
             "min": [_to_fixed(v) for v in feature.bounding_box.get("min", (0, 0, 0))],
             "max": [_to_fixed(v) for v in feature.bounding_box.get("max", (0, 0, 0))],
         },
-        "traversal_rules": _encode_refs(feature.traversal_rules or {}),
+        "traversal_rules": encode_refs(feature.traversal_rules or {}),
     }
     if isinstance(feature, RuinsTerrain):
         base["walls"] = [
@@ -767,12 +662,12 @@ def _serialize_map(game_map) -> dict:
 
 def _serialize_decision(request: DecisionRequest) -> dict:
     data = request.to_dict()
-    data["context"] = _encode_refs(data.get("context", {}) or {})
+    data["context"] = encode_refs(data.get("context", {}) or {})
     data["options"] = [
         {
             "option_id": opt.get("option_id"),
             "label": opt.get("label"),
-            "payload": _encode_refs(opt.get("payload", {}) or {}),
+            "payload": encode_refs(opt.get("payload", {}) or {}),
         }
         for opt in data.get("options", []) or []
     ]
@@ -806,8 +701,8 @@ def _deserialize_decision(data: dict) -> DecisionRequest:
 
 def _serialize_command(command: GameCommand) -> dict:
     data = command.to_dict()
-    data["payload"] = _encode_refs(data.get("payload", {}) or {})
-    data["metadata"] = _encode_refs(data.get("metadata", {}) or {})
+    data["payload"] = encode_refs(data.get("payload", {}) or {})
+    data["metadata"] = encode_refs(data.get("metadata", {}) or {})
     return data
 
 
@@ -849,7 +744,7 @@ def _serialize_card(card: MissionCard | None) -> dict | None:
     for key, value in card.__dict__.items():
         if callable(value):
             continue
-        state[key] = _encode_refs(value)
+        state[key] = encode_refs(value)
     return {"kind": kind, "name": str(card.name or ""), "state": state}
 
 
@@ -863,7 +758,7 @@ def _deserialize_card(data: dict | None, registry: EntityRegistry) -> MissionCar
     if cls is None:
         raise KeyError(f"Unknown mission card {kind}:{name}")
     card = cls()
-    state = _decode_refs(data.get("state", {}) or {}, registry)
+    state = decode_refs(data.get("state", {}) or {}, registry)
     for key, value in state.items():
         setattr(card, key, value)
     return card
@@ -876,7 +771,7 @@ def _serialize_player(player: Player) -> dict:
             continue
         if callable(value):
             continue
-        state[key] = _encode_refs(value)
+        state[key] = encode_refs(value)
     return {
         "id": get_entity_id(player),
         "name": str(player.name or ""),
@@ -893,7 +788,7 @@ def _serialize_player(player: Player) -> dict:
 
 def _apply_player_state(player: Player, data: dict, registry: EntityRegistry) -> None:
     player._id = str(data.get("id") or player._id)
-    state = _decode_refs(data.get("state", {}) or {}, registry)
+    state = decode_refs(data.get("state", {}) or {}, registry)
     for key, value in state.items():
         if key in _PLAYER_STATE_EXCLUDE:
             continue
@@ -918,14 +813,14 @@ def _serialize_manager_state(manager: object) -> dict | None:
             continue
         if is_dataclass(value):
             continue
-        state[key] = _encode_refs(value)
+        state[key] = encode_refs(value)
     return state
 
 
 def _apply_manager_state(manager: object, data: dict | None, registry: EntityRegistry) -> None:
     if manager is None or data is None:
         return
-    decoded = _decode_refs(data, registry)
+    decoded = decode_refs(data, registry)
     for key, value in decoded.items():
         if key in _MANAGER_STATE_EXCLUDE:
             continue
@@ -941,7 +836,7 @@ def _serialize_army(army: Army) -> dict:
             continue
         if _is_rule_manager(value):
             continue
-        state[key] = _encode_refs(value)
+        state[key] = encode_refs(value)
 
     managers = {}
     for key, value in army.__dict__.items():
@@ -966,7 +861,7 @@ def _serialize_army(army: Army) -> dict:
 
 def _apply_army_state(army: Army, data: dict, registry: EntityRegistry) -> None:
     army._id = str(data.get("id") or army._id)
-    state = _decode_refs(data.get("state", {}) or {}, registry)
+    state = decode_refs(data.get("state", {}) or {}, registry)
     for key, value in state.items():
         if key in _ARMY_STATE_EXCLUDE:
             continue
@@ -981,7 +876,7 @@ def _serialize_deployment_zones(zones: dict) -> dict:
     encoded = {}
     for player_id, zone in (zones or {}).items():
         if not isinstance(zone, dict):
-            encoded[str(player_id)] = _encode_refs(zone)
+            encoded[str(player_id)] = encode_refs(zone)
             continue
         zone_copy = {}
         for key, value in zone.items():
@@ -996,7 +891,7 @@ def _serialize_deployment_zones(zones: dict) -> dict:
                                 "cutout_type": c.cutout_type.value if isinstance(c.cutout_type, Enum) else str(c.cutout_type),
                                 "center_x": _to_fixed(c.center_x),
                                 "center_y": _to_fixed(c.center_y),
-                                "parameters": _encode_refs(_serialize_cutout_parameters(c.cutout_type, c.parameters)),
+                                "parameters": encode_refs(_serialize_cutout_parameters(c.cutout_type, c.parameters)),
                             }
                             for c in list(z.cutouts or [])
                         ] if getattr(z, "cutouts", None) else [],
@@ -1004,7 +899,7 @@ def _serialize_deployment_zones(zones: dict) -> dict:
                     for z in list(value or [])
                 ]
             else:
-                zone_copy[key] = _encode_refs(value)
+                zone_copy[key] = encode_refs(value)
         encoded[str(player_id)] = zone_copy
     return encoded
 
@@ -1093,8 +988,8 @@ def _serialize_game_state(game: Game) -> dict:
         "selected_mission_info": dict(getattr(game, "selected_mission_info", {}) or {}),
         "commands": list(getattr(game, "commands", []) or []),
         "secondary_mission_mode": getattr(game, "secondary_mission_mode", None),
-        "in_progress_actions": [_encode_refs(a) for a in list(getattr(game, "in_progress_actions", []) or [])],
-        "completed_actions_this_turn": [_encode_refs(a) for a in list(getattr(game, "completed_actions_this_turn", []) or [])],
+        "in_progress_actions": [encode_refs(a) for a in list(getattr(game, "in_progress_actions", []) or [])],
+        "completed_actions_this_turn": [encode_refs(a) for a in list(getattr(game, "completed_actions_this_turn", []) or [])],
         "destroyed_units_this_turn": [get_entity_id(u) for u in list(getattr(game, "destroyed_units_this_turn", []) or [])],
         "models_destroyed_this_turn": [get_entity_id(m) for m in list(getattr(game, "models_destroyed_this_turn", []) or [])],
         "destroyed_units_this_battle_round_by_player": destroyed_by_player,
@@ -1104,13 +999,13 @@ def _serialize_game_state(game: Game) -> dict:
         "phase_charge_targets": {
             str(k): sorted(list(v or [])) for k, v in (getattr(game, "phase_charge_targets", {}) or {}).items()
         },
-        "_phoenix_gem_pending": _encode_refs(list(getattr(game, "_phoenix_gem_pending", []) or [])),
-        "_blood_surge_shooting_snapshot": _encode_refs(getattr(game, "_blood_surge_shooting_snapshot", {}) or {}),
-        "_frenzy_shooting_targets": _encode_refs(getattr(game, "_frenzy_shooting_targets", {}) or {}),
-        "_frenzy_fight_targets": _encode_refs(getattr(game, "_frenzy_fight_targets", {}) or {}),
-        "_pain_parasite_shooting_snapshot": _encode_refs(getattr(game, "_pain_parasite_shooting_snapshot", {}) or {}),
-        "_pain_parasite_fight_snapshot": _encode_refs(getattr(game, "_pain_parasite_fight_snapshot", {}) or {}),
-        "army_muster_requests": _encode_refs(getattr(game, "army_muster_requests", {}) or {}),
+        "_phoenix_gem_pending": encode_refs(list(getattr(game, "_phoenix_gem_pending", []) or [])),
+        "_blood_surge_shooting_snapshot": encode_refs(getattr(game, "_blood_surge_shooting_snapshot", {}) or {}),
+        "_frenzy_shooting_targets": encode_refs(getattr(game, "_frenzy_shooting_targets", {}) or {}),
+        "_frenzy_fight_targets": encode_refs(getattr(game, "_frenzy_fight_targets", {}) or {}),
+        "_pain_parasite_shooting_snapshot": encode_refs(getattr(game, "_pain_parasite_shooting_snapshot", {}) or {}),
+        "_pain_parasite_fight_snapshot": encode_refs(getattr(game, "_pain_parasite_fight_snapshot", {}) or {}),
+        "army_muster_requests": encode_refs(getattr(game, "army_muster_requests", {}) or {}),
     }
 
 
@@ -1146,8 +1041,8 @@ def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
     if data.get("secondary_mission_mode") is not None:
         game.secondary_mission_mode = data.get("secondary_mission_mode")
 
-    game.in_progress_actions = _decode_refs(data.get("in_progress_actions", []) or [], registry)
-    game.completed_actions_this_turn = _decode_refs(data.get("completed_actions_this_turn", []) or [], registry)
+    game.in_progress_actions = decode_refs(data.get("in_progress_actions", []) or [], registry)
+    game.completed_actions_this_turn = decode_refs(data.get("completed_actions_this_turn", []) or [], registry)
     game.destroyed_units_this_turn = [
         registry.get(uid, kind="unit") for uid in data.get("destroyed_units_this_turn", []) or []
     ]
@@ -1167,13 +1062,13 @@ def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
     game.phase_charge_targets = {
         str(k): set(v or []) for k, v in (data.get("phase_charge_targets", {}) or {}).items()
     }
-    game._phoenix_gem_pending = _decode_refs(data.get("_phoenix_gem_pending", []) or [], registry)
-    game._blood_surge_shooting_snapshot = _decode_refs(data.get("_blood_surge_shooting_snapshot", {}) or {}, registry)
-    game._frenzy_shooting_targets = _decode_refs(data.get("_frenzy_shooting_targets", {}) or {}, registry)
-    game._frenzy_fight_targets = _decode_refs(data.get("_frenzy_fight_targets", {}) or {}, registry)
-    game._pain_parasite_shooting_snapshot = _decode_refs(data.get("_pain_parasite_shooting_snapshot", {}) or {}, registry)
-    game._pain_parasite_fight_snapshot = _decode_refs(data.get("_pain_parasite_fight_snapshot", {}) or {}, registry)
-    game.army_muster_requests = _decode_refs(data.get("army_muster_requests", {}) or {}, registry)
+    game._phoenix_gem_pending = decode_refs(data.get("_phoenix_gem_pending", []) or [], registry)
+    game._blood_surge_shooting_snapshot = decode_refs(data.get("_blood_surge_shooting_snapshot", {}) or {}, registry)
+    game._frenzy_shooting_targets = decode_refs(data.get("_frenzy_shooting_targets", {}) or {}, registry)
+    game._frenzy_fight_targets = decode_refs(data.get("_frenzy_fight_targets", {}) or {}, registry)
+    game._pain_parasite_shooting_snapshot = decode_refs(data.get("_pain_parasite_shooting_snapshot", {}) or {}, registry)
+    game._pain_parasite_fight_snapshot = decode_refs(data.get("_pain_parasite_fight_snapshot", {}) or {}, registry)
+    game.army_muster_requests = decode_refs(data.get("army_muster_requests", {}) or {}, registry)
 
 
 def snapshot_game(game: Game) -> dict:
@@ -1193,6 +1088,8 @@ def snapshot_game(game: Game) -> dict:
 
     decision_queue = getattr(game, "decision_queue", None)
     decisions = decision_queue.list() if decision_queue is not None else []
+    event_log = getattr(game, "event_log", None)
+    events = event_log.serialize_events() if event_log is not None else []
 
     return {
         "schema_version": SCHEMA_VERSION,
@@ -1205,6 +1102,7 @@ def snapshot_game(game: Game) -> dict:
         "map": _serialize_map(getattr(game, "map", None)),
         "decisions": [_serialize_decision(d) for d in list(decisions or [])],
         "commands": [_serialize_command(c) for c in list(getattr(game, "command_queue", []) or [])],
+        "events": list(events or []),
         "rng_state": _serialize_rng_state(getattr(game, "random_source").getstate()),
     }
 
@@ -1224,6 +1122,13 @@ def load_game_snapshot(snapshot: dict) -> Game:
         players.append(player)
 
     game = Game(battlefield, players=players)
+    events_payload = list(snapshot.get("events", []) or [])
+    from .event_log import DeterministicEventLog
+    existing_log = getattr(game, "event_log", None)
+    if existing_log is not None:
+        existing_log.detach()
+    game.event_log = DeterministicEventLog.from_payload(events_payload)
+    game.event_log.attach(game)
 
     units_by_id: dict[str, Unit] = {}
     armies_by_id: dict[str, Army] = {}
@@ -1368,7 +1273,7 @@ def load_game_snapshot(snapshot: dict) -> Game:
         models = list(getattr(unit, "models", []) or []) + list(getattr(unit, "models_lost", []) or [])
         for model in models:
             if getattr(model, "_temporary_effects", None) is not None:
-                model._temporary_effects = _decode_refs(model._temporary_effects, game.entity_registry)
+                model._temporary_effects = decode_refs(model._temporary_effects, game.entity_registry)
 
     for adata in list(snapshot.get("armies", []) or []):
         army = armies_by_id.get(adata.get("id"))
@@ -1400,17 +1305,17 @@ def load_game_snapshot(snapshot: dict) -> Game:
     decision_queue = DecisionQueue()
     for ddata in list(snapshot.get("decisions", []) or []):
         req = _deserialize_decision(ddata)
-        req.context = _decode_refs(req.context, game.entity_registry)
+        req.context = decode_refs(req.context, game.entity_registry)
         for opt in req.options:
-            opt.payload = _decode_refs(opt.payload, game.entity_registry)
+            opt.payload = decode_refs(opt.payload, game.entity_registry)
         decision_queue.add(req)
     game.decision_queue = decision_queue
 
     command_queue = []
     for cdata in list(snapshot.get("commands", []) or []):
         cmd = _deserialize_command(cdata)
-        cmd.payload = _decode_refs(cmd.payload, game.entity_registry)
-        cmd.metadata = _decode_refs(cmd.metadata, game.entity_registry)
+        cmd.payload = decode_refs(cmd.payload, game.entity_registry)
+        cmd.metadata = decode_refs(cmd.metadata, game.entity_registry)
         command_queue.append(cmd)
     game.command_queue = command_queue
 
