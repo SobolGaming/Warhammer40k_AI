@@ -124,6 +124,17 @@ class DeterministicEventLog:
             return list(self.events)
         return [e for e in self.events if int(e.event_id) > int(since_event_id)]
 
+    def trim_through(self, event_id: int | None = None) -> int:
+        if self.mode == "replay":
+            raise RuntimeError("Cannot trim event log in replay mode.")
+        if not self.events:
+            return 0
+        if event_id is None:
+            event_id = self.events[-1].event_id
+        event_id = int(event_id)
+        self.events = [e for e in self.events if int(e.event_id) > event_id]
+        return event_id
+
     def serialize_events(self, *, since_event_id: int | None = None) -> List[dict]:
         return [e.to_dict() for e in self.tail(since_event_id=since_event_id)]
 

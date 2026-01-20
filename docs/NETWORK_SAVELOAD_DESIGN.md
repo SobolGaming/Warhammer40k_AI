@@ -256,6 +256,8 @@ Files:
 
 Cleanup:
 - Manual only. No auto-pruning or expiry yet.
+- Snapshot cadence: end of each phase (autosave).
+- Event retention: keep only events since the most recent snapshot; flush on successful snapshot save.
 
 ## Snapshot Implementation Notes (PR2)
 
@@ -310,4 +312,4 @@ PR7: Save/Load UX (Completed)
 
 ## Open Questions
 
-- How much event history to retain for resyncs.
+None.

@@ -11,6 +11,7 @@ from .game import Game
 DEFAULT_BASE_DIR = Path("games") / "data"
 MANIFEST_FILENAME = "manifest.json"
 SNAPSHOT_FILENAME = "snapshot.json"
+AUTOSAVE_GROUP = "session_autosave"
 
 
 def _utc_now() -> str:
@@ -131,6 +132,10 @@ def save_session_snapshot(
     snapshot_path = session_path / SNAPSHOT_FILENAME
     _write_json(snapshot_path, snapshot)
 
+    event_log = getattr(game, "event_log", None)
+    if event_log is not None:
+        event_log.trim_through()
+
     manifest_path = session_path / MANIFEST_FILENAME
     manifest = _build_manifest(game, session_id, label=label)
     if manifest_path.exists():
@@ -192,3 +197,29 @@ def delete_session(session_id: str, *, base_dir: str | Path | None = None) -> No
         elif path.is_dir():
             path.rmdir()
     session_path.rmdir()
+
+
+def enable_phase_end_autosave(
+    game: Game,
+    *,
+    base_dir: str | Path | None = None,
+    session_id: str | None = None,
+    label: str | None = None,
+) -> str:
+    if game is None:
+        raise ValueError("Game is required.")
+    session_id = session_id or getattr(game, "session_id", None)
+    if not session_id:
+        session_id = create_session(game, base_dir=base_dir, label=label)
+
+    event_system = getattr(game, "event_system", None)
+    if event_system is None:
+        raise RuntimeError("Game missing event_system.")
+
+    def _on_phase_end(**_kwargs: Any) -> None:
+        if int(getattr(game, "get_battle_round", lambda: 0)() or 0) < 1:
+            return
+        save_session_snapshot(game, base_dir=base_dir, session_id=session_id, label=label)
+
+    event_system.subscribe_group(AUTOSAVE_GROUP, "phase_end", _on_phase_end)
+    return str(session_id)
