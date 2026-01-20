@@ -86,6 +86,7 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
   - [Deployment architecture](docs/DEPLOYMENT_ARCHITECTURE.md): deployment sequence and decision flow.
   - [Mission deployment system](docs/MISSION_DEPLOYMENT_SYSTEM.md): mission-specific deployment steps and logic.
   - [Mission selection dialog](docs/MISSION_SELECTION_DIALOG.md): mission selection UI flow.
+  - [Army mustering scaffolding](docs/ARMY_MUSTERING_SCAFFOLDING.md): current in-engine mustering placeholders.
   - [Dialog manager](docs/DIALOG_MANAGER.md): modal dialog routing and stacking behavior.
   - [Player configuration](docs/PLAYER_CONFIGURATION.md): controller ownership and UI enablement.
 - **Networking and save/load**
