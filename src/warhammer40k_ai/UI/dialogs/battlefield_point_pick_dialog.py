@@ -23,8 +23,10 @@ class BattlefieldPointPickDialog(BaseDialog):
         self.game_view = None
 
         self._validate_cb: Optional[Callable[[float, float], dict]] = None
-        self._on_confirm: Optional[Callable[[Tuple[float, float]], None]] = None
+        self._on_confirm: Optional[Callable[[str, Tuple[float, float]], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries = []
 
         self.selected_point: Optional[Tuple[float, float]] = None
         self._last_validation: dict = {"valid": False, "reason": "No point selected"}
@@ -47,8 +49,9 @@ class BattlefieldPointPickDialog(BaseDialog):
         title: str,
         instructions: str,
         validate_cb: Callable[[float, float], dict],
-        on_confirm: Callable[[Tuple[float, float]], None],
+        on_confirm: Callable[[str, Tuple[float, float]], None],
         on_cancel: Optional[Callable[[], None]] = None,
+        decision_request=None,
     ) -> None:
         super().show()
         self.visible = True
@@ -58,6 +61,12 @@ class BattlefieldPointPickDialog(BaseDialog):
         self._validate_cb = validate_cb
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
         self.selected_point = None
         self._last_validation = {"valid": False, "reason": "No point selected"}
 
@@ -69,6 +78,8 @@ class BattlefieldPointPickDialog(BaseDialog):
         self._on_cancel = None
         self.selected_point = None
         self._last_validation = {"valid": False, "reason": "No point selected"}
+        self.decision_request = None
+        self._option_entries = []
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
@@ -86,7 +97,8 @@ class BattlefieldPointPickDialog(BaseDialog):
                 return True
             if self._on_confirm:
                 try:
-                    self._on_confirm(self.selected_point)
+                    option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                    self._on_confirm(option_id, self.selected_point)
                 except Exception:
                     pass
             self.hide()
@@ -203,5 +215,3 @@ class BattlefieldPointPickDialog(BaseDialog):
             label = "Confirm" if name == "confirm" else "Cancel"
             txt = self.font_small.render(label, True, TEXT_PRIMARY)
             screen.blit(txt, (rect.centerx - txt.get_width() // 2, rect.centery - txt.get_height() // 2))
-
-

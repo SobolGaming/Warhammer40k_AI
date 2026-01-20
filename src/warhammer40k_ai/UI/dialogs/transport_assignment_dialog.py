@@ -1,5 +1,7 @@
 import pygame
-from typing import List, Dict, Optional, Callable, Set
+from typing import Dict, List, Optional, Callable, Set
+
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 from .base_dialog import BaseDialog, BUTTON_BG, PANEL_BORDER, TEXT_PRIMARY, TEXT_SECONDARY, BUTTON_SELECTED
 
@@ -16,11 +18,13 @@ class TransportAssignmentDialog(BaseDialog):
         self.all_units: List = []
         self.transports: List = []
         self.selected_transport_index: int = 0
+        self.decision_requests: Dict[str, object] = {}
+        self._selected_option_ids: Dict[str, str] = {}
 
         # transport -> set(unit)
         self.assignments: Dict[object, Set[object]] = {}
 
-        self.on_confirm: Optional[Callable[[Dict[object, List[object]]], None]] = None
+        self.on_confirm: Optional[Callable[[Dict[str, str]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
 
         # Scrolling per pane
@@ -29,17 +33,26 @@ class TransportAssignmentDialog(BaseDialog):
         self.right_scroll = 0
         self.right_max_scroll = 0
 
-    def show(self, all_units: List, *, on_confirm: Callable[[Dict[object, List[object]]], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(
+        self,
+        all_units: List,
+        *,
+        unit_requests: Dict[str, object],
+        on_confirm: Callable[[Dict[str, str]], None],
+        on_cancel: Optional[Callable[[], None]] = None,
+    ) -> None:
         self.all_units = list(all_units or [])
         # Transports that exist in armies (setup: not deployed yet)
         self.transports = [u for u in self.all_units if getattr(u, "is_transport", False)]
         self.transports.sort(key=lambda u: (getattr(getattr(u.get_parent_army(), "player", None), "name", ""), getattr(u, "name", "")))
         self.selected_transport_index = 0
+        self.decision_requests = dict(unit_requests or {})
 
         # Seed assignments from current embarked state
         self.assignments = {}
         for t in self.transports:
             self.assignments[t] = set(getattr(t, "transport_passengers", []) or [])
+        self._selected_option_ids = self._seed_selected_options()
 
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
@@ -52,6 +65,8 @@ class TransportAssignmentDialog(BaseDialog):
         self.all_units = []
         self.transports = []
         self.selected_transport_index = 0
+        self.decision_requests = {}
+        self._selected_option_ids = {}
         self.assignments = {}
         self.on_confirm = None
         self.on_cancel = None
@@ -94,10 +109,11 @@ class TransportAssignmentDialog(BaseDialog):
             if assigned_elsewhere:
                 continue
 
-            try:
-                if not transport_unit.can_transport(u) and u not in (self.assignments.get(transport_unit, set()) or set()):
-                    continue
-            except Exception:
+            uid = get_entity_id(u)
+            request = self.decision_requests.get(uid)
+            options = list(getattr(request, "options", []) or []) if request is not None else []
+            transport_id = get_entity_id(transport_unit)
+            if not any(str(getattr(opt, "payload", {}).get("transport_id", "")) == transport_id for opt in options):
                 continue
 
             candidates.append(u)
@@ -183,12 +199,8 @@ class TransportAssignmentDialog(BaseDialog):
             return True
 
         if button_name == "confirm":
-            result: Dict[object, List[object]] = {}
-            for t, units in self.assignments.items():
-                if units:
-                    result[t] = list(units)
             if self.on_confirm:
-                self.on_confirm(result)
+                self.on_confirm(dict(self._selected_option_ids))
             self.hide()
             return True
 
@@ -218,6 +230,8 @@ class TransportAssignmentDialog(BaseDialog):
             if unit in assigned:
                 assigned.remove(unit)
                 self.assignments[t] = assigned
+                uid = get_entity_id(unit)
+                self._selected_option_ids[uid] = self._option_for_transport(unit, None)
                 return True
 
             # Capacity check when adding
@@ -234,9 +248,36 @@ class TransportAssignmentDialog(BaseDialog):
 
             assigned.add(unit)
             self.assignments[t] = assigned
+            uid = get_entity_id(unit)
+            self._selected_option_ids[uid] = self._option_for_transport(unit, t)
             return True
 
         return False
+
+    def _option_for_transport(self, unit, transport_unit) -> str:
+        uid = get_entity_id(unit)
+        request = self.decision_requests.get(uid)
+        options = list(getattr(request, "options", []) or []) if request is not None else []
+        transport_id = get_entity_id(transport_unit) if transport_unit is not None else None
+        for opt in options:
+            payload = dict(getattr(opt, "payload", {}) or {})
+            if transport_id is None and payload.get("transport_id") is None:
+                return opt.option_id
+            if transport_id is not None and str(payload.get("transport_id", "")) == transport_id:
+                return opt.option_id
+        return ""
+
+    def _seed_selected_options(self) -> Dict[str, str]:
+        selected: Dict[str, str] = {}
+        for unit in self.all_units:
+            if unit is None or bool(getattr(unit, "is_transport", False)):
+                continue
+            uid = get_entity_id(unit)
+            if uid not in self.decision_requests:
+                continue
+            current_transport = getattr(unit, "embarked_in", None)
+            selected[uid] = self._option_for_transport(unit, current_transport)
+        return selected
 
     def draw(self, screen: pygame.Surface) -> None:
         if not self.visible:
@@ -327,5 +368,3 @@ class TransportAssignmentDialog(BaseDialog):
         # Action buttons
         self.draw_button(screen, "confirm", "Done")
         self.draw_button(screen, "cancel", "Cancel")
-
-

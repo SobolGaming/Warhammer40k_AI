@@ -18,8 +18,12 @@ class BloodTitheDialog(BaseDialog):
         self.timing: str = ""
         self.source: str = ""
         self.selected_idx: Optional[int] = None
-        self._on_confirm: Optional[Callable[[object], None]] = None
+        self._on_confirm: Optional[Callable[[str], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._skip_option_id: str = ""
+        self._skip_label: str = "Skip"
 
         self.add_button("confirm", 10, self.height - 50, 160, 35)
         self.add_button("skip", self.width - 160, self.height - 50, 140, 35)
@@ -27,20 +31,34 @@ class BloodTitheDialog(BaseDialog):
     def show(
         self,
         *,
-        options: List[object],
         points: int = 0,
         timing: str = "",
         source: str = "",
-        on_confirm: Callable[[object], None],
+        on_confirm: Callable[[str], None],
         on_cancel: Optional[Callable[[], None]] = None,
+        decision_request=None,
     ):
         super().show()
         self.visible = True
-        self.options = list(options or [])
+        self.decision_request = decision_request
+        self._option_entries = []
+        self._skip_option_id = ""
+        self._skip_label = "Skip"
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            for entry in option_entries(self.decision_request):
+                payload = entry.get("payload", {})
+                action = str(payload.get("action", "") or "").lower()
+                if action == "skip":
+                    self._skip_option_id = entry.get("option_id", "")
+                    self._skip_label = entry.get("label", self._skip_label) or self._skip_label
+                    continue
+                self._option_entries.append(entry)
         self.points = int(points or 0)
         self.timing = str(timing or "")
         self.source = str(source or "")
-        self.selected_idx = 0 if self.options else None
+        self.selected_idx = 0 if self._option_entries else None
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
 
@@ -53,6 +71,10 @@ class BloodTitheDialog(BaseDialog):
         self.selected_idx = None
         self._on_confirm = None
         self._on_cancel = None
+        self.decision_request = None
+        self._option_entries = []
+        self._skip_option_id = ""
+        self._skip_label = "Skip"
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         if not self.visible:
@@ -67,7 +89,12 @@ class BloodTitheDialog(BaseDialog):
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "skip":
-            if self._on_cancel:
+            if self._skip_option_id and self._on_confirm:
+                try:
+                    self._on_confirm(self._skip_option_id)
+                except Exception:
+                    pass
+            elif self._on_cancel:
                 try:
                     self._on_cancel()
                 except Exception:
@@ -77,11 +104,11 @@ class BloodTitheDialog(BaseDialog):
         if button_name == "confirm":
             if self.selected_idx is None:
                 return True
-            if not (0 <= self.selected_idx < len(self.options)):
+            if not (0 <= self.selected_idx < len(self._option_entries)):
                 return True
             if self._on_confirm:
                 try:
-                    self._on_confirm(self.options[self.selected_idx])
+                    self._on_confirm(self._option_entries[self.selected_idx]["option_id"])
                 except Exception:
                     pass
             self.hide()
@@ -96,9 +123,9 @@ class BloodTitheDialog(BaseDialog):
         list_left = 15
         list_w = self.width - 30
         row_h = 80
-        if list_left <= rel_x <= list_left + list_w and list_top <= rel_y <= list_top + row_h * max(1, len(self.options)):
+        if list_left <= rel_x <= list_left + list_w and list_top <= rel_y <= list_top + row_h * max(1, len(self._option_entries)):
             idx = int((rel_y - list_top) // row_h)
-            if 0 <= idx < len(self.options):
+            if 0 <= idx < len(self._option_entries):
                 self.selected_idx = idx
                 return True
         return False
@@ -113,7 +140,7 @@ class BloodTitheDialog(BaseDialog):
                 return True
             if event.key == pygame.K_DOWN:
                 if self.selected_idx is not None:
-                    self.selected_idx = min(len(self.options) - 1, self.selected_idx + 1)
+                    self.selected_idx = min(len(self._option_entries) - 1, self.selected_idx + 1)
                 return True
         return True
 
@@ -143,7 +170,7 @@ class BloodTitheDialog(BaseDialog):
         list_x = self.x + 15
         list_y = self.y + self.title_bar_height + 48
         list_w = self.width - 30
-        for i, option in enumerate(self.options):
+        for i, entry in enumerate(self._option_entries):
             r = pygame.Rect(list_x, list_y + i * row_h, list_w, row_h - 8)
             hovered = r.collidepoint(pygame.mouse.get_pos())
             selected = (self.selected_idx == i)
@@ -151,10 +178,11 @@ class BloodTitheDialog(BaseDialog):
             pygame.draw.rect(screen, bg, r, border_radius=8)
             pygame.draw.rect(screen, PANEL_BORDER, r, width=1, border_radius=8)
 
-            name = getattr(option, "name", "Ability")
-            cost = getattr(option, "cost", None)
+            name = entry.get("label", "Ability")
+            payload = entry.get("payload", {})
+            cost = payload.get("cost", None)
             label = f"{name} [{int(cost)} BTP]" if cost is not None else str(name)
-            summary = getattr(option, "summary", "")
+            summary = payload.get("summary", "")
             name_surf = self.font_medium.render(str(label), True, TEXT_PRIMARY)
             screen.blit(name_surf, (r.x + 10, r.y + 8))
             if summary:
@@ -170,4 +198,4 @@ class BloodTitheDialog(BaseDialog):
                 )
 
         self.draw_button(screen, "confirm", "Activate")
-        self.draw_button(screen, "skip", "Skip")
+        self.draw_button(screen, "skip", self._skip_label)

@@ -1,5 +1,5 @@
 import pygame
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -23,12 +23,14 @@ class LeaderAttachmentDialog(BaseDialog):
         self.army_units: List = []
         self.leaders: List = []
         self.bodyguards: List = []
+        self.decision_requests: Dict[str, object] = {}
+        self._selected_option_ids: Dict[str, str] = {}
 
         self.selected_leader_idx: Optional[int] = None
         self.target_rows: List[Tuple[str, Optional[object]]] = []  # (label, unit or None)
         self.selected_target_idx: Optional[int] = None
 
-        self.on_confirm: Optional[Callable[[], None]] = None
+        self.on_confirm: Optional[Callable[[Dict[str, str]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
 
         # Scrolling
@@ -44,7 +46,14 @@ class LeaderAttachmentDialog(BaseDialog):
         # Display names (disambiguate duplicate unit names like "Warp Spiders 1")
         self._unit_display_names = {}
 
-    def show(self, army_units: List, on_confirm: Callable[[], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(
+        self,
+        army_units: List,
+        *,
+        leader_requests: Dict[str, object],
+        on_confirm: Callable[[Dict[str, str]], None],
+        on_cancel: Optional[Callable[[], None]] = None,
+    ) -> None:
         self.army_units = list(army_units or [])
         self.leaders = [u for u in self.army_units if bool(getattr(u, "is_leader", False))]
         self.bodyguards = [u for u in self.army_units if not bool(getattr(u, "is_leader", False))]
@@ -52,6 +61,8 @@ class LeaderAttachmentDialog(BaseDialog):
         self.selected_leader_idx = 0 if self.leaders else None
         self.leader_scroll = 0
         self.target_scroll = 0
+        self.decision_requests = dict(leader_requests or {})
+        self._selected_option_ids = self._seed_selected_options()
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
         self._message = ""
@@ -66,6 +77,8 @@ class LeaderAttachmentDialog(BaseDialog):
         self.leaders = []
         self.bodyguards = []
         self._unit_display_names = {}
+        self.decision_requests = {}
+        self._selected_option_ids = {}
         self.selected_leader_idx = None
         self.target_rows = []
         self.selected_target_idx = None
@@ -134,7 +147,7 @@ class LeaderAttachmentDialog(BaseDialog):
             return True
         if button_name == "done":
             if self.on_confirm:
-                self.on_confirm()
+                self.on_confirm(dict(self._selected_option_ids))
             self.hide()
             return True
         return False
@@ -159,53 +172,24 @@ class LeaderAttachmentDialog(BaseDialog):
         if self.selected_leader_idx is None or not (0 <= self.selected_leader_idx < len(self.leaders)):
             return
         leader = self.leaders[self.selected_leader_idx]
+        leader_id = get_entity_id(leader)
+        request = self.decision_requests.get(leader_id)
+        options = list(getattr(request, "options", []) or []) if request is not None else []
+        selected_option_id = self._selected_option_ids.get(leader_id)
 
-        # Always include Unattached option
-        self.target_rows.append(("Unattached", None))
-
-        # Eligible bodyguards
-        eligible = []
-        for bg in self.bodyguards:
-            try:
-                if not leader.can_attach_to(bg):
-                    continue
-                # Enforce "1 Leader unless special rule allows 2 Leaders" at the UI level:
-                # If the bodyguard is already at capacity, do not list it (unless it's the leader's current attachment).
-                current = getattr(leader, "attached_to", None)
-                if bg is current:
-                    eligible.append(bg)
-                    continue
-                try:
-                    max_leaders = int(bg.max_attached_leaders())
-                except Exception:
-                    max_leaders = 1
-                try:
-                    current_leaders = list(getattr(bg, "attached_leaders", []) or [])
-                except Exception:
-                    current_leaders = []
-                if len(current_leaders) >= max_leaders:
-                    continue
-                eligible.append(bg)
-            except Exception:
-                continue
-
-        # Sort by name for stability
-        eligible.sort(key=lambda u: str(self._get_display_name(u)))
-        for bg in eligible:
-            attached = getattr(leader, "attached_to", None)
-            # ASCII-only marker to avoid font glyph issues on some platforms
-            prefix = "[x] " if attached is bg else ""
-            self.target_rows.append((f"{prefix}{self._get_display_name(bg)}", bg))
-
-        # Default selected row reflects current attachment
-        current = getattr(leader, "attached_to", None)
-        if current is None:
-            self.selected_target_idx = 0
-        else:
-            for i, (_, u) in enumerate(self.target_rows):
-                if u is current:
-                    self.selected_target_idx = i
-                    break
+        for opt in options:
+            payload = dict(getattr(opt, "payload", {}) or {})
+            bodyguard_id = payload.get("bodyguard_id")
+            target_unit = None
+            if bodyguard_id:
+                target_unit = next((u for u in self.bodyguards if get_entity_id(u) == str(bodyguard_id)), None)
+            label = str(getattr(opt, "label", "Option"))
+            if target_unit is not None:
+                label = self._get_display_name(target_unit)
+            if opt.option_id == selected_option_id:
+                label = f"[x] {label}"
+                self.selected_target_idx = len(self.target_rows)
+            self.target_rows.append((label, target_unit))
 
         # Update scroll bounds
         self._recompute_scroll_bounds()
@@ -226,18 +210,53 @@ class LeaderAttachmentDialog(BaseDialog):
         if self.selected_leader_idx is None or not (0 <= self.selected_leader_idx < len(self.leaders)):
             return
         leader = self.leaders[self.selected_leader_idx]
-        try:
-            if target_unit is None:
-                leader.detach_from_unit()
-                self._message = f"{leader.name}: set to Unattached"
-                self._message_color = TEXT_SECONDARY
-            else:
-                leader.attach_to_unit(target_unit)
-                self._message = f"{leader.name}: attached to {self._get_display_name(target_unit)}"
-                self._message_color = TEXT_SECONDARY
-        except Exception as e:
-            self._message = str(e)
+        leader_id = get_entity_id(leader)
+        request = self.decision_requests.get(leader_id)
+        options = list(getattr(request, "options", []) or []) if request is not None else []
+        chosen = None
+        for opt in options:
+            payload = dict(getattr(opt, "payload", {}) or {})
+            bodyguard_id = payload.get("bodyguard_id")
+            if bodyguard_id is None and target_unit is None:
+                chosen = opt
+                break
+            if target_unit is not None and str(bodyguard_id or "") == get_entity_id(target_unit):
+                chosen = opt
+                break
+        if chosen is None:
+            self._message = "Invalid selection"
             self._message_color = TEXT_WARNING
+            return
+        self._selected_option_ids[leader_id] = chosen.option_id
+        if target_unit is None:
+            self._message = f"{leader.name}: set to Unattached"
+        else:
+            self._message = f"{leader.name}: attached to {self._get_display_name(target_unit)}"
+        self._message_color = TEXT_SECONDARY
+
+    def _seed_selected_options(self) -> Dict[str, str]:
+        selected: Dict[str, str] = {}
+        for leader in self.leaders:
+            leader_id = get_entity_id(leader)
+            request = self.decision_requests.get(leader_id)
+            options = list(getattr(request, "options", []) or []) if request is not None else []
+            attached = getattr(leader, "attached_to", None)
+            attached_id = get_entity_id(attached) if attached is not None else None
+            chosen = None
+            for opt in options:
+                payload = dict(getattr(opt, "payload", {}) or {})
+                bodyguard_id = payload.get("bodyguard_id")
+                if attached_id is None and bodyguard_id is None:
+                    chosen = opt
+                    break
+                if attached_id is not None and str(bodyguard_id or "") == attached_id:
+                    chosen = opt
+                    break
+            if chosen is None and options:
+                chosen = options[0]
+            if chosen is not None:
+                selected[leader_id] = chosen.option_id
+        return selected
 
     def _recompute_display_names(self) -> None:
         """
@@ -355,4 +374,3 @@ class LeaderAttachmentDialog(BaseDialog):
         self._update_buttons()
         self.draw_button(screen, "done", "Done")
         self.draw_button(screen, "cancel", "Cancel")
-

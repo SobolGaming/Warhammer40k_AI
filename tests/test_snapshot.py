@@ -3,6 +3,7 @@ import pytest
 from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.commands import GameCommand
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_EXAMPLE
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.engine.game import Game
 from warhammer40k_ai.engine.mission_cards import MarkedForDeathSecondary, TakeAndHoldPrimary
@@ -140,6 +141,7 @@ def test_snapshot_roundtrip_core_state():
     player_one.active_secondaries = [active_card]
 
     req = DecisionRequest.create(
+        DECISION_CONFIRM_EXAMPLE,
         prompt="Test decision",
         player_id=player_one.id,
         options=[

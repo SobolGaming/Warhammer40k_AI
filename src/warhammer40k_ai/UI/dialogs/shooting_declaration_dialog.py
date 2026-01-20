@@ -64,8 +64,9 @@ class ShootingDeclarationDialog(BaseDialog):
         self.out_of_phase = False
         self.allow_actions = True
         self.last_execution_success = None
+        self.decision_request = None
     
-    def show(self, unit, callback, game_map=None, game_view=None, *, out_of_phase: bool = False, allow_actions: bool | None = None):
+    def show(self, unit, callback, game_map=None, game_view=None, *, out_of_phase: bool = False, allow_actions: bool | None = None, decision_request=None):
         """Show the shooting declaration dialog."""
         # Call parent show method
         super().show(callback)
@@ -74,6 +75,7 @@ class ShootingDeclarationDialog(BaseDialog):
         self.game_map = game_map
         self.game_view = game_view
         self.out_of_phase = bool(out_of_phase)
+        self.decision_request = decision_request
         if allow_actions is None:
             self.allow_actions = not self.out_of_phase
         else:
@@ -141,7 +143,7 @@ class ShootingDeclarationDialog(BaseDialog):
             return True
         elif button_name == 'cancel':
             print("INFO: Cancel button clicked")
-            self.hide()
+            self._resolve_skip()
             return True
         if not self.allow_actions and button_name.startswith("start_"):
             return False
@@ -192,6 +194,7 @@ class ShootingDeclarationDialog(BaseDialog):
         self.out_of_phase = False
         self.allow_actions = True
         self.last_execution_success = None
+        self.decision_request = None
         try:
             self.force_single_target_unit = None
         except Exception:
@@ -915,28 +918,103 @@ class ShootingDeclarationDialog(BaseDialog):
         if not self.weapon_declarations:
             print("ERROR: No shooting declarations to execute")
             return
-        
-        print(f"INFO: Executing {len(self.weapon_declarations)} shooting declarations...")
-        
-        # Execute shooting using the unit's new method
-        success = self.unit.execute_shooting_declarations(
-            self.weapon_declarations,
-            self.game_map,
-            out_of_phase=bool(self.out_of_phase),
-        )
+        option_id = self._option_id_for_action("confirm")
+        if not option_id:
+            print("ERROR: Missing decision option for shooting execute")
+            return
+        payload = {"declarations": self._build_declarations_payload()}
+        success = self._resolve_decision(option_id, payload)
         self.last_execution_success = bool(success)
-        
         if success:
             print(f"INFO: {self.unit.name} completed shooting phase")
         else:
             print(f"ERROR: {self.unit.name} failed to execute shooting")
-        
-        # Call the callback with the results
         if self.callback:
-            self.callback(self.weapon_declarations)
-        
-        # Hide the dialog
+            self.callback(bool(success))
         self.hide()
+
+    def _resolve_skip(self):
+        option_id = self._option_id_for_action("skip")
+        if option_id:
+            self._resolve_decision(option_id, {"skipped": True})
+        self.last_execution_success = False
+        if self.callback:
+            self.callback(False)
+        self.hide()
+
+    def _resolve_decision(self, option_id: str, payload: dict) -> bool:
+        if not option_id or self.decision_request is None:
+            return False
+        game = None
+        if self.game_view is not None:
+            game = getattr(self.game_view, "game", None)
+        if game is None and self.unit is not None:
+            try:
+                game = self.unit.get_parent_army().player.game
+            except Exception:
+                game = None
+        if game is None:
+            return False
+        try:
+            from ...utility.decision_utils import resolve_decision_value
+        except Exception:
+            return False
+        value, _apply = resolve_decision_value(
+            game,
+            self.decision_request,
+            option_id,
+            result_payload=payload,
+        )
+        return bool(value)
+
+    def _option_id_for_action(self, action: str) -> str:
+        from ..decision_ui_utils import option_id_for_action
+
+        return option_id_for_action(self.decision_request, action)
+
+    def _build_declarations_payload(self):
+        try:
+            from ...utility.entity_ids import get_entity_id
+        except Exception:
+            return []
+        declarations = []
+        for decl in list(self.weapon_declarations or []):
+            weapon_profile = decl.get("weapon_profile")
+            if weapon_profile is None:
+                continue
+            wargear = getattr(weapon_profile, "parent_wargear", None)
+            if wargear is None:
+                continue
+            profile_name = self._profile_name_for_wargear(wargear, weapon_profile)
+            if not profile_name:
+                continue
+            target_unit = decl.get("target_unit")
+            if target_unit is None:
+                continue
+            models = list(decl.get("models") or [])
+            model_ids = [get_entity_id(m) for m in models if m is not None]
+            if not model_ids:
+                continue
+            entry = {
+                "wargear_id": get_entity_id(wargear),
+                "profile_name": profile_name,
+                "target_unit_id": get_entity_id(target_unit),
+                "model_ids": model_ids,
+            }
+            fd_models = list(decl.get("firing_deck_source_models") or [])
+            if fd_models:
+                entry["firing_deck_source_model_ids"] = [get_entity_id(m) for m in fd_models if m is not None]
+            declarations.append(entry)
+        return declarations
+
+    def _profile_name_for_wargear(self, wargear, profile) -> str:
+        if wargear is None or profile is None:
+            return ""
+        profiles = getattr(wargear, "profiles", {}) or {}
+        for name, candidate in profiles.items():
+            if candidate is profile:
+                return str(name)
+        return str(getattr(profile, "name", "") or "")
     
     def draw(self, screen):
         """Draw the shooting declaration dialog"""

@@ -11,13 +11,26 @@ class SecondaryDiscardDialog(BaseDialog):
         super().__init__(screen_width, screen_height, width=520, height=360, draggable=True)
         self.cards: List[Any] = []
         self.selected_index: Optional[int] = None
-        self.on_confirm: Optional[Callable[[Any], None]] = None
+        self.on_confirm: Optional[Callable[[str], None]] = None
         self.list_rect = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
 
-    def show(self, cards: List[Any], on_confirm: Callable[[Any], None]):
+    def show(self, cards: List[Any], on_confirm: Callable[[str], None], *, decision_request=None):
         super().show()
-        self.cards = list(cards)
-        self.selected_index = 0 if self.cards else None
+        self.decision_request = decision_request
+        self._option_entries = []
+        self.cards = []
+        if self.decision_request is not None:
+            options = list(getattr(self.decision_request, "options", []) or [])
+            candidates = list(cards or [])
+            for opt in options:
+                payload = dict(getattr(opt, "payload", {}) or {})
+                name = str(payload.get("card_name", payload.get("name", opt.label)) or "")
+                card = next((c for c in candidates if str(getattr(c, "name", "") or "") == name), None)
+                self.cards.append(card)
+                self._option_entries.append({"option_id": opt.option_id, "label": name, "card": card})
+        self.selected_index = 0 if self._option_entries else None
         self.on_confirm = on_confirm
         self._create_buttons()
 
@@ -28,6 +41,8 @@ class SecondaryDiscardDialog(BaseDialog):
         self.on_confirm = None
         self.buttons.clear()
         self.button_states.clear()
+        self.decision_request = None
+        self._option_entries = []
 
     def _create_buttons(self) -> None:
         self.buttons.clear()
@@ -37,10 +52,10 @@ class SecondaryDiscardDialog(BaseDialog):
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == 'discard':
-            if self.selected_index is not None and 0 <= self.selected_index < len(self.cards):
-                card = self.cards[self.selected_index]
+            if self.selected_index is not None and 0 <= self.selected_index < len(self._option_entries):
+                option_id = self._option_entries[self.selected_index]["option_id"]
                 if callable(self.on_confirm):
-                    self.on_confirm(card)
+                    self.on_confirm(option_id)
             return True
         if button_name in ('cancel', 'close'):
             self.hide()
@@ -68,19 +83,21 @@ class SecondaryDiscardDialog(BaseDialog):
         # Render cards
         line_h = 28
         max_lines = list_h // line_h
-        visible = self.cards[:max_lines]
-        for i, card in enumerate(visible):
+        visible = self._option_entries[:max_lines]
+        for i, entry in enumerate(visible):
             y = list_y + i * line_h
             is_sel = (self.selected_index == i)
             row = pygame.Rect(list_x + 2, y + 2, list_w - 4, line_h - 4)
             pygame.draw.rect(screen, BUTTON_SELECTED if is_sel else (60, 60, 67), row)
             pygame.draw.rect(screen, (63, 63, 70), row, 1)
-            try:
-                name = getattr(card, 'name', str(card))
-                desc = getattr(card, 'description', '')
-            except Exception:
-                name, desc = str(card), ''
-            text = f"{name}"
+            card = entry.get("card")
+            label = entry.get("label") or "Secondary"
+            if card is not None:
+                try:
+                    label = getattr(card, "name", label)
+                except Exception:
+                    pass
+            text = f"{label}"
             surf = self.font_small.render(text, True, (255, 255, 255))
             screen.blit(surf, (row.x + 8, row.y + 4))
 
@@ -109,9 +126,9 @@ class SecondaryDiscardDialog(BaseDialog):
                     self.selected_index = min(len(self.cards) - 1, self.selected_index + 1)
                     return True
             elif event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                if self.selected_index is not None and self.cards:
-                    card = self.cards[self.selected_index]
+                if self.selected_index is not None and self._option_entries:
+                    option_id = self._option_entries[self.selected_index]["option_id"]
                     if callable(self.on_confirm):
-                        self.on_confirm(card)
+                        self.on_confirm(option_id)
                     return True
         return False

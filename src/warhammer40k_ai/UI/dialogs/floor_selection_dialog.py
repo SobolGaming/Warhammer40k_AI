@@ -56,20 +56,44 @@ class FloorSelectionDialog(BaseDialog):
         self.font_large = get_ui_font(24, bold=True)
         self.font_medium = get_ui_font(20, bold=True)
         self.font_small = get_ui_font(18, bold=False)
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._on_confirm = None
+        self._on_cancel = None
+
+    def show(self, *, on_confirm, on_cancel=None, decision_request=None) -> None:
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+        self._on_confirm = on_confirm
+        self._on_cancel = on_cancel
+        super().show()
 
     # BaseDialog abstract requirement (we don't use BaseDialog's button system here)
     def _handle_button_click(self, button_name: str) -> bool:
         return False
+
+    def hide(self) -> None:
+        super().hide()
+        self.decision_request = None
+        self._option_entries = []
+        self._on_confirm = None
+        self._on_cancel = None
         
-    def handle_event(self, event: pygame.event.Event) -> Optional[dict]:
+    def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events."""
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_ESCAPE:
-                return {"action": "cancel"}
+                self._cancel()
+                return True
             elif event.key == pygame.K_RETURN or event.key == pygame.K_KP_ENTER:
                 if self.selected_floor in self.disabled_floors:
-                    return None
-                return {"action": "confirm", "floor": self.selected_floor}
+                    return True
+                self._confirm_selection()
+                return True
             elif event.key == pygame.K_UP:
                 current_index = self.available_floors.index(self.selected_floor)
                 # Move to previous enabled floor (if any)
@@ -89,9 +113,9 @@ class FloorSelectionDialog(BaseDialog):
         
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:  # Left click
-                return self._handle_click(event.pos)
+                return bool(self._handle_click(event.pos))
         
-        return None
+        return False
     
     def _handle_click(self, pos: Tuple[int, int]) -> Optional[dict]:
         """Handle mouse click events."""
@@ -104,7 +128,8 @@ class FloorSelectionDialog(BaseDialog):
         # Check if click is within dialog bounds
         if not (dialog_x <= x <= dialog_x + self.dialog_width and 
                 dialog_y <= y <= dialog_y + self.dialog_height):
-            return {"action": "cancel"}
+            self._cancel()
+            return True
         
         # Convert to dialog-relative coordinates
         rel_x = x - dialog_x
@@ -117,9 +142,9 @@ class FloorSelectionDialog(BaseDialog):
             if (20 <= rel_x <= self.dialog_width - 20 and 
                 button_y <= rel_y <= button_y + 30):
                 if floor in self.disabled_floors:
-                    return None
+                    return True
                 self.selected_floor = floor
-                return None
+                return True
         
         # Check confirm/cancel buttons
         button_y = self.dialog_height - 50
@@ -129,13 +154,32 @@ class FloorSelectionDialog(BaseDialog):
         if (confirm_button_x <= rel_x <= confirm_button_x + 70 and 
             button_y <= rel_y <= button_y + 30):
             if self.selected_floor in self.disabled_floors:
-                return None
-            return {"action": "confirm", "floor": self.selected_floor}
+                return True
+            self._confirm_selection()
+            return True
         elif (cancel_button_x <= rel_x <= cancel_button_x + 70 and 
               button_y <= rel_y <= button_y + 30):
-            return {"action": "cancel"}
+            self._cancel()
+            return True
         
-        return None
+        return True
+
+    def _confirm_selection(self) -> None:
+        option_id = ""
+        if self._option_entries:
+            from ..decision_ui_utils import option_id_for_payload
+
+            option_id = option_id_for_payload(self.decision_request, "floor", self.selected_floor)
+            if not option_id:
+                option_id = self._option_entries[0].get("option_id", "")
+        if callable(self._on_confirm):
+            self._on_confirm(option_id, int(self.selected_floor))
+        self.hide()
+
+    def _cancel(self) -> None:
+        if callable(self._on_cancel):
+            self._on_cancel()
+        self.hide()
     
     def draw(self, screen: pygame.Surface) -> None:
         """Draw the floor selection dialog."""

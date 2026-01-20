@@ -27,8 +27,11 @@ class PledgeSelectionDialog(BaseDialog):
         self.max_value = 1
         self.value = 1
         self._input_text = "1"
-        self._on_confirm: Optional[Callable[[int], None]] = None
+        self._on_confirm: Optional[Callable[[str], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: list[dict] = []
+        self._option_by_value: dict[int, str] = {}
 
         self._input_w = 120
         self._input_h = 44
@@ -44,25 +47,46 @@ class PledgeSelectionDialog(BaseDialog):
     def show(
         self,
         *,
-        max_value: int,
         default_value: int = 1,
-        on_confirm: Callable[[int], None],
+        on_confirm: Callable[[str], None],
         on_cancel: Optional[Callable[[], None]] = None,
         title: Optional[str] = None,
         subtitle: Optional[str] = None,
+        decision_request=None,
     ):
         super().show()
         self.visible = True
         self.title = title or "Pledge to Slaanesh"
         self.subtitle = subtitle or ""
-        try:
-            self.max_value = max(1, int(max_value))
-        except Exception:
+        self.decision_request = decision_request
+        self._option_entries = []
+        self._option_by_value = {}
+        values = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            for entry in option_entries(self.decision_request):
+                payload = entry.get("payload", {})
+                value = payload.get("pledge_value", payload.get("value"))
+                if value is None:
+                    continue
+                try:
+                    val = int(value)
+                except Exception:
+                    continue
+                values.append(val)
+                self._option_entries.append(entry)
+                self._option_by_value[val] = entry.get("option_id", "")
+        if values:
+            self.min_value = min(values)
+            self.max_value = max(values)
+        else:
+            self.min_value = 1
             self.max_value = 1
         try:
             default = int(default_value)
         except Exception:
-            default = 1
+            default = self.min_value
         self._set_value(default)
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
@@ -72,6 +96,9 @@ class PledgeSelectionDialog(BaseDialog):
         self.subtitle = ""
         self._on_confirm = None
         self._on_cancel = None
+        self.decision_request = None
+        self._option_entries = []
+        self._option_by_value = {}
 
     def _set_value(self, value: int) -> None:
         try:
@@ -101,7 +128,9 @@ class PledgeSelectionDialog(BaseDialog):
         if button_name == "confirm":
             if self._on_confirm:
                 try:
-                    self._on_confirm(int(self.value))
+                    option_id = self._option_by_value.get(int(self.value))
+                    if option_id:
+                        self._on_confirm(option_id)
                 except Exception:
                     pass
             self.hide()

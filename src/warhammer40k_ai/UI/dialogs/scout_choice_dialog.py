@@ -11,12 +11,14 @@ class ScoutChoiceDialog(BaseDialog):
         self.callback = None
         self.game_map = None
         self.scout_distance = 0.0
+        self.decision_request = None
     
-    def show(self, unit, callback, game_map=None):
+    def show(self, unit, callback, game_map=None, decision_request=None):
         """Show the dialog for the given unit"""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
+        self.decision_request = decision_request
         super().show(callback)
         self._create_buttons()
 
@@ -35,12 +37,23 @@ class ScoutChoiceDialog(BaseDialog):
         self.callback = None
         self.game_map = None
         self.scout_distance = 0.0
+        self.decision_request = None
     
     def can_scout(self) -> bool:
         """Check if the unit can make a scout move"""
         if not self.unit:
             print("DEBUG: can_scout: No unit")
             return False
+
+        if self.decision_request is not None:
+            has_option = False
+            for opt in list(getattr(self.decision_request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action", "") or "").lower() == "scout":
+                    has_option = True
+                    break
+            if not has_option:
+                return False
         
         # Check if unit has scout ability
         has_scout, _ = self.unit.has_scout()

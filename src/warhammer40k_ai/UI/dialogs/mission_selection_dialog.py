@@ -5,7 +5,7 @@ Displays approved combinations of Primary Mission, Deployment, and Terrain Layou
 
 import pygame
 import random
-from typing import Optional, Tuple, Dict, List
+from typing import Optional, Tuple, Dict, List, Iterable
 from .base_dialog import BaseDialog
 from ..ui_fonts import get_ui_font
 
@@ -13,42 +13,7 @@ from ..ui_fonts import get_ui_font
 class MissionSelectionDialog(BaseDialog):
     """Dialog for selecting official Chapter Approved mission combinations."""
     
-    # Official Chapter Approved 2025/2026 mission combinations
-    APPROVED_COMBINATIONS = [
-        # A-D: Tipping Point missions
-        {"id": "A", "primary": "Take and Hold", "deployment": "Tipping Point", "layouts": [1, 2, 4, 6, 7, 8]},
-        {"id": "B", "primary": "Supply Drop", "deployment": "Tipping Point", "layouts": [1, 2, 4, 6, 7, 8]},
-        {"id": "C", "primary": "Linchpin", "deployment": "Tipping Point", "layouts": [1, 2, 4, 6, 7, 8]},
-        {"id": "D", "primary": "Scorched Earth", "deployment": "Tipping Point", "layouts": [1, 2, 4, 6, 7, 8]},
-        
-        # E-H: Hammer and Anvil missions  
-        {"id": "E", "primary": "Take and Hold", "deployment": "Hammer and Anvil", "layouts": [1, 7, 8]},
-        {"id": "F", "primary": "Hidden Supplies", "deployment": "Hammer and Anvil", "layouts": [1, 7, 8]},
-        {"id": "G", "primary": "Purge the Foe", "deployment": "Hammer and Anvil", "layouts": [1, 7, 8]},
-        {"id": "H", "primary": "Supply Drop", "deployment": "Hammer and Anvil", "layouts": [1, 7, 8]},
-        
-        # I-L: Search and Destroy missions
-        {"id": "I", "primary": "Hidden Supplies", "deployment": "Search and Destroy", "layouts": [1, 2, 3, 4, 6]},
-        {"id": "J", "primary": "Linchpin", "deployment": "Search and Destroy", "layouts": [1, 2, 3, 4, 6]},
-        {"id": "K", "primary": "Scorched Earth", "deployment": "Search and Destroy", "layouts": [1, 2, 3, 4, 6]},
-        {"id": "L", "primary": "Take and Hold", "deployment": "Search and Destroy", "layouts": [1, 2, 3, 4, 6]},
-        
-        # M-P: Crucible of Battle missions
-        {"id": "M", "primary": "Purge the Foe", "deployment": "Crucible of Battle", "layouts": [1, 2, 3, 4, 6]},
-        {"id": "N", "primary": "Hidden Supplies", "deployment": "Crucible of Battle", "layouts": [1, 2, 3, 4, 6]},
-        {"id": "O", "primary": "Terraform", "deployment": "Crucible of Battle", "layouts": [1, 2, 3, 4, 6]},
-        {"id": "P", "primary": "Scorched Earth", "deployment": "Crucible of Battle", "layouts": [1, 2, 3, 4, 6]},
-        
-        # Q-R: Sweeping Engagement missions
-        {"id": "Q", "primary": "Supply Drop", "deployment": "Sweeping Engagement", "layouts": [3, 5]},
-        {"id": "R", "primary": "Terraform", "deployment": "Sweeping Engagement", "layouts": [3, 5]},
-        
-        # S-T: Dawn of War missions
-        {"id": "S", "primary": "Linchpin", "deployment": "Dawn of War", "layouts": [5]},
-        {"id": "T", "primary": "Purge the Foe", "deployment": "Dawn of War", "layouts": [5]},
-    ]
-    
-    def __init__(self, screen_width: int, screen_height: int):
+    def __init__(self, screen_width: int, screen_height: int, combinations: Optional[Iterable[Dict]] = None):
         # Calculate dialog dimensions first
         dialog_width = min(900, screen_width - 100)
         dialog_height = min(700, screen_height - 100)
@@ -60,6 +25,10 @@ class MissionSelectionDialog(BaseDialog):
         self.dialog_width = dialog_width
         self.dialog_height = dialog_height
         
+        self.combinations = list(combinations or [])
+        self.decision_request = None
+        self._option_entries: List[Dict] = []
+
         # Selection state
         self.selected_combination = None
         self.selected_layout = None
@@ -87,9 +56,28 @@ class MissionSelectionDialog(BaseDialog):
         self.layout_button_size = 30
         
         # Calculate scrollable area
-        self.content_height = len(self.APPROVED_COMBINATIONS) * self.row_height + self.header_height
+        self.content_height = len(self.combinations) * self.row_height + self.header_height
         self.visible_height = self.dialog_height - 200  # Leave space for title and buttons
         self.max_scroll = max(0, self.content_height - self.visible_height)
+
+    def show(self, *, decision_request=None) -> None:
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+            self.combinations = []
+            for entry in self._option_entries:
+                combo = dict(entry.get("payload", {}) or {}).get("combination")
+                if isinstance(combo, dict):
+                    self.combinations.append(combo)
+        self.selected_combination = None
+        self.selected_layout = None
+        self.scroll_offset = 0
+        self.content_height = len(self.combinations) * self.row_height + self.header_height
+        self.max_scroll = max(0, self.content_height - self.visible_height)
+        super().show()
         
     def handle_event(self, event) -> Optional[Dict]:
         """Handle user input events."""
@@ -98,10 +86,14 @@ class MissionSelectionDialog(BaseDialog):
                 return {"action": "cancel"}
             elif event.key == pygame.K_RETURN:
                 if self.selected_combination is not None and self.selected_layout is not None:
+                    option_id = ""
+                    if 0 <= self.selected_combination < len(self._option_entries):
+                        option_id = self._option_entries[self.selected_combination].get("option_id", "")
                     return {
                         "action": "confirm",
-                        "combination": self.APPROVED_COMBINATIONS[self.selected_combination],
-                        "layout": self.selected_layout
+                        "combination": self.combinations[self.selected_combination],
+                        "layout": self.selected_layout,
+                        "option_id": option_id,
                     }
             elif event.key == pygame.K_r:  # 'R' key for random
                 self.pick_random_mission()
@@ -152,10 +144,14 @@ class MissionSelectionDialog(BaseDialog):
                 return None  # Don't close dialog, just update selection
             elif confirm_x <= x <= confirm_x + 100:
                 if self.selected_combination is not None and self.selected_layout is not None:
+                    option_id = ""
+                    if 0 <= self.selected_combination < len(self._option_entries):
+                        option_id = self._option_entries[self.selected_combination].get("option_id", "")
                     return {
                         "action": "confirm",
-                        "combination": self.APPROVED_COMBINATIONS[self.selected_combination],
-                        "layout": self.selected_layout
+                        "combination": self.combinations[self.selected_combination],
+                        "layout": self.selected_layout,
+                        "option_id": option_id,
                     }
         
         # Check mission combination clicks
@@ -164,14 +160,14 @@ class MissionSelectionDialog(BaseDialog):
         
         if list_y >= self.header_height:
             row_index = (list_y - self.header_height) // self.row_height
-            if 0 <= row_index < len(self.APPROVED_COMBINATIONS):
+            if 0 <= row_index < len(self.combinations):
                 # Check if clicking on layout buttons
                 # Account for dialog position + content area offset + layout buttons position
                 content_area_x = dialog_x + 10  # Content area starts at dialog_x + 10
                 layouts_x = content_area_x + 445  # Match drawing position from _draw_combinations
                 if layouts_x <= x <= dialog_x + self.dialog_width - 20:
                     layout_index = (x - layouts_x) // (self.layout_button_size + 5)
-                    combination = self.APPROVED_COMBINATIONS[row_index]
+                    combination = self.combinations[row_index]
                     if 0 <= layout_index < len(combination["layouts"]):
                         self.selected_combination = row_index
                         self.selected_layout = combination["layouts"][layout_index]
@@ -190,10 +186,10 @@ class MissionSelectionDialog(BaseDialog):
     def pick_random_mission(self):
         """Randomly select a mission combination and terrain layout."""
         # Pick a random combination from A-T
-        self.selected_combination = random.randint(0, len(self.APPROVED_COMBINATIONS) - 1)
+        self.selected_combination = random.randint(0, len(self.combinations) - 1)
         
         # Pick a random terrain layout from the available options
-        combination = self.APPROVED_COMBINATIONS[self.selected_combination]
+        combination = self.combinations[self.selected_combination]
         self.selected_layout = random.choice(combination["layouts"])
         
         print(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
@@ -288,7 +284,7 @@ class MissionSelectionDialog(BaseDialog):
         """Draw the mission combination rows."""
         y = self.header_height
         
-        for i, combo in enumerate(self.APPROVED_COMBINATIONS):
+        for i, combo in enumerate(self.combinations):
             row_rect = pygame.Rect(0, y, surface.get_width(), self.row_height)
             
             # Row background
@@ -392,7 +388,7 @@ class MissionSelectionDialog(BaseDialog):
         
         # Selection status
         if self.selected_combination is not None:
-            combo = self.APPROVED_COMBINATIONS[self.selected_combination]
+            combo = self.combinations[self.selected_combination]
             status_text = f"Selected: {combo['id']} - {combo['primary']} / {combo['deployment']}"
             if self.selected_layout is not None:
                 status_text += f" / Layout {self.selected_layout}"

@@ -6,6 +6,7 @@ import pygame
 
 from .base_dialog import BaseDialog, PANEL_BG, PANEL_BORDER, BUTTON_BG, BUTTON_HOVER, TEXT_PRIMARY, TEXT_SECONDARY
 from ...units.wargear import AttackCountInfo
+from ...utility.entity_ids import get_entity_id
 
 
 class MeleeAttackSplitDialog(BaseDialog):
@@ -22,6 +23,8 @@ class MeleeAttackSplitDialog(BaseDialog):
 
         self.on_confirm: Optional[Callable[[Dict[object, int], AttackCountInfo], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
 
         self._row_height = 44
         self._row_hitboxes: List[Dict[str, pygame.Rect]] = []
@@ -35,8 +38,9 @@ class MeleeAttackSplitDialog(BaseDialog):
         game_map=None,
         attack_info: Optional[AttackCountInfo] = None,
         allocations: Optional[Dict[object, int]] = None,
-        on_confirm: Callable[[Dict[object, int], AttackCountInfo], None],
+        on_confirm: Callable[[str, Dict[str, object]], None],
         on_cancel: Optional[Callable[[], None]] = None,
+        decision_request=None,
     ) -> None:
         self.unit = unit
         self.weapon_bundle = weapon_bundle
@@ -44,6 +48,12 @@ class MeleeAttackSplitDialog(BaseDialog):
         self.game_map = game_map
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
 
         if attack_info is None:
             attack_info = self._roll_attack_count()
@@ -71,6 +81,8 @@ class MeleeAttackSplitDialog(BaseDialog):
         self.on_confirm = None
         self.on_cancel = None
         self._row_hitboxes = []
+        self.decision_request = None
+        self._option_entries = []
 
     def _roll_attack_count(self) -> AttackCountInfo:
         if not self.weapon_bundle or not self.targets:
@@ -121,7 +133,13 @@ class MeleeAttackSplitDialog(BaseDialog):
             if self._remaining_attacks() != 0:
                 return True
             if callable(self.on_confirm) and self.attack_info is not None:
-                self.on_confirm(dict(self.allocations), self.attack_info)
+                option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                allocations = {get_entity_id(t): int(c or 0) for t, c in dict(self.allocations).items()}
+                payload = {
+                    "split_allocations": allocations,
+                    "attack_info": self._serialize_attack_info(self.attack_info),
+                }
+                self.on_confirm(option_id, payload)
             self.hide()
             return True
         return False
@@ -222,3 +240,10 @@ class MeleeAttackSplitDialog(BaseDialog):
         self._create_buttons()
         self.draw_button(screen, "confirm", "Confirm")
         self.draw_button(screen, "cancel", "Cancel")
+
+    def _serialize_attack_info(self, info: AttackCountInfo) -> Dict[str, object]:
+        return {
+            "num_attacks": int(getattr(info, "num_attacks", 0) or 0),
+            "dice_rolls": list(getattr(info, "dice_rolls", []) or []),
+            "special_modifiers": list(getattr(info, "special_modifiers", []) or []),
+        }

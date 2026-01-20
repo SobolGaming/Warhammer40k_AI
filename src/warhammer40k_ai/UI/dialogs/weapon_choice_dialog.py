@@ -20,6 +20,77 @@ TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_DISABLED = (100, 100, 100)  # Disabled text
 
 
+def collect_available_weapons(unit):
+    available_weapons = []
+    if unit is None:
+        return available_weapons
+    for model in unit.models:
+        if not model.is_alive:
+            continue
+
+        for wargear in model.wargear:
+            if not wargear.is_ranged():
+                continue
+            if wargear.is_bubblechukka():
+                profile = None
+                profile_name = None
+                for name, candidate in wargear.profiles.items():
+                    if getattr(candidate, "is_bubblechukka", lambda: False)():
+                        profile = candidate
+                        profile_name = name
+                        break
+                if profile is None:
+                    profile_name, profile = next(iter(wargear.profiles.items()), (None, None))
+                if profile is None or profile_name is None:
+                    continue
+                can_shoot = True
+                if unit.round_state.advanced_this_round and not unit.can_shoot_after_advance(profile):
+                    can_shoot = False
+                if unit.round_state.fell_back_this_round and not unit.can_shoot_after_fall_back(profile):
+                    can_shoot = False
+
+                weapon_info = {
+                    'wargear': wargear,
+                    'profile': profile,
+                    'profile_name': profile_name,
+                    'model': model,
+                    'can_shoot': can_shoot,
+                    'models_with_weapon': _count_models_with_weapon(unit, wargear)
+                }
+
+                if not any(w['wargear'] == wargear and w['profile'] == profile for w in available_weapons):
+                    available_weapons.append(weapon_info)
+                continue
+
+            for profile_name, profile in wargear.profiles.items():
+                can_shoot = True
+                if unit.round_state.advanced_this_round and not unit.can_shoot_after_advance(profile):
+                    can_shoot = False
+                if unit.round_state.fell_back_this_round and not unit.can_shoot_after_fall_back(profile):
+                    can_shoot = False
+
+                weapon_info = {
+                    'wargear': wargear,
+                    'profile': profile,
+                    'profile_name': profile_name,
+                    'model': model,
+                    'can_shoot': can_shoot,
+                    'models_with_weapon': _count_models_with_weapon(unit, wargear)
+                }
+
+                if not any(w['wargear'] == wargear and w['profile_name'] == profile_name for w in available_weapons):
+                    available_weapons.append(weapon_info)
+    return available_weapons
+
+
+def _count_models_with_weapon(unit, wargear):
+    count = 0
+    for model in unit.models:
+        if model.is_alive and wargear in model.wargear:
+            count += 1
+    return count
+
+
 class WeaponChoiceDialog:
     """Dialog for choosing weapon and profile for a unit during shooting phase"""
     def __init__(self, screen_width: int, screen_height: int):
@@ -46,92 +117,24 @@ class WeaponChoiceDialog:
         
         self.hovered_weapon = None
         self.weapon_buttons = []
+        self.decision_request = None
+        self._option_entries = []
     
-    def show(self, unit, callback, game_map=None):
+    def show(self, unit, callback, game_map=None, decision_request=None):
         """Show the dialog for the given unit"""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
+        self.decision_request = decision_request
         self.visible = True
         self.scroll_offset = 0
         
         # Collect all available weapons and profiles
-        self.available_weapons = []
-        for model in unit.models:
-            if not model.is_alive:
-                continue
-            
-            for wargear in model.wargear:
-                if wargear.is_ranged():
-                    if wargear.is_bubblechukka():
-                        profile = None
-                        for candidate in wargear.profiles.values():
-                            if getattr(candidate, "is_bubblechukka", lambda: False)():
-                                profile = candidate
-                                break
-                        if profile is None:
-                            profile = next(iter(wargear.profiles.values()), None)
-                        if profile is None:
-                            continue
-                        # Check if unit can shoot this weapon
-                        can_shoot = True
-                        if unit.round_state.advanced_this_round:
-                            # Unit method already checks both weapon-specific and unit-specific abilities
-                            if not unit.can_shoot_after_advance(profile):
-                                can_shoot = False
-                        if unit.round_state.fell_back_this_round:
-                            if not unit.can_shoot_after_fall_back(profile):
-                                can_shoot = False
-
-                        weapon_info = {
-                            'wargear': wargear,
-                            'profile': profile,
-                            'profile_name': "random profile",
-                            'model': model,
-                            'can_shoot': can_shoot,
-                            'models_with_weapon': self._count_models_with_weapon(unit, wargear)
-                        }
-
-                        # Avoid duplicates (same weapon/profile combo)
-                        if not any(w['wargear'] == wargear and w['profile'] == profile
-                                 for w in self.available_weapons):
-                            self.available_weapons.append(weapon_info)
-                        continue
-                    for profile_name, profile in wargear.profiles.items():
-                        # Check if unit can shoot this weapon
-                        can_shoot = True
-                        if unit.round_state.advanced_this_round:
-                            # Unit method already checks both weapon-specific and unit-specific abilities
-                            if not unit.can_shoot_after_advance(profile):
-                                can_shoot = False
-                        if unit.round_state.fell_back_this_round:
-                            if not unit.can_shoot_after_fall_back(profile):
-                                can_shoot = False
-                        
-                        weapon_info = {
-                            'wargear': wargear,
-                            'profile': profile,
-                            'profile_name': profile_name,
-                            'model': model,
-                            'can_shoot': can_shoot,
-                            'models_with_weapon': self._count_models_with_weapon(unit, wargear)
-                        }
-                        
-                        # Avoid duplicates (same weapon/profile combo)
-                        if not any(w['wargear'] == wargear and w['profile_name'] == profile_name 
-                                 for w in self.available_weapons):
-                            self.available_weapons.append(weapon_info)
+        self.available_weapons = collect_available_weapons(unit)
+        self._option_entries = self._match_options_to_weapons()
         
         # Create button rectangles
         self._create_weapon_buttons()
-    
-    def _count_models_with_weapon(self, unit, wargear):
-        """Count how many models in the unit have this weapon"""
-        count = 0
-        for model in unit.models:
-            if model.is_alive and wargear in model.wargear:
-                count += 1
-        return count
     
     def _create_weapon_buttons(self):
         """Create button rectangles for weapon selection"""
@@ -153,6 +156,34 @@ class WeaponChoiceDialog:
         total_height = len(self.available_weapons) * (button_height + button_spacing)
         visible_height = self.height - 100  # Account for title and padding
         self.max_scroll = max(0, total_height - visible_height)
+
+    def _match_options_to_weapons(self):
+        if self.decision_request is None:
+            return []
+        try:
+            from ...utility.entity_ids import get_entity_id
+        except Exception:
+            return []
+        options = list(getattr(self.decision_request, "options", []) or [])
+        entries = []
+        for weapon_info in self.available_weapons:
+            wargear_id = ""
+            try:
+                wargear_id = get_entity_id(weapon_info.get("wargear"))
+            except Exception:
+                wargear_id = ""
+            profile_name = str(weapon_info.get("profile_name", "") or "")
+            match = None
+            for opt in options:
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("wargear_id", "")) != wargear_id:
+                    continue
+                if str(payload.get("profile_name", "")) != profile_name:
+                    continue
+                match = opt
+                break
+            entries.append(match)
+        return entries
     
     def hide(self):
         """Hide the dialog"""
@@ -163,6 +194,8 @@ class WeaponChoiceDialog:
         self.available_weapons = []
         self.weapon_buttons = []
         self.scroll_offset = 0
+        self.decision_request = None
+        self._option_entries = []
     
     def handle_event(self, event):
         """Handle pygame events"""
@@ -195,7 +228,9 @@ class WeaponChoiceDialog:
                 weapon_info = self.available_weapons[i]
                 if weapon_info['can_shoot']:
                     if self.callback:
-                        self.callback(weapon_info['profile'])
+                        opt = self._option_entries[i] if i < len(self._option_entries) else None
+                        if opt is not None:
+                            self.callback(opt.option_id)
                     self.hide()
                     return True
         

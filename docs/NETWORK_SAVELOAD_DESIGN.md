@@ -95,6 +95,9 @@ Validation:
 - Engine validates every command before applying.
 - Invalid commands do not mutate state and produce error events.
 
+DecisionResult command:
+- `RESOLVE_DECISION` payload: `decision_id`, `option_id`, `result_payload` (optional dict)
+
 Command execution:
 - `Game.apply_command(...)` validates and dispatches commands through the engine dispatcher.
 - `Game.process_command_queue(...)` drains queued commands in order for deterministic replay.
@@ -105,7 +108,7 @@ Command execution:
 DecisionRequest:
 - request_id
 - actor_player_id
-- type (enum)
+- decision_type (enum)
 - context (phase, unit_id, target_id, weapon_id, etc)
 - options (list of valid options with IDs and parameters)
 - constraints (range, min/max, count limits)
@@ -239,7 +242,7 @@ PR3: Decision/Command API enforcement (Completed)
 - Convert existing direct UI mutations to commands.
 - Emit DecisionRequests for every optional choice (dialog mapping in PR4).
 
-PR4: Dialog integration
+PR4: Dialog integration (Completed)
 - Map every dialog to a DecisionRequest type.
 - Ensure UI uses the decision options payload.
 - Add headless controller path for all dialogs.

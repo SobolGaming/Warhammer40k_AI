@@ -48,11 +48,19 @@ class ReservesAllocationDialog(BaseDialog):
 
         self._message: str = ""
         self._message_color = TEXT_SECONDARY
+        self.decision_request = None
+        self._option_entries: List[dict] = []
 
-    def show(self, army, *, on_confirm: Callable[[Dict[str, str]], None], on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(self, army, *, on_confirm: Callable[[str, Dict[str, List[str]]], None], on_cancel: Optional[Callable[[], None]] = None, decision_request=None) -> None:
         self.army = army
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
         self.scroll_offset = 0
         self.selected_index = 0
         self._message = ""
@@ -81,6 +89,8 @@ class ReservesAllocationDialog(BaseDialog):
         self.on_cancel = None
         self._message = ""
         self._message_color = TEXT_SECONDARY
+        self.decision_request = None
+        self._option_entries = []
 
     # -------------------------------
     # Helpers
@@ -270,7 +280,13 @@ class ReservesAllocationDialog(BaseDialog):
                     self._message_color = TEXT_WARNING
                     return True
             if self.on_confirm:
-                self.on_confirm(dict(self.decisions))
+                buckets: Dict[str, List[str]] = {"deploy": [], "reserves": [], "strategic_reserves": []}
+                for uid, choice in dict(self.decisions).items():
+                    if choice not in buckets:
+                        continue
+                    buckets[choice].append(uid)
+                option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                self.on_confirm(option_id, buckets)
             self.hide()
             return True
 

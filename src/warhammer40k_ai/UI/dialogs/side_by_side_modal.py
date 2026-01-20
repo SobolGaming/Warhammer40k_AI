@@ -29,6 +29,7 @@ class SideBySideModal:
         self.right = right
         self.on_both_done = on_both_done
         self.visible = False
+        self.decision_request = None
 
         # Optional helper: set by callers when a side completes
         self.left_done = False
@@ -39,7 +40,8 @@ class SideBySideModal:
         self._overlay.set_alpha(96)
         self._overlay.fill((0, 0, 0))
 
-    def show(self) -> None:
+    def show(self, *, decision_request=None) -> None:
+        self.decision_request = decision_request
         self.visible = True
         try:
             self.left.visible = True
@@ -52,6 +54,7 @@ class SideBySideModal:
 
     def hide(self) -> None:
         self.visible = False
+        self.decision_request = None
         try:
             self.left.hide()
         except Exception:
@@ -143,5 +146,4 @@ class SideBySideModal:
                 self.right.draw(screen)
         except Exception:
             pass
-
 

@@ -19,6 +19,9 @@ class AspectShrinePromptDialog(BaseDialog):
         self.title = "Aspect Shrine Token"
         self.message = ""
         self._roll_text = ""
+        self.decision_request = None
+        self._option_ids = {"use": "", "skip": "", "suppress": ""}
+        self._labels = {"use": "Use", "skip": "Don't Use", "suppress": "Don't Use for this Unit"}
 
     def show(
         self,
@@ -27,10 +30,23 @@ class AspectShrinePromptDialog(BaseDialog):
         message: str,
         roll_text: str = "",
         callback: Callable[[str], None],
+        decision_request=None,
     ):
         self.title = title or "Aspect Shrine Token"
         self.message = message or ""
         self._roll_text = roll_text or ""
+        self.decision_request = decision_request
+        self._option_ids = {"use": "", "skip": "", "suppress": ""}
+        self._labels = {"use": "Use", "skip": "Don't Use", "suppress": "Don't Use for this Unit"}
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            for entry in option_entries(self.decision_request):
+                payload = entry.get("payload", {})
+                key = str(payload.get("choice", payload.get("action", entry.get("label", ""))) or "").lower()
+                if key in self._option_ids:
+                    self._option_ids[key] = entry.get("option_id", "")
+                    self._labels[key] = entry.get("label", self._labels[key]) or self._labels[key]
         super().show(callback=callback)
         self._create_buttons()
 
@@ -51,17 +67,17 @@ class AspectShrinePromptDialog(BaseDialog):
         if button_name == "use":
             self.hide()
             if cb:
-                cb("use")
+                cb(self._option_ids["use"])
             return True
         if button_name == "skip":
             self.hide()
             if cb:
-                cb("skip")
+                cb(self._option_ids["skip"])
             return True
         if button_name == "suppress":
             self.hide()
             if cb:
-                cb("suppress")
+                cb(self._option_ids["suppress"])
             return True
         return False
 
@@ -111,6 +127,12 @@ class AspectShrinePromptDialog(BaseDialog):
             screen.blit(msg, (self.x + 20, msg_y))
 
         self._create_buttons()
-        self.draw_button(screen, "use", "Use", text_color=TEXT_PRIMARY)
-        self.draw_button(screen, "skip", "Don't Use", text_color=TEXT_PRIMARY)
-        self.draw_button(screen, "suppress", "Don't Use for this Unit", text_color=TEXT_PRIMARY)
+        self.draw_button(screen, "use", self._labels["use"], text_color=TEXT_PRIMARY)
+        self.draw_button(screen, "skip", self._labels["skip"], text_color=TEXT_PRIMARY)
+        self.draw_button(screen, "suppress", self._labels["suppress"], text_color=TEXT_PRIMARY)
+
+    def hide(self):
+        super().hide()
+        self.decision_request = None
+        self._option_ids = {"use": "", "skip": "", "suppress": ""}
+        self._labels = {"use": "Use", "skip": "Don't Use", "suppress": "Don't Use for this Unit"}

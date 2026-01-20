@@ -40,6 +40,7 @@ class DecisionOption:
 class DecisionRequest:
     decision_id: str
     player_id: Optional[str]
+    decision_type: str
     prompt: str
     options: List[DecisionOption] = field(default_factory=list)
     context: Dict[str, Any] = field(default_factory=dict)
@@ -49,6 +50,7 @@ class DecisionRequest:
     @classmethod
     def create(
         cls,
+        decision_type: str,
         prompt: str,
         *,
         player_id: Optional[str] = None,
@@ -56,9 +58,13 @@ class DecisionRequest:
         context: Optional[Dict[str, Any]] = None,
         timeout_seconds: Optional[float] = None,
     ) -> "DecisionRequest":
+        dtype = str(decision_type or "").strip()
+        if not dtype:
+            raise ValueError("DecisionRequest requires decision_type.")
         return cls(
             decision_id=str(uuid.uuid4()),
             player_id=player_id,
+            decision_type=dtype,
             prompt=str(prompt),
             options=list(options or []),
             context=dict(context or {}),
@@ -69,6 +75,7 @@ class DecisionRequest:
         return {
             "decision_id": self.decision_id,
             "player_id": self.player_id,
+            "decision_type": self.decision_type,
             "prompt": self.prompt,
             "options": [opt.to_dict() for opt in self.options],
             "context": dict(self.context or {}),
@@ -82,9 +89,13 @@ class DecisionRequest:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "DecisionRequest":
+        decision_type = str(data.get("decision_type", "") or "").strip()
+        if not decision_type:
+            raise ValueError("DecisionRequest missing decision_type.")
         return cls(
             decision_id=str(data.get("decision_id", "") or ""),
             player_id=data.get("player_id", None),
+            decision_type=decision_type,
             prompt=str(data.get("prompt", "") or ""),
             options=[DecisionOption.from_dict(d) for d in list(data.get("options", []) or [])],
             context=dict(data.get("context", {}) or {}),
@@ -145,6 +156,14 @@ class DecisionQueue:
         for idx, req in enumerate(self._pending):
             if req.decision_id == decision_id:
                 return self._pending.pop(idx)
+        return None
+
+    def get(self, decision_id: str) -> Optional[DecisionRequest]:
+        if not self._pending:
+            return None
+        for req in self._pending:
+            if req.decision_id == decision_id:
+                return req
         return None
 
     def list(self) -> List[DecisionRequest]:

@@ -16,6 +16,7 @@ from .base_dialog import (
     TEXT_DISABLED,
 )
 from ...units.wargear import AttackCountInfo
+from ...utility.entity_ids import get_entity_id
 
 
 class MeleeWeaponTargetAllocationDialog(BaseDialog):
@@ -27,10 +28,13 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
         self.target_units: List = []
         self.weapon_bundles: List[dict] = []
         self.game_map = None
+        self.game = None
         self.split_dialog = None
 
         self.on_confirm: Optional[Callable[[List[dict]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
 
         self.scroll_offset = 0
         self.max_scroll = 0
@@ -45,16 +49,25 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
         weapon_declarations: List[dict],
         on_confirm: Callable[[List[dict]], None],
         game_map=None,
-        on_cancel: Optional[Callable[[], None]] = None,
         *,
+        game=None,
+        on_cancel: Optional[Callable[[], None]] = None,
         split_dialog=None,
+        decision_request=None,
     ) -> None:
         self.unit = unit
         self.target_units = list(target_units or [])
         self.game_map = game_map
+        self.game = game
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
         self.split_dialog = split_dialog
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
 
         self.scroll_offset = 0
         self._build_bundles(list(weapon_declarations or []))
@@ -67,12 +80,15 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
         self.target_units = []
         self.weapon_bundles = []
         self.game_map = None
+        self.game = None
         self.on_confirm = None
         self.on_cancel = None
         self.split_dialog = None
         self.scroll_offset = 0
         self.max_scroll = 0
         self._row_hitboxes = []
+        self.decision_request = None
+        self._option_entries = []
 
     def _build_bundles(self, weapon_declarations: List[dict]) -> None:
         self.weapon_bundles = []
@@ -151,7 +167,8 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
             if not self._can_confirm():
                 return True
             if callable(self.on_confirm):
-                self.on_confirm(self._build_attack_declarations())
+                option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                self.on_confirm(option_id, {"attack_declarations": self._build_attack_declarations()})
             self.hide()
             return True
         return False
@@ -161,8 +178,12 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
         for bundle in self.weapon_bundles:
             model = bundle.get("model")
             profile = bundle.get("weapon_profile")
+            wargear = bundle.get("wargear")
             if model is None or profile is None:
                 continue
+            model_id = get_entity_id(model)
+            wargear_id = get_entity_id(wargear) if wargear is not None else ""
+            profile_name = str(bundle.get("profile_name") or "")
             if bundle.get("split_allocations"):
                 attack_info: Optional[AttackCountInfo] = bundle.get("split_attack_info")
                 total = int(getattr(attack_info, "num_attacks", 0) or 0) if attack_info else 0
@@ -172,11 +193,10 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
                         continue
                     note = f"Split {int(count)} of {int(total)}"
                     declarations.append({
-                        "model": model,
-                        "weapon_profile": profile,
-                        "wargear": bundle.get("wargear"),
-                        "profile_name": bundle.get("profile_name"),
-                        "target_unit": target,
+                        "model_id": model_id,
+                        "wargear_id": wargear_id,
+                        "profile_name": profile_name,
+                        "target_unit_id": get_entity_id(target),
                         "attacks_override": int(count),
                         "attacks_override_modifiers": mods,
                         "attacks_override_note": note,
@@ -186,11 +206,10 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
             if target is None:
                 continue
             declarations.append({
-                "model": model,
-                "weapon_profile": profile,
-                "wargear": bundle.get("wargear"),
-                "profile_name": bundle.get("profile_name"),
-                "target_unit": target,
+                "model_id": model_id,
+                "wargear_id": wargear_id,
+                "profile_name": profile_name,
+                "target_unit_id": get_entity_id(target),
             })
         return declarations
 
@@ -203,10 +222,49 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
         eligible_targets = bundle.get("eligible_targets") or []
         if len(eligible_targets) < 2:
             return
+        from ...engine.decision_kinds import DECISION_SPLIT_ATTACKS
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_command
 
-        def _on_confirm(allocations: Dict[object, int], attack_info: AttackCountInfo):
+        request = None
+        if self.game is not None:
+            unit_id = get_entity_id(self.unit) if self.unit is not None else ""
+            model = bundle.get("model")
+            wargear = bundle.get("wargear")
+            profile_name = str(bundle.get("profile_name", "") or "")
+            bundle_id = f"{get_entity_id(model)}:{get_entity_id(wargear)}:{profile_name}" if model and wargear else ""
+            request = DecisionRequest.create(
+                DECISION_SPLIT_ATTACKS,
+                f"Split attacks for {getattr(self.unit, 'name', 'Unit')}",
+                player_id=getattr(getattr(self.unit.get_parent_army(), "player", None), "id", None) if self.unit else None,
+                options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "bundle_id": bundle_id})],
+                context={"unit_id": unit_id, "bundle_id": bundle_id},
+            )
+            self.game.request_decision(request)
+
+        def _deserialize_attack_info(payload: dict) -> AttackCountInfo:
+            return AttackCountInfo(
+                num_attacks=int(payload.get("num_attacks", 0) or 0),
+                dice_rolls=list(payload.get("dice_rolls", []) or []),
+                special_modifiers=list(payload.get("special_modifiers", []) or []),
+            )
+
+        def _on_confirm(option_id: str, payload: dict):
+            allocations_raw = dict(payload.get("split_allocations") or {})
+            attack_info_data = dict(payload.get("attack_info") or {})
+            if request is not None and self.game is not None:
+                resolve_decision_command(self.game, request, option_id, result_payload=payload)
+
+            unit_by_id = {str(get_entity_id(t)): t for t in list(eligible_targets or [])}
+            allocations: Dict[object, int] = {}
+            for target_id, count in allocations_raw.items():
+                target = unit_by_id.get(str(target_id))
+                if target is None:
+                    continue
+                allocations[target] = int(count or 0)
+
             bundle["split_allocations"] = dict(allocations)
-            bundle["split_attack_info"] = attack_info
+            bundle["split_attack_info"] = _deserialize_attack_info(attack_info_data)
             bundle["selected_target"] = None
             self._create_buttons()
 
@@ -222,6 +280,7 @@ class MeleeWeaponTargetAllocationDialog(BaseDialog):
             allocations=bundle.get("split_allocations"),
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=request,
         )
 
     def _cycle_target(self, bundle_idx: int) -> None:

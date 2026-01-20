@@ -12,6 +12,7 @@ from .base_dialog import (
     TEXT_SECONDARY,
     TEXT_DISABLED,
 )
+from ...utility.entity_ids import get_entity_id
 
 
 class MeleeTargetAllocationDialog(BaseDialog):
@@ -22,8 +23,10 @@ class MeleeTargetAllocationDialog(BaseDialog):
         self.unit = None
         self.target_units: List = []
         self.game_map = None
-        self.on_confirm: Optional[Callable[[Dict], None]] = None
+        self.on_confirm: Optional[Callable[[str, Dict[str, List[str]]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
+        self.decision_request = None
+        self._option_entries: List[dict] = []
 
         self.model_assignments: Dict[object, Optional[object]] = {}
         self.eligible_targets_by_model: Dict[object, List[object]] = {}
@@ -37,15 +40,22 @@ class MeleeTargetAllocationDialog(BaseDialog):
         self,
         unit,
         target_units: List,
-        on_confirm: Callable[[Dict], None],
+        on_confirm: Callable[[str, Dict[str, List[str]]], None],
         game_map=None,
         on_cancel: Optional[Callable[[], None]] = None,
+        decision_request=None,
     ) -> None:
         self.unit = unit
         self.target_units = list(target_units or [])
         self.game_map = game_map
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
         super().show()
         self._initialize_assignments()
         self._create_buttons()
@@ -62,6 +72,8 @@ class MeleeTargetAllocationDialog(BaseDialog):
         self.scroll_offset = 0
         self.max_scroll = 0
         self._models_cache = []
+        self.decision_request = None
+        self._option_entries = []
 
     def _create_buttons(self) -> None:
         self.buttons.clear()
@@ -187,17 +199,18 @@ class MeleeTargetAllocationDialog(BaseDialog):
             return True
         if button_name == "confirm":
             if self.on_confirm:
-                self.on_confirm(self._build_target_declarations())
+                option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                self.on_confirm(option_id, {"target_allocations": self._build_target_declarations()})
             self.hide()
             return True
         return False
 
-    def _build_target_declarations(self) -> Dict:
-        declarations: Dict[object, List[object]] = {}
+    def _build_target_declarations(self) -> Dict[str, List[str]]:
+        declarations: Dict[str, List[str]] = {}
         for model, target in self.model_assignments.items():
             if target is None:
                 continue
-            declarations.setdefault(target, []).append(model)
+            declarations.setdefault(get_entity_id(target), []).append(get_entity_id(model))
         return declarations
 
     def handle_event(self, event: pygame.event.Event) -> bool:

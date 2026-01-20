@@ -19,9 +19,11 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.army = None
         self.manager = None
         self.ctx = None
-        self.on_confirm: Optional[Callable[[Dict[str, Any]], None]] = None
+        self.on_confirm: Optional[Callable[[str, Dict[str, Any]], None]] = None
         self.on_cancel: Optional[Callable[[], None]] = None
-        self.apply_choice: bool = True
+        self.decision_request = None
+        self._option_entries: List[dict] = []
+        self._ctx_payload: Dict[str, Any] = {}
 
         self._selected_reroll: List[int] = []
         self._reroll_done: bool = False
@@ -34,7 +36,7 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self._blessing_rects: List[tuple[str, pygame.Rect]] = []
         self._reborn_rect: Optional[pygame.Rect] = None
 
-    def show(self, *, player, game, army, ctx, on_confirm: Callable[[Dict[str, Any]], None], apply_choice: bool = True, on_cancel: Optional[Callable[[], None]] = None) -> None:
+    def show(self, *, player, game, army, ctx, on_confirm: Callable[[str, Dict[str, Any]], None], on_cancel: Optional[Callable[[], None]] = None, decision_request=None) -> None:
         super().show(callback=None)
         self.player = player
         self.game = game
@@ -43,7 +45,15 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.ctx = ctx
         self.on_confirm = on_confirm
         self.on_cancel = on_cancel
-        self.apply_choice = bool(apply_choice)
+        self.decision_request = decision_request
+        self._option_entries = []
+        if self.decision_request is not None:
+            from ..decision_ui_utils import option_entries
+
+            self._option_entries = option_entries(self.decision_request)
+        self._ctx_payload = self._serialize_ctx_payload()
+        if self.decision_request is not None:
+            self.decision_request.context["ctx"] = dict(self._ctx_payload)
 
         self._selected_reroll = []
         self._reroll_done = False
@@ -63,6 +73,9 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self._die_rects = []
         self._blessing_rects = []
         self._reborn_rect = None
+        self.decision_request = None
+        self._option_entries = []
+        self._ctx_payload = {}
 
     # --- Events ---
     def _handle_button_click(self, button_name: str) -> bool:
@@ -81,10 +94,19 @@ class BlessingsOfKhorneDialog(BaseDialog):
             if not self.manager or not self.ctx:
                 return True
             try:
-                self.manager.reroll_indices(self.ctx, list(self._selected_reroll))
+                roll_fn = None
+                if self.game is not None and hasattr(self.game, "random_source"):
+                    roll_fn = lambda: int(self.game.random_source.randint(1, 6))
+                if roll_fn is not None:
+                    self.manager.reroll_indices(self.ctx, list(self._selected_reroll), roll_d6=roll_fn)
+                else:
+                    self.manager.reroll_indices(self.ctx, list(self._selected_reroll))
                 self._reroll_done = True
                 self._selected_reroll = []
                 self._error_text = ""
+                self._ctx_payload = self._serialize_ctx_payload()
+                if self.decision_request is not None:
+                    self.decision_request.context["ctx"] = dict(self._ctx_payload)
             except Exception as e:
                 self._error_text = str(e)
             return True
@@ -102,33 +124,14 @@ class BlessingsOfKhorneDialog(BaseDialog):
                 self._error_text = preview.get("error", "Invalid selection")
                 return True
 
-            if self.apply_choice:
-                try:
-                    res = self.manager.apply_choice(
-                        self.ctx,
-                        selected_blessing_keys=list(self._selected_blessings),
-                        use_reborn_in_blood=bool(self._use_reborn),
-                    )
-                except Exception as e:
-                    self._error_text = str(e)
-                    return True
-            else:
-                res = {
-                    "activated": list(self._selected_blessings),
-                    "spent_indices": list(preview.get("spent_indices", [])),
-                    "reborn_used": bool(self._use_reborn),
-                    "allocation": preview.get("allocation", {}),
-                }
-
             payload = {
-                "player": self.player,
-                "ctx": self.ctx,
-                "result": res,
                 "selected_blessings": list(self._selected_blessings),
                 "use_reborn": bool(self._use_reborn),
+                "ctx": dict(self._ctx_payload),
             }
             if callable(self.on_confirm):
-                self.on_confirm(payload)
+                option_id = self._option_entries[0]["option_id"] if self._option_entries else ""
+                self.on_confirm(option_id, payload)
             self.hide()
             return True
 
@@ -322,4 +325,25 @@ class BlessingsOfKhorneDialog(BaseDialog):
         self.draw_button(screen, "reroll", "Re-roll")
         self.draw_button(screen, "confirm", "Confirm")
         self.draw_button(screen, "cancel", "Cancel")
+
+    def _serialize_ctx_payload(self) -> Dict[str, Any]:
+        ctx = self.ctx
+        if ctx is None:
+            return {}
+        timing = getattr(ctx, "timing", None)
+        if hasattr(timing, "name"):
+            timing_val = timing.name
+        else:
+            timing_val = str(timing or "")
+        return {
+            "timing": timing_val,
+            "battle_round": int(getattr(ctx, "battle_round", 0) or 0),
+            "dice": list(getattr(ctx, "dice", []) or []),
+            "rerolls_allowed": int(getattr(ctx, "rerolls_allowed", 0) or 0),
+            "rerolled_indices": list(getattr(ctx, "rerolled_indices", []) or []),
+            "max_activations": int(getattr(ctx, "max_activations", 0) or 0),
+            "counts_toward_baseline_limit": bool(getattr(ctx, "counts_toward_baseline_limit", False)),
+            "already_active_keys": list(getattr(ctx, "already_active_keys", set()) or []),
+            "reborn_in_blood_available": bool(getattr(ctx, "reborn_in_blood_available", False)),
+        }
 

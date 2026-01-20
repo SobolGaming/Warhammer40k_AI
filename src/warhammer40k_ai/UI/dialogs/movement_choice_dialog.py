@@ -12,27 +12,38 @@ class MovementChoiceDialog(BaseDialog):
         self.game_map = None
         self.available_actions = []
         self._embark_candidates = []
+        self.decision_request = None
     
-    def show(self, unit, callback, game_map=None):
+    def show(self, unit, callback, game_map=None, decision_request=None):
         """Show the dialog for the given unit"""
         self.unit = unit
         self.callback = callback
         self.game_map = game_map
+        self.decision_request = decision_request
         super().show(callback)
         
-        # Get available actions based on engagement state
-        if game_map:
-            engagement_state = unit.get_engagement_state(game_map)
-            self.available_actions = unit.get_available_move_actions(engagement_state.value)
+        if decision_request is not None:
+            actions = []
+            for opt in list(getattr(decision_request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                action = str(payload.get("action_type", "") or "")
+                if action:
+                    actions.append(action)
+            self.available_actions = actions
         else:
-            # Fallback - assume all actions available
-            from warhammer40k_ai.units.unit import MovementAction
-            self.available_actions = [
-                MovementAction.REMAIN_STATIONARY.value,
-                MovementAction.MOVE.value,
-                MovementAction.ADVANCE.value,
-                MovementAction.FALL_BACK.value
-            ]
+            # Get available actions based on engagement state
+            if game_map:
+                engagement_state = unit.get_engagement_state(game_map)
+                self.available_actions = unit.get_available_move_actions(engagement_state.value)
+            else:
+                # Fallback - assume all actions available
+                from warhammer40k_ai.units.unit import MovementAction
+                self.available_actions = [
+                    MovementAction.REMAIN_STATIONARY.value,
+                    MovementAction.MOVE.value,
+                    MovementAction.ADVANCE.value,
+                    MovementAction.FALL_BACK.value
+                ]
         # Precompute embark candidates if this is a transport
         self._embark_candidates = self._compute_embark_candidates()
         # Create buttons
@@ -46,11 +57,15 @@ class MovementChoiceDialog(BaseDialog):
         self.game_map = None
         self.available_actions = []
         self._embark_candidates = []
+        self.decision_request = None
 
     def is_action_available(self, action_name: str) -> bool:
         """Check if a movement action is available for the current unit"""
         from warhammer40k_ai.units.unit import MovementAction
-        
+
+        if self.decision_request is not None:
+            return action_name in self.available_actions
+
         action_map = {
             'move': MovementAction.MOVE.value,
             'advance': MovementAction.ADVANCE.value,
@@ -106,50 +121,9 @@ class MovementChoiceDialog(BaseDialog):
 
     def _compute_embark_candidates(self) -> List:
         """Return friendly units on the map that are currently valid to embark into this transport."""
-        if not self.unit or not getattr(self.unit, "is_transport", False):
-            return []
-        if not self.game_map:
-            return []
-        transport = self.unit
-        if not getattr(transport, "models", None):
-            return []
-        try:
-            t_model = transport.models[0]
-        except Exception:
-            return []
-        if not getattr(t_model, "is_alive", False):
-            return []
+        from ...utility.movement_utils import compute_embark_candidates
 
-        candidates = []
-        for u in list(getattr(self.game_map, "units", []) or []):
-            if u is None or u == transport:
-                continue
-            if not u.is_alive():
-                continue
-            # Must be friendly
-            if u.get_parent_army() != transport.get_parent_army():
-                continue
-            # Must be able to transport (capacity + keyword restrictions)
-            if not transport.can_transport(u):
-                continue
-            # Must have moved (not remain stationary) and not have disembarked this turn
-            if getattr(u.round_state, "remained_stationary_this_round", False):
-                continue
-            if getattr(u.round_state, "disembarked_this_round", False):
-                continue
-            # Must be within 3" with all models
-            ok = True
-            from ...utility.aura_utils import distance_between_models_bases_3d
-            for m in u.models:
-                if not m.is_alive:
-                    continue
-                if float(distance_between_models_bases_3d(m, t_model)) > 3.0 + 1e-6:
-                    ok = False
-                    break
-            if not ok:
-                continue
-            candidates.append(u)
-        return candidates
+        return compute_embark_candidates(self.unit, self.game_map)
 
     def _create_buttons(self):
         # Clear existing movement buttons

@@ -21,7 +21,8 @@ from .command_kinds import (
     CMD_SELECT_MISSION,
     CMD_SET_DEPLOYMENT_WAITING,
 )
-from .decisions import DecisionQueue, DecisionRequest, DecisionResult
+from .decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
+from .decision_kinds import DECISION_CHOOSE_MISSION
 from .random_source import RandomSource
 from ..rules.lifecycle import AbilityLifecycle
 from ..rules.registry import RuleRegistry
@@ -3389,12 +3390,172 @@ class Game:
         self.decision_queue.add(request)
         self.event_system.publish("decision_requested", request=request, game=self)
 
-    def resolve_decision(self, result: DecisionResult) -> None:
+    def request_mission_selection(self) -> DecisionRequest:
+        """Queue a mission selection decision request and return it."""
+        from .mission_selection import iter_mission_combinations
+
+        combos = iter_mission_combinations()
+        options = []
+        for combo in combos:
+            label = f"{combo.get('id')} - {combo.get('primary')} / {combo.get('deployment')}"
+            options.append(DecisionOption.create(label, payload={"combination": dict(combo)}))
+        player_id = None
+        try:
+            player_id = self.get_current_player().id
+        except Exception:
+            player_id = None
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_MISSION,
+            "Select mission combination and terrain layout.",
+            player_id=player_id,
+            options=options,
+        )
+        self.request_decision(request)
+        return request
+
+    def apply_transport_assignments(self, army, units, assignments) -> bool:
+        """Apply pre-battle transport assignments for an army."""
+        if army is None:
+            return False
+        # Clear any previous start-embarked assignments for this army.
+        for unit in list(units or []):
+            if getattr(unit, "is_transport", False):
+                continue
+            if getattr(unit, "embarked_in", None) is not None and (not getattr(unit, "deployed", False)):
+                try:
+                    transport = unit.embarked_in
+                    if transport is not None:
+                        transport.remove_passenger(unit)
+                except Exception:
+                    pass
+
+        for transport, passengers in (assignments or {}).items():
+            for passenger in list(passengers or []):
+                try:
+                    passenger.embark(transport, game_map=self.map)
+                except Exception:
+                    return False
+                try:
+                    passenger.deployed = True
+                except Exception:
+                    pass
+                try:
+                    for leader in list(getattr(passenger, "attached_leaders", []) or []):
+                        leader.deployed = True
+                except Exception:
+                    pass
+        return True
+
+    def apply_reserves_decisions(self, army, decisions: dict) -> bool:
+        """Apply reserves decisions to an army."""
+        if army is None:
+            return False
+        try:
+            try:
+                roots = list(getattr(army, "_reserve_group_roots")() or [])
+            except Exception:
+                roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
+
+            for root in roots:
+                rid = str(getattr(root, "_id", None) or "")
+                decision = str(decisions.get(rid, "deploy") or "deploy")
+                try:
+                    if bool(getattr(root, "must_start_in_reserves", lambda: False)()):
+                        if decision != "reserves":
+                            print(f"{root.name} must start in Reserves (AIRCRAFT)")
+                        decision = "reserves"
+                except Exception:
+                    pass
+                started = decision in ("reserves", "strategic_reserves")
+                if decision == "deploy":
+                    root.set_reserve_status("deployed")
+                    root.deployed = False
+                elif decision == "reserves":
+                    root.set_reserve_status("reserves")
+                    root.deployed = True
+                elif decision == "strategic_reserves":
+                    root.set_reserve_status("strategic_reserves")
+                    root.deployed = True
+                else:
+                    root.set_reserve_status("deployed")
+                    root.deployed = False
+
+                # AIRCRAFT TRANSPORT rule: passengers must also start in Reserves.
+                try:
+                    is_transport = bool(getattr(root, "is_transport", False))
+                    must_reserves = bool(getattr(root, "must_start_in_reserves", lambda: False)())
+                except Exception:
+                    is_transport = False
+                    must_reserves = False
+                if is_transport and must_reserves and decision in ("reserves", "strategic_reserves"):
+                    try:
+                        passengers = list(getattr(root, "transport_passengers", []) or [])
+                    except Exception:
+                        passengers = []
+                    for passenger in passengers:
+                        try:
+                            passenger.set_reserve_status("reserves")
+                        except Exception:
+                            try:
+                                passenger.reserve_status = "reserves"
+                            except Exception:
+                                pass
+                        try:
+                            passenger.deployed = True
+                        except Exception:
+                            pass
+                        try:
+                            setattr(passenger, "_started_in_reserves", True)
+                        except Exception:
+                            pass
+                        try:
+                            for leader in list(getattr(passenger, "attached_leaders", []) or []):
+                                setattr(leader, "_started_in_reserves", True)
+                        except Exception:
+                            pass
+
+                try:
+                    members = list(getattr(army, "_reserve_group_members")(root) or [])
+                except Exception:
+                    members = [root]
+                # Mark which units started the game in reserves (Chapter Approved round-3 destruction applies only to these).
+                for member in members:
+                    try:
+                        setattr(member, "_started_in_reserves", bool(started))
+                    except Exception:
+                        pass
+                for member in members:
+                    if member is root:
+                        continue
+                    try:
+                        member.set_reserve_status(getattr(root, "reserve_status", "deployed"))
+                    except Exception:
+                        try:
+                            member.reserve_status = getattr(root, "reserve_status", "deployed")
+                        except Exception:
+                            pass
+                    try:
+                        member.deployed = True
+                    except Exception:
+                        pass
+        except Exception:
+            return False
+        return True
+
+    def resolve_decision(self, result: DecisionResult):
         """Resolve and remove a pending decision."""
         if result is None:
-            return
-        self.decision_queue.pop(result.decision_id)
-        self.event_system.publish("decision_resolved", result=result, game=self)
+            return None
+        request = self.decision_queue.get(result.decision_id)
+        if request is None:
+            return None
+        from .decision_dispatcher import dispatch_decision
+
+        apply_result = dispatch_decision(self, request, result)
+        if apply_result.ok:
+            self.decision_queue.pop(result.decision_id)
+            self.event_system.publish("decision_resolved", result=result, request=request, game=self)
+        return apply_result
 
     def get_current_player(self) -> Player:
         """Get the current player."""
