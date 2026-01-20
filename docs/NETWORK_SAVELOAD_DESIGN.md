@@ -217,12 +217,45 @@ This keeps AI and network clients identical to human UI behavior.
 - Client UIs replay events to update local views.
 - Server can push Snapshot + Event tail for resync.
 
+## Network Message Schema (PR6)
+
+Envelope:
+- type
+- protocol_version
+- payload
+
+Message payloads:
+- Snapshot: { snapshot }
+- Command: { command, client_last_event_id? }
+- Event: { events[] }
+- Error: { errors[], context? }
+- Resync: { snapshot, events[], reason?, since_event_id? }
+
+Round-trip validation (default):
+- Server compares client_last_event_id to its current event_id.
+- If mismatched or out of range, respond with Resync instead of applying the command.
+- Otherwise apply the command and return Event(s); if rejected, also return Error.
+
+Resync snapshots clear their embedded events list (events are sent separately in the Resync payload).
+
 ## Save/Load Flow
 
 - Save is a Snapshot + (optional) Event tail.
 - Load restores Snapshot, rehydrates registries, replays Event tail.
 - On load, pending DecisionRequests are re-queued exactly once.
 - Save/Load allowed only if battle_round >= 1.
+
+## Session Storage (PR7)
+
+Snapshots and event logs are stored under:
+- `./games/data/<session_id>/`
+
+Files:
+- `manifest.json`: UX metadata (player stubs with id/control/agent_type, factions/detachments, battle round/phase, scores).
+- `snapshot.json`: single snapshot per session (event log is embedded in the snapshot).
+
+Cleanup:
+- Manual only. No auto-pruning or expiry yet.
 
 ## Snapshot Implementation Notes (PR2)
 
@@ -258,13 +291,14 @@ PR5: Event log and replay (Completed)
 - Persist event log tail alongside snapshot and restore on load.
 - Provide replay helper to run commands against a snapshot + event tail; add tests.
 
-PR6: Network transport
+PR6: Network transport (Completed)
 - Add server/client message types (Snapshot, Command, Event, Error, Resync).
-- Implement round-trip validation and resync.
+- Implement round-trip validation and resync helpers.
 
-PR7: Save/Load UX
+PR7: Save/Load UX (Completed)
 - Add save/load endpoints in engine API (no UI changes required here).
 - Enforce battle_round >= 1 gating.
+- API: Game.save_snapshot(), Game.load_snapshot(snapshot).
 
 ## Acceptance Criteria
 
@@ -276,5 +310,4 @@ PR7: Save/Load UX
 
 ## Open Questions
 
-- Where to store snapshot files and event logs (docs vs data directory).
 - How much event history to retain for resyncs.

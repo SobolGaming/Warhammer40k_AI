@@ -43,3 +43,6 @@ wahapedia_data/Archive
 
 # Mac OS specific
 .DS_Store
+
+# Local game session data
+games/data/

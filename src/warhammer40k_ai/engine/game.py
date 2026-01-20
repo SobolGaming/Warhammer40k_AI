@@ -5987,6 +5987,19 @@ class Game:
             "phase": self.phase,
         }
 
+    def save_snapshot(self) -> dict:
+        """Serialize the current game state into a snapshot payload."""
+        from .snapshot import snapshot_game
+
+        return snapshot_game(self)
+
+    @staticmethod
+    def load_snapshot(snapshot: dict) -> "Game":
+        """Load a game instance from a snapshot payload."""
+        from .snapshot import load_game_snapshot
+
+        return load_game_snapshot(snapshot)
+
     def declare_charge(self, charging_unit: 'Unit', target_unit: 'Unit', *, out_of_turn: bool = False) -> dict | None:
         """
         Single source of truth for charge declaration bookkeeping + rolling:
