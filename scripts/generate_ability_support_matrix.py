@@ -1293,6 +1293,7 @@ def _classify_ability(
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
     move_over_friendly_support = _move_over_friendly_monster_vehicle_support(description)
+    move_over_mortal_support = _move_over_mortal_wounds_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -1340,6 +1341,8 @@ def _classify_ability(
         return battlesuit_support_system_support
     if move_over_friendly_support:
         return move_over_friendly_support
+    if move_over_mortal_support:
+        return move_over_mortal_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -3120,6 +3123,56 @@ def _move_over_friendly_monster_vehicle_support(description: str) -> Optional[Tu
     height = m.group("height")
     type_label = "/".join(move_types)
     return ("Supported", f"{type_label}: move through friendly MONSTER/VEHICLE models and terrain <= {height}\".")
+
+
+def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+        r"(?:that )?(?:it )?moved over during that move "
+        r"(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
+        r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>\d+) mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    moves_text = (m.group("moves") or "").strip()
+    tokens = [t for t in moves_text.split() if t]
+    allowed = {"normal", "advance", "or", "and"}
+    if not tokens or any(t not in allowed for t in tokens):
+        return None
+    if "normal" not in tokens:
+        return None
+    move_types = ["Normal"]
+    if "advance" in tokens:
+        move_types.append("Advance")
+    dice_raw = (m.group("dice") or "").strip().lower()
+    dice_map = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+    }
+    dice_count = int(dice_raw) if dice_raw.isdigit() else dice_map.get(dice_raw, 0)
+    if dice_count <= 0:
+        return None
+    threshold = int(m.group("threshold") or 0)
+    mortal_per = int(m.group("mw") or 0)
+    if threshold <= 0 or mortal_per <= 0:
+        return None
+    type_label = "/".join(move_types)
+    return ("Supported", f"{type_label}: select a moved-over enemy; roll {dice_count}D6, each {threshold}+ inflicts {mortal_per} mortal wound(s).")
 
 
 def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:
