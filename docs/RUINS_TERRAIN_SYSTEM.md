@@ -50,26 +50,50 @@ ruins = TerrainFactory.create_ruins(
 - Collision and blocking polygons are computed via
   `warhammer40k_ai.utility.calcs.get_terrain_blocking_polygons`.
 - `RuinsTerrain.can_unit_move_through` enforces wall traversal rules, using
-  `RuinsTerrain.traversal_rules` (infantry/beast pass; vehicle/monster/titanic/flying blocked
-  unless an opening allows movement).
+  `RuinsTerrain.traversal_rules` and unit helpers:
+  - Breachable set: `INFANTRY`, `BEAST`, `IMPERIUM PRIMARCH`, `BELISARIUS CAWL`
+  - These units can move through walls/floors/ceilings as if not there, but can never
+    end a move within a wall/floor/ceiling volume.
+  - All other units require an opening to pass through wall volumes.
 - Floor legality and wall overlap are validated in:
   - `Map.validate_ruins_position`
   - `utility.calcs.can_end_move_on_terrain`
 
 Key rules applied:
-- Ground floor: base must not overhang the footprint and must not overlap walls.
+- Ground floor: base/hull may be partially within the footprint ("toe-in" is legal) and must
+  not overlap walls. Overhang is only restricted on upper floors.
 - Upper floors:
   - require `unit.can_access_upper_floors()`
-  - base must be within the floor polygon unless `unit.can_overhang_floor()`
+  - base/hull must be within the floor polygon (no overhang permitted)
   - wall overlap is disallowed at the model's Z
 - Floor level is resolved via `_resolve_ruins_floor_level` using the model Z.
+- "Within" vs "wholly within" uses the footprint polygon:
+  - within: any part of base/hull intersects the footprint
+  - wholly within: base/hull is fully covered by the footprint
+
+### Low terrain + FLY + Super-Heavy Walker
+- Terrain ≤2" is freely passable for all units (no blocking polygons added).
+- `FLY` units do not gain the breach-through-walls permission, but may move over walls;
+  movement is measured using the shortest path through the air (see `measure_path_distance`).
+- Super-Heavy Walker and similar abilities are handled via:
+  - `Unit.has_super_heavy_walker()` (raises freely climbable range to 4")
+  - `special_rules.move_over_low_terrain_height_value` (per-unit override)
+  These affect wall blocking and vertical movement costs.
 
 ## Line of sight
 `Map.can_model_see_model` applies ruins-aware LOS:
-- The footprint blocks outside-to-outside visibility unless aircraft are involved.
+- The footprint blocks outside-to-outside visibility regardless of openings or height
+  (unless aircraft are involved).
 - Models partially inside the footprint cannot see out unless they are towering.
+- Models within the footprint can be seen normally.
+- Models wholly within can see out normally; TOWERING models within can also see out.
 - Walls block LOS unless an opening with `allows_los` intersects the line segment at the
-  relevant height.
+  relevant height (applies only to valid "normal LOS" cases above).
+
+## Benefit of Cover and Plunging Fire
+- Benefit of Cover for RUINS is evaluated in `Map.get_benefit_of_cover_for_ranged_attack`.
+- Plunging Fire is evaluated in `WargearProfile._plunging_fire_applies`.
+
 
 ## Files
 - `src/warhammer40k_ai/battlefield/map.py`

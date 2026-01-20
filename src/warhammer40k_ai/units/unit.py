@@ -6214,8 +6214,7 @@ class Unit:
     
     def can_overhang_floor(self) -> bool:
         """Check if this unit's base can overhang floor edges on upper floors."""
-        # Only flying units can overhang floors on upper levels
-        return self.is_flying
+        return False
 
     def has_keyword_local(self, keyword: str) -> bool:
         kw = (keyword or "").lower().strip()

@@ -749,6 +749,8 @@ class RuinsTerrain(TerrainFeature):
         traversal_rules = {
             "infantry_can_pass_walls": True,
             "beast_can_pass_walls": True,
+            "imperium_primarch_can_pass_walls": True,
+            "belisarius_cawl_can_pass_walls": True,
             "vehicle_can_pass_walls": False,
             "monster_can_pass_walls": False,
             "flying_can_pass_walls": False,
@@ -785,16 +787,39 @@ class RuinsTerrain(TerrainFeature):
 
     def can_unit_move_through(self, unit, position: Tuple[float, float, float]) -> bool:
         """Check if a unit can move through a specific position in the ruins."""
-        # Check wall collision
-        if self.check_wall_collision(position):
-            # Check if unit can pass through walls
-            unit_type = self._get_unit_type(unit)
-            if not self.traversal_rules.get(f"{unit_type}_can_pass_walls", False):
-                # Check for openings that allow movement
-                if not self.check_opening_passage(position):
-                    return False
+        if not self.point_in_bounds(position):
+            return True
 
-        return True
+        x, y, z = position
+        point = Point(x, y)
+        colliding_walls = []
+        for wall in self.walls:
+            if (wall["z_bottom"] <= z <= wall["z_top"] and
+                wall["polygon"].contains(point)):
+                colliding_walls.append(wall)
+
+        if not colliding_walls:
+            return True
+
+        from ..utility.calcs import get_freely_climbable_range
+        threshold = get_freely_climbable_range(unit)
+        all_low = True
+        for wall in colliding_walls:
+            height = float(wall.get("z_top", 0.0)) - float(wall.get("z_bottom", 0.0))
+            if height > threshold:
+                all_low = False
+                break
+        if all_low:
+            return True
+
+        can_breach = False
+        fn = getattr(unit, "can_move_through_ruins_walls", None)
+        if callable(fn):
+            can_breach = bool(fn())
+        if can_breach:
+            return True
+
+        return self.check_opening_passage(position)
 
     def _get_unit_type(self, unit) -> str:
         """Get unit type string for traversal rule lookup."""
@@ -810,6 +835,10 @@ class RuinsTerrain(TerrainFeature):
             return "beast"
         elif getattr(unit, 'is_flying', False):
             return "flying"
+        elif getattr(unit, 'is_imperium_primarch', False):
+            return "imperium_primarch"
+        elif getattr(unit, 'is_belisarius_cawl', False):
+            return "belisarius_cawl"
         elif getattr(unit, 'is_titanic', False):
             return "titanic"
         elif 'Vehicle' in getattr(unit, 'keywords', []):

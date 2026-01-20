@@ -103,6 +103,17 @@ class TestLineOfSight:
         # Shooter below, target inside; line should pass through the ground-level door opening
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
 
+    def test_ruins_block_outside_to_outside_even_with_opening(self):
+        shooter = create_unit("Shooter", 13.0, 9.0)
+        target = create_unit("Target", 27.0, 9.0, faction="B")
+        attach_to_armies(self.map, [shooter], [target])
+
+        # Door aligned between shooter/target; outside-to-outside should still be blocked.
+        ruins = TerrainFactory.create_ruins([(15.0, 8.0), (25.0, 8.0), (25.0, 12.0), (15.0, 12.0)], wall_height=4.0, num_floors=1)
+        self.map.add_terrain_feature(ruins)
+
+        assert not shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+
     def test_aircraft_uses_normal_los_not_ruins_block(self):
         # Place shooter and target outside on opposite sides with ray skimming through bottom door
         shooter = create_unit("Shooter", 14.0, 8.0)
@@ -117,6 +128,22 @@ class TestLineOfSight:
         # For Aircraft, special ruins blanket block is skipped; with a bottom-edge door aligned,
         # normal wall checks allow LOS through the opening.
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+
+    def test_ruins_block_outside_to_inside_without_opening(self):
+        shooter = create_unit("Shooter", 20.0, 6.0)
+        target = create_unit("Target", 20.0, 12.0, faction="B")
+        attach_to_armies(self.map, [shooter], [target])
+
+        ruins = TerrainFactory.create_ruins(
+            [(16.0, 8.0), (24.0, 8.0), (24.0, 16.0), (16.0, 16.0)],
+            wall_height=4.0,
+            num_floors=1,
+            has_windows=False,
+            has_doors=False,
+        )
+        self.map.add_terrain_feature(ruins)
+
+        assert not shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
 
     def test_partially_inside_non_towering_cannot_see_out(self):
         # Place shooter so its base overlaps the southern wall buffer (partially inside)
@@ -148,6 +175,23 @@ class TestLineOfSight:
         # LOS should pass out through the ground-level door opening
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
 
+    def test_wholly_within_cannot_see_out_without_opening(self):
+        shooter = create_unit("Shooter", 20.0, 12.0)
+        target = create_unit("Target", 20.0, 6.0, faction="B")
+        attach_to_armies(self.map, [shooter], [target])
+
+        ruins = TerrainFactory.create_ruins(
+            [(16.0, 8.0), (24.0, 8.0), (24.0, 16.0), (16.0, 16.0)],
+            wall_height=4.0,
+            num_floors=1,
+            has_windows=False,
+            has_doors=False,
+        )
+        self.map.add_terrain_feature(ruins)
+
+        shooter.models[0].set_location(20.0, 12.0, 0.0, 0.0)
+        assert not shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+
     def test_towering_inside_can_see_out_via_opening(self):
         shooter = create_unit("Shooter", 20.0, 12.0)
         shooter.keywords = ["Towering"]
@@ -160,5 +204,23 @@ class TestLineOfSight:
         shooter.models[0].set_location(20.0, 12.0, 0.0, 0.0)
 
         assert shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
+
+    def test_towering_within_cannot_see_out_without_opening(self):
+        shooter = create_unit("Shooter", 20.0, 12.0)
+        shooter.keywords = ["Towering"]
+        target = create_unit("Target", 20.0, 6.0, faction="B")
+        attach_to_armies(self.map, [shooter], [target])
+
+        ruins = TerrainFactory.create_ruins(
+            [(16.0, 8.0), (24.0, 8.0), (24.0, 16.0), (16.0, 16.0)],
+            wall_height=4.0,
+            num_floors=1,
+            has_windows=False,
+            has_doors=False,
+        )
+        self.map.add_terrain_feature(ruins)
+
+        shooter.models[0].set_location(20.0, 12.0, 0.0, 0.0)
+        assert not shooter._has_line_of_sight_to_target(shooter.models[0], target, self.map)
 
 

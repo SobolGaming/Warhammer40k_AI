@@ -401,7 +401,23 @@ def can_traverse_freely(unit: 'Unit', terrain_feature: 'TerrainFeature') -> bool
 
     # RUINS have special traversal rules
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
-        return _can_breach_ruins_walls(unit)
+        if _can_breach_ruins_walls(unit):
+            return True
+        try:
+            if bool(getattr(unit, "is_flying", False)):
+                return True
+        except Exception:
+            pass
+        threshold = get_freely_climbable_range(unit)
+        for wall in list(getattr(terrain_feature, "walls", []) or []):
+            try:
+                z0 = float(wall.get("z_bottom", 0.0) or 0.0)
+                z1 = float(wall.get("z_top", 0.0) or 0.0)
+                if (z1 - z0) > float(threshold):
+                    return False
+            except Exception as exc:
+                raise RuntimeError("RUINS wall metadata missing") from exc
+        return True
 
     # Flying units can traverse any other terrain freely
     if unit.is_flying:
@@ -434,6 +450,9 @@ def is_terrain_impassable(unit: 'Unit', terrain_feature: 'TerrainFeature',
 
     # Only RUINS walls are truly impassable for certain unit types
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
+        fly_move = _unit_is_fly_move(unit, movement_type) if movement_type is not None else bool(getattr(unit, "is_flying", False))
+        if fly_move:
+            return False
         can_traverse_walls = _ruins_wall_traversal_allowed(unit, movement_type)
 
         if not can_traverse_walls:
@@ -487,6 +506,9 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
 
     # RUINS: only walls block movement for non-Infantry/Beast units
     if terrain_type == TerrainType.RUINS and isinstance(terrain_feature, RuinsTerrain):
+        fly_move = _unit_is_fly_move(unit, movement_type) if movement_type is not None else bool(getattr(unit, "is_flying", False))
+        if fly_move:
+            return []
         can_traverse_walls = _ruins_wall_traversal_allowed(unit, movement_type)
 
         if not can_traverse_walls:
@@ -1415,7 +1437,7 @@ def a_star_unified(model: 'Model', target: Tuple[float, float, float], max_dista
     fly_move = _unit_is_fly_move(unit, movement_type)
 
     # Surface resolution helpers (2.5D pathing across floors/ground).
-    from warhammer40k_ai.battlefield.map import TerrainType
+    from warhammer40k_ai.battlefield.map import TerrainType, RuinsTerrain
     from ..utility.constants import RUINS_FLOOR_THICKNESS
 
     def _poly_contains(poly, point: Point) -> bool:
@@ -3423,7 +3445,7 @@ def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -
     Returns:
         bool: True if the model can end its move on this terrain
     """
-    from warhammer40k_ai.battlefield.map import TerrainType
+    from warhammer40k_ai.battlefield.map import TerrainType, RuinsTerrain
     terrain = terrain_feature.terrain_type
     base_overhang = base_overhangs_terrain(model, terrain_feature)
     unit = model.parent_unit
@@ -3447,7 +3469,7 @@ def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -
         if floor_level is None or current_floor is None:
             return False
         if floor_level == 0:
-            return not base_overhang
+            return True
 
         can_access_val = getattr(unit, "can_access_upper_floors", None)
         can_access = bool(can_access_val() if callable(can_access_val) else can_access_val)
@@ -3466,10 +3488,7 @@ def can_end_move_on_terrain(model: 'Model', terrain_feature: 'TerrainFeature') -
             else:
                 within = floor_poly.contains(base_shape)
             if not within:
-                can_overhang_val = getattr(unit, "can_overhang_floor", None)
-                can_overhang = bool(can_overhang_val() if callable(can_overhang_val) else can_overhang_val)
-                if not can_overhang:
-                    return False
+                return False
         return True
     else:
         # Default behavior for unknown terrain types
