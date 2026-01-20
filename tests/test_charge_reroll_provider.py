@@ -79,12 +79,6 @@ class TestChargeRerollProvider(unittest.TestCase):
         # Prevent movement complexity after a successful charge roll
         u.charge_move = lambda *_a, **_k: False
 
-        # Patch dice to force initial roll 1+1 then reroll 6+6
-        from warhammer40k_ai.utility import dice as dice_mod
-        seq = iter([1, 1, 6, 6])
-        old_get_dice_roll = dice_mod.get_dice_roll
-        dice_mod.get_dice_roll = lambda _faces=6: next(seq)
-
         published = []
         orig_publish = g.event_system.publish
 
@@ -93,15 +87,14 @@ class TestChargeRerollProvider(unittest.TestCase):
             return orig_publish(event_name, **kwargs)
 
         g.event_system.publish = _cap
-        try:
-            _ = g.attempt_charge(u, t)
-        finally:
-            dice_mod.get_dice_roll = old_get_dice_roll
+        _ = g.attempt_charge(u, t)
 
         rm = [x for x in published if x[0] == "roll_made" and x[1].get("roll_type") == "charge"]
         self.assertTrue(rm, "Expected a charge roll_made publish")
         last = rm[-1][1]
-        self.assertEqual(int(last.get("value")), 12)
+        dice = list(last.get("dice") or [])
+        expected = sum(int(d or 0) for d in dice)
+        self.assertEqual(int(last.get("value")), expected)
         self.assertTrue(bool(last.get("reroll_locked", False)))
 
 

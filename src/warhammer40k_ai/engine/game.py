@@ -28,6 +28,7 @@ from ..rules.lifecycle import AbilityLifecycle
 from ..rules.registry import RuleRegistry
 from ..rules.providers.default_rules import build_default_rule_providers
 from ..utility.calcs import get_dist, clear_enemy_model_cache
+from ..utility.charge_roll import ChargeRollResult, ChargeRollSpec
 from ..utility.dice import DiceCollection, get_roll
 from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 from ..utility.entity_ids import get_entity_id
@@ -5947,7 +5948,7 @@ class Game:
 
         - Validates eligibility (`Unit.can_declare_charge_against`)
         - Marks `attempted_charge_this_round` immediately (a declared charge is an attempt)
-        - Rolls 2D6 (with detailed dice)
+        - Rolls charge dice (default 2D6; supports non-additive mechanics like 3D6 drop lowest)
         - Offers a rule-based re-roll prompt (e.g. "re-roll Charge rolls") via map.roll_reroll_provider (UI hook)
         - Publishes `roll_made` for stratagem/telemetry consumers
 
@@ -5975,21 +5976,25 @@ class Game:
         if not out_of_turn:
             charging_unit.round_state.attempted_charge_this_round = True
 
-        dice_collection = DiceCollection.from_string("2D6")
+        spec = self._get_charge_roll_spec(charging_unit, target_unit=target_unit)
+        from ..utility import dice as dice_mod
         base_roll = None
         dice = None
         miracle_used = False
         mgr = getattr(army, "acts_of_faith", None) if army is not None else None
         if mgr is not None and mgr.can_use_act_of_faith(charging_unit, game=self):
-            base_roll, dice, miracle_used = mgr.resolve_roll(
+                base_roll, dice, miracle_used = mgr.resolve_roll(
                 charging_unit,
                 roll_type="charge",
                 game=self,
-                dice_count=2,
+                    dice_count=int(spec.dice_count or 2),
                 die_faces=6,
             )
         if base_roll is None or dice is None:
-            base_roll, dice = dice_collection.roll_detailed()
+            dice = [dice_mod.get_dice_roll(6) for _ in range(int(spec.dice_count or 2))]
+
+        roll_result = ChargeRollResult.from_dice(spec, dice)
+        base_roll = roll_result.total
 
         player = charging_unit.get_parent_army().player
 
@@ -6015,7 +6020,9 @@ class Game:
                 allow_reroll=bool(can_rule_reroll),
             ))
             if want and can_rule_reroll:
-                base_roll, dice = dice_collection.roll_detailed()
+                dice = [dice_mod.get_dice_roll(6) for _ in range(int(spec.dice_count or 2))]
+                roll_result = ChargeRollResult.from_dice(spec, dice)
+                base_roll = roll_result.total
                 reroll_used = True
 
         # Store roll for UI/telemetry
@@ -6023,7 +6030,9 @@ class Game:
 
         # Publish roll event (reroll_locked means "already rerolled").
         def _reroll():
-            new_total, new_dice = DiceCollection.from_string("2D6").roll_detailed()
+            new_dice = [dice_mod.get_dice_roll(6) for _ in range(int(spec.dice_count or 2))]
+            new_result = ChargeRollResult.from_dice(spec, new_dice)
+            new_total = int(new_result.total or 0)
             # If a consumer uses this (e.g. Command Re-roll), keep unit state consistent.
             charging_unit.round_state.charge_roll = int(new_total or 0)
             return new_total, new_dice
@@ -6046,25 +6055,37 @@ class Game:
             reroll_locked=bool(reroll_locked),
             roll_id=roll_id,
             miracle_used=bool(miracle_used),
+            kept_indices=list(getattr(roll_result, "kept_indices", []) or []),
+            dropped_indices=list(getattr(roll_result, "dropped_indices", []) or []),
         )
 
         # Dice log
         from ..utility.event_bus import append_dice
+        kept_note = ""
+        try:
+            kept = roll_result.kept_values()
+            dropped = roll_result.dropped_values()
+            if dropped:
+                kept_note = f" (kept {kept}, dropped {dropped})"
+        except Exception:
+            kept_note = ""
         if miracle_used:
             append_dice(
                 player,
-                f"Miracle die used for Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}",
+                f"Miracle die used for Charge roll: {int(base_roll or 0)} (dice {list(dice)}{kept_note}) for {charging_unit.name}",
             )
         else:
             append_dice(
                 player,
-                f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}) for {charging_unit.name}",
+                f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}{kept_note}) for {charging_unit.name}",
             )
         return {
             "base_roll": int(base_roll or 0),
             "dice": list(dice),
             "reroll_used": bool(reroll_used),
             "miracle_used": bool(miracle_used),
+            "kept_indices": list(getattr(roll_result, "kept_indices", []) or []),
+            "dropped_indices": list(getattr(roll_result, "dropped_indices", []) or []),
         }
 
     def roll_blood_surge_distance(self, unit: 'Unit') -> int:
@@ -6370,6 +6391,31 @@ class Game:
 
         return modifiers
 
+    def _get_charge_roll_spec(
+        self,
+        charging_unit: 'Unit',
+        *,
+        target_unit: Optional['Unit'] = None,
+    ) -> ChargeRollSpec:
+        dice_count = 2
+        keep_highest = 2
+        sr = getattr(charging_unit, "special_rules", None)
+        if isinstance(sr, dict):
+            try:
+                dice_count = int(sr.get("charge_roll_dice_count", dice_count) or dice_count)
+            except Exception:
+                dice_count = 2
+            try:
+                keep_highest = int(sr.get("charge_roll_keep_highest", keep_highest) or keep_highest)
+            except Exception:
+                keep_highest = 2
+        dice_count = max(1, int(dice_count or 1))
+        keep_highest = max(1, int(keep_highest or 1))
+        if keep_highest > dice_count:
+            keep_highest = dice_count
+        spec = ChargeRollSpec(dice_count=dice_count, keep_highest=keep_highest)
+        return spec
+
     def get_charge_roll_modifiers(
         self,
         charging_unit: 'Unit',
@@ -6384,7 +6430,8 @@ class Game:
         *,
         target_unit: Optional['Unit'] = None,
     ) -> float:
-        base_max = 12.0
+        spec = self._get_charge_roll_spec(charging_unit, target_unit=target_unit)
+        base_max = float(max(1, int(spec.keep_highest or spec.dice_count)) * 6)
         mods = self._collect_charge_modifiers(charging_unit, target_unit=target_unit)
         total = 0
         for val, _source in mods:

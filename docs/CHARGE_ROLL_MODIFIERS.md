@@ -2,8 +2,8 @@
 
 ## Overview
 Charge roll modifiers are aggregated in `Game._collect_charge_modifiers()` and applied
-when resolving charge rolls. The engine currently supports **additive** modifiers and
-rule-based rerolls; non-additive dice mechanics (e.g., 3D6 drop lowest) are not yet wired.
+when resolving charge rolls. The engine supports **additive** modifiers, rule-based rerolls,
+and non-additive dice mechanics (e.g., 3D6 drop lowest).
 
 ## Supported Sources
 - Unit abilities that state: "Add X to Charge rolls made for this unit."
@@ -21,6 +21,17 @@ rule-based rerolls; non-additive dice mechanics (e.g., 3D6 drop lowest) are not 
 ## Notes
 - Modifiers are additive and can stack.
 - Some effects filter negative modifiers (e.g., Internal Rivalries / Driven by Ultimate Rage).
-- Charge eligibility uses `Game.get_max_charge_distance(...)`, which includes modifiers.
+- Charge eligibility uses `Game.get_max_charge_distance(...)`, which includes modifiers and
+  the configured charge dice spec.
 - Re-roll prompts are handled by the reroll provider / unit abilities; the roll itself
-  is still `2D6` in the current engine.
+  uses the configured charge dice spec.
+
+## Charge Dice Spec (Non-Additive)
+Charge rolls read the following optional per-unit keys from `unit.special_rules`:
+- `charge_roll_dice_count`: total number of D6 rolled (default `2`)
+- `charge_roll_keep_highest`: number of highest dice summed (default `2`)
+
+Examples:
+- Standard charge: `dice_count=2`, `keep_highest=2` (2D6)
+- 3D6 drop lowest: `dice_count=3`, `keep_highest=2`
+- 3D6 sum: `dice_count=3`, `keep_highest=3`
