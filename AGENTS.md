@@ -195,6 +195,16 @@ Practical expectation:
 
 ---
 
+## UI dialog decision mapping (mandatory)
+All new UI dialogs must have a deterministic decision mapping to preserve networked play determinism.
+
+Practical expectations:
+- Every new UI dialog must map to a specific, serializable decision/action in the engine.
+- When adding a new dialog, update the UI dialog-to-decision mapping entries in `docs/NETWORK_SAVELOAD_DESIGN.md`
+  (see <https://github.com/SobolGaming/Warhammer40k_AI/blob/dev/docs/NETWORK_SAVELOAD_DESIGN.md#ui-dialog-to-decision-mapping>).
+
+---
+
 ## Architecture requirements for future AI (Hierarchical Reinforcement Learning)
 
 We plan to add **hierarchical reinforcement learning** so AI can learn to play at strategic, operational, and tactical levels.
