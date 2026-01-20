@@ -236,7 +236,6 @@ PR2: Snapshot schema + serializer (Completed)
 - Implement serialization/deserialization with fixed-point coordinates.
 - Exclude caches; rebuild on load.
 
-PR3: Decision/Command API enforcement
 PR3: Decision/Command API enforcement (Completed)
 - Make engine accept only commands for state mutations.
 - Convert existing direct UI mutations to commands.

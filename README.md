@@ -76,10 +76,9 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
   - [Optional Wargear Support Matrix](docs/OPTIONAL_WARGEAR_SUPPORT_MATRIX.md): optional wargear and replacement rules support.
   - [Damaged Profile Support Matrix](docs/DAMAGED_PROFILE_SUPPORT_MATRIX.md): damaged profile handling coverage.
 - **Rules and mechanics**
-  - [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md): parsing and application of charge modifiers.
+  - [Movement system](docs/MOVEMENT_SYSTEM.md): pathing, coherency, and movement types.
   - [Mortal wounds](docs/MORTAL_WOUNDS.md): mortal wound timing and spillover handling.
   - [Melee target allocation](docs/MELEE_TARGET_ALLOCATION.md): multi-target melee allocation flow.
-  - [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md): fight-phase move rules and constraints.
   - [Ruins terrain system](docs/RUINS_TERRAIN_SYSTEM.md): terrain, floors, and line-of-sight behavior in ruins.
   - [Reserve limits implementation](docs/RESERVE_LIMITS_IMPLEMENTATION.md): reserve caps and enforcement.
 - **Setup, UI, and decisions**
