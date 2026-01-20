@@ -124,9 +124,11 @@ def test_aircraft_only_normal_moves_and_minimum_move():
     # Must move straight forward
     assert aircraft.move((12.0, 35.0, 0.0), game_map) is False
     # Must move at least 20"
-    assert aircraft.move((10.0, 25.0, 0.0), game_map) is False
+    assert aircraft.move((10.0, 25.0, 0.0), game_map) is True
 
     assert aircraft.models[0].get_location() == start
+    assert aircraft.reserve_status == "strategic_reserves"
+    assert aircraft not in game_map.units
 
 
 def test_aircraft_move_off_board_sends_to_strategic_reserves_next_turn():

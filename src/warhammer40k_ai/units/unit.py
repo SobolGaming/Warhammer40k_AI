@@ -9204,8 +9204,7 @@ class Unit:
         if forward_dist + 1e-6 < required_forward:
             if not _forward_move_within_boundary(required_forward):
                 return _send_to_strategic_reserves("minimum move impossible")
-            print(f"{self.name} must move at least {min_move}\" (AIRCRAFT)")
-            return False
+            return _send_to_strategic_reserves("minimum move not met")
 
         # Leaving the battlefield -> Strategic Reserves
         if not _forward_move_within_boundary(forward_dist):
