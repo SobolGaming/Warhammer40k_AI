@@ -178,7 +178,7 @@ These constraints are encoded in `get_validation_rules()`:
 Charge movement is handled by `Unit.charge_move()` and uses charge-aware pathfinding.
 Key differences from Normal moves:
 - Requires a target unit.
-- Allows ending in engagement range.
+- Requires ending in engagement range.
 - Uses `get_charge_movement_path()` and charge-specific validation rules.
 
 Charge roll behavior and modifiers are documented in [Charge roll modifiers](docs/CHARGE_ROLL_MODIFIERS.md).
