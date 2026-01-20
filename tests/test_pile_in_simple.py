@@ -69,8 +69,8 @@ class TestPileInValidationRules(unittest.TestCase):
             expected_rules = {
                 'prevent_friendly_overlap': True,
                 'prevent_enemy_overlap': True,
-                # Fight phase pile-in/consolidate moves should not pay pivot cost.
-                'apply_pivot_cost': False,
+                # Fight phase pile-in/consolidate moves pay pivot cost.
+                'apply_pivot_cost': True,
                 'check_terrain_traversal': True,
                 'must_end_closer_to_enemies': True,
                 'prefer_base_contact': True,

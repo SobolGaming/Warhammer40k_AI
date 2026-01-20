@@ -957,6 +957,14 @@ class Unit:
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
+        r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+        r"(?:that )?(?:it )?moved over during that move "
+        r"(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
+        r"for each (?P<threshold>\d)\+ that (?:enemy )?unit suffers (?P<mw>\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
     _CHARGE_PHASE_BODYGUARD_LOSS_RE = re.compile(
         r"at the end of your charge phase if this model is leading a unit and that unit is not within "
         r"engagement range of (?:one or more|any) enemy units? you must take a leadership test for this model "
@@ -1045,6 +1053,18 @@ class Unit:
         "equipped",
         "with",
     )
+    _NUMBER_WORDS = {
+        "one": 1,
+        "two": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+        "ten": 10,
+    }
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
@@ -2091,17 +2111,7 @@ class Unit:
             return [part.strip() for part in re.split(r"\.\s*", cleaned) if part.strip()]
 
         def _parse_move_types(value: str) -> set[str]:
-            types: set[str] = set()
-            low = value.lower()
-            if "normal" in low:
-                types.add("move")
-            if "advance" in low:
-                types.add("advance")
-            if "fall back" in low or "fallback" in low:
-                types.add("fall_back")
-            if "charge" in low:
-                types.add("charge")
-            return types
+            return self._parse_move_types_from_text(value)
 
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
@@ -16382,6 +16392,23 @@ class Unit:
                 return t[idx + len(marker):].strip()
         return t
 
+    @staticmethod
+    def _parse_move_types_from_text(value: str) -> set[str]:
+        """Parse movement type tokens (normal/advance/fall back/charge) from a text fragment."""
+        types: set[str] = set()
+        if not value:
+            return types
+        low = str(value).lower()
+        if "normal" in low:
+            types.add("move")
+        if "advance" in low:
+            types.add("advance")
+        if "fall back" in low or "fallback" in low:
+            types.add("fall_back")
+        if "charge" in low:
+            types.add("charge")
+        return types
+
     def _iter_ability_entries_for_rules(self, model: Optional['Model'] = None):
         """Yield (name, description) pairs for unit/model abilities."""
         # Unit-level abilities
@@ -16882,6 +16909,105 @@ class Unit:
                     "dice": 8,
                     "threshold": 4,
                     "mortal_per_success": 1,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_move_over_mortal_wounds_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Normal/Advance move, select an enemy unit moved over and roll D6s for mortals.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - dice: int
+            - threshold: int
+            - mortal_per_success: int
+            - move_types: list[str] (e.g., ["move", "advance"])
+            - exclude_monster_vehicle: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_move_over_mortal_wounds:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            if not normalized:
+                continue
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "moved over" not in normalized or "mortal wound" not in normalized:
+                continue
+            if "for each model" in normalized:
+                continue
+            if "one of the following" in normalized:
+                continue
+
+            m = self._MOVE_OVER_MORTAL_WOUNDS_RE.fullmatch(normalized)
+            if not m:
+                continue
+
+            moves_text = (m.group("moves") or "").strip()
+            move_types = self._parse_move_types_from_text(moves_text)
+            if "move" not in move_types:
+                continue
+            if not move_types.issubset({"move", "advance"}):
+                continue
+
+            dice_raw = (m.group("dice") or "").strip().lower()
+            dice_count = None
+            if dice_raw.isdigit():
+                dice_count = int(dice_raw)
+            else:
+                dice_count = self._NUMBER_WORDS.get(dice_raw)
+            if not dice_count or dice_count <= 0:
+                continue
+            try:
+                threshold = int(m.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            try:
+                mortal_per = int(m.group("mw") or 0)
+            except Exception:
+                mortal_per = 0
+            if threshold <= 0 or mortal_per <= 0:
+                continue
+
+            exclude_mv = "excluding monsters and vehicles" in normalized or "excluding monster and vehicle" in normalized
+            source = str(name or "Move-over mortals").strip() or "Move-over mortals"
+            key = (
+                source.lower(),
+                int(dice_count),
+                int(threshold),
+                int(mortal_per),
+                tuple(sorted(move_types)),
+                bool(exclude_mv),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "dice": int(dice_count),
+                    "threshold": int(threshold),
+                    "mortal_per_success": int(mortal_per),
+                    "move_types": sorted(move_types),
+                    "exclude_monster_vehicle": bool(exclude_mv),
                 }
             )
 

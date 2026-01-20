@@ -49,6 +49,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_destroyed", "_on_unit_destroyed_transport_rules"),
                 ("unit_move_ended", "_on_unit_move_ended_detachment_rules"),
                 ("unit_move_ended", "_on_unit_move_ended_charge_mortal_wounds"),
+                ("unit_move_ended", "_on_unit_move_ended_move_over_mortal_wounds"),
                 ("unit_move_ended", "_on_unit_move_ended_transport_reactive_disembark"),
                 ("unit_set_up", "_on_unit_set_up_transport_reactive_disembark"),
                 ("unit_move_ended", "_on_unit_move_ended_loping_speed"),

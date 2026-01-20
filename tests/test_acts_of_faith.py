@@ -212,7 +212,7 @@ class TestActsOfFaith(unittest.TestCase):
         aof.get_dice_roll = lambda _faces=6: 1
         result = None
         try:
-            result = game.declare_charge(charger, target)
+            result = game.declare_charge(charger, [target])
         except Exception as exc:
             self.fail(f"declare_charge raised: {exc}")
         finally:

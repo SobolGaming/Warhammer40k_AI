@@ -1598,6 +1598,9 @@ class GameView:
         # Fight phase end mortal wound prompts
         self._pending_fight_end_mortal_wounds_queue = []
         self._fight_end_mortal_wounds_flow_active = False
+        # Move-over mortal wound prompts
+        self._pending_move_over_mortal_wounds_queue = []
+        self._move_over_mortal_wounds_flow_active = False
         # Post-shoot Battle-shock prompts
         self._pending_post_shoot_battleshock_queue = []
         self._post_shoot_battleshock_flow_active = False
@@ -1657,6 +1660,8 @@ class GameView:
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
                 self.game.event_system.subscribe("charge_mortal_wounds_prompt", self._on_charge_mortal_wounds_prompt)
+                # Move-over mortal wound target selection
+                self.game.event_system.subscribe("move_over_mortal_wounds_prompt", self._on_move_over_mortal_wounds_prompt)
                 # Charge phase end leadership test bodyguard loss
                 self.game.event_system.subscribe(
                     "charge_phase_bodyguard_loss_prompt",
@@ -4349,6 +4354,96 @@ class GameView:
         except Exception:
             self._charge_mortal_wounds_flow_active = False
             self._open_next_charge_mortal_wounds_prompt(game)
+
+    # ---------------- Move-over mortal wound prompts ----------------
+
+    def _on_move_over_mortal_wounds_prompt(
+        self,
+        player=None,
+        unit=None,
+        model=None,
+        candidates=None,
+        ability=None,
+        on_select=None,
+        **_kwargs,
+    ):
+        if player is None or unit is None or model is None:
+            return
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return
+        except Exception:
+            return
+
+        cand = list(candidates or [])
+        if not cand:
+            return
+
+        if self._move_over_mortal_wounds_flow_active:
+            self._pending_move_over_mortal_wounds_queue.append((player, unit, model, cand, ability, on_select))
+            return
+        self._pending_move_over_mortal_wounds_queue.append((player, unit, model, cand, ability, on_select))
+        self._open_next_move_over_mortal_wounds_prompt(self.game)
+
+    def _open_next_move_over_mortal_wounds_prompt(self, game):
+        q = list(getattr(self, "_pending_move_over_mortal_wounds_queue", []) or [])
+        if not q:
+            self._pending_move_over_mortal_wounds_queue = []
+            self._move_over_mortal_wounds_flow_active = False
+            return
+        player, unit, model, candidates, ability, on_select = q.pop(0)
+        self._pending_move_over_mortal_wounds_queue = q
+
+        if player is None or unit is None or model is None:
+            self._open_next_move_over_mortal_wounds_prompt(game)
+            return
+        cand = list(candidates or [])
+        if not cand:
+            self._open_next_move_over_mortal_wounds_prompt(game)
+            return
+
+        ability_name = str((ability or {}).get("source", "") or "Move-over mortals")
+        title = ability_name
+        subtitle = f"{getattr(model, 'name', 'Model')} ({getattr(unit, 'name', 'Unit')}): select target or skip."
+
+        def _finish(chosen):
+            try:
+                self.overwatch_shooter_dialog.hide()
+            except Exception:
+                pass
+            if callable(on_select) and chosen is not None:
+                try:
+                    on_select(chosen)
+                except Exception:
+                    pass
+            self._move_over_mortal_wounds_flow_active = False
+            self._open_next_move_over_mortal_wounds_prompt(game)
+
+        def _on_cancel():
+            _finish(None)
+
+        self._move_over_mortal_wounds_flow_active = True
+        try:
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=cand,
+                    on_chosen=_finish,
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select move-over mortal wounds target.",
+                    title=title,
+                    subtitle=subtitle,
+                    enemy_unit=unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            else:
+                _finish(cand[0] if cand else None)
+        except Exception:
+            self._move_over_mortal_wounds_flow_active = False
+            self._open_next_move_over_mortal_wounds_prompt(game)
 
     # ---------------- Charge phase bodyguard loss prompts ----------------
 

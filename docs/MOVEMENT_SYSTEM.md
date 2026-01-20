@@ -171,6 +171,19 @@ These constraints are encoded in `get_validation_rules()`:
         })
 ```
 
+#### Move-over mortal wound triggers
+
+Some abilities trigger when a model ends a Normal or Advance move and it moved over an
+enemy unit. The engine detects “moved over” by checking the model’s movement path against
+enemy base geometry; a candidate is recorded if any path segment intersects an enemy base
+in 2D and the model’s vertical band overlaps the enemy’s. This avoids counting vertical-only
+overlaps (e.g., moving above models on RUINS). These triggers are evaluated only for FLY units.
+
+When eligible, the UI prompts to select one of the moved-over enemy units (with a Skip option).
+Currently supported pattern:
+- “Each time this model ends a Normal or Advance move … roll X D6; for each Y+, that enemy
+  unit suffers Z mortal wounds.” (fixed dice count and fixed mortal-per-success only).
+
 ### Aircraft movement
 
 AIRCRAFT movement uses a dedicated path (see `Unit._aircraft_normal_move()`):

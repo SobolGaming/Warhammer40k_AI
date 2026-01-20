@@ -77,7 +77,7 @@ class TestChargeRollNonAdditive(unittest.TestCase):
             return orig_publish(event_name, **kwargs)
 
         game.event_system.publish = _cap
-        declared = game.declare_charge(charger, target)
+        declared = game.declare_charge(charger, [target])
 
         self.assertIsNotNone(declared)
         dice = list(declared.get("dice") or [])

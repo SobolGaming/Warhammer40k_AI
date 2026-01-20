@@ -2382,6 +2382,123 @@ def check_desperate_escape_requirements(model: 'Model', path: List[Tuple[float, 
         'path_through_enemy': False
     }
 
+def get_enemy_units_moved_over(
+    model: 'Model',
+    path: List[Tuple[float, float, float]],
+    game_map: 'Map',
+    *,
+    require_vertical_overlap: bool = True,
+) -> List['Unit']:
+    """
+    Return enemy unit roots that the model moved over along the given path.
+
+    "Moved over" is approximated by 2D path intersection with enemy base geometry,
+    with an optional vertical overlap check (to avoid counting units moved over on
+    a different floor/height).
+    """
+    if model is None or game_map is None:
+        return []
+    if not path or len(path) < 2:
+        return []
+    unit = getattr(model, "parent_unit", None)
+    if unit is None:
+        return []
+
+    try:
+        enemy_units = list(game_map.get_enemy_units(unit) or [])
+    except Exception:
+        try:
+            all_units = list(getattr(game_map, "units", []) or [])
+        except Exception:
+            all_units = []
+        enemy_units = [u for u in all_units if u is not None and getattr(u, "faction", None) != getattr(unit, "faction", None)]
+
+    if not enemy_units:
+        return []
+
+    moved_over: list['Unit'] = []
+    seen: set[str] = set()
+
+    def _pt(point) -> Optional[Tuple[float, float, float]]:
+        if not point:
+            return None
+        try:
+            x = float(point[0])
+            y = float(point[1])
+        except Exception:
+            return None
+        z = 0.0
+        try:
+            if len(point) > 2:
+                z = float(point[2])
+        except Exception:
+            z = 0.0
+        return (x, y, z)
+
+    try:
+        moving_height = float(getattr(getattr(model, "model_base", None), "model_height", 0.0))
+    except Exception:
+        moving_height = 0.0
+
+    for i in range(len(path) - 1):
+        start = _pt(path[i])
+        end = _pt(path[i + 1])
+        if start is None or end is None:
+            continue
+        path_segment = LineString([start[:2], end[:2]])
+        seg_z_min = min(start[2], end[2])
+        seg_z_max = max(start[2], end[2])
+
+        for enemy_unit in enemy_units:
+            if enemy_unit is None:
+                continue
+            try:
+                if not enemy_unit.is_alive() or not getattr(enemy_unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(enemy_unit, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                pass
+            try:
+                if bool(getattr(enemy_unit, "is_embarked", False)):
+                    continue
+            except Exception:
+                pass
+
+            root = enemy_unit.get_attached_unit_root() if hasattr(enemy_unit, "get_attached_unit_root") else enemy_unit
+            root_id = get_entity_id(root)
+            if root_id in seen:
+                continue
+
+            for enemy_model in list(getattr(enemy_unit, "models", []) or []):
+                if not getattr(enemy_model, "is_alive", False):
+                    continue
+                base = getattr(enemy_model, "model_base", None)
+                if base is None:
+                    continue
+                if not path_segment.intersects(base.get_base_shape()):
+                    continue
+                if require_vertical_overlap:
+                    try:
+                        enemy_z = float(getattr(base, "z", 0.0))
+                    except Exception:
+                        enemy_z = 0.0
+                    try:
+                        enemy_height = float(getattr(base, "model_height", 0.0))
+                    except Exception:
+                        enemy_height = 0.0
+                    max_h = max(moving_height, enemy_height)
+                    if seg_z_max < enemy_z - max_h or seg_z_min > enemy_z + max_h:
+                        continue
+                moved_over.append(root)
+                seen.add(root_id)
+                break
+
+    return moved_over
+
 def validate_final_position(model: 'Model', position: Tuple[float, float, float],
                           validation_rules: dict, game_map: 'Map') -> dict:
     """

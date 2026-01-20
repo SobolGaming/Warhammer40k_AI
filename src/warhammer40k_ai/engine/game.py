@@ -2070,6 +2070,172 @@ class Game:
                 continue
             self.resolve_charge_end_mortal_wounds(root, target, spec)
 
+    def _choose_move_over_mortal_wounds_target(self, player, unit, model, candidates, spec):
+        if not candidates:
+            return None
+        choice = None
+        if player is not None and callable(getattr(player, "_choose_optional_value", None)):
+            ctx = {
+                "unit": getattr(unit, "name", "") or "",
+                "model": getattr(model, "name", "") or "",
+                "ability": str((spec or {}).get("source", "") or ""),
+                "candidates": [getattr(c, "name", "") for c in candidates],
+            }
+            choice = player._choose_optional_value("MOVE_OVER_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
+        if choice in candidates:
+            return choice
+        if isinstance(choice, str):
+            wanted = choice.strip().lower()
+            for cand in candidates:
+                if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
+                    return cand
+        return None
+
+    def resolve_move_over_mortal_wounds(self, unit, model, target_unit, spec) -> None:
+        if unit is None or model is None or target_unit is None or not isinstance(spec, dict):
+            return
+        dice_count = int(spec.get("dice", 0) or 0)
+        threshold = int(spec.get("threshold", 0) or 0)
+        mortal_per = int(spec.get("mortal_per_success", 1) or 0)
+        if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
+            return
+
+        from ..utility.dice import get_roll
+
+        rolls = []
+        successes = 0
+        for _ in range(dice_count):
+            r = int(get_roll("D6") or 0)
+            rolls.append(r)
+            if r >= threshold:
+                successes += 1
+        total_mw = int(successes * mortal_per)
+
+        ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
+        print(
+            f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
+            f"(rolls={rolls}) => {total_mw} mortal wounds"
+        )
+
+        if total_mw > 0:
+            unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(self, "map", None))
+        from ..utility.event_bus import append_action, append_dice
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: rolls {rolls} => {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+            append_action(
+                player,
+                f"{ability_name}: {getattr(model, 'name', 'Model')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+
+    def _on_unit_move_ended_move_over_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance"):
+            return
+
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+
+        if not models:
+            return
+
+        from ..utility.calcs import get_enemy_units_moved_over
+
+        for model in models:
+            if not getattr(model, "is_alive", False):
+                continue
+            model_unit = getattr(model, "parent_unit", None) or root
+            if not bool(getattr(model_unit, "is_flying", False)):
+                continue
+            specs = model_unit.model_move_over_mortal_wounds_specs(model) or []
+            if not specs:
+                continue
+            path = getattr(model, "last_move_path", None)
+            candidates = get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True)
+            if not candidates:
+                continue
+
+            player = model_unit.get_parent_army().player
+            if player is None:
+                continue
+            es = getattr(self, "event_system", None)
+
+            for spec in specs:
+                move_types = set(spec.get("move_types") or [])
+                if action_key not in move_types:
+                    continue
+                filtered = list(candidates)
+                if spec.get("exclude_monster_vehicle"):
+                    filtered = [
+                        cand for cand in filtered
+                        if not (cand.has_any_keyword("MONSTER") or cand.has_any_keyword("VEHICLE"))
+                    ]
+                if not filtered:
+                    continue
+
+                ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
+                ctx = {
+                    "unit": getattr(model_unit, "name", "") or "",
+                    "model": getattr(model, "name", "") or "",
+                    "ability_name": ability_name,
+                    "candidates": [getattr(c, "name", "") for c in filtered],
+                }
+
+                if bool(getattr(player, "has_control", lambda: False)()):
+                    def _on_select(target_unit, _spec=spec, _unit=model_unit, _model=model):
+                        if target_unit is None:
+                            return
+                        self.resolve_move_over_mortal_wounds(_unit, _model, target_unit, _spec)
+
+                    if es is not None:
+                        es.publish(
+                            "move_over_mortal_wounds_prompt",
+                            player=player,
+                            unit=model_unit,
+                            model=model,
+                            candidates=list(filtered),
+                            ability=spec,
+                            on_select=_on_select,
+                        )
+                        subs = getattr(es, "subscribers", None)
+                        if isinstance(subs, dict) and subs.get("move_over_mortal_wounds_prompt"):
+                            continue
+                    else:
+                        continue
+
+                should_fn = getattr(player, "_should_use_optional_ability", None)
+                should = bool(should_fn("MOVE_OVER_MORTAL_WOUNDS", ctx)) if callable(should_fn) else False
+                if not should:
+                    continue
+                target = filtered[0] if len(filtered) == 1 else self._choose_move_over_mortal_wounds_target(
+                    player, model_unit, model, filtered, spec
+                )
+                if target is None:
+                    continue
+                self.resolve_move_over_mortal_wounds(model_unit, model, target, spec)
+
     def _choose_charge_phase_bodyguard_loss_model(self, player, bodyguard, candidates, ability):
         if not candidates:
             return None
@@ -6022,10 +6188,15 @@ class Game:
           { "base_roll": int, "dice": list[int], "reroll_used": bool, "target_unit_ids": list[str] }
         or None if the charge cannot be declared.
         """
-        targets = list(target_units or [])
+        if target_units is None:
+            targets = []
+        elif isinstance(target_units, (list, tuple, set)):
+            targets = list(target_units)
+        else:
+            targets = [target_units]
         if not targets:
             return None
-        if not charging_unit.can_declare_charge(self, out_of_turn=out_of_turn):
+        if not charging_unit._can_declare_charge_base(self, out_of_turn=out_of_turn):
             return None
         for tgt in targets:
             if tgt is None:
