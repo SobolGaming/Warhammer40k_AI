@@ -34,6 +34,9 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Deployment placement facing (radians). Used for hover silhouette + final placement.
         self._deploy_facing_radians: Optional[float] = None
+        # AIRCRAFT post-move pivot (degrees, clamped to [-90, 90]).
+        self._aircraft_pivot_degrees: float = 0.0
+        self._aircraft_move_completed_all: bool = False
         # Optional custom placement validator for deploy-like placement.
         self.placement_validator = None
         
@@ -87,6 +90,8 @@ class IndividualModelMovementDialog(BaseDialog):
         self.awaiting_battlefield_click = False
         if movement_type != 'deploy':
             self._deploy_facing_radians = None
+        self._aircraft_pivot_degrees = 0.0
+        self._aircraft_move_completed_all = False
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
@@ -162,6 +167,8 @@ class IndividualModelMovementDialog(BaseDialog):
         self.selected_model_index = None
         self.awaiting_battlefield_click = False
         self._deploy_facing_radians = None
+        self._aircraft_pivot_degrees = 0.0
+        self._aircraft_move_completed_all = False
         self.placement_validator = None
         self._coherency_request = None
         # Hide nested dialogs as well
@@ -365,6 +372,8 @@ class IndividualModelMovementDialog(BaseDialog):
             except Exception:
                 if self._deploy_facing_radians is None:
                     self._deploy_facing_radians = 0.0
+        elif self.movement_type == 'move' and bool(getattr(self.unit, "is_aircraft", False)):
+            self._aircraft_pivot_degrees = 0.0
         
         print(f"INFO: Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
         print(f"INFO: Click on the battlefield to move this model")
@@ -463,6 +472,18 @@ class IndividualModelMovementDialog(BaseDialog):
             except Exception:
                 self._deploy_facing_radians = 0.0
 
+    def rotate_aircraft_pivot_degrees(self, delta_degrees: float) -> None:
+        """Adjust AIRCRAFT post-move pivot (clamped to +/- 90 degrees)."""
+        if self.movement_type != "move":
+            return
+        if not bool(getattr(self.unit, "is_aircraft", False)):
+            return
+        try:
+            updated = float(self._aircraft_pivot_degrees) + float(delta_degrees)
+        except (TypeError, ValueError):
+            updated = float(self._aircraft_pivot_degrees or 0.0)
+        self._aircraft_pivot_degrees = max(-90.0, min(90.0, updated))
+
     def get_highlighted_model_index(self) -> Optional[int]:
         """Get the index of the currently highlighted model for battlefield rendering"""
         return self.selected_model_index
@@ -485,6 +506,21 @@ class IndividualModelMovementDialog(BaseDialog):
                 if getattr(event, "type", None) == pygame.MOUSEBUTTONDOWN and getattr(event, "button", None) in (4, 5):
                     delta = 5.0 if int(getattr(event, "button", 0)) == 4 else -5.0
                     self.rotate_deploy_facing_degrees(delta)
+                    return True
+        except Exception:
+            pass
+        try:
+            if (
+                getattr(self, "movement_type", "") == "move"
+                and self.selected_model_index is not None
+                and bool(getattr(self.unit, "is_aircraft", False))
+            ):
+                if getattr(event, "type", None) == pygame.MOUSEWHEEL:
+                    self.rotate_aircraft_pivot_degrees(float(getattr(event, "y", 0.0)) * 5.0)
+                    return True
+                if getattr(event, "type", None) == pygame.MOUSEBUTTONDOWN and getattr(event, "button", None) in (4, 5):
+                    delta = 5.0 if int(getattr(event, "button", 0)) == 4 else -5.0
+                    self.rotate_aircraft_pivot_degrees(delta)
                     return True
         except Exception:
             pass
@@ -811,11 +847,21 @@ class IndividualModelMovementDialog(BaseDialog):
             success = self._move_model(self.selected_model_index, destination)
         
         if success:
-            # Mark model as moved
-            self.model_movements[self.selected_model_index] = {
-                'path': [],  # Path would be stored here if needed
-                'completed': True
-            }
+            if self._aircraft_move_completed_all:
+                for idx, m in enumerate(self.unit.models):
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    self.model_movements[idx] = {
+                        'path': getattr(m, 'last_move_path', []) or [],
+                        'completed': True
+                    }
+                self._aircraft_move_completed_all = False
+            else:
+                # Mark model as moved
+                self.model_movements[self.selected_model_index] = {
+                    'path': [],  # Path would be stored here if needed
+                    'completed': True
+                }
             
             # Check if all models are moved
             if self._all_models_moved():
@@ -1142,7 +1188,26 @@ class IndividualModelMovementDialog(BaseDialog):
             return False
             
         model = self.unit.models[model_index]
-        
+
+        # Convert 2D target to 3D if needed
+        if len(destination) == 2:
+            target_3d = (destination[0], destination[1], model.model_base.z)
+        else:
+            target_3d = destination
+
+        # AIRCRAFT move uses its dedicated rules (straight-line + min move + optional pivot)
+        if self.movement_type == "move" and bool(getattr(self.unit, "is_aircraft", False)):
+            success = self.unit.move(
+                target_3d,
+                self.game_map,
+                aircraft_pivot_degrees=self._aircraft_pivot_degrees,
+            )
+            self._aircraft_move_completed_all = bool(success)
+            if success:
+                return True
+            print(f"ERROR: No valid aircraft move for {model.name} (Model #{model_index + 1})")
+            return False
+
         # Use unified pathfinding for ALL movement types
         #print(f" DEBUG: Using unified pathfinding for {model.name} with movement type {self.movement_type}")
         from ...utility.calcs import unified_pathfinding, MovementType
@@ -1158,12 +1223,6 @@ class IndividualModelMovementDialog(BaseDialog):
                     moved_models_in_unit.add(self.unit.models[int(moved_index)])
             except Exception:
                 continue
-
-        # Convert 2D target to 3D if needed
-        if len(destination) == 2:
-            target_3d = (destination[0], destination[1], model.model_base.z)
-        else:
-            target_3d = destination
 
         # Map movement type to MovementType enum for pathfinding
         movement_type_map = {
@@ -1528,6 +1587,8 @@ class IndividualModelMovementDialog(BaseDialog):
             instruction_text = f"Click on battlefield to move #{self.selected_model_index + 1}: {self.unit.models[self.selected_model_index].name}"
             if getattr(self, "movement_type", "") == "deploy":
                 instruction_text += " | Mouse wheel: rotate facing (5deg)"
+            elif getattr(self, "movement_type", "") == "move" and bool(getattr(self.unit, "is_aircraft", False)):
+                instruction_text += f" | Mouse wheel: pivot ±90° (now {self._aircraft_pivot_degrees:.0f}°)"
             instruction_color = TEXT_WARNING
         else:
             instruction_text = "Select a model, then click on battlefield to move it. ESC to close."

@@ -3,7 +3,7 @@ import uuid
 from enum import Enum, auto
 from ..units.unit import Unit
 from ..units.model import Model
-from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely, _resolve_ruins_floor_level
+from ..utility.calcs import get_dist, convert_mm_to_inches, can_traverse_freely, _resolve_ruins_floor_level, get_pivot_cost
 from ..utility.constants import (
     ENGAGEMENT_RANGE_HORIZONTAL,
     ENGAGEMENT_RANGE_VERTICAL,
@@ -192,14 +192,7 @@ class Map:
         """
         Calculate the pivot cost for a unit based on its characteristics.
         """
-        if unit.is_aircraft:
-            return 0
-        if unit.is_monster or unit.is_vehicle:
-            if not unit.has_circular_base or unit.base_size > convert_mm_to_inches(32 / 2):
-                return 2
-        if not unit.has_circular_base:
-            return 1
-        return 0
+        return get_pivot_cost(unit)
 
     def check_collision_with_terrain(self, model: Model, destination: Tuple[float, float] = None) -> bool:
         """Check collision with terrain features."""

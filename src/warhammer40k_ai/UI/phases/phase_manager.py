@@ -2097,6 +2097,11 @@ class BattlePhaseHandler(BasePhaseHandler):
         target_unit=None,
         placement_validator=None,
     ) -> None:
+        if movement_type in ("pile_in", "consolidate") and bool(getattr(unit, "is_aircraft", False)):
+            print(f"{getattr(unit, 'name', 'Unit')} cannot {movement_type.replace('_', ' ')} (AIRCRAFT)")
+            if callable(callback):
+                callback(False)
+            return
         from ...engine.decision_kinds import DECISION_MOVE_UNIT
         from ...engine.decisions import DecisionOption, DecisionRequest
         from ...utility.decision_utils import resolve_decision_command

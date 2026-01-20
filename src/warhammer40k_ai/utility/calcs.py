@@ -536,15 +536,29 @@ def get_terrain_blocking_polygons(unit: 'Unit', terrain_feature: 'TerrainFeature
 
     return blocking_polygons
 
+def _unit_has_flying_base(unit: 'Unit') -> bool:
+    models = getattr(unit, "models", None) or []
+    if not models:
+        return False
+    base = getattr(models[0], "model_base", None)
+    return bool(getattr(base, "is_flying_base", False))
+
+
 def get_pivot_cost(unit: 'Unit') -> float:
     """
     Calculate the pivot cost for a unit based on its characteristics.
     """
-    if unit.is_aircraft:
+    if bool(getattr(unit, "is_aircraft", False)):
         return 0
-    if unit.is_monster or unit.is_vehicle:
-        if not unit.has_circular_base or unit.base_size > convert_mm_to_inches(32 / 2):
+
+    is_vehicle = bool(getattr(unit, "is_vehicle", False))
+    is_monster = bool(getattr(unit, "is_monster", False))
+
+    if is_vehicle and unit.has_circular_base:
+        if unit.base_size > convert_mm_to_inches(32 / 2) and _unit_has_flying_base(unit):
             return 2
+    if (is_vehicle or is_monster) and not unit.has_circular_base:
+        return 2
     if not unit.has_circular_base:
         return 1
     return 0
@@ -1225,8 +1239,7 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'must_end_closer_to_enemies': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
             'max_distance_override': pile_in_distance,  # Standard pile-in distance (or override)
-            # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
-            'apply_pivot_cost': False,
+            'apply_pivot_cost': True,
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
@@ -1258,8 +1271,7 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
             'must_end_closer_to_enemies_or_objectives': True,
             'prefer_base_contact': True,  # Prefer ending in base-to-base contact
             'max_distance_override': consolidate_distance,  # Standard consolidate distance (or override)
-            # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
-            'apply_pivot_cost': False,
+            'apply_pivot_cost': True,
             # Pathfinding is discretized; allow a tiny epsilon so an intended 3.0" move doesn't get rejected as 3.04".
             'distance_tolerance': 0.05,
         })
@@ -2977,10 +2989,11 @@ def a_star_optimized_with_pivot_cost(model: 'Model', game_map: 'Map', target: Tu
     
     # Apply pivot cost if any rotation occurred during the path
     effective_max_distance = max_distance
-    if rotation_occurred and not model.parent_unit.has_circular_base:
+    if rotation_occurred:
         pivot_cost = get_pivot_cost(model.parent_unit)
-        effective_max_distance -= pivot_cost
-        logger.debug(f"Pivot cost applied: {pivot_cost:.2f} inches, effective max distance: {effective_max_distance:.2f} inches")
+        if pivot_cost > 0:
+            effective_max_distance -= pivot_cost
+            logger.debug(f"Pivot cost applied: {pivot_cost:.2f} inches, effective max distance: {effective_max_distance:.2f} inches")
     
     # Validate path length against effective max distance
     if len(path) > 1:

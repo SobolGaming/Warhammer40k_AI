@@ -1,4 +1,6 @@
-﻿from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, SetupPhase
+import math
+
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, SetupPhase
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.engine.deployment import DeploymentManager
@@ -6,6 +8,7 @@ from warhammer40k_ai.battlefield.map import Map
 from warhammer40k_ai.units.unit import Unit, MovementAction
 from warhammer40k_ai.utility.calcs import (
     build_collision_trees,
+    get_pivot_cost,
     get_validation_rules,
     is_position_valid_unified_detailed,
     MovementType,
@@ -162,6 +165,24 @@ def test_aircraft_can_move_while_engaged():
 
     assert aircraft.move((10.0, 35.0, 0.0), game_map) is True
     assert aircraft.models[0].get_location()[1] > 10.0
+
+
+def test_aircraft_post_move_pivot_is_applied_and_clamped():
+    game_map = Map(width=100, height=100)
+    aircraft = make_unit("Flyer", keywords=["Aircraft", "Fly"])
+    game_map.units = [aircraft]
+
+    aircraft.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    assert aircraft.move((10.0, 35.0, 0.0), game_map, aircraft_pivot_degrees=120.0) is True
+
+    facing = float(getattr(aircraft.models[0].model_base, "facing", 0.0))
+    assert math.isclose(facing, math.radians(90.0), abs_tol=1e-6)
+
+
+def test_pivot_cost_vehicle_flying_base_over_32mm():
+    vehicle = Unit(MockDatasheet("Skimmer", keywords=["Vehicle"], base_size="40mm flying base"))
+    vehicle.deployed = True
+    assert get_pivot_cost(vehicle) == 2
 
 
 def test_engaged_only_by_aircraft_allows_normal_and_advance():

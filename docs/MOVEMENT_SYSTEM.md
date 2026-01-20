@@ -59,7 +59,7 @@ Movement allowance interacts with pathing in two steps:
 ### Pivoting and rotation cost
 
 Pivoting is modeled as a movement cost for certain bases and large models.
-The pivot cost is applied inside pathfinding and can be disabled for fight-phase moves.
+The pivot cost is applied inside pathfinding for all movement types, including fight-phase moves.
 
 ```1174:1265:src/warhammer40k_ai/utility/calcs.py
 def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None, *, moving_unit: 'Unit' = None) -> dict:
@@ -74,16 +74,14 @@ def get_validation_rules(movement_type: MovementType, target_unit: 'Unit' = None
         ...
         base_rules.update({
             ...
-            # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
-            'apply_pivot_cost': False,
+            'apply_pivot_cost': True,
             ...
         })
     elif movement_type == MovementType.CONSOLIDATE:
         ...
         base_rules.update({
             ...
-            # Fight phase moves should not pay pivot cost; this was causing valid 3" moves to be rejected.
-            'apply_pivot_cost': False,
+            'apply_pivot_cost': True,
             ...
         })
 ```
@@ -173,6 +171,14 @@ These constraints are encoded in `get_validation_rules()`:
         })
 ```
 
+### Aircraft movement
+
+AIRCRAFT movement uses a dedicated path (see `Unit._aircraft_normal_move()`):
+- AIRCRAFT can only make Normal moves (no Advance/Fall Back/Remain Stationary).
+- Each Normal move is straight forward with a minimum of 20" and no upper limit.
+- After the straight move, the model can pivot up to 90° without costing distance.
+- If the minimum move is impossible or the move crosses the battlefield edge, the model is placed into Strategic Reserves and returns next turn.
+
 ### Charge movement
 
 Charge movement is handled by `Unit.charge_move()` and uses charge-aware pathfinding.
@@ -212,7 +218,7 @@ the same pathfinding/validation system with different rule constraints:
 - Must end closer to enemies (pile-in) or closer to enemies/objectives (consolidate).
 - Max move distances are governed by `PILE_IN_DISTANCE` and `CONSOLIDATE_DISTANCE`,
   with possible overrides from rules.
-- Pivot costs are disabled for these moves to avoid rejecting valid 3" moves.
+- Pivot costs apply normally; if a model pivots, the pivot value reduces its remaining distance.
 
 See [Pile-in and consolidate implementation](docs/PILE_IN_AND_CONSOLIDATE_IMPLEMENTATION.md) for the workflow and UI details.
 

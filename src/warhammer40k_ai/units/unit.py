@@ -9045,8 +9045,14 @@ class Unit:
             return False
         return self.move(destination, game_map, advance=True)
 
-    def _aircraft_normal_move(self, destination: Tuple[float, float, float], game_map: 'Map') -> bool:
-        """Resolve AIRCRAFT Normal move (straight line, minimum 20", no max)."""
+    def _aircraft_normal_move(
+        self,
+        destination: Tuple[float, float, float],
+        game_map: 'Map',
+        *,
+        pivot_degrees: Optional[float] = None,
+    ) -> bool:
+        """Resolve AIRCRAFT Normal move (straight line, minimum 20", no max; optional post-move pivot)."""
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False
@@ -9244,19 +9250,47 @@ class Unit:
                             print(f"{self.name} cannot end within Engagement Range (AIRCRAFT)")
                             return False
 
-        # Apply movement (pivot after move is optional; keep facing by default)
+        final_facing = facing
+        if pivot_degrees is not None:
+            try:
+                pivot_val = float(pivot_degrees)
+            except (TypeError, ValueError):
+                pivot_val = 0.0
+            pivot_val = max(-90.0, min(90.0, pivot_val))
+            final_facing = (facing + math.radians(pivot_val)) % (2.0 * math.pi)
+
+        # Apply movement (pivot after move is optional)
         for m, nx, ny, nz in proposed:
             try:
-                m.last_move_path = [(m.model_base.x, m.model_base.y, m.model_base.z, m.model_base.facing),
-                                    (nx, ny, nz, m.model_base.facing)]
+                m.last_move_path = [
+                    (m.model_base.x, m.model_base.y, m.model_base.z, m.model_base.facing),
+                    (nx, ny, nz, final_facing),
+                ]
             except Exception:
                 pass
-            m.set_location(nx, ny, nz, m.model_base.facing)
+            m.set_location(nx, ny, nz, final_facing)
 
-        print(f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) to ({start_x + move_dx:.1f}, {start_y + move_dy:.1f}) - distance: {forward_dist:.1f}\"")
+        pivot_note = ""
+        if pivot_degrees:
+            try:
+                pivot_note = f", pivot {float(pivot_degrees):.1f}°"
+            except (TypeError, ValueError):
+                pivot_note = ""
+        print(
+            f"{self.name} moved from ({start_x:.1f}, {start_y:.1f}) "
+            f"to ({start_x + move_dx:.1f}, {start_y + move_dy:.1f}) "
+            f"- distance: {forward_dist:.1f}\"{pivot_note}"
+        )
         return True
 
-    def move(self, destination: Tuple[float, float, float], game_map: 'Map', advance: bool = False) -> bool:
+    def move(
+        self,
+        destination: Tuple[float, float, float],
+        game_map: 'Map',
+        advance: bool = False,
+        *,
+        aircraft_pivot_degrees: Optional[float] = None,
+    ) -> bool:
         """
         Moves the unit towards the destination using optimized individual model pathfinding.
         
@@ -9266,7 +9300,7 @@ class Unit:
         3. If coherency would be broken at the end of the move, the move is NOT allowed and is rolled back
         """
         if bool(getattr(self, "is_aircraft", False)):
-            return self._aircraft_normal_move(destination, game_map)
+            return self._aircraft_normal_move(destination, game_map, pivot_degrees=aircraft_pivot_degrees)
         if not self.models:
             logger.error(f"Cannot move unit {self.name}: no models in unit")
             return False

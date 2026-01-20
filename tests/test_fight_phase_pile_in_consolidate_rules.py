@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.battlefield.map import Map, ObjectivePoint
-from warhammer40k_ai.utility.calcs import unified_pathfinding, MovementType, clear_enemy_model_cache, clear_collision_caches
+from warhammer40k_ai.utility.calcs import unified_pathfinding, MovementType, get_validation_rules, clear_enemy_model_cache, clear_collision_caches
 from warhammer40k_ai.utility.constants import BASE_CONTACT_EPSILON
 
 
@@ -64,6 +64,13 @@ class TestPileInAndConsolidateRules(unittest.TestCase):
         clear_enemy_model_cache()
         clear_collision_caches()
         self.game_map = Map(60, 44)
+
+    def test_pile_in_and_consolidate_apply_pivot_cost(self):
+        friendly = _make_single_model_unit("Friendly", "A", 10.0, 10.0)
+        pile_rules = get_validation_rules(MovementType.PILE_IN, moving_unit=friendly)
+        consolidate_rules = get_validation_rules(MovementType.CONSOLIDATE, moving_unit=friendly)
+        self.assertTrue(pile_rules.get("apply_pivot_cost"))
+        self.assertTrue(consolidate_rules.get("apply_pivot_cost"))
 
     def test_pile_in_must_end_closer_to_closest_enemy(self):
         friendly = _make_single_model_unit("Friendly", "A", 10.0, 10.0)
