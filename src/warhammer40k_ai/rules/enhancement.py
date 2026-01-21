@@ -172,5 +172,8 @@ class Enhancement:
         if name == "faultless opportunist" or enh_id == "000010002002":
             unit.special_rules["enhancement_faultless_opportunist"] = True
 
+        if name == "rise to the challenge" or enh_id == "000010002005":
+            unit.special_rules["enhancement_rise_to_challenge"] = True
+
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"

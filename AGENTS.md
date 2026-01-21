@@ -112,6 +112,14 @@ This rule exists to reduce UI friction and to keep decision/action modeling clea
 
 ---
 
+## Local and Remote play parity (mandatory)
+When implementing any rule/ability/feature that involves player choices or prompts:
+- Support both **local** (same-machine UI) and **remote** (networked) player flows.
+- Ensure every decision point is available through the deterministic decision/action interface used by remote play.
+- Do not ship abilities that only work in local play; if remote support is unclear or blocked, stop and ask the developer.
+
+---
+
 ## Testing requirements (pytest)
 
 ### Test location

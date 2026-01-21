@@ -6,6 +6,7 @@ from typing import Protocol, List, Dict, Tuple, Optional
 
 from warhammer40k_ai.engine.fight_phase_manager import FightPhaseManager, FightStage
 from warhammer40k_ai.utility.calcs import get_unit_movement_path_preview, clear_enemy_model_cache
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.dice import get_roll
 
 from ..ui_constants import TILE_SIZE
@@ -1209,6 +1210,10 @@ class BattlePhaseHandler(BasePhaseHandler):
     def __init__(self, game_view: 'GameView'):
         super().__init__(game_view)
         self.fight_phase_manager = None
+        self._rise_to_challenge_flow_active = False
+        self._pending_rise_to_challenge_queue = []
+        self._decision_callbacks = {}
+        self._decision_subscription_enabled = False
     
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle pygame events during battle phases"""
@@ -2008,13 +2013,15 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         def on_stage_complete():
             print("OK: Fight Phase complete")
-            self.fight_phase_manager = None
-            try:
-                self.game.fight_phase_manager = None
-            except Exception:
-                pass
-            # Advance to next phase
-            self.game.next_phase()
+            def _advance_phase():
+                self.fight_phase_manager = None
+                try:
+                    self.game.fight_phase_manager = None
+                except Exception:
+                    pass
+                self.game.next_phase()
+
+            self._maybe_prompt_rise_to_challenge(current_player, opponent_player, _advance_phase)
 
         def on_movement_required(movement_type: str, unit: Unit, callback):
             """Handle pile-in and consolidate movements using Individual Model Movement Dialog"""
@@ -2054,6 +2061,249 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Start the fight phase
         self.fight_phase_manager.start_fight_phase(current_player, opponent_player)
+
+    def _ensure_decision_subscription(self) -> None:
+        if self._decision_subscription_enabled:
+            return
+        es = getattr(self.game, "event_system", None)
+        if es is None:
+            return
+        es.subscribe("decision_resolved", self._on_decision_resolved, group="ui:phase_manager")
+        self._decision_subscription_enabled = True
+
+    def _register_decision_callback(self, request, callback) -> None:
+        if request is None or callback is None:
+            return
+        try:
+            self._decision_callbacks[request.decision_id] = callback
+        except Exception:
+            return
+        self._ensure_decision_subscription()
+
+    def _on_decision_resolved(self, request=None, result=None, **_kwargs) -> None:
+        if request is None or result is None:
+            return
+        try:
+            cb = self._decision_callbacks.pop(getattr(request, "decision_id", ""), None)
+        except Exception:
+            cb = None
+        if cb is None:
+            return
+        try:
+            cb(request, result)
+        except Exception:
+            pass
+
+    def _maybe_prompt_rise_to_challenge(self, current_player: Player, opponent_player: Player, on_done) -> None:
+        if self._rise_to_challenge_flow_active:
+            return
+        queue = []
+        for p in (current_player, opponent_player):
+            if p is None:
+                continue
+            try:
+                candidates = list(self.game._rise_to_challenge_candidates(p) or [])
+            except Exception:
+                candidates = []
+            if candidates:
+                queue.append((p, candidates))
+        if not queue:
+            if callable(on_done):
+                on_done()
+            return
+        self._pending_rise_to_challenge_queue = queue
+        self._open_next_rise_to_challenge_prompt(current_player, opponent_player, on_done)
+
+    def _open_next_rise_to_challenge_prompt(self, current_player: Player, opponent_player: Player, on_done) -> None:
+        q = list(getattr(self, "_pending_rise_to_challenge_queue", []) or [])
+        if not q:
+            self._pending_rise_to_challenge_queue = []
+            self._rise_to_challenge_flow_active = False
+            if callable(on_done):
+                on_done()
+            return
+        player, candidates = q.pop(0)
+        self._pending_rise_to_challenge_queue = q
+
+        def _finish():
+            self._rise_to_challenge_flow_active = False
+            self._open_next_rise_to_challenge_prompt(current_player, opponent_player, on_done)
+
+        if player is None or not candidates:
+            _finish()
+            return
+
+        is_human = False
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+
+        def _use_rise_to_challenge(unit):
+            if unit is None:
+                _finish()
+                return
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["enhancement_rise_to_challenge_used"] = True
+                unit.special_rules = sr
+            except Exception:
+                pass
+
+            def _after_exquisite():
+                self._start_bonus_fight_sequence(unit, player, current_player, opponent_player, _finish)
+
+            if hasattr(self.game_view, "_prompt_exquisite_swordsmanship_choice"):
+                try:
+                    self.game_view._prompt_exquisite_swordsmanship_choice(unit, _after_exquisite)
+                    return
+                except Exception:
+                    pass
+            try:
+                unit.set_exquisite_swordsmanship_choice("LETHAL")
+            except Exception:
+                pass
+            _after_exquisite()
+
+        if not is_human:
+            try:
+                from ...engine.decision_kinds import DECISION_SELECT_RISE_TO_CHALLENGE
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...engine.decision_handlers._helpers import find_option, get_unit, is_skip_choice
+            except Exception:
+                _finish()
+                return
+
+            options = []
+            for unit in candidates:
+                try:
+                    label = str(getattr(unit, "name", "Unit") or "Unit")
+                except Exception:
+                    label = "Unit"
+                options.append(DecisionOption.create(label, payload={"unit_id": get_entity_id(unit)}))
+            options.append(DecisionOption.create("Skip", payload={"action": "skip"}))
+
+            req = DecisionRequest.create(
+                DECISION_SELECT_RISE_TO_CHALLENGE,
+                "Select Rise to the Challenge unit.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            self._rise_to_challenge_flow_active = True
+
+            def _on_resolved(request, result):
+                if request is None or result is None:
+                    _finish()
+                    return
+                if is_skip_choice(request, result):
+                    _finish()
+                    return
+                opt = find_option(request, result.option_id)
+                payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+                unit = get_unit(self.game, str(payload.get("unit_id", "") or ""))
+                if unit is None:
+                    _finish()
+                    return
+                _use_rise_to_challenge(unit)
+
+            self._register_decision_callback(req, _on_resolved)
+            return
+
+        self._rise_to_challenge_flow_active = True
+        try:
+            from ...engine.decision_kinds import DECISION_SELECT_RISE_TO_CHALLENGE
+        except Exception:
+            DECISION_SELECT_RISE_TO_CHALLENGE = "SELECT_RISE_TO_CHALLENGE"
+
+        if callable(getattr(self.game_view, "_resolve_unit_selection_dialog", None)):
+            self.game_view._resolve_unit_selection_dialog(
+                player=player,
+                candidates=candidates,
+                on_chosen=_use_rise_to_challenge,
+                decision_type=DECISION_SELECT_RISE_TO_CHALLENGE,
+                prompt="Select Rise to the Challenge unit.",
+                title="Rise to the Challenge",
+                subtitle="End of Fight phase: fight one additional time",
+                dialog=self.game_view.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+            return
+        _use_rise_to_challenge(candidates[0] if candidates else None)
+
+    def _start_bonus_fight_sequence(
+        self,
+        unit: Unit,
+        player: Player,
+        current_player: Player,
+        opponent_player: Player,
+        on_done,
+    ) -> None:
+        if unit is None:
+            if callable(on_done):
+                on_done()
+            return
+        try:
+            game_map = getattr(self.game, "map", None)
+        except Exception:
+            game_map = None
+        if game_map is None:
+            if callable(on_done):
+                on_done()
+            return
+        try:
+            enemies = list(game_map.get_enemy_units(unit) or [])
+        except Exception:
+            enemies = []
+        if not enemies:
+            if callable(on_done):
+                on_done()
+            return
+        engaged = []
+        seen = set()
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None:
+                continue
+            rid = get_entity_id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if game_map.is_within_engagement_range(unit, root):
+                    engaged.append(root)
+            except Exception:
+                continue
+        if not engaged:
+            if callable(on_done):
+                on_done()
+            return
+
+        if player is current_player:
+            opponent = opponent_player
+        else:
+            opponent = current_player
+
+        try:
+            self._bonus_fight_on_complete = on_done
+        except Exception:
+            self._bonus_fight_on_complete = on_done
+        self._start_comprehensive_fight_sequence(unit, engaged, player, opponent)
 
     def _serialize_unit_positions(self, unit: Unit) -> List[dict]:
         from ...utility.entity_ids import get_entity_id
@@ -2580,6 +2830,15 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Handle consolidate movement after attacks are resolved."""
         def on_consolidate_complete(completed: bool):
             print(f"INFO: {fighting_unit.name} consolidate completed: {completed}")
+
+            on_bonus = getattr(self, "_bonus_fight_on_complete", None)
+            if callable(on_bonus):
+                try:
+                    self._bonus_fight_on_complete = None
+                except Exception:
+                    pass
+                on_bonus()
+                return
 
             self.fight_phase_manager.finalize_unit_fight(fighting_unit, current_player, opponent_player)
 

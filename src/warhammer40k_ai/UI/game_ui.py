@@ -3510,6 +3510,119 @@ class GameView:
             self._emperors_children_exquisite_flow_active = False
             self._open_next_emperors_children_exquisite_prompt(game_ctx)
 
+    def _prompt_exquisite_swordsmanship_choice(self, unit, on_done=None) -> None:
+        if unit is None:
+            if callable(on_done):
+                on_done()
+            return
+        player = None
+        try:
+            player = unit.get_parent_army().player
+        except Exception:
+            player = None
+        is_human = False
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        if self.martial_katah_dialog is None:
+            try:
+                from .dialogs import MartialKatahDialog
+                sw, sh = self.screen.get_width(), self.screen.get_height()
+                self.martial_katah_dialog = MartialKatahDialog(sw, sh)
+            except Exception:
+                self.martial_katah_dialog = None
+        if self.martial_katah_dialog is None:
+            try:
+                unit.set_exquisite_swordsmanship_choice("LETHAL")
+            except Exception:
+                pass
+            if callable(on_done):
+                on_done()
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_MARTIAL_KATAH
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload
+
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Lethal Hits",
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": "LETHAL",
+                    "selection_kind": "exquisite_swordsmanship",
+                    "summary": "Melee weapons gain [LETHAL HITS] for this fight.",
+                },
+            ),
+            DecisionOption.create(
+                "Sustained Hits 1",
+                payload={
+                    "unit_id": unit_id,
+                    "choice_key": "SUSTAINED",
+                    "selection_kind": "exquisite_swordsmanship",
+                    "summary": "Melee weapons gain [SUSTAINED HITS 1] for this fight.",
+                },
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_MARTIAL_KATAH,
+            "Select Exquisite Swordsmanship stance.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"unit_id": unit_id, "selection_kind": "exquisite_swordsmanship"},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        if not is_human:
+            registrar = getattr(getattr(self, "phase_manager", None), "_register_decision_callback", None)
+            if callable(registrar):
+                def _on_resolved(_request, _result):
+                    if callable(on_done):
+                        on_done()
+                registrar(req, _on_resolved)
+                return
+            if callable(on_done):
+                on_done()
+            return
+
+        from ..utility.decision_utils import resolve_decision_value
+        def _finish(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
+            if callable(on_done):
+                on_done()
+
+        def _on_confirm(option_id: str):
+            _finish(option_id)
+
+        def _on_cancel():
+            default_id = option_id_for_payload(req, "choice_key", "LETHAL")
+            if default_id:
+                _finish(default_id)
+            else:
+                if callable(on_done):
+                    on_done()
+
+        try:
+            self.martial_katah_dialog.show(
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                subtitle=f"{getattr(unit, 'name', 'Unit')} fights again.",
+                title="Exquisite Swordsmanship",
+                decision_request=req,
+            )
+            self.dialog_manager.open(self.martial_katah_dialog, modal=True)
+        except Exception:
+            try:
+                unit.set_exquisite_swordsmanship_choice("LETHAL")
+            except Exception:
+                pass
+            if callable(on_done):
+                on_done()
+
     def _on_emperors_children_sensational_prompt(self, player=None, unit=None, phase_name=None, game=None, **_kwargs):
         if player is None or unit is None:
             return

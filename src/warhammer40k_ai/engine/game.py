@@ -4040,6 +4040,108 @@ class Game:
                 count += 1
         return int(count)
 
+    def _count_enemy_models_in_engagement_range(self, unit, model) -> int:
+        if unit is None or model is None:
+            return 0
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return 0
+        try:
+            enemy_units = list(game_map.get_enemy_units(unit) or [])
+        except Exception:
+            enemy_units = []
+        if not enemy_units:
+            return 0
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+        from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+
+        count = 0
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            try:
+                if not enemy.is_alive() or not getattr(enemy, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if enemy.is_in_reserves() or enemy.is_embarked:
+                    continue
+            except Exception:
+                pass
+            get_models = getattr(enemy, "get_models_for_collision", None)
+            if callable(get_models):
+                e_models = list(get_models() or [])
+            else:
+                e_models = list(getattr(enemy, "models", []) or [])
+            for e_model in e_models:
+                alive = getattr(e_model, "is_alive", True)
+                if callable(alive):
+                    alive = alive()
+                if not alive:
+                    continue
+                try:
+                    h = float(horizontal_distance_between_bases_2d(model.model_base, e_model.model_base))
+                    v = float(vertical_distance_between_bases(model.model_base, e_model.model_base))
+                except Exception:
+                    continue
+                if h <= ENGAGEMENT_RANGE_HORIZONTAL and v <= ENGAGEMENT_RANGE_VERTICAL:
+                    count += 1
+        return int(count)
+
+    def _rise_to_challenge_candidates(self, player) -> list:
+        if player is None:
+            return []
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return []
+        army = self._get_player_army(player)
+        if army is None:
+            return []
+        candidates = []
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_rise_to_challenge"):
+                continue
+            if sr.get("enhancement_rise_to_challenge_used"):
+                continue
+            try:
+                if not self._unit_has_keyword(unit, "INFANTRY"):
+                    continue
+            except Exception:
+                continue
+            get_models = getattr(unit, "get_models_for_collision", None)
+            if callable(get_models):
+                models = list(get_models() or [])
+            else:
+                models = list(getattr(unit, "models", []) or [])
+            bearer = None
+            for model in models:
+                alive = getattr(model, "is_alive", True)
+                if callable(alive):
+                    alive = alive()
+                if alive:
+                    bearer = model
+                    break
+            if bearer is None:
+                continue
+            if self._count_enemy_models_in_engagement_range(unit, bearer) < 3:
+                continue
+            candidates.append(unit)
+        return candidates
+
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

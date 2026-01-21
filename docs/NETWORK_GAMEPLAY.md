@@ -130,9 +130,30 @@ When implemented, add dialog mappings for any new UI prompts to
 ## Staged Implementation Plan
 
 1. Transport layer: asyncio server/client, TLS, JSON framing, ping/pong.
+   - PR: Add shared transport primitives (JSON framing, message validation) + tests.
+   - PR: Add asyncio server with TLS config, connection lifecycle, ping/pong, CLI flags.
+   - PR: Add asyncio client with TLS/CA handling, reconnect hooks, ping/pong support.
 2. Lobby state + control protocol: role selection, ready states, join tokens.
+   - PR: Define lobby state model + pure transition helpers + unit tests.
+   - PR: Implement control message handlers (`hello`, `auth`, `role_select`, `ready`, `lobby_state`).
+   - PR: Wire lobby events into server transport (broadcasts, error handling).
 3. Army list submission and server-side parsing/validation.
+   - PR: Add `army_submit` control handling + file/text payload validation.
+   - PR: Integrate `parse_army_list` and roster validation with structured errors.
+   - PR: Add lobby UI support for list submission + status display.
 4. Game start integration: snapshot broadcast + command/event streaming.
+   - PR: Start-game gatekeeping (both ready, validated rosters) + lobby lock.
+   - PR: Instantiate `Game`, emit initial `snapshot`, begin command/event loop.
+   - PR: Add integration tests covering start flow and initial sync.
 5. Spectator restrictions and UI gating for read-only mode.
+   - PR: Enforce server-side command rejection for spectators + tests.
+   - PR: Add UI gating to suppress decision prompts for spectators.
+   - PR: Update dialog mapping entries in `docs/NETWORK_SAVELOAD_DESIGN.md`.
 6. Reconnect/resync support using existing snapshot/resync helpers.
+   - PR: Add session tokens + role reclaim rules + lobby state restore.
+   - PR: Add resync flow using `build_resync_message` + cursor tracking.
+   - PR: Add integration tests for reconnect and out-of-sync recovery.
 7. UI polish + documentation updates, including dialog mapping entries.
+   - PR: UX pass on lobby layout, validation feedback, and error messages.
+   - PR: Add minimal spectator UX affordances (read-only panels).
+   - PR: Refresh docs in `docs/NETWORK_GAMEPLAY.md` and related references.

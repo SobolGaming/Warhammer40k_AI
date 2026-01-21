@@ -47,6 +47,32 @@ class _StubUnit:
         return False
 
 
+class _MockDatasheet:
+    def __init__(self, name, *, keywords=None, faction_keywords=None, model_count=1, base_size="32mm"):
+        self.name = name
+        self.faction_data = {"name": "Test"}
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [])
+        self.datasheets_unit_composition = [{"description": f"{model_count} Test Models"}]
+        self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
+        self.datasheets_models = [{
+            "M": "6", "T": "4", "Sv": "3", "W": "2",
+            "Ld": "7", "OC": "1",
+            "base_size": base_size, "inv_sv": "7", "inv_sv_descr": "none",
+        }]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = []
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
+
+
+def _make_unit(name, *, keywords=None, faction_keywords=None, model_count=1):
+    from warhammer40k_ai.units.unit import Unit
+    datasheet = _MockDatasheet(name, keywords=keywords, faction_keywords=faction_keywords, model_count=model_count)
+    return Unit(datasheet)
+
+
 def _make_game(turn: int = 1, phase_name: str = "FIGHT_PHASE"):
     from warhammer40k_ai.engine.event.system import EventSystem
     return SimpleNamespace(
@@ -260,6 +286,96 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         self.assertTrue(manager._heroic_intervention_repeat_allowed(target_unit=bearer))
         self.assertFalse(manager._heroic_intervention_repeat_allowed(target_unit=other))
+
+    def test_rise_to_challenge_candidates_and_usage(self):
+        from warhammer40k_ai.engine.game import Game, Battlefield
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        game = Game(Battlefield(width=44, height=30))
+        army = Army("Emperor's Children", detachment_type="Peerless Bladesmen")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.LOCAL, army)
+        army.player = player
+
+        bearer = _make_unit("Bearer", keywords=["INFANTRY"], model_count=1)
+        bearer.deployed = True
+        bearer.reserve_status = "deployed"
+        bearer.set_parent_army(army)
+        Enhancement(
+            id="000010002005",
+            name="Rise to the Challenge",
+            faction_id="EC",
+            detachment="Peerless Bladesmen",
+            points=30,
+            description="",
+        ).apply_to_unit(bearer)
+
+        enemy_army = Army("Opponent", detachment_type="Other")
+        enemy = _make_unit("Enemy", keywords=["INFANTRY"], model_count=3)
+        enemy.deployed = True
+        enemy.reserve_status = "deployed"
+        enemy.set_parent_army(enemy_army)
+
+        army.units = [bearer]
+        enemy_army.units = [enemy]
+        enemy_army.player = Player("P2", PlayerControl.LOCAL, enemy_army)
+
+        bearer.models[0].model_base.set_position(0.0, 0.0, 0.0)
+        enemy.models[0].model_base.set_position(0.5, 0.0, 0.0)
+        enemy.models[1].model_base.set_position(0.6, 0.3, 0.0)
+        enemy.models[2].model_base.set_position(0.8, -0.2, 0.0)
+        game.map.units = [bearer, enemy]
+
+        candidates = game._rise_to_challenge_candidates(player)
+        self.assertIn(bearer, candidates)
+
+        bearer.special_rules["enhancement_rise_to_challenge_used"] = True
+        candidates_after = game._rise_to_challenge_candidates(player)
+        self.assertNotIn(bearer, candidates_after)
+
+    def test_rise_to_challenge_decision_handler(self):
+        from warhammer40k_ai.engine.game import Game, Battlefield
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_RISE_TO_CHALLENGE
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        game = Game(Battlefield(width=44, height=30))
+        army = Army("Emperor's Children", detachment_type="Peerless Bladesmen")
+        army.faction_id = "EC"
+        player = Player("P1", PlayerControl.REMOTE, army)
+        army.player = player
+
+        bearer = _make_unit("Bearer", keywords=["INFANTRY"], model_count=1)
+        bearer.set_parent_army(army)
+        army.units = [bearer]
+
+        game.players = [player]
+        game.rebuild_entity_registry()
+
+        unit_id = get_entity_id(bearer)
+        choose_opt = DecisionOption.create("Bearer", payload={"unit_id": unit_id})
+        skip_opt = DecisionOption.create("Skip", payload={"action": "skip"})
+        req = DecisionRequest.create(
+            DECISION_SELECT_RISE_TO_CHALLENGE,
+            "Select Rise to the Challenge unit.",
+            player_id=getattr(player, "id", None),
+            options=[choose_opt, skip_opt],
+        )
+
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=choose_opt.option_id)
+        applied = dispatch_decision(game, req, result)
+        self.assertTrue(applied.ok)
+        self.assertIs(applied.value, bearer)
+
+        skip_result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=skip_opt.option_id)
+        skipped = dispatch_decision(game, req, skip_result)
+        self.assertTrue(skipped.ok)
+        self.assertIsNone(skipped.value)
 
     def test_pact_points_melee_lethal_and_sustained(self):
         from warhammer40k_ai.roster.army import Army

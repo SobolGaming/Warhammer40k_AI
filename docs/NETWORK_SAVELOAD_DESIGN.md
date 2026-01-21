@@ -185,6 +185,7 @@ Fight:
 - target_model_selection_dialog: SELECT_TARGET_MODEL {unit_id, target_model_id}
 - precision_allocation_dialog: SELECT_PRECISION_TARGET {unit_id, target_model_id}
 - damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id, amount}
+- overwatch_shooter_dialog: SELECT_RISE_TO_CHALLENGE {unit_id | skip}
 
 Faction / Detachment / Ability choices:
 - blessings_of_khorne_dialog: CHOOSE_BLESSINGS {choices[]}

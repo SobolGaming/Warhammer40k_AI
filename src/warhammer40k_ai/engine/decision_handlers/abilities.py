@@ -26,6 +26,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_ASPECT,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+    DECISION_SELECT_RISE_TO_CHALLENGE,
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
@@ -720,6 +721,28 @@ def _apply_choose_setup_reactive_action(game: object, request: DecisionRequest, 
     return str(payload.get("action", "") or payload.get("choice", "") or payload.get("value", ""))
 
 
+def _validate_select_rise_to_challenge(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit")
+    if unit_val is None:
+        return ("Rise to the Challenge selection requires unit_id.",)
+    if resolve_unit(game, unit_val) is None:
+        return ("Rise to the Challenge unit not found.",)
+    return ()
+
+
+def _apply_select_rise_to_challenge(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    return resolve_unit(game, payload.get("unit_id") or payload.get("unit"))
+
+
 register_decision_handler(DECISION_CHOOSE_BLESSINGS, validate=_validate_choose_blessings, apply=_apply_choose_blessings)
 register_decision_handler(DECISION_CHOOSE_BLOOD_TITHE, validate=_validate_choose_blood_tithe, apply=_apply_choose_blood_tithe)
 register_decision_handler(DECISION_CHOOSE_RITUALS, validate=_validate_choose_ritual, apply=_apply_choose_ritual)
@@ -757,4 +780,9 @@ register_decision_handler(
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     validate=_validate_choose_setup_reactive_action,
     apply=_apply_choose_setup_reactive_action,
+)
+register_decision_handler(
+    DECISION_SELECT_RISE_TO_CHALLENGE,
+    validate=_validate_select_rise_to_challenge,
+    apply=_apply_select_rise_to_challenge,
 )
