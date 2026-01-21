@@ -114,6 +114,91 @@ def min_distance_between_units_3d(unit1, unit2, *, use_attached_aggregate: bool 
     return float(best)
 
 
+def unit_within_range_of_point_3d(
+    unit,
+    point: tuple[float, float],
+    radius: float,
+    *,
+    use_attached_aggregate: bool = True,
+) -> bool:
+    """
+    Check if a unit is within a given radius of a point (3D distance).
+
+    Per AGENTS.md: distances are 3D unless explicitly stated as horizontal/vertical.
+
+    Args:
+        unit: The unit to check
+        point: (x, y) coordinates of the point
+        radius: Maximum distance in inches
+        use_attached_aggregate: Whether to include attached units
+
+    Returns:
+        True if ANY model in the unit is within radius of the point
+    """
+    try:
+        r = float(radius)
+        px, py = float(point[0]), float(point[1])
+    except Exception:
+        return False
+    if r < 0:
+        return False
+
+    try:
+        if use_attached_aggregate:
+            models = unit.get_attached_unit_models()
+        else:
+            models = list(getattr(unit, "models", []) or [])
+    except Exception:
+        return False
+
+    alive_models = [m for m in models if getattr(m, "is_alive", True)]
+    if not alive_models:
+        return False
+
+    # Check if any model is within radius of the point (edge-to-point distance)
+    for model in alive_models:
+        base = getattr(model, "model_base", None)
+        if base is None:
+            continue
+        dxy = float(horizontal_distance_point_to_base_2d(base, px, py))
+        if math.isinf(dxy):
+            continue
+        dz = abs(float(getattr(base, "z", 0.0)))
+        dist_3d = float(math.hypot(dxy, dz))
+        if dist_3d <= r:
+            return True
+
+    return False
+
+
+def get_units_within_range_of_point_3d(
+    point: tuple[float, float],
+    radius: float,
+    all_units: Iterable,
+    *,
+    use_attached_aggregate: bool = True,
+) -> list:
+    """
+    Get all units within a given radius of a point (3D distance).
+
+    Per AGENTS.md: distances are 3D unless explicitly stated as horizontal/vertical.
+
+    Args:
+        point: (x, y) coordinates of the point
+        radius: Maximum distance in inches
+        all_units: Iterable of units to check
+        use_attached_aggregate: Whether to include attached units
+
+    Returns:
+        List of units within radius of the point
+    """
+    units_in_range = []
+    for unit in all_units:
+        if unit_within_range_of_point_3d(unit, point, radius, use_attached_aggregate=use_attached_aggregate):
+            units_in_range.append(unit)
+    return units_in_range
+
+
 def unit_within_range_of_unit(
     source_unit,
     target_unit,
@@ -293,3 +378,111 @@ def unit_within_horizontal_distance_of_point(unit, x: float, y: float, radius: f
             return True
     return False
 
+
+def get_eligible_linked_fire_origin_units(bearer_unit, *, game_map=None):
+    """
+    Find eligible Fire Prism units for Linked Fire origin selection.
+
+    Per Linked Fire rule: "you can measure range and determine visibility from another
+    friendly FIRE PRISM model that is visible to the bearer."
+
+    Returns list of units that are:
+    - Friendly (same army as bearer)
+    - Alive and deployed
+    - Have FIRE PRISM keywords
+    - Not the bearer unit itself
+    - Visible to the bearer (at least one model of origin visible to at least one model of bearer)
+
+    Args:
+        bearer_unit: The unit with the Linked Fire weapon
+        game_map: Optional game map for visibility checks
+
+    Returns:
+        List of eligible Fire Prism units
+    """
+    if bearer_unit is None or game_map is None:
+        return []
+
+    # Get all friendly units
+    try:
+        friendly_units = list(game_map.get_friendly_units(bearer_unit))
+    except Exception:
+        return []
+
+    eligible = []
+    for unit in friendly_units:
+        if _is_linked_fire_origin_eligible(bearer_unit, unit, game_map=game_map):
+            eligible.append(unit)
+
+    return eligible
+
+
+def _unit_is_alive(unit) -> bool:
+    if unit is None:
+        return False
+    alive = getattr(unit, "is_alive", None)
+    if callable(alive):
+        return bool(alive())
+    return bool(alive)
+
+
+def _model_is_alive(model) -> bool:
+    alive = getattr(model, "is_alive", True)
+    if callable(alive):
+        return bool(alive())
+    return bool(alive)
+
+
+def unit_has_fire_prism_keyword(unit) -> bool:
+    if unit is None:
+        return False
+    try:
+        if unit.has_any_keyword("Fire Prism"):
+            return True
+    except AttributeError:
+        pass
+    keywords = []
+    try:
+        keywords = list(getattr(unit, "get_effective_keywords")() or [])
+    except AttributeError:
+        keywords = list(getattr(unit, "keywords", []) or [])
+    keyword_set = {str(k or "").strip().lower() for k in keywords if str(k or "").strip()}
+    if "fire prism" in keyword_set:
+        return True
+    return "fire" in keyword_set and "prism" in keyword_set
+
+
+def linked_fire_origin_is_visible(bearer_unit, origin_unit, *, game_map=None) -> bool:
+    if bearer_unit is None or origin_unit is None or game_map is None:
+        return False
+    can_see_fn = getattr(game_map, "can_model_see_model", None)
+    if not callable(can_see_fn):
+        return False
+    bearer_models = [m for m in (getattr(bearer_unit, "models", []) or []) if _model_is_alive(m)]
+    origin_models = [m for m in (getattr(origin_unit, "models", []) or []) if _model_is_alive(m)]
+    if not bearer_models or not origin_models:
+        return False
+    for bearer_model in bearer_models:
+        for origin_model in origin_models:
+            if can_see_fn(bearer_model, origin_model):
+                return True
+    return False
+
+
+def _is_linked_fire_origin_eligible(bearer_unit, origin_unit, *, game_map=None) -> bool:
+    if bearer_unit is None or origin_unit is None or game_map is None:
+        return False
+    try:
+        from .entity_ids import get_entity_id
+        if get_entity_id(origin_unit) == get_entity_id(bearer_unit):
+            return False
+    except ValueError:
+        if origin_unit is bearer_unit:
+            return False
+    if not _unit_is_alive(origin_unit):
+        return False
+    if not bool(getattr(origin_unit, "deployed", False)):
+        return False
+    if not unit_has_fire_prism_keyword(origin_unit):
+        return False
+    return linked_fire_origin_is_visible(bearer_unit, origin_unit, game_map=game_map)

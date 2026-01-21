@@ -42,6 +42,8 @@ class Model:
         leadership_raw: Optional[str] = None,
         objective_control_raw: Optional[str] = None,
         inv_save_raw: Optional[str] = None,
+        keywords: Optional[List[str]] = None,
+        faction_keywords: Optional[List[str]] = None,
     ):
         self.name = name.split(' \u2013 ')[0]
         # Model attributes have a base value, but can be modified by wargear, strategems, etc
@@ -72,6 +74,10 @@ class Model:
         self.wargear: List[Wargear] = []
         self.abilities: Dict[Ability] = {}
         self.optional_wargear: List[str] = []
+
+        # Per-model keywords (initialized from datasheet)
+        self.keywords: List[str] = list(keywords or [])
+        self.faction_keywords: List[str] = list(faction_keywords or [])
 
         # Gameplay related attributes
         self._id = str(uuid.uuid4())  # Generate a unique ID for each model
@@ -111,6 +117,33 @@ class Model:
         except Exception:
             pass
         return bool(getattr(pu, "is_character", False))
+
+    def has_keyword(self, keyword: str) -> bool:
+        """Check if this model has the specified keyword (case-insensitive)."""
+        kw = (keyword or "").lower().strip()
+        if not kw:
+            return False
+        try:
+            return kw in [k.lower() for k in (self.keywords or [])]
+        except Exception:
+            return False
+
+    def has_any_keyword(self, keyword: str) -> bool:
+        """Check if this model has the specified keyword in keywords or faction_keywords (case-insensitive)."""
+        kw = (keyword or "").lower().strip()
+        if not kw:
+            return False
+        try:
+            if kw in [k.lower() for k in (self.keywords or [])]:
+                return True
+        except Exception:
+            pass
+        try:
+            if kw in [k.lower() for k in (self.faction_keywords or [])]:
+                return True
+        except Exception:
+            pass
+        return False
 
     @property
     def has_circular_base(self) -> bool:

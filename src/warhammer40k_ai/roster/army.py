@@ -271,6 +271,7 @@ class Army:
         self.gate_of_infinity = None
         self.emperors_children = None
         self.emperors_children_detachments = None
+        self.deathstrike = None
         self.detachment_managers = {}
         from ..rules.detachment_registry import DETACHMENT_MANAGER_CLASSES
         for attr_name in DETACHMENT_MANAGER_CLASSES:
@@ -362,7 +363,14 @@ class Army:
 
         if fid == "AM":
             from ..rules.voice_of_command import VoiceOfCommandManager
+            from ..rules.deathstrike import DeathstrikeManager
             self.voice_of_command = VoiceOfCommandManager(self)
+            self.deathstrike = DeathstrikeManager(self)
+
+        if fid == "GSC":
+            # Genestealer Cults can also use Deathstrike
+            from ..rules.deathstrike import DeathstrikeManager
+            self.deathstrike = DeathstrikeManager(self)
 
         if fid == "GK":
             from ..rules.gate_of_infinity import GateOfInfinityManager

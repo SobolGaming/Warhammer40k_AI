@@ -15,6 +15,9 @@ class _DummyProfile:
     def one_shot_key(self) -> str:
         return self._key
 
+    def is_psychic_assassin(self) -> bool:
+        return False
+
     def attack(self, target_unit, model, game_map=None):
         self.calls += 1
 
@@ -46,7 +49,7 @@ class TestOneShot(unittest.TestCase):
 
         u = Unit.__new__(Unit)
         u.name = "Shooter"
-        u._can_model_shoot_weapon_at_target = lambda model, weapon_profile, target_unit, game_map: True
+        u._can_model_shoot_weapon_at_target = lambda model, weapon_profile, target_unit, game_map, *, origin_unit=None: True
 
         profile = _DummyProfile(key="Hunter-killer missile")
         wargear = _DummyWargear(profile)

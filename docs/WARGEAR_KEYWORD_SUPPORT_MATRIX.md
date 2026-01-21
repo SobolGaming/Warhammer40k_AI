@@ -150,11 +150,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Critical hits auto-wound.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>linked fire</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">linked fire</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>linked fire</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">linked fire</td>
+<td bgcolor="#d4edda">Allows measuring range and visibility from another friendly FIRE PRISM unit. When used, weapon Attacks characteristic becomes 1.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>melta</code></td>
@@ -185,11 +185,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Engaged shooting + pistol-vs-other-ranged choice enforced (10e).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>plasma warhead</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">plasma warhead</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>plasma warhead</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">plasma warhead</td>
+<td bgcolor="#d4edda">Requires Remained Stationary, Deathstrike marker placed, no Designate/Adjust this phase. Hits all units within 6" of marker (3D distance). ONE SHOT.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>precision</code></td>
@@ -206,11 +206,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>psychic assassin</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">psychic assassin</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>psychic assassin</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">psychic assassin</td>
+<td bgcolor="#d4edda">When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>rapid fire</code></td>

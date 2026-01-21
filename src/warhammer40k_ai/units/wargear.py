@@ -1,4 +1,4 @@
-from typing import Union, Dict, List, Optional
+﻿from typing import Union, Dict, List, Optional, Tuple
 from enum import Enum, auto
 from collections import namedtuple
 import copy
@@ -943,12 +943,25 @@ class WargearProfile:
             _closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
         except Exception:
             closest_dist = 0.0
+
+        # Apply Psychic Assassin override for preview if applicable
+        attacks_override = None
+        attacks_override_note = None
+        try:
+            if self.is_psychic_assassin() and target.has_any_keyword("PSYKER"):
+                attacks_override = 6
+                attacks_override_note = "Psychic Assassin"
+        except Exception:
+            pass
+
         return self._resolve_attack_count(
             target,
             attacker,
             attack_result,
             game_map=game_map,
             closest_dist=float(closest_dist),
+            attacks_override=attacks_override,
+            attacks_override_note=attacks_override_note,
             publish_roll_event=bool(publish_roll_event),
         )
 
@@ -6552,6 +6565,69 @@ class WargearProfile:
 
     def is_one_shot(self) -> bool:
         return 'one shot' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_plasma_warhead(self) -> bool:
+        """Check if weapon has Plasma Warhead keyword."""
+        return 'plasma warhead' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_linked_fire(self) -> bool:
+        """Check if weapon has Linked Fire keyword."""
+        return 'linked fire' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_psychic_assassin(self) -> bool:
+        """Check if weapon has Psychic Assassin keyword."""
+        return 'psychic assassin' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def can_shoot_plasma_warhead(
+        self,
+        attacker: 'Model',
+        *,
+        game_map: Optional['Map'] = None,
+        out_of_phase: bool = False,
+    ) -> Tuple[bool, str]:
+        """
+        Check if Plasma Warhead weapon can be fired this phase.
+
+        Per wahapedia rule text:
+        "The bearer can only shoot with this weapon in your Shooting phase, and only if it
+        Remained Stationary this turn and you did not use its Deathstrike Missile ability
+        to Designate Target or Adjust Target this phase."
+
+        Returns:
+            (can_shoot, reason) tuple
+        """
+        if not self.is_plasma_warhead():
+            return True, "Not a Plasma Warhead weapon"
+
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False, "Plasma Warhead requires a parent unit"
+        if out_of_phase or not bool(getattr(unit, "_is_controlling_players_shooting_phase", lambda: False)()):
+            return False, "Plasma Warhead can only be fired in your Shooting phase"
+
+        # Check Remained Stationary
+        if not bool(getattr(getattr(unit, "round_state", None), "remained_stationary_this_round", False)):
+            return False, "Plasma Warhead requires unit to Remain Stationary"
+
+        army = getattr(unit, "get_parent_army", lambda: None)()
+        deathstrike_mgr = getattr(army, "deathstrike", None)
+        if deathstrike_mgr is None:
+            return False, "No Deathstrike manager found"
+
+        try:
+            from ..utility.entity_ids import get_entity_id
+            unit_id = get_entity_id(unit)
+        except ValueError:
+            return False, "Unit ID not found"
+
+        if not deathstrike_mgr.has_marker(unit_id):
+            return False, "No Deathstrike marker placed (use Designate Target first)"
+
+        # Check if Designate/Adjust was used this phase
+        if deathstrike_mgr.used_designate_adjust_this_phase(unit_id):
+            return False, "Cannot fire Plasma Warhead in same phase as Designate/Adjust"
+
+        return True, "OK"
 
     def is_conversion(self) -> bool:
         """Check if weapon has Conversion keyword."""
