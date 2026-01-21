@@ -15,6 +15,9 @@ class _DummyProfile:
     def one_shot_key(self) -> str:
         return self._key
 
+    def is_psychic_assassin(self) -> bool:
+        return False
+
     def attack(self, target_unit, model, game_map=None):
         self.calls += 1
 

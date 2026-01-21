@@ -302,6 +302,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
         "precision": "Allows allocating a successful wound to a visible CHARACTER in an Attached unit.",
         "psychic": "Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.",
+        "psychic assassin": "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",
         "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
         # Ork-specific keywords
         "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",

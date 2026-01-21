@@ -206,11 +206,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>psychic assassin</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">psychic assassin</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>psychic assassin</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">psychic assassin</td>
+<td bgcolor="#d4edda">When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>rapid fire</code></td>

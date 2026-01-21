@@ -3104,6 +3104,8 @@ class Unit:
                     leadership_raw=str(profile.get("Ld", datasheet.datasheets_models[0].get("Ld", "")) or ""),
                     objective_control_raw=str(profile.get("OC", datasheet.datasheets_models[0].get("OC", "")) or ""),
                     inv_save_raw=str(profile.get("inv_sv", datasheet.datasheets_models[0].get("inv_sv", "")) or ""),
+                    keywords=list(getattr(datasheet, 'keywords', []) or []),
+                    faction_keywords=list(getattr(datasheet, 'faction_keywords', []) or []),
                 )
                 model.set_parent_unit(self)
                 models.append(model)
@@ -5594,7 +5596,7 @@ class Unit:
         return leaders_models
 
     def get_effective_keywords(self) -> List[str]:
-        """Effective keywords for rules checks while attached (union of all members)."""
+        """Effective keywords for rules checks while attached (union of all members and all models)."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -5608,6 +5610,21 @@ class Unit:
         for u in members:
             try:
                 hover_active = bool(getattr(u, "hover_mode", False))
+                # Collect keywords from all models in this unit
+                for model in (getattr(u, "models", []) or []):
+                    try:
+                        for k in (getattr(model, "keywords", []) or []):
+                            ks = str(k)
+                            lk = ks.lower()
+                            if hover_active and lk == "aircraft":
+                                continue
+                            if lk in seen:
+                                continue
+                            seen.add(lk)
+                            kws.append(ks)
+                    except Exception:
+                        continue
+                # Also include unit-level keywords for backwards compatibility
                 for k in (getattr(u, "keywords", []) or []):
                     ks = str(k)
                     lk = ks.lower()
@@ -5634,7 +5651,7 @@ class Unit:
         return kws
 
     def get_effective_faction_keywords(self) -> List[str]:
-        """Effective faction keywords while attached (union of all members)."""
+        """Effective faction keywords while attached (union of all members and all models)."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -5653,6 +5670,21 @@ class Unit:
                         disciple_active = True
                 except Exception:
                     disciple_active = False
+                # Collect faction keywords from all models in this unit
+                for model in (getattr(u, "models", []) or []):
+                    try:
+                        for k in (getattr(model, "faction_keywords", []) or []):
+                            ks = str(k)
+                            lk = ks.lower()
+                            if disciple_active and lk == "world eaters":
+                                continue
+                            if lk in seen:
+                                continue
+                            seen.add(lk)
+                            kws.append(ks)
+                    except Exception:
+                        continue
+                # Also include unit-level faction keywords for backwards compatibility
                 for k in (getattr(u, "faction_keywords", []) or []):
                     ks = str(k)
                     lk = ks.lower()
@@ -12185,13 +12217,22 @@ class Unit:
                 if weapon_instance:
                     weapon_display += f" #{weapon_instance}"
 
-                # Linked Fire: apply Attacks=1 override when using origin unit
+                # Attack count overrides (apply in precedence order)
                 attacks_override = None
                 attacks_override_note = None
+
+                # Linked Fire: apply Attacks=1 override when using origin unit
+                # This takes precedence over other overrides (applied first)
                 if linked_fire_origin_unit is not None:
                     attacks_override = 1
                     attacks_override_note = "Linked Fire"
                     print(f"{model.name} attacking with {weapon_display} (Linked Fire from {linked_fire_origin_unit.name})")
+                # Psychic Assassin: apply Attacks=6 override when targeting PSYKER
+                # Only applies if no other override is already set
+                elif active_profile.is_psychic_assassin() and target_unit.has_any_keyword("PSYKER"):
+                    attacks_override = 6
+                    attacks_override_note = "Psychic Assassin"
+                    print(f"{model.name} attacking with {weapon_display} (Psychic Assassin vs PSYKER)")
                 else:
                     print(f"{model.name} attacking with {weapon_display}")
 

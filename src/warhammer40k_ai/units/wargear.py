@@ -943,12 +943,25 @@ class WargearProfile:
             _closest_target, closest_dist = attacker.return_closest_model_in_unit(target)
         except Exception:
             closest_dist = 0.0
+
+        # Apply Psychic Assassin override for preview if applicable
+        attacks_override = None
+        attacks_override_note = None
+        try:
+            if self.is_psychic_assassin() and target.has_any_keyword("PSYKER"):
+                attacks_override = 6
+                attacks_override_note = "Psychic Assassin"
+        except Exception:
+            pass
+
         return self._resolve_attack_count(
             target,
             attacker,
             attack_result,
             game_map=game_map,
             closest_dist=float(closest_dist),
+            attacks_override=attacks_override,
+            attacks_override_note=attacks_override_note,
             publish_roll_event=bool(publish_roll_event),
         )
 
@@ -6560,6 +6573,10 @@ class WargearProfile:
     def is_linked_fire(self) -> bool:
         """Check if weapon has Linked Fire keyword."""
         return 'linked fire' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_psychic_assassin(self) -> bool:
+        """Check if weapon has Psychic Assassin keyword."""
+        return 'psychic assassin' in [keyword.lower() for keyword in self.get_keywords()]
 
     def can_shoot_plasma_warhead(self, attacker: 'Model', *, game_map: Optional['Map'] = None) -> Tuple[bool, str]:
         """
