@@ -1299,6 +1299,7 @@ def _classify_ability(
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
+    bearer_save_support = _bearer_save_characteristic_support(description)
     model_fnp_support = _model_fnp_support(description)
     bearer_smoke_support = _bearer_smoke_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
@@ -1391,6 +1392,8 @@ def _classify_ability(
         return leading_support
     if bearer_invuln_support:
         return bearer_invuln_support
+    if bearer_save_support:
+        return bearer_save_support
     if model_fnp_support:
         return model_fnp_support
     if bearer_smoke_support:
@@ -1843,6 +1846,21 @@ def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, s
     if not m:
         return None
     return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
+
+
+def _bearer_save_characteristic_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+([.])", r"\1", text)
+    m = re.fullmatch(r"the bearer has a save characteristic of (\d)\+\.?", text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return ("Supported", f"Bearer has a Save characteristic of {m.group(1)}+.")
 
 
 def _model_fnp_support(description: str) -> Optional[Tuple[str, str]]:
