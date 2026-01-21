@@ -6,6 +6,7 @@ from ..decision_dispatcher import register_decision_handler
 from ..decision_kinds import (
     DECISION_DECLARE_FIRING_DECK,
     DECISION_DECLARE_SHOTS,
+    DECISION_DEATHSTRIKE_ACTION,
     DECISION_REROLL_ROLL,
     DECISION_SELECT_OVERWATCH_SHOOTER,
     DECISION_SELECT_WEAPON,
@@ -142,13 +143,61 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
                 models.append(model)
         if not models:
             continue
-        entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
-        fd_ids = decl.get("firing_deck_source_model_ids")
-        if isinstance(fd_ids, list) and fd_ids:
-            fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
-            if fd_models:
-                entry["firing_deck_source_models"] = fd_models
-        declarations.append(entry)
+
+        # Check if this is a Plasma Warhead weapon (AoE around marker)
+        is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
+        if is_plasma_warhead:
+            # Plasma Warhead hits ALL units within 6" of the marker (3D distance)
+            army = unit.get_parent_army()
+            deathstrike_mgr = getattr(army, "deathstrike", None)
+            if deathstrike_mgr is None:
+                print(f"⚠️ Plasma Warhead: No Deathstrike manager found")
+                continue
+
+            marker_pos = deathstrike_mgr.get_marker_position(unit_id)
+            if marker_pos is None:
+                print(f"⚠️ Plasma Warhead: No marker found for {unit.name}")
+                continue
+
+            # Get all units within 6" of marker (both friendly and enemy)
+            from ...utility.aura_utils import get_units_within_range_of_point_3d
+            all_units = list(getattr(game_map, "units", []) or [])
+            units_in_aoe = get_units_within_range_of_point_3d(
+                marker_pos,
+                6.0,  # 6" radius
+                all_units,
+                use_attached_aggregate=True
+            )
+
+            if not units_in_aoe:
+                print(f"⚠️ Plasma Warhead: No units within 6\" of marker at ({marker_pos[0]:.1f}\", {marker_pos[1]:.1f}\")")
+                continue
+
+            print(f"💥 Plasma Warhead: Hitting {len(units_in_aoe)} units within 6\" of marker")
+
+            # Create a separate declaration for each unit in the AoE
+            for aoe_target in units_in_aoe:
+                if not getattr(aoe_target, "is_alive", lambda: False)():
+                    continue
+                entry = {"weapon_profile": profile, "target_unit": aoe_target, "models": models}
+                fd_ids = decl.get("firing_deck_source_model_ids")
+                if isinstance(fd_ids, list) and fd_ids:
+                    fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
+                    if fd_models:
+                        entry["firing_deck_source_models"] = fd_models
+                declarations.append(entry)
+
+            # Mark Deathstrike as fired (ONE SHOT)
+            deathstrike_mgr.mark_deathstrike_fired(unit_id)
+        else:
+            # Normal single-target shooting
+            entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
+            fd_ids = decl.get("firing_deck_source_model_ids")
+            if isinstance(fd_ids, list) and fd_ids:
+                fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
+                if fd_models:
+                    entry["firing_deck_source_models"] = fd_models
+            declarations.append(entry)
     if not declarations:
         return False
     return bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
@@ -217,8 +266,74 @@ def _apply_reroll(game: object, request: DecisionRequest, result: DecisionResult
     return bool(payload.get("reroll", False))
 
 
+def _validate_deathstrike_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    opt = find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    action = str(payload.get("action", "") or "")
+    if action not in ("designate", "adjust", "none"):
+        return ("Invalid Deathstrike action. Must be 'designate', 'adjust', or 'none'.",)
+
+    unit_id = str(request.context.get("unit_id", "") or "")
+    if not unit_id:
+        return ("Deathstrike action requires unit_id in context.",)
+
+    unit = get_unit(game, unit_id)
+    if unit is None:
+        return ("Unit not found.",)
+
+    # Validate position if designate or adjust
+    if action in ("designate", "adjust"):
+        position = result.payload.get("position")
+        if not isinstance(position, (list, tuple)) or len(position) != 2:
+            return ("Deathstrike action requires position as [x, y].",)
+        try:
+            float(position[0])
+            float(position[1])
+        except (TypeError, ValueError):
+            return ("Position coordinates must be numeric.",)
+
+    return ()
+
+
+def _apply_deathstrike_action(game: object, request: DecisionRequest, result: DecisionResult):
+    opt = find_option(request, result.option_id)
+    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    action = str(payload.get("action", "") or "")
+    unit_id = str(request.context.get("unit_id", "") or "")
+    unit = get_unit(game, unit_id)
+    if unit is None:
+        raise RuntimeError("Unit not found for Deathstrike action.")
+
+    army = unit.get_parent_army()
+    deathstrike_mgr = getattr(army, "deathstrike", None)
+    if deathstrike_mgr is None:
+        raise RuntimeError("Deathstrike manager not found for army.")
+
+    if action == "none":
+        return None
+
+    position = result.payload.get("position")
+    if not position:
+        raise RuntimeError("Position required for Deathstrike action.")
+
+    position = (float(position[0]), float(position[1]))
+
+    if action == "designate":
+        deathstrike_mgr.place_marker(unit_id, position)
+        print(f"✅ Deathstrike marker placed at ({position[0]:.1f}\", {position[1]:.1f}\")")
+    elif action == "adjust":
+        deathstrike_mgr.move_marker(unit_id, position)
+        print(f"✅ Deathstrike marker moved to ({position[0]:.1f}\", {position[1]:.1f}\")")
+
+    return None
+
+
 register_decision_handler(DECISION_SELECT_WEAPON, validate=_validate_select_weapon, apply=_apply_select_weapon)
 register_decision_handler(DECISION_DECLARE_SHOTS, validate=_validate_declare_shots, apply=_apply_declare_shots)
 register_decision_handler(DECISION_DECLARE_FIRING_DECK, validate=_validate_firing_deck, apply=_apply_firing_deck)
 register_decision_handler(DECISION_SELECT_OVERWATCH_SHOOTER, validate=_validate_select_overwatch, apply=_apply_select_overwatch)
 register_decision_handler(DECISION_REROLL_ROLL, validate=_validate_reroll, apply=_apply_reroll)
+register_decision_handler(DECISION_DEATHSTRIKE_ACTION, validate=_validate_deathstrike_action, apply=_apply_deathstrike_action)

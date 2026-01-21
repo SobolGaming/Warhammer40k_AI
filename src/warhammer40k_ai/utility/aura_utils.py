@@ -114,6 +114,105 @@ def min_distance_between_units_3d(unit1, unit2, *, use_attached_aggregate: bool 
     return float(best)
 
 
+def unit_within_range_of_point_3d(
+    unit,
+    point: tuple[float, float],
+    radius: float,
+    *,
+    use_attached_aggregate: bool = True,
+) -> bool:
+    """
+    Check if a unit is within a given radius of a point (3D distance).
+
+    Per AGENTS.md: distances are 3D unless explicitly stated as horizontal/vertical.
+
+    Args:
+        unit: The unit to check
+        point: (x, y) coordinates of the point
+        radius: Maximum distance in inches
+        use_attached_aggregate: Whether to include attached units
+
+    Returns:
+        True if ANY model in the unit is within radius of the point
+    """
+    try:
+        r = float(radius)
+        px, py = float(point[0]), float(point[1])
+    except Exception:
+        return False
+    if r < 0:
+        return False
+
+    try:
+        if use_attached_aggregate:
+            models = unit.get_attached_unit_models()
+        else:
+            models = list(getattr(unit, "models", []) or [])
+    except Exception:
+        return False
+
+    alive_models = [m for m in models if getattr(m, "is_alive", True)]
+    if not alive_models:
+        return False
+
+    # Check if any model is within radius of the point
+    for model in alive_models:
+        base = getattr(model, "model_base", None)
+        if base is None:
+            continue
+
+        try:
+            # Get model position
+            mx = float(getattr(base, "x", 0.0))
+            my = float(getattr(base, "y", 0.0))
+            mz = float(getattr(base, "z", 0.0))
+
+            # Calculate 2D distance from point to model center
+            dxy = float(math.hypot(mx - px, my - py))
+
+            # For 3D distance, we need to account for vertical separation
+            # The point is on the ground (z=0), so vertical distance is just model's z
+            dz = abs(mz)
+
+            # 3D distance
+            dist_3d = float(math.hypot(dxy, dz))
+
+            if dist_3d <= r:
+                return True
+        except Exception:
+            continue
+
+    return False
+
+
+def get_units_within_range_of_point_3d(
+    point: tuple[float, float],
+    radius: float,
+    all_units: Iterable,
+    *,
+    use_attached_aggregate: bool = True,
+) -> list:
+    """
+    Get all units within a given radius of a point (3D distance).
+
+    Per AGENTS.md: distances are 3D unless explicitly stated as horizontal/vertical.
+
+    Args:
+        point: (x, y) coordinates of the point
+        radius: Maximum distance in inches
+        all_units: Iterable of units to check
+        use_attached_aggregate: Whether to include attached units
+
+    Returns:
+        List of units within radius of the point
+    """
+    units_in_range = []
+    for unit in all_units:
+        if unit_within_range_of_point_3d(unit, point, radius, use_attached_aggregate=use_attached_aggregate):
+            units_in_range.append(unit)
+    return units_in_range
+
+
 def unit_within_range_of_unit(
     source_unit,
     target_unit,

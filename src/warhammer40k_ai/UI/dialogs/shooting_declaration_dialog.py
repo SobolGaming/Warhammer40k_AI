@@ -126,6 +126,18 @@ class ShootingDeclarationDialog(BaseDialog):
         self.add_button('cancel', self.width - 160, self.height - 50, 140, 35)
 
         if self.allow_actions:
+            # Check if unit has Deathstrike capability
+            has_deathstrike = False
+            if self.unit:
+                army = self.unit.get_parent_army()
+                deathstrike_mgr = getattr(army, "deathstrike", None)
+                if deathstrike_mgr is not None:
+                    has_deathstrike = True
+
+            # Add Deathstrike button if available
+            if has_deathstrike:
+                self.add_button('start_deathstrike', 10, self.height - 185, 200, 35)
+
             # Add additional Mission Action buttons (The Ritual / Move Hazard)
             self.add_button('start_the_ritual', 10, self.height - 140, 200, 35)
             self.add_button('start_move_hazard', 220, self.height - 140, 200, 35)
@@ -147,6 +159,8 @@ class ShootingDeclarationDialog(BaseDialog):
             return True
         if not self.allow_actions and button_name.startswith("start_"):
             return False
+        elif button_name == 'start_deathstrike':
+            return self._try_start_deathstrike()
         elif button_name == 'start_terraform':
             return self._try_start_terraform()
         elif button_name == 'start_sabotage':
@@ -357,6 +371,48 @@ class ShootingDeclarationDialog(BaseDialog):
             return False
         if self.unit.round_state.fell_back_this_round and not self.unit.can_shoot_after_fall_back(weapon_profile):
             return False
+        return True
+
+    def _try_start_deathstrike(self) -> bool:
+        """Open Deathstrike Missile action dialog (Designate/Adjust/None)."""
+        if not self.game_view or not hasattr(self.game_view, 'game'):
+            return False
+        game = self.game_view.game
+
+        # Check if unit has Deathstrike capability
+        army = self.unit.get_parent_army()
+        deathstrike_mgr = getattr(army, "deathstrike", None)
+        if deathstrike_mgr is None:
+            print("❌ Deathstrike: No Deathstrike manager found")
+            return False
+
+        # Import the Deathstrike dialog
+        from .deathstrike_action_dialog import DeathstrikeActionDialog
+
+        if not hasattr(self.game_view, "deathstrike_action_dialog") or self.game_view.deathstrike_action_dialog is None:
+            self.game_view.deathstrike_action_dialog = DeathstrikeActionDialog(
+                self.game_view.screen.get_width(),
+                self.game_view.screen.get_height()
+            )
+
+        dialog = self.game_view.deathstrike_action_dialog
+
+        def _on_complete():
+            """Called when Deathstrike action is complete."""
+            print("✅ Deathstrike action complete")
+            # Don't hide shooting dialog - user can continue with shooting
+
+        dialog.show(
+            unit=self.unit,
+            game_view=self.game_view,
+            on_complete=_on_complete
+        )
+
+        try:
+            self.game_view.dialog_manager.open(dialog, modal=True)
+        except Exception:
+            pass
+
         return True
 
     def _try_start_terraform(self) -> bool:

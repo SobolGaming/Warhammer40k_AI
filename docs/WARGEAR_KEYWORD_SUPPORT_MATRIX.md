@@ -192,11 +192,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Engaged shooting + pistol-vs-other-ranged choice enforced (10e).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>plasma warhead</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">plasma warhead</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>plasma warhead</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">2</td>
+<td bgcolor="#d4edda">plasma warhead</td>
+<td bgcolor="#d4edda">Requires Remained Stationary, Deathstrike marker placed, no Designate/Adjust this phase. Hits all units within 6" of marker (3D distance). ONE SHOT.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>precision</code></td>

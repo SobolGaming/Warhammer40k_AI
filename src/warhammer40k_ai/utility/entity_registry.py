@@ -84,6 +84,11 @@ def rebuild_registry_from_game(registry: EntityRegistry, game: object) -> None:
         if cult_ambush is not None:
             registry.register_many(getattr(cult_ambush, "markers", []) or [], kind="marker")
 
+        deathstrike = getattr(army, "deathstrike", None)
+        if deathstrike is not None:
+            markers = getattr(deathstrike, "_markers", {}) or {}
+            registry.register_many(markers.values(), kind="deathstrike_marker")
+
     game_map = getattr(game, "map", None)
     if game_map is not None:
         registry.register_many(getattr(game_map, "terrain_features", []) or [], kind="terrain")

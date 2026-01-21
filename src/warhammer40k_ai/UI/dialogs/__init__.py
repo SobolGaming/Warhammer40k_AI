@@ -45,6 +45,7 @@ from .voice_of_command_dialog import VoiceOfCommandDialog
 from .dark_pacts_dialog import DarkPactsDialog
 from .martial_katah_dialog import MartialKatahDialog
 from .cabal_of_sorcerers_dialog import CabalOfSorcerersDialog
+from .deathstrike_action_dialog import DeathstrikeActionDialog
 
 __all__ = [
     'BaseDialog',
@@ -94,4 +95,5 @@ __all__ = [
     'DarkPactsDialog',
     'MartialKatahDialog',
     'CabalOfSorcerersDialog',
-] 
+    'DeathstrikeActionDialog',
+]

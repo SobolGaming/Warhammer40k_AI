@@ -1,4 +1,4 @@
-﻿from typing import Union, Dict, List, Optional
+﻿from typing import Union, Dict, List, Optional, Tuple
 from enum import Enum, auto
 from collections import namedtuple
 import copy
@@ -6539,6 +6539,53 @@ class WargearProfile:
 
     def is_one_shot(self) -> bool:
         return 'one shot' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_plasma_warhead(self) -> bool:
+        """Check if weapon has Plasma Warhead keyword."""
+        return 'plasma warhead' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def can_shoot_plasma_warhead(self, attacker: 'Model', *, game_map: Optional['Map'] = None) -> Tuple[bool, str]:
+        """
+        Check if Plasma Warhead weapon can be fired this phase.
+
+        Per wahapedia rule text:
+        "The bearer can only shoot with this weapon in your Shooting phase, and only if it
+        Remained Stationary this turn and you did not use its Deathstrike Missile ability
+        to Designate Target or Adjust Target this phase."
+
+        Returns:
+            (can_shoot, reason) tuple
+        """
+        if not self.is_plasma_warhead():
+            return True, "Not a Plasma Warhead weapon"
+
+        try:
+            unit = attacker.parent_unit
+            army = unit.get_parent_army()
+
+            # Check Remained Stationary
+            if not getattr(unit.round_state, "remained_stationary_this_round", False):
+                return False, "Plasma Warhead requires unit to Remain Stationary"
+
+            # Check for Deathstrike marker
+            deathstrike_mgr = getattr(army, "deathstrike", None)
+            if deathstrike_mgr is None:
+                return False, "No Deathstrike manager found"
+
+            unit_id = getattr(unit, "_id", None)
+            if not unit_id:
+                return False, "Unit ID not found"
+
+            if not deathstrike_mgr.has_marker(unit_id):
+                return False, "No Deathstrike marker placed (use Designate Target first)"
+
+            # Check if Designate/Adjust was used this phase
+            if deathstrike_mgr.used_designate_adjust_this_phase(unit_id):
+                return False, "Cannot fire Plasma Warhead in same phase as Designate/Adjust"
+
+            return True, "OK"
+        except Exception as e:
+            return False, f"Error checking Plasma Warhead eligibility: {e}"
 
     def is_conversion(self) -> bool:
         """Check if weapon has Conversion keyword."""
