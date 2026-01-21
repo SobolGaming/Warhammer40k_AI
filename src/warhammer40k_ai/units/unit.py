@@ -1079,6 +1079,10 @@ class Unit:
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
     )
+    _BEARER_SAVE_CHARACTERISTIC_RE = re.compile(
+        r"^the bearer has a save characteristic of (\d)\+\.?$",
+        re.IGNORECASE,
+    )
     _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(
         r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this unit, subtract 1 from the hit roll",
         re.IGNORECASE,
@@ -2090,6 +2094,8 @@ class Unit:
                 if isinstance(cache, dict):
                     for k in list(cache.keys()):
                         if k == "feel_no_pain" or k == "deep_strike" or k.startswith("target_hit_penalty:") or k.startswith("model_invulnerable_save:"):
+                            del cache[k]
+                        if k.startswith("model_save_characteristic:"):
                             del cache[k]
             except Exception:
                 pass
@@ -7027,6 +7033,22 @@ class Unit:
         except Exception:
             return None
 
+    def _parse_bearer_save_characteristic(self, text: str) -> Optional[int]:
+        if not text:
+            return None
+        normalized = self._normalize_rules_text(text)
+        if not normalized:
+            return None
+        normalized = normalized.replace("\u2019", "'")
+        normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
+        m = self._BEARER_SAVE_CHARACTERISTIC_RE.match(normalized)
+        if not m:
+            return None
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+
     def get_model_invulnerable_save_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
         """
         Return (invulnerable_save_value, source_name) for bearer-only invuln wargear abilities.
@@ -7100,6 +7122,82 @@ class Unit:
                     if best_value is None or val < best_value:
                         best_value = int(val)
                         best_source = str(source or "Bearer unit ability")
+        except Exception:
+            pass
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = (best_value, best_source)
+        return best_value, best_source
+
+    def get_model_save_characteristic_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
+        """
+        Return (save_value, source_name) for bearer-only save characteristic overrides.
+        """
+        if model is None:
+            return None, None
+        cache_key = f"model_save_characteristic:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        best_value: Optional[int] = None
+        best_source: Optional[str] = None
+
+        # Model-level abilities (if any)
+        try:
+            for ab in getattr(model, "abilities", {}).values():
+                try:
+                    desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                    name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Model ability")
+                except Exception:
+                    desc = ""
+                    name = "Model ability"
+                val = self._parse_bearer_save_characteristic(desc)
+                if val is None:
+                    continue
+                if best_value is None or val < best_value:
+                    best_value = val
+                    best_source = str(name or "Model ability")
+        except Exception:
+            pass
+
+        # Wargear abilities tied to equipped items.
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = getattr(ab, "name", "") or ""
+                if not name:
+                    continue
+                if not self._model_has_wargear_named(model, name):
+                    continue
+                desc = getattr(ab, "description", "") or ""
+                val = self._parse_bearer_save_characteristic(desc)
+                if val is None:
+                    continue
+                if best_value is None or val < best_value:
+                    best_value = val
+                    best_source = str(name)
+            except Exception:
+                continue
+
+        # Unit-level abilities on single-model units.
+        try:
+            if len(list(getattr(self, "models", []) or [])) == 1:
+                for ab in list(getattr(self, "possible_abilities", []) or []):
+                    try:
+                        desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                        name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Unit ability")
+                    except Exception:
+                        desc = ""
+                        name = "Unit ability"
+                    val = self._parse_bearer_save_characteristic(desc)
+                    if val is None:
+                        continue
+                    if best_value is None or val < best_value:
+                        best_value = val
+                        best_source = str(name or "Unit ability")
         except Exception:
             pass
 

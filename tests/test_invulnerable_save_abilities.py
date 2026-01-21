@@ -92,6 +92,50 @@ class TestInvulnerableSaveAbilities(unittest.TestCase):
         self.assertEqual(res_with["final_save"], 4)
         self.assertEqual(res_without["final_save"], 5)
 
+    def test_model_save_characteristic_from_ability(self):
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        unit = Unit.__new__(Unit)
+        unit.possible_wargear = []
+        unit.possible_abilities = [
+            Ability(
+                "Shining Aegis",
+                "",
+                "The bearer has a Save characteristic of 3+.",
+                "Datasheet",
+                "",
+            )
+        ]
+        unit._ability_cache = {}
+
+        model = self._make_model("Bearer", save=5)
+        model.set_parent_unit(unit)
+        unit.models = [model]
+
+        profile = WargearProfile(
+            "default",
+            {
+                "name": "Test Gun",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+        )
+
+        res = profile._save_with_tracking(
+            model,
+            {"weapon_profile": profile, "is_mortal": False},
+            ap=0,
+        )
+        self.assertEqual(res["final_save"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()
