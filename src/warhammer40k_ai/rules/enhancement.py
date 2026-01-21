@@ -169,5 +169,8 @@ class Enhancement:
                 unit.special_rules.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0
             ) + 1
 
+        if name == "faultless opportunist" or enh_id == "000010002002":
+            unit.special_rules["enhancement_faultless_opportunist"] = True
+
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"

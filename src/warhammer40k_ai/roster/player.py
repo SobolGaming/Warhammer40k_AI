@@ -1,4 +1,4 @@
-﻿# This is the player that gets put onto a Battlefield and has an Army
+# This is the player that gets put onto a Battlefield and has an Army
 
 import logging
 import uuid
@@ -506,6 +506,38 @@ class Player:
             return True
         return False
 
+    def _target_unit_has_faultless_opportunist(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("enhancement_faultless_opportunist", False):
+                continue
+            try:
+                if callable(getattr(u, "is_alive", None)) and not u.is_alive():
+                    continue
+            except Exception:
+                continue
+            return True
+        return False
+
+    def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name != "heroic intervention":
+            return 0
+        if not self._target_unit_has_faultless_opportunist(target_unit):
+            return 0
+        try:
+            base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        except Exception:
+            base = 0
+        return max(0, base)
+
     def _preview_gift_of_foresight_discount(self, *, stratagem=None, target_unit=None) -> int:
         """
         Gift of Foresight (Warhost):
@@ -625,6 +657,12 @@ class Player:
         discount = 0
         reasons: list[str] = []
 
+        faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
+        if faultless:
+            discount = base
+            reasons.append("Faultless Opportunist: Heroic Intervention for 0CP.")
+            return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
         dts = self._preview_direct_the_slaughter_discount(target_unit=target_unit)
         if dts:
             ctx = {
@@ -668,6 +706,14 @@ class Player:
         Compute effective CP cost and CONSUME any once-per-battle-round discounts that are applied.
         """
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
+        if faultless:
+            return {
+                "base": base,
+                "discount": base,
+                "cost": 0,
+                "reasons": ["Faultless Opportunist: Heroic Intervention for 0CP."],
+            }
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
         preview = self.preview_stratagem_cp_cost(stratagem, target_unit=target_unit, assume_optional_discounts=True)
         available_discount = int(preview.get("discount", 0) or 0)

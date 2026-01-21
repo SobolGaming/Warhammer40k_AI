@@ -9923,9 +9923,27 @@ class GameView:
             print("Heroic Intervention: charge declaration failed")
             return
 
+        name_u = str(name).strip().upper()
+        if name_u == "HEROIC INTERVENTION" and name_u in getattr(manager, "_used_stratagems_this_phase", set()):
+            try:
+                if not manager._heroic_intervention_repeat_allowed(target_unit=unit):
+                    print("Heroic Intervention: already used this phase")
+                    return
+            except Exception:
+                print("Heroic Intervention: already used this phase")
+                return
+
         strat = manager.get_by_name(str(name)) if manager else None
+        eff_cost = None
+        if strat is not None:
+            eff_cost = strat.cp_cost
+            try:
+                if hasattr(player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(player.apply_stratagem_cp_cost(strat, target_unit=unit).get("cost", strat.cp_cost))
+            except Exception:
+                eff_cost = strat.cp_cost
         if strat is None or not player.spend_command_points(
-            strat.cp_cost,
+            int(eff_cost or 0),
             reason=f"Stratagem: {strat.name}",
             source="stratagem",
         ):
@@ -9936,6 +9954,7 @@ class GameView:
             manager._dequeue_reaction_by_name(strat.name)
         try:
             manager._used_stratagems_this_phase.add((strat.name or "").strip().upper())
+            manager._record_heroic_intervention_use(unit)
         except Exception:
             pass
 

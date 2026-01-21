@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -203,6 +203,63 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
             self.assertTrue(any("Critical hit (5+)" in x for x in hit_res.get("special_effects", [])))
         finally:
             wargear_mod.get_roll = old_get_roll
+
+    def test_faultless_opportunist_heroic_intervention_free_and_repeatable(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.rules.stratagems import StratagemManager, Stratagem
+
+        army = Army("Test Faction", detachment_type="Peerless Bladesmen")
+        army.faction_id = "TEST"
+        bearer = _StubUnit("Bearer", army)
+        bearer.deployed = True
+        bearer.reserve_status = "deployed"
+        bearer.is_embarked = False
+        bearer.embarked_in = None
+
+        Enhancement(
+            id="000010002002",
+            name="Faultless Opportunist",
+            faction_id="TEST",
+            detachment="Peerless Bladesmen",
+            points=15,
+            description="",
+        ).apply_to_unit(bearer)
+
+        other = _StubUnit("Other", army)
+        other.deployed = True
+        other.reserve_status = "deployed"
+        other.is_embarked = False
+        other.embarked_in = None
+
+        army.units = [bearer, other]
+
+        player = Player("P1", PlayerControl.LOCAL, army)
+        player.command_points = 0
+        player.set_game(SimpleNamespace(turn=1))
+
+        strat = Stratagem(
+            id="core-hi",
+            name="Heroic Intervention",
+            type="Core",
+            description="",
+            cp_cost=1,
+            turn="Opponent's turn",
+            phase="Charge phase",
+            detachment="",
+            faction_id="",
+        )
+
+        preview = player.preview_stratagem_cp_cost(strat, target_unit=bearer)
+        self.assertEqual(int(preview["cost"]), 0)
+
+        manager = StratagemManager(player)
+        manager._used_stratagems_this_phase.add("HEROIC INTERVENTION")
+        manager._record_heroic_intervention_use(other)
+
+        self.assertTrue(manager._heroic_intervention_repeat_allowed(target_unit=bearer))
+        self.assertFalse(manager._heroic_intervention_repeat_allowed(target_unit=other))
 
     def test_pact_points_melee_lethal_and_sustained(self):
         from warhammer40k_ai.roster.army import Army
