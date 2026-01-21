@@ -42,14 +42,19 @@ class TestOrkKeywords(unittest.TestCase):
 
     def _make_attacker(self, wargear_list=None):
         """Helper to create a mock attacker model"""
-        class _Unit:
-            special_rules = {}
-            def get_parent_army(self):
-                return None
-            def get_attached_unit_root(self):
-                return self
-        
-        unit = _Unit()
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        # Create a real Unit instance so it has the register_wargear_charge_keyword_hit method
+        unit = Unit.__new__(Unit)
+        unit.name = "Attacker Unit"
+        unit.special_rules = {}
+        unit._id = "attacker-unit-1"
+
+        # Add minimal required methods
+        unit.get_parent_army = lambda: None
+        unit.get_attached_unit_root = lambda: unit
+
         attacker = SimpleNamespace(
             name="Attacker",
             parent_unit=unit,
@@ -212,9 +217,12 @@ class TestOrkKeywords(unittest.TestCase):
 
     def test_harpooned_sets_flag_on_monster_hit(self):
         """Test that Harpooned sets charge bonus on unit when hitting MONSTER"""
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
         profile = self._make_profile("harpooned")
         attacker = self._make_attacker()
         target = self._make_target(has_monster=True)
+        target._id = "target-monster-1"
 
         attack_instance = {}
 
@@ -223,20 +231,24 @@ class TestOrkKeywords(unittest.TestCase):
 
         self.assertTrue(result['hit'])
         # Check that the charge bonus was set on the attacker's unit
-        self.assertTrue(hasattr(attacker.parent_unit, "_ork_charge_bonuses"))
-        target_id = getattr(target, "_id", id(target))
-        self.assertIn(target_id, attacker.parent_unit._ork_charge_bonuses)
-        bonus_info = attacker.parent_unit._ork_charge_bonuses[target_id]
-        self.assertEqual(bonus_info["bonus"], 2)
-        self.assertEqual(bonus_info["source"], "Harpooned")
-        self.assertFalse(bonus_info["no_overwatch"])
+        self.assertIn("wargear_charge_keyword_hits", attacker.parent_unit.special_rules)
+        hits = attacker.parent_unit.special_rules["wargear_charge_keyword_hits"]
+        target_id = get_entity_id(target)
+        self.assertIn(target_id, hits)
+        bonus_info = hits[target_id]
+        self.assertEqual(bonus_info["charge_bonus"], 2)
+        self.assertIn("harpooned", bonus_info["keywords"])
+        self.assertFalse(bonus_info.get("no_overwatch", False))
         self.assertIn("Harpooned", str(result['special_effects']))
 
     def test_harpooned_sets_flag_on_vehicle_hit(self):
         """Test that Harpooned sets charge bonus on unit when hitting VEHICLE"""
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
         profile = self._make_profile("harpooned")
         attacker = self._make_attacker()
         target = self._make_target(has_vehicle=True)
+        target._id = "target-vehicle-1"
 
         attack_instance = {}
 
@@ -245,13 +257,14 @@ class TestOrkKeywords(unittest.TestCase):
 
         self.assertTrue(result['hit'])
         # Check that the charge bonus was set on the attacker's unit
-        self.assertTrue(hasattr(attacker.parent_unit, "_ork_charge_bonuses"))
-        target_id = getattr(target, "_id", id(target))
-        self.assertIn(target_id, attacker.parent_unit._ork_charge_bonuses)
-        bonus_info = attacker.parent_unit._ork_charge_bonuses[target_id]
-        self.assertEqual(bonus_info["bonus"], 2)
-        self.assertEqual(bonus_info["source"], "Harpooned")
-        self.assertFalse(bonus_info["no_overwatch"])
+        self.assertIn("wargear_charge_keyword_hits", attacker.parent_unit.special_rules)
+        hits = attacker.parent_unit.special_rules["wargear_charge_keyword_hits"]
+        target_id = get_entity_id(target)
+        self.assertIn(target_id, hits)
+        bonus_info = hits[target_id]
+        self.assertEqual(bonus_info["charge_bonus"], 2)
+        self.assertIn("harpooned", bonus_info["keywords"])
+        self.assertFalse(bonus_info.get("no_overwatch", False))
         self.assertIn("Harpooned", str(result['special_effects']))
 
     def test_harpooned_no_flag_on_infantry_hit(self):
@@ -276,9 +289,12 @@ class TestOrkKeywords(unittest.TestCase):
 
     def test_hooked_sets_flag_on_monster_hit(self):
         """Test that Hooked sets charge bonus and overwatch prevention flag"""
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
         profile = self._make_profile("hooked")
         attacker = self._make_attacker()
         target = self._make_target(has_monster=True)
+        target._id = "target-monster-2"
 
         attack_instance = {}
 
@@ -287,13 +303,14 @@ class TestOrkKeywords(unittest.TestCase):
 
         self.assertTrue(result['hit'])
         # Check that the charge bonus was set on the attacker's unit
-        self.assertTrue(hasattr(attacker.parent_unit, "_ork_charge_bonuses"))
-        target_id = getattr(target, "_id", id(target))
-        self.assertIn(target_id, attacker.parent_unit._ork_charge_bonuses)
-        bonus_info = attacker.parent_unit._ork_charge_bonuses[target_id]
-        self.assertEqual(bonus_info["bonus"], 2)
-        self.assertEqual(bonus_info["source"], "Hooked")
-        self.assertTrue(bonus_info["no_overwatch"])  # Hooked prevents Overwatch
+        self.assertIn("wargear_charge_keyword_hits", attacker.parent_unit.special_rules)
+        hits = attacker.parent_unit.special_rules["wargear_charge_keyword_hits"]
+        target_id = get_entity_id(target)
+        self.assertIn(target_id, hits)
+        bonus_info = hits[target_id]
+        self.assertEqual(bonus_info["charge_bonus"], 2)
+        self.assertIn("hooked", bonus_info["keywords"])
+        self.assertTrue(bonus_info.get("no_overwatch", False))  # Hooked prevents Overwatch
         self.assertIn("Hooked", str(result['special_effects']))
         self.assertIn("no Overwatch", str(result['special_effects']))
 
@@ -303,9 +320,12 @@ class TestOrkKeywords(unittest.TestCase):
 
     def test_impaled_sets_flag_on_vehicle_hit(self):
         """Test that Impaled sets charge bonus flag when hitting VEHICLE"""
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
         profile = self._make_profile("anti-monster 2+, anti-vehicle 2+, impaled")
         attacker = self._make_attacker()
         target = self._make_target(has_vehicle=True)
+        target._id = "target-vehicle-2"
 
         attack_instance = {}
 
@@ -314,13 +334,14 @@ class TestOrkKeywords(unittest.TestCase):
 
         self.assertTrue(result['hit'])
         # Check that the charge bonus was set on the attacker's unit
-        self.assertTrue(hasattr(attacker.parent_unit, "_ork_charge_bonuses"))
-        target_id = getattr(target, "_id", id(target))
-        self.assertIn(target_id, attacker.parent_unit._ork_charge_bonuses)
-        bonus_info = attacker.parent_unit._ork_charge_bonuses[target_id]
-        self.assertEqual(bonus_info["bonus"], 2)
-        self.assertEqual(bonus_info["source"], "Impaled")
-        self.assertFalse(bonus_info["no_overwatch"])
+        self.assertIn("wargear_charge_keyword_hits", attacker.parent_unit.special_rules)
+        hits = attacker.parent_unit.special_rules["wargear_charge_keyword_hits"]
+        target_id = get_entity_id(target)
+        self.assertIn(target_id, hits)
+        bonus_info = hits[target_id]
+        self.assertEqual(bonus_info["charge_bonus"], 2)
+        self.assertIn("impaled", bonus_info["keywords"])
+        self.assertFalse(bonus_info.get("no_overwatch", False))
         self.assertIn("Impaled", str(result['special_effects']))
 
     ###########################################################################
@@ -329,9 +350,12 @@ class TestOrkKeywords(unittest.TestCase):
 
     def test_snagged_sets_flag_on_monster_hit(self):
         """Test that Snagged sets charge bonus and overwatch prevention flag"""
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
         profile = self._make_profile("anti-monster 2+, anti-vehicle 2+, snagged")
         attacker = self._make_attacker()
         target = self._make_target(has_monster=True)
+        target._id = "target-monster-3"
 
         attack_instance = {}
 
@@ -340,13 +364,14 @@ class TestOrkKeywords(unittest.TestCase):
 
         self.assertTrue(result['hit'])
         # Check that the charge bonus was set on the attacker's unit
-        self.assertTrue(hasattr(attacker.parent_unit, "_ork_charge_bonuses"))
-        target_id = getattr(target, "_id", id(target))
-        self.assertIn(target_id, attacker.parent_unit._ork_charge_bonuses)
-        bonus_info = attacker.parent_unit._ork_charge_bonuses[target_id]
-        self.assertEqual(bonus_info["bonus"], 2)
-        self.assertEqual(bonus_info["source"], "Snagged")
-        self.assertTrue(bonus_info["no_overwatch"])  # Snagged prevents Overwatch
+        self.assertIn("wargear_charge_keyword_hits", attacker.parent_unit.special_rules)
+        hits = attacker.parent_unit.special_rules["wargear_charge_keyword_hits"]
+        target_id = get_entity_id(target)
+        self.assertIn(target_id, hits)
+        bonus_info = hits[target_id]
+        self.assertEqual(bonus_info["charge_bonus"], 2)
+        self.assertIn("snagged", bonus_info["keywords"])
+        self.assertTrue(bonus_info.get("no_overwatch", False))  # Snagged prevents Overwatch
         self.assertIn("Snagged", str(result['special_effects']))
         self.assertIn("no Overwatch", str(result['special_effects']))
 
@@ -358,65 +383,77 @@ class TestOrkKeywords(unittest.TestCase):
         """Test that Harpooned +2 charge bonus is applied in _apply_charge_modifiers"""
         from warhammer40k_ai.engine.game import Game
         from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
 
-        # Create a mock game and units
-        game = SimpleNamespace(map=None, turn=1)
-        charging_unit = SimpleNamespace(
-            _ork_charge_bonuses={
+        # Create a real Unit instance so it has the get_wargear_charge_keyword_modifiers method
+        charging_unit = Unit.__new__(Unit)
+        charging_unit.name = "Charging Unit"
+        charging_unit._id = "charging-unit-1"
+        charging_unit.special_rules = {
+            "wargear_charge_keyword_hits": {
                 "target_123": {
-                    "bonus": 2,
-                    "source": "Harpooned",
+                    "charge_bonus": 2,
+                    "keywords": ["harpooned"],
                     "no_overwatch": False
                 }
-            },
-            _filter_internal_rivalries_roll_modifiers=lambda mods, kind: mods,
-            _filter_driven_by_ultimate_rage_roll_modifiers=lambda mods, kind: mods,
-            special_rules={}
-        )
+            }
+        }
+        charging_unit.get_attached_unit_root = lambda: charging_unit
+
         target_unit = SimpleNamespace(_id="target_123")
+        target_unit.get_attached_unit_root = lambda: target_unit
 
         # Create a minimal Game instance just to test _apply_charge_modifiers
         game_obj = Game.__new__(Game)
         game_obj.map = None
+        game_obj.get_current_player = lambda: None
 
-        # Test that the bonus is applied
+        # Test that the bonus is applied (target_unit is keyword-only)
         base_roll = 7
-        modified_roll = game_obj._apply_charge_modifiers(charging_unit, base_roll, target_unit)
+        modified_roll = game_obj._apply_charge_modifiers(charging_unit, base_roll, target_unit=target_unit)
 
         self.assertEqual(modified_roll, 9)  # 7 + 2 from Harpooned
 
     def test_overwatch_prevented_by_hooked(self):
         """Test that Hooked prevents Overwatch from being queued"""
-        from warhammer40k_ai.engine.stratagems import StratagemManager
-        from warhammer40k_ai.engine.player import Player
+        from warhammer40k_ai.rules.stratagems import StratagemManager
+        from warhammer40k_ai.roster.player import Player
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
 
-        # Create mock objects
-        moving_unit = SimpleNamespace(
-            _ork_charge_bonuses={
+        # Create a real Unit instance for the moving unit so it has is_overwatch_prevented_against method
+        moving_unit = Unit.__new__(Unit)
+        moving_unit.name = "Moving Unit"
+        moving_unit._id = "moving-unit-1"
+        moving_unit.special_rules = {
+            "wargear_charge_keyword_hits": {
                 "defender_unit_id": {
-                    "bonus": 2,
-                    "source": "Hooked",
+                    "charge_bonus": 2,
+                    "keywords": ["hooked"],
                     "no_overwatch": True
                 }
-            },
-            get_parent_army=lambda: SimpleNamespace(player=SimpleNamespace(name="Attacker"))
-        )
+            }
+        }
+        moving_unit.get_attached_unit_root = lambda: moving_unit
+        moving_unit.get_parent_army = lambda: SimpleNamespace(player=SimpleNamespace(name="Attacker", id="attacker-player"))
 
         defender_unit = SimpleNamespace(
             _id="defender_unit_id",
             is_alive=lambda: True,
             deployed=True,
-            is_titanic=False
+            is_titanic=False,
+            get_attached_unit_root=lambda: defender_unit
         )
 
         defender_player = SimpleNamespace(
             name="Defender",
+            id="defender-player",
             command_points=1,
             get_army=lambda: SimpleNamespace(units=[defender_unit])
         )
 
         game = SimpleNamespace(
-            get_current_player=lambda: SimpleNamespace(name="Attacker"),
+            get_current_player=lambda: SimpleNamespace(name="Attacker", id="attacker-player"),
             map=SimpleNamespace(get_distance_between_units=lambda u1, u2: 10.0)
         )
 
@@ -427,9 +464,11 @@ class TestOrkKeywords(unittest.TestCase):
         stratagem_mgr._used_this_turn = {}
         stratagem_mgr._current_phase_name = "Charge phase"
         stratagem_mgr._pending_reactions = []
+        stratagem_mgr._queue_reaction = lambda reaction: stratagem_mgr._pending_reactions.append(reaction)
 
-        # Mock the stratagem
+        # Mock the stratagem with name attribute
         stratagem_mgr.get_by_name = lambda name: SimpleNamespace(
+            name="FIRE OVERWATCH",
             is_phase_allowed=lambda phase: True,
             is_turn_allowed=lambda is_active: True,
             cp_cost=1
@@ -438,7 +477,7 @@ class TestOrkKeywords(unittest.TestCase):
         # Call _maybe_queue_overwatch - it should return early due to Hooked
         stratagem_mgr._maybe_queue_overwatch(moving_unit, "charge", "start")
 
-        # Verify that no Overwatch was queued
+        # Verify that no Overwatch was queued (prevented by Hooked)
         self.assertEqual(len(stratagem_mgr._pending_reactions), 0)
 
 
