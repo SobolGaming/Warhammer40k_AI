@@ -1309,6 +1309,7 @@ def _classify_ability(
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
+    enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
@@ -1409,6 +1410,8 @@ def _classify_ability(
         return transport_support
     if transport_reactive_disembark_support:
         return transport_reactive_disembark_support
+    if enemy_move_reactive_d6_support:
+        return enemy_move_reactive_d6_support
     if sticky_support:
         return sticky_support
     if bodyguard_return_support:
@@ -2575,6 +2578,24 @@ def _transport_reactive_disembark_support(description: str) -> Optional[Tuple[st
         return None
     rng = m.group("range")
     return ("Supported", f"Enemy unit set up/move within {rng}\": disembark embarked units.")
+
+
+def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
+        r"(?:model(?: s)? unit|unit|model) if this unit is not within engagement range of (?:one or more|any) enemy units? "
+        r"(?:it )?can make a normal move of up to d6"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    rng = m.group("range")
+    return ("Supported", f"Enemy unit ends move within {rng}\": optional D6\" Normal move if not in Engagement Range.")
 
 
 def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
