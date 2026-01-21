@@ -110,6 +110,8 @@ class Game:
         # Track attack targets separately from charge targets so abilities can opt in to either.
         self.phase_targeted_units: Dict[str, set[str]] = {}
         self.phase_charge_targets: Dict[str, set[str]] = {}
+        # Phase-scoped enemy unit destruction tracking (for phase-end Leadership CP abilities).
+        self._phase_enemy_unit_destroyers: Dict[str, set[str]] = {}
         # Return-on-death pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
@@ -3302,6 +3304,61 @@ class Game:
                             continue
                         self.resolve_fight_phase_end_mortal_wounds(unit, model, target, spec)
 
+    def _on_phase_end_leadership_cp_gain(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Shooting/Fight phase: Leadership test to gain CP after destroying enemy units."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+            return
+        if player is None:
+            return
+        if player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        tracked = set(self._phase_enemy_unit_destroyers.get(pname, set()) or set())
+        if not tracked:
+            return
+
+        processed: set[str] = set()
+        for unit in list(army.units):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            uid = get_entity_id(root)
+            if not uid or uid in processed:
+                continue
+            processed.add(uid)
+            if uid not in tracked:
+                continue
+            if not root.is_alive() or not getattr(root, "deployed", True):
+                continue
+            if root.is_in_reserves() or root.is_embarked:
+                continue
+
+            specs = root.get_phase_end_leadership_cp_gain_specs() or []
+            for spec in specs:
+                if spec.get("type") != "phase_end_leadership_cp_gain":
+                    continue
+                cp = int(spec.get("cp", 1) or 1)
+                if cp <= 0:
+                    continue
+                if not bool(root.pass_leadership_check()):
+                    continue
+                gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+                self.event_system.publish(
+                    "command_points_gained",
+                    player=player,
+                    amount=gained,
+                    reason=spec.get("source_ability", ""),
+                    unit=root,
+                )
+
+        self._phase_enemy_unit_destroyers[pname] = set()
+
     def _queue_transport_reactive_disembark_decisions(
         self,
         *,
@@ -3724,6 +3781,39 @@ class Game:
                     amount=amount,
                     reason=spec.get("source_ability", ""),
                 )
+
+    def _on_unit_destroyed_phase_kill_tracking(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        """Track units that destroyed enemy units during Shooting/Fight phases."""
+        if unit is None or destroyed_by_unit is None:
+            return
+        if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
+            return
+        phase = getattr(self, "phase", None)
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+            return
+        current_player = None
+        try:
+            current_player = self.get_current_player()
+        except Exception:
+            current_player = None
+        if current_player is None:
+            return
+        try:
+            owner = destroyed_by_unit.get_parent_army().player
+        except Exception:
+            owner = None
+        if owner is None or owner is not current_player:
+            return
+        try:
+            root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            root = destroyed_by_unit
+        uid = get_entity_id(root)
+        if not uid:
+            return
+        tracked = self._phase_enemy_unit_destroyers.setdefault(pname, set())
+        tracked.add(uid)
 
     def _on_unit_destroyed_rules(self, unit=None, destroyed_by_unit=None, destroyed_by_model=None, destroyed_by_weapon_profile=None, **_kwargs) -> None:
         # Generic partial support for "... destroys an enemy <KEYWORD> unit, gain X CP".

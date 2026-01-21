@@ -1318,6 +1318,7 @@ def _classify_ability(
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
+    phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
@@ -1430,6 +1431,8 @@ def _classify_ability(
         return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
+    if phase_end_leadership_cp_gain_support:
+        return phase_end_leadership_cp_gain_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
     if post_shoot_battleshock_support:
@@ -2777,6 +2780,29 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Start of Command phase: gain {m.group('cp')} CP while on the battlefield.")
+
+
+def _phase_end_leadership_cp_gain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your shooting phase or the fight phase if "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) destroyed one or more enemy units? that phase "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) takes a leadership test "
+        r"if that test is passed you gain (?P<cp>\d+|one) ?(?:cp|command points?)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    cp_token = str(m.group("cp") or "")
+    cp_label = "1" if cp_token == "one" else cp_token
+    return (
+        "Supported",
+        f"End of Shooting/Fight phase: if bearer unit destroyed enemy units, pass Leadership test to gain {cp_label} CP.",
+    )
 
 
 def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str, str]]:

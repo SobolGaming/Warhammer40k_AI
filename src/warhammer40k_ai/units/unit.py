@@ -982,6 +982,13 @@ class Unit:
         r"if that test is failed one bodyguard model in that unit is destroyed",
         re.IGNORECASE,
     )
+    _PHASE_END_LEADERSHIP_CP_GAIN_RE = re.compile(
+        r"at the end of your shooting phase or the fight phase if "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) destroyed one or more enemy units? that phase "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) takes a leadership test "
+        r"if that test is passed you gain (?P<cp>\d+|one) ?(?:cp|command points?)",
+        re.IGNORECASE,
+    )
     _RETURN_ON_DEATH_RE = re.compile(
         r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
         r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
@@ -17444,6 +17451,67 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = (int(penalty), tuple(reasons))
         return int(penalty), tuple(reasons)
+
+    def _parse_phase_end_leadership_cp_gain_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """Parse end-of-phase Leadership test CP gain abilities."""
+        normalized = self._normalize_rules_text(ability_desc)
+        if not normalized:
+            return []
+        norm = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+        norm = norm.lower()
+        norm = re.sub(r"'s\b", "s", norm)
+        norm = re.sub(r"[^a-z0-9]+", " ", norm)
+        norm = re.sub(r"\s+", " ", norm).strip()
+        m = self._PHASE_END_LEADERSHIP_CP_GAIN_RE.fullmatch(norm)
+        if not m:
+            return []
+        token = str(m.group("cp") or "").strip().lower()
+        try:
+            cp = int(token)
+        except Exception:
+            cp = 1 if token == "one" else 1
+        return [
+            {
+                "type": "phase_end_leadership_cp_gain",
+                "cp": int(cp),
+                "source_ability": ability_name or "",
+            }
+        ]
+
+    def get_phase_end_leadership_cp_gain_specs(self) -> List[dict]:
+        """Return end-of-phase Leadership test CP gain specs for this unit group."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "phase_end_leadership_cp_gain_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs: List[dict] = []
+        seen = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                parsed = unit._parse_phase_end_leadership_cp_gain_specs_from_text(name, text_src)
+                for spec in parsed:
+                    key = (spec.get("source_ability", "").lower(), int(spec.get("cp", 1) or 1))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append(spec)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
 
     def _parse_cp_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
         """Parse partial support for 'gain CP when destroying enemy keyword unit/model' abilities.
