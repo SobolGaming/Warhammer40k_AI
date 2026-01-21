@@ -39,6 +39,8 @@ from warhammer40k_ai.roster.army import SUPPORTED_FACTION_IDS
 from warhammer40k_ai.rules.stratagems import (
     IMPLEMENTED_STRATAGEM_NAMES,
     defensive_reaction_note,
+    parse_charge_melee_ap_stratagem,
+    parse_consolidate_move_stratagem,
     parse_defensive_reaction_stratagem,
 )
 from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
@@ -3453,6 +3455,8 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "SUMMONED BY SLAUGHTER": "Any phase: set up BLOODLETTERS from Reserves wholly within 9\" of destroyed model; >6\" from enemies; once per battle round.",
         "THE FOE FORESEEN": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
+        "CRUEL BLADESMAN": "Fight phase: charged unit gains +1 AP on melee weapons (before it has fought).",
+        "INCESSANT VIOLENCE": "Fight phase: consolidate up to 6\" if the unit can end in Engagement Range.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:
@@ -3460,6 +3464,22 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
     spec = parse_defensive_reaction_stratagem(name, description or "")
     if spec:
         return ("Implemented", defensive_reaction_note(spec), name_u)
+    spec = parse_charge_melee_ap_stratagem(name, description or "")
+    if spec:
+        bonus = int(spec.get("ap_bonus", 1) or 1)
+        note = notes.get(name_u, f"Fight phase: charged unit gains +{bonus} AP on melee weapons.")
+        return ("Implemented", note, name_u)
+    spec = parse_consolidate_move_stratagem(name, description or "")
+    if spec:
+        max_dist = int(spec.get("max_distance", 0) or 0)
+        if spec.get("requires_engagement"):
+            note = notes.get(
+                name_u,
+                f"Fight phase: consolidate up to {max_dist}\" if the unit can end in Engagement Range.",
+            )
+        else:
+            note = notes.get(name_u, f"Fight phase: consolidate up to {max_dist}\".")
+        return ("Implemented", note, name_u)
     return ("Not implemented", "No effect logic currently wired.", name_u)
 
 
