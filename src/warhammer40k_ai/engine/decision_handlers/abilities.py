@@ -24,6 +24,8 @@ from ..decision_kinds import (
     DECISION_ISSUE_ORDER,
     DECISION_CHOOSE_WRATHFUL_PRESENCE,
     DECISION_CHOOSE_ASPECT,
+    DECISION_SELECT_SETUP_REACTIVE_TARGET,
+    DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
@@ -676,6 +678,48 @@ def _apply_choose_aspect(game: object, request: DecisionRequest, result: Decisio
     return payload.get("choice")
 
 
+def _validate_select_setup_reactive_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if target_val is None:
+        return ("Setup reactive target requires unit_id.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Setup reactive target unit not found.",)
+    return ()
+
+
+def _apply_select_setup_reactive_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    return resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+
+
+def _validate_choose_setup_reactive_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    action = str(payload.get("action", "") or payload.get("choice", "") or payload.get("value", ""))
+    if action not in ("shoot", "charge"):
+        return ("Setup reactive action requires 'shoot' or 'charge'.",)
+    return ()
+
+
+def _apply_choose_setup_reactive_action(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    return str(payload.get("action", "") or payload.get("choice", "") or payload.get("value", ""))
+
+
 register_decision_handler(DECISION_CHOOSE_BLESSINGS, validate=_validate_choose_blessings, apply=_apply_choose_blessings)
 register_decision_handler(DECISION_CHOOSE_BLOOD_TITHE, validate=_validate_choose_blood_tithe, apply=_apply_choose_blood_tithe)
 register_decision_handler(DECISION_CHOOSE_RITUALS, validate=_validate_choose_ritual, apply=_apply_choose_ritual)
@@ -704,3 +748,13 @@ register_decision_handler(
     apply=_apply_choose_wrathful,
 )
 register_decision_handler(DECISION_CHOOSE_ASPECT, validate=_validate_choose_aspect, apply=_apply_choose_aspect)
+register_decision_handler(
+    DECISION_SELECT_SETUP_REACTIVE_TARGET,
+    validate=_validate_select_setup_reactive_target,
+    apply=_apply_select_setup_reactive_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+    validate=_validate_choose_setup_reactive_action,
+    apply=_apply_choose_setup_reactive_action,
+)

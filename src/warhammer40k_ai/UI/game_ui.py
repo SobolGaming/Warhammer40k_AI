@@ -1308,6 +1308,50 @@ class GameView:
                 self.game.request_decision(req)
 
             def _cb(executed: bool):
+                self.shooting_declaration_dialog.force_single_target_unit = None
+                on_done(bool(executed))
+
+            self.shooting_declaration_dialog.show(
+                shooter_unit,
+                _cb,
+                self.game.map,
+                self,
+                out_of_phase=True,
+                allow_actions=False,
+                decision_request=req,
+            )
+            # Ensure dialog is visible and receives events immediately
+            self.shooting_declaration_dialog.visible = True
+        self._request_overwatch_shooting = _request_overwatch_shooting
+
+        def _request_setup_reactive_shooting(shooter_unit, enemy_unit, source, on_done):
+            from ..engine.decision_kinds import DECISION_DECLARE_SHOTS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import maybe_entity_id
+
+            if not hasattr(self, 'shooting_declaration_dialog'):
+                from .dialogs import ShootingDeclarationDialog
+                self.shooting_declaration_dialog = ShootingDeclarationDialog(self.screen.get_width(), self.screen.get_height())
+            self.shooting_declaration_dialog.force_single_target_unit = enemy_unit
+
+            unit_id = str(maybe_entity_id(shooter_unit) or "")
+            target_id = str(maybe_entity_id(enemy_unit) or "")
+            options = [
+                DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
+                DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+            ]
+            title = str(source or "Reactive Response").strip() or "Reactive Response"
+            req = DecisionRequest.create(
+                DECISION_DECLARE_SHOTS,
+                f"{title}: Declare shots for {getattr(shooter_unit, 'name', 'Unit')}",
+                player_id=getattr(getattr(shooter_unit.get_parent_army(), "player", None), "id", None),
+                options=options,
+                context={"unit_id": unit_id, "out_of_phase": True, "force_target_unit_id": target_id, "source": title},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _cb(executed: bool):
                 try:
                     self.shooting_declaration_dialog.force_single_target_unit = None
                 except Exception:
@@ -1323,9 +1367,8 @@ class GameView:
                 allow_actions=False,
                 decision_request=req,
             )
-            # Ensure dialog is visible and receives events immediately
             self.shooting_declaration_dialog.visible = True
-        self._request_overwatch_shooting = _request_overwatch_shooting
+        self._request_setup_reactive_shooting = _request_setup_reactive_shooting
 
         def _request_frenzy_shooting(shooter_unit, enemy_unit, on_done):
             from ..engine.decision_kinds import DECISION_DECLARE_SHOTS
@@ -1589,6 +1632,9 @@ class GameView:
         # Reactive enemy-move prompt queue (e.g. Loping Speed)
         self._pending_loping_speed_queue = []
         self._loping_speed_flow_active = False
+        # Setup reactive shoot/charge prompt queue
+        self._pending_setup_reactive_shoot_charge_queue = []
+        self._setup_reactive_shoot_charge_flow_active = False
         # Charge-end mortal wound prompts
         self._pending_charge_mortal_wounds_queue = []
         self._charge_mortal_wounds_flow_active = False
@@ -1656,6 +1702,8 @@ class GameView:
                 self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
                 # Reactive normal move prompt (enemy unit ends move within range)
                 self.game.event_system.subscribe("loping_speed_prompt", self._on_loping_speed_prompt)
+                # Setup reactive shoot/charge prompt (enemy unit set up within range)
+                self.game.event_system.subscribe("setup_reactive_shoot_charge_prompt", self._on_setup_reactive_shoot_charge_prompt)
                 # World Eaters: Frenzy prompt (Helbrute reactive shoot/fight)
                 self.game.event_system.subscribe("frenzy_prompt", self._on_frenzy_prompt)
                 # Charge-end mortal wound target selection
@@ -4024,6 +4072,184 @@ class GameView:
             self._request_yes_no(title, msg, "Move", "Skip", _done, player=player)
         except Exception:
             _finish_and_next()
+
+    # ---------------- Setup reactive shoot/charge prompts ----------------
+
+    def _on_setup_reactive_shoot_charge_prompt(self, player=None, unit=None, candidates=None, rule=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return
+        except Exception:
+            return
+
+        entry = (player, unit, list(candidates or []), rule, game)
+        if self._setup_reactive_shoot_charge_flow_active:
+            self._pending_setup_reactive_shoot_charge_queue.append(entry)
+            return
+        self._pending_setup_reactive_shoot_charge_queue.append(entry)
+        self._open_next_setup_reactive_shoot_charge_prompt(game or self.game)
+
+    def _open_next_setup_reactive_shoot_charge_prompt(self, game):
+        q = list(getattr(self, "_pending_setup_reactive_shoot_charge_queue", []) or [])
+        if not q:
+            self._pending_setup_reactive_shoot_charge_queue = []
+            self._setup_reactive_shoot_charge_flow_active = False
+            return
+        player, unit, candidates, rule, game_ctx = q.pop(0)
+        self._pending_setup_reactive_shoot_charge_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_setup_reactive_shoot_charge_prompt(game_ctx)
+            return
+        rule = rule or unit.get_setup_reactive_shoot_or_charge_rule()
+        if not rule:
+            self._open_next_setup_reactive_shoot_charge_prompt(game_ctx)
+            return
+        if not unit.can_setup_reactive_shoot_or_charge(game=game_ctx, game_map=getattr(game_ctx, "map", None)):
+            self._open_next_setup_reactive_shoot_charge_prompt(game_ctx)
+            return
+
+        source = str((rule or {}).get("source", "") or "Reactive Response").strip() or "Reactive Response"
+        try:
+            rng = int((rule or {}).get("range", 12) or 12)
+        except Exception:
+            rng = 12
+
+        actionable = []
+        for enemy in list(candidates or []):
+            if enemy is None:
+                continue
+            if not enemy.is_alive():
+                continue
+            if not getattr(enemy, "deployed", True):
+                continue
+            if enemy.get_parent_army() == unit.get_parent_army():
+                continue
+            if not game_ctx._setup_reactive_available_actions(unit, enemy):
+                continue
+            actionable.append(enemy)
+        if not actionable:
+            self._open_next_setup_reactive_shoot_charge_prompt(game_ctx)
+            return
+
+        title = source
+        subtitle = (
+            f"Select an enemy unit set up within {int(rng)}\" of {getattr(unit, 'name', 'Unit')}."
+        )
+
+        def _finish_and_next():
+            unit.clear_setup_reactive_shoot_or_charge_candidates(game_ctx)
+            self._setup_reactive_shoot_charge_flow_active = False
+            self._open_next_setup_reactive_shoot_charge_prompt(game_ctx)
+
+        def _on_target_chosen(target_unit):
+            if target_unit is None:
+                _finish_and_next()
+                return
+
+            try:
+                actions = list(game_ctx._setup_reactive_available_actions(unit, target_unit) or [])
+            except Exception:
+                actions = []
+            if not actions:
+                _finish_and_next()
+                return
+
+            def _on_action_chosen(action_choice):
+                if not action_choice:
+                    _finish_and_next()
+                    return
+                unit.mark_setup_reactive_shoot_or_charge_used(game_ctx)
+
+                action = str(action_choice)
+                if action == "shoot":
+                    def _done(_executed: bool):
+                        _finish_and_next()
+                    if callable(getattr(self, "_request_setup_reactive_shooting", None)):
+                        self._request_setup_reactive_shooting(unit, target_unit, source, _done)
+                    else:
+                        _finish_and_next()
+                    return
+                if action == "charge":
+                    game_ctx.attempt_charge(unit, target_unit, out_of_turn=True, count_as_charged=False)
+                    _finish_and_next()
+                    return
+                _finish_and_next()
+
+            from ..engine.decision_kinds import DECISION_CHOOSE_SETUP_REACTIVE_ACTION
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+
+            options = []
+            if "shoot" in actions:
+                options.append(DecisionOption.create("Shoot", payload={"action": "shoot"}))
+            if "charge" in actions:
+                options.append(DecisionOption.create("Charge", payload={"action": "charge"}))
+            if not options:
+                _finish_and_next()
+                return
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+                f"{source}: Choose action",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={"unit_id": getattr(unit, "_id", ""), "target_unit_id": getattr(target_unit, "_id", "")},
+            )
+            self.game.request_decision(req)
+
+            def _on_confirm(option_id: str):
+                value, apply = resolve_decision_value(self.game, req, option_id)
+                if apply is None or not getattr(apply, "ok", False):
+                    _finish_and_next()
+                else:
+                    _on_action_chosen(value)
+                try:
+                    self.overwatch_shooter_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                _finish_and_next()
+                try:
+                    self.overwatch_shooter_dialog.hide()
+                except Exception:
+                    pass
+
+            self.overwatch_shooter_dialog.show(
+                [],
+                target_unit,
+                _on_confirm,
+                title=title,
+                subtitle=f"Choose how {getattr(unit, 'name', 'Unit')} responds to {getattr(target_unit, 'name', 'Unit')}.",
+                on_cancel=_on_cancel,
+                decision_request=req,
+            )
+            try:
+                self.dialog_manager.open(self.overwatch_shooter_dialog, modal=True)
+            except Exception:
+                pass
+
+        self._setup_reactive_shoot_charge_flow_active = True
+        from ..engine.decision_kinds import DECISION_SELECT_SETUP_REACTIVE_TARGET
+
+        if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+            self._resolve_unit_selection_dialog(
+                player=player,
+                candidates=actionable,
+                on_chosen=_on_target_chosen,
+                decision_type=DECISION_SELECT_SETUP_REACTIVE_TARGET,
+                prompt="Select setup reactive target.",
+                title=title,
+                subtitle=subtitle,
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        else:
+            _on_target_chosen(actionable[0] if actionable else None)
 
     # ---------------- Frenzy prompts ----------------
 

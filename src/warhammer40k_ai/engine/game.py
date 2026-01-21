@@ -27,7 +27,10 @@ from .decision_kinds import (
     DECISION_CHOOSE_MISSION,
     DECISION_CONFIRM_YES_NO,
     DECISION_DISEMBARK,
+    DECISION_DECLARE_SHOTS,
+    DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_MOVE_UNIT,
+    DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_OVERWATCH_SHOOTER,
 )
 from .random_source import RandomSource
@@ -1909,6 +1912,262 @@ class Game:
             )
         return
 
+    def _setup_reactive_can_shoot_target(self, unit, target_unit) -> bool:
+        if unit is None or target_unit is None:
+            return False
+        if not unit.is_alive() or not target_unit.is_alive():
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        if bool(getattr(getattr(unit, "round_state", None), "action_locked_until_turn_end", False)):
+            return False
+        if bool(getattr(unit, "_reserves_edge_touch_this_turn", False)) and bool(
+            getattr(unit, "arrived_from_reserves_this_turn", False)
+        ):
+            return False
+        for model in list(getattr(unit, "models", []) or []):
+            if not getattr(model, "is_alive", True):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                if not wargear.is_ranged():
+                    continue
+                profiles = getattr(wargear, "profiles", {}) or {}
+                for profile in list(profiles.values()):
+                    if profile is None:
+                        continue
+                    validation = unit._validate_shooting_declaration(profile, target_unit, [model], game_map)
+                    if bool(validation.get("valid", False)):
+                        return True
+        return False
+
+    def _setup_reactive_available_actions(self, unit, target_unit) -> list[str]:
+        actions: list[str] = []
+        if unit is None or target_unit is None:
+            return actions
+        if self._setup_reactive_can_shoot_target(unit, target_unit):
+            actions.append("shoot")
+        if unit.can_declare_charge_against(target_unit, self, out_of_turn=True):
+            actions.append("charge")
+        return actions
+
+    def _queue_setup_reactive_target_decision(
+        self,
+        *,
+        player,
+        unit,
+        candidates: list,
+        rule: dict | None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        if not candidates:
+            return None
+        sorted_candidates = [c for c in candidates if c is not None]
+        sorted_candidates.sort(key=lambda c: str(maybe_entity_id(c) or ""))
+        source = str((rule or {}).get("source", "") or "Reactive Response").strip() or "Reactive Response"
+        rng = int((rule or {}).get("range", 12) or 12)
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        used_labels = set()
+        for enemy in sorted_candidates:
+            enemy_id = maybe_entity_id(enemy)
+            if not enemy_id:
+                continue
+            label = str(getattr(enemy, "name", "") or "Enemy unit")
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} ({idx})"
+                idx += 1
+            used_labels.add(label)
+            options.append(DecisionOption.create(label, payload={"unit_id": enemy_id}))
+        ctx = {
+            "setup_reactive_flow": True,
+            "setup_reactive_source": source,
+            "setup_reactive_range": int(rng),
+            "setup_reactive_unit_id": unit_id,
+            "unit_id": unit_id,
+            "setup_reactive_candidate_ids": [maybe_entity_id(c) for c in sorted_candidates if maybe_entity_id(c)],
+        }
+        request = DecisionRequest.create(
+            DECISION_SELECT_SETUP_REACTIVE_TARGET,
+            f"{source}: Select enemy unit",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_setup_reactive_action_decision(
+        self,
+        *,
+        player,
+        unit,
+        target_unit,
+        actions: list[str],
+        source: str | None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None or target_unit is None:
+            return None
+        if not actions:
+            return None
+        unit_id = maybe_entity_id(unit)
+        target_id = maybe_entity_id(target_unit)
+        if not unit_id or not target_id:
+            return None
+        opts = []
+        if "shoot" in actions:
+            opts.append(DecisionOption.create("Shoot", payload={"action": "shoot"}))
+        if "charge" in actions:
+            opts.append(DecisionOption.create("Charge", payload={"action": "charge"}))
+        if not opts:
+            return None
+        source = str(source or "Reactive Response").strip() or "Reactive Response"
+        ctx = {
+            "setup_reactive_flow": True,
+            "setup_reactive_source": source,
+            "setup_reactive_unit_id": unit_id,
+            "unit_id": unit_id,
+            "target_unit_id": target_id,
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+            f"{source}: Choose action",
+            player_id=getattr(player, "id", None),
+            options=opts,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_setup_reactive_shooting_decision(
+        self,
+        *,
+        player,
+        unit,
+        target_unit,
+        source: str | None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None or target_unit is None:
+            return None
+        unit_id = maybe_entity_id(unit)
+        target_id = maybe_entity_id(target_unit)
+        if not unit_id or not target_id:
+            return None
+        options = [
+            DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
+            DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+        ]
+        source = str(source or "Reactive Response").strip() or "Reactive Response"
+        ctx = {
+            "unit_id": unit_id,
+            "out_of_phase": True,
+            "force_target_unit_id": target_id,
+            "setup_reactive_source": source,
+        }
+        request = DecisionRequest.create(
+            DECISION_DECLARE_SHOTS,
+            f"{source}: Declare shots for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _maybe_queue_setup_reactive_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if not bool(ctx.get("setup_reactive_flow", False)):
+            return
+        decision_type = str(getattr(request, "decision_type", "") or "")
+
+        def _get_payload():
+            for opt in list(getattr(request, "options", []) or []):
+                if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
+                    return dict(getattr(opt, "payload", {}) or {})
+            return {}
+
+        def _is_skip(payload: dict) -> bool:
+            if bool((getattr(result, "payload", {}) or {}).get("skipped", False)):
+                return True
+            if str((getattr(result, "payload", {}) or {}).get("action", "") or "") == "skip":
+                return True
+            return str(payload.get("action", "") or "") == "skip"
+
+        if decision_type == DECISION_SELECT_SETUP_REACTIVE_TARGET:
+            payload = _get_payload()
+            if _is_skip(payload):
+                unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+                unit = self._resolve_unit_by_id(unit_id)
+                if unit is not None:
+                    unit.clear_setup_reactive_shoot_or_charge_candidates(self)
+                return
+            target_id = str(payload.get("unit_id") or payload.get("target_unit_id") or "")
+            unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            target_unit = self._resolve_unit_by_id(target_id)
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if unit is None or target_unit is None or player is None:
+                return
+            actions = self._setup_reactive_available_actions(unit, target_unit)
+            if not actions:
+                unit.clear_setup_reactive_shoot_or_charge_candidates(self)
+                return
+            source = str(ctx.get("setup_reactive_source", "") or "Reactive Response").strip() or "Reactive Response"
+            self._queue_setup_reactive_action_decision(
+                player=player,
+                unit=unit,
+                target_unit=target_unit,
+                actions=actions,
+                source=source,
+            )
+            return
+
+        if decision_type == DECISION_CHOOSE_SETUP_REACTIVE_ACTION:
+            payload = _get_payload()
+            if _is_skip(payload):
+                unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+                unit = self._resolve_unit_by_id(unit_id)
+                if unit is not None:
+                    unit.clear_setup_reactive_shoot_or_charge_candidates(self)
+                return
+            action = str(payload.get("action", "") or "")
+            if action not in ("shoot", "charge"):
+                return
+            unit_id = str(ctx.get("setup_reactive_unit_id") or ctx.get("unit_id") or "")
+            target_id = str(ctx.get("target_unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            target_unit = self._resolve_unit_by_id(target_id)
+            if unit is None or target_unit is None:
+                return
+            unit.mark_setup_reactive_shoot_or_charge_used(self)
+            unit.clear_setup_reactive_shoot_or_charge_candidates(self)
+            source = str(ctx.get("setup_reactive_source", "") or "Reactive Response").strip() or "Reactive Response"
+            if action == "shoot":
+                if not self._setup_reactive_can_shoot_target(unit, target_unit):
+                    return
+                player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+                if player is None:
+                    return
+                self._queue_setup_reactive_shooting_decision(
+                    player=player,
+                    unit=unit,
+                    target_unit=target_unit,
+                    source=source,
+                )
+                return
+            if action == "charge":
+                if not unit.can_declare_charge_against(target_unit, self, out_of_turn=True):
+                    return
+                self.attempt_charge(unit, target_unit, out_of_turn=True, count_as_charged=False)
+            return
+
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -3232,6 +3491,151 @@ class Game:
             return
         self._maybe_prompt_transport_reactive_disembark(unit, trigger="set_up")
 
+    def _record_setup_reactive_shoot_or_charge_candidate(self, enemy_unit) -> None:
+        if enemy_unit is None:
+            return
+        if not self.is_movement_phase():
+            return
+        enemy_army = enemy_unit.get_parent_army()
+        enemy_player = getattr(enemy_army, "player", None) if enemy_army is not None else None
+        if enemy_player is None:
+            return
+        if self.get_current_player() is not enemy_player:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Setup reactive shoot/charge requires players.")
+            if p is enemy_player:
+                continue
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Setup reactive shoot/charge requires an army for {p.name}.")
+            seen = set()
+            for candidate in list(army.units):
+                if candidate is None:
+                    continue
+                root = candidate.get_attached_unit_root()
+                if root is None:
+                    continue
+                rid = get_entity_id(root)
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                rule = root.get_setup_reactive_shoot_or_charge_rule()
+                if not rule:
+                    continue
+                rng = int(rule.get("range", 12) or 12)
+                if not root.can_setup_reactive_shoot_or_charge(
+                    game=self,
+                    game_map=game_map,
+                    enemy_unit=enemy_unit,
+                    range_override=rng,
+                ):
+                    continue
+                root.record_setup_reactive_shoot_or_charge_candidate(enemy_unit, game=self)
+
+    def _on_unit_set_up_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        self._record_setup_reactive_shoot_or_charge_candidate(unit)
+
+    def _on_unit_disembarked_setup_reactive_shoot_or_charge(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        self._record_setup_reactive_shoot_or_charge_candidate(unit)
+
+    def _on_phase_end_setup_reactive_shoot_or_charge(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        current_player = self.get_current_player()
+        if current_player is None:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Setup reactive shoot/charge requires players.")
+            if p is current_player:
+                continue
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Setup reactive shoot/charge requires an army for {p.name}.")
+            seen = set()
+            for unit in list(army.units):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root()
+                if root is None:
+                    continue
+                rid = get_entity_id(root)
+                if rid in seen:
+                    continue
+                seen.add(rid)
+                rule = root.get_setup_reactive_shoot_or_charge_rule()
+                if not rule:
+                    continue
+                if root.setup_reactive_shoot_or_charge_used_this_phase(self):
+                    continue
+                if not root.can_setup_reactive_shoot_or_charge(game=self, game_map=game_map):
+                    root.clear_setup_reactive_shoot_or_charge_candidates(self)
+                    continue
+                candidate_ids = root.get_setup_reactive_shoot_or_charge_candidates(self)
+                if not candidate_ids:
+                    continue
+                candidates = []
+                for cid in candidate_ids:
+                    enemy = self._resolve_unit_by_id(str(cid))
+                    if enemy is None:
+                        continue
+                    if not enemy.is_alive():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if enemy.get_parent_army() == root.get_parent_army():
+                        continue
+                    candidates.append(enemy)
+                if not candidates:
+                    root.clear_setup_reactive_shoot_or_charge_candidates(self)
+                    continue
+                actionable = []
+                for enemy in candidates:
+                    if self._setup_reactive_available_actions(root, enemy):
+                        actionable.append(enemy)
+                if not actionable:
+                    root.clear_setup_reactive_shoot_or_charge_candidates(self)
+                    continue
+                if p.has_control():
+                    es = getattr(self, "event_system", None)
+                    if es is None or not hasattr(es, "subscribers"):
+                        raise RuntimeError("Event system missing for setup reactive prompt.")
+                    subs = getattr(es, "subscribers", None)
+                    if not isinstance(subs, dict):
+                        raise RuntimeError("Event system subscribers not configured.")
+                    if subs.get("setup_reactive_shoot_charge_prompt"):
+                        es.publish(
+                            "setup_reactive_shoot_charge_prompt",
+                            player=p,
+                            unit=root,
+                            candidates=list(actionable),
+                            rule=rule,
+                            game=self,
+                        )
+                else:
+                    self._queue_setup_reactive_target_decision(
+                        player=p,
+                        unit=root,
+                        candidates=list(actionable),
+                        rule=rule,
+                    )
+                root.clear_setup_reactive_shoot_or_charge_candidates(self)
+
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
         if attacker_unit is None or target_unit is None:
@@ -4366,6 +4770,7 @@ class Game:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
             self._maybe_queue_reactive_move_followup(request, result)
+            self._maybe_queue_setup_reactive_followup(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:
@@ -7137,8 +7542,12 @@ class Game:
             final_distance = self.map.get_distance_between_units(charging_unit, target_unit)
 
             if final_distance <= 1.0:
-                if count_as_charged:
-                    charging_unit.round_state.charged_this_round = True
+                charging_unit.round_state.charged_this_round = True
+                if not count_as_charged:
+                    try:
+                        charging_unit.mark_charge_bonus_suppressed(self)
+                    except Exception:
+                        pass
                 charging_unit._apply_charge_move_devastating_wounds()
                 print(
                     f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "

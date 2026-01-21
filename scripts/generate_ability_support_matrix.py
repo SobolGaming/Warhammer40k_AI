@@ -1310,6 +1310,7 @@ def _classify_ability(
     transport_support = _transport_disembark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
+    setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
@@ -1412,6 +1413,8 @@ def _classify_ability(
         return transport_reactive_disembark_support
     if enemy_move_reactive_d6_support:
         return enemy_move_reactive_d6_support
+    if setup_reactive_shoot_charge_support:
+        return setup_reactive_shoot_charge_support
     if sticky_support:
         return sticky_support
     if bodyguard_return_support:
@@ -2596,6 +2599,29 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
         return None
     rng = m.group("range")
     return ("Supported", f"Enemy unit ends move within {rng}\": optional D6\" Normal move if not in Engagement Range.")
+
+
+def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your opponents movement phase.*?"
+        r"select one enemy unit that was set up on the battlefield within (?P<range>\d+) of this (?:model|unit).*?"
+        r"can then either shoot at that unit but only if it is an eligible target.*?"
+        r"declare a charge against that unit.*?"
+        r"does not receive any charge bonus"
+    )
+    m = re.search(pattern, norm)
+    if not m:
+        return None
+    rng = m.group("range")
+    return (
+        "Supported",
+        f"End of opponent Movement phase: select enemy set up within {rng}\" to shoot (if eligible) or charge without charge bonus.",
+    )
 
 
 def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:

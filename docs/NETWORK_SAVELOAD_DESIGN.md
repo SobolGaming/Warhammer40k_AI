@@ -154,6 +154,8 @@ Movement:
 - transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)
 - battle_focus_opportunity_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="opportunity"`)
 - battle_focus_fade_back_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="fade_back"`)
+- setup_reactive_target_dialog: SELECT_SETUP_REACTIVE_TARGET {unit_id, target_unit_id | skip}
+- setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
 - battlefield_point_pick_dialog: PICK_POINT {point}
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
 Note: Reactive enemy-move D6 abilities (e.g., Loping Speed) use `CONFIRM_YES_NO` with `reactive_move_*`
@@ -161,6 +163,7 @@ context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_di
 Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
 Battle Focus reactive maneuvers first use `SELECT_OVERWATCH_SHOOTER` (context `ability="battle_focus"`),
 then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`.
+Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.
 
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
