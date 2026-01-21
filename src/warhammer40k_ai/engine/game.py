@@ -2227,13 +2227,29 @@ class Game:
                         )
                         continue
                 source = str((rule or {}).get("source", "") or "Reactive Move").strip() or "Reactive Move"
+                move_label = "D6"
+                try:
+                    fixed = (rule or {}).get("max_distance")
+                    if fixed is not None:
+                        move_label = str(int(fixed))
+                    else:
+                        roll_spec = str((rule or {}).get("distance_roll", "") or "").strip()
+                        if roll_spec:
+                            move_label = roll_spec.upper()
+                except Exception:
+                    move_label = "D6"
+                message = (
+                    f"{getattr(moving_root, 'name', 'Enemy unit')} ended a move within {int(rng)}\" of "
+                    f"{getattr(root, 'name', 'unit')}.\n\n"
+                    f"{source}: Make a Normal move of up to {move_label}\"?"
+                )
                 request = self._queue_reactive_move_confirmation(
                     player=p,
                     unit=root,
                     kind="loping_speed",
                     movement_type="loping_speed",
                     source=source,
-                    message=None,
+                    message=message,
                     moving_unit=moving_root,
                     range_value=rng,
                 )
@@ -7524,15 +7540,34 @@ class Game:
         return int(max_distance)
 
     def roll_loping_speed_distance(self, unit: 'Unit') -> int:
-        """Roll distance for a reactive Normal move (D6)."""
+        """Resolve distance for a reactive Normal move (fixed or rolled)."""
         if unit is None:
             return 0
+        try:
+            rule = unit.get_loping_speed_rule()
+        except Exception:
+            rule = None
+        source = str((rule or {}).get("source", "") or "Reactive Move").strip() or "Reactive Move"
+        fixed = (rule or {}).get("max_distance")
+        if fixed is not None:
+            try:
+                fixed_val = int(fixed)
+            except Exception:
+                fixed_val = 0
+            if fixed_val > 0:
+                from ..utility.event_bus import append_dice
+                player = getattr(unit.get_parent_army(), "player", None)
+                if player is not None:
+                    append_dice(player, f"{source} fixed distance: {fixed_val}\" for {unit.name}")
+                return int(fixed_val)
+
+        roll_spec = str((rule or {}).get("distance_roll", "") or "D6").strip().upper() or "D6"
         from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = int(get_roll(roll_spec) or 0)
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
-            append_dice(player, f"Loping Speed roll: {int(base_roll)}\" for {unit.name}")
+            append_dice(player, f"{source} roll: {int(base_roll)}\" for {unit.name}")
         return int(base_roll)
 
     def attempt_charge(

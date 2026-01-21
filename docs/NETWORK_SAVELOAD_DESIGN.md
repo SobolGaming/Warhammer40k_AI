@@ -158,8 +158,9 @@ Movement:
 - setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
 - battlefield_point_pick_dialog: PICK_POINT {point}
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
-Note: Reactive enemy-move D6 abilities (e.g., Loping Speed) use `CONFIRM_YES_NO` with `reactive_move_*`
-context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_distance`.
+Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use `CONFIRM_YES_NO` with
+`reactive_move_*` context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_distance`
+(rolled or fixed).
 Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
 Battle Focus reactive maneuvers first use `SELECT_OVERWATCH_SHOOTER` (context `ability="battle_focus"`),
 then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`.

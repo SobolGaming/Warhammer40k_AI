@@ -4138,9 +4138,20 @@ class GameView:
         source = str((rule or {}).get("source", "") or "Reactive Move").strip() or "Reactive Move"
         enemy_name = getattr(moving_unit, "name", "Enemy unit")
         title = source
+        move_label = "D6"
+        try:
+            fixed = (rule or {}).get("max_distance")
+            if fixed is not None:
+                move_label = str(int(fixed))
+            else:
+                roll_spec = str((rule or {}).get("distance_roll", "") or "").strip()
+                if roll_spec:
+                    move_label = roll_spec.upper()
+        except Exception:
+            move_label = "D6"
         msg = (
             f"{enemy_name} ended a move within {int(rng)}\" of {getattr(unit, 'name', 'unit')}.\n\n"
-            f"{source}: Make a Normal move of up to D6\"?"
+            f"{source}: Make a Normal move of up to {move_label}\"?"
         )
 
         def _finish_and_next():

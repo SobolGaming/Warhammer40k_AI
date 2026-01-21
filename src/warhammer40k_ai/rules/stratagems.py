@@ -1984,7 +1984,10 @@ class StratagemManager:
         except Exception:
             raise
         try:
-            self._heroic_intervention_units_this_phase.clear()
+            if not hasattr(self, "_heroic_intervention_units_this_phase"):
+                self._heroic_intervention_units_this_phase = set()
+            else:
+                self._heroic_intervention_units_this_phase.clear()
         except Exception:
             raise
     def _on_phase_end(self, player, phase, **kwargs):

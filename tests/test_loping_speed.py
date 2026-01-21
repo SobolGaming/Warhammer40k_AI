@@ -18,6 +18,10 @@ LOPING_SPEED_TEXT = (
     "if this model's unit is not within Engagement Range of one or more enemy units, it can make a Normal move of "
     "up to D6\"."
 )
+FIXED_REACTIVE_MOVE_TEXT = (
+    "Once per turn, when an enemy unit ends a Normal, Advance or Fall Back move within 9\" of this unit, "
+    "this unit can make a Normal move of up to 6\"."
+)
 
 
 class TestLopingSpeed(unittest.TestCase):
@@ -299,6 +303,49 @@ class TestLopingSpeed(unittest.TestCase):
         )
 
         self.assertTrue(reacting_unit.loping_speed_used_this_turn(game))
+
+    def test_fixed_reactive_move_rule_parses_distance(self):
+        game, _moving_player, _reacting_player, _army_move, army_react = self._build_game()
+        reacting_unit = self._make_unit("Skitterers", army_react, ability_text=FIXED_REACTIVE_MOVE_TEXT)
+        rule = reacting_unit.get_loping_speed_rule()
+        self.assertIsNotNone(rule)
+        self.assertEqual(int(rule.get("max_distance") or 0), 6)
+
+    def test_fixed_reactive_move_remote_queues_fixed_distance(self):
+        game, _moving_player, reacting_player, army_move, army_react = self._build_game(
+            reacting_control=PlayerControl.REMOTE,
+        )
+
+        moving_unit = self._make_unit("Enemy Movers", army_move)
+        reacting_unit = self._make_unit("Skitterers", army_react, ability_text=FIXED_REACTIVE_MOVE_TEXT)
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy Model", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Skitterer", reacting_unit, 8.0, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+
+        game.map.units = [moving_unit, reacting_unit]
+
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="move",
+        )
+
+        request = game.decision_queue.peek()
+        yes_option = None
+        for opt in list(request.options or []):
+            if bool((opt.payload or {}).get("choice", False)):
+                yes_option = opt
+                break
+        self.assertIsNotNone(yes_option)
+        resolve_decision_command(game, request, yes_option.option_id, player_id=reacting_player.id)
+
+        move_request = game.decision_queue.peek()
+        move_ctx = move_request.context or {}
+        self.assertEqual(int(move_ctx.get("max_distance") or 0), 6)
 
 
 if __name__ == "__main__":

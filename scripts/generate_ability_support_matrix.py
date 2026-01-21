@@ -2609,14 +2609,21 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
         return None
     pattern = (
         r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
-        r"(?:model(?: s)? unit|unit|model) if this unit is not within engagement range of (?:one or more|any) enemy units? "
-        r"(?:it )?can make a normal move of up to d6"
+        r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of "
+        r"(?:one or more|any) enemy units?)? (?:it )?can make a normal move of up to (?P<move>d6|\d+)"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
         return None
     rng = m.group("range")
-    return ("Supported", f"Enemy unit ends move within {rng}\": optional D6\" Normal move if not in Engagement Range.")
+    move = str(m.group("move") or "").strip().lower()
+    move_label = "D6" if move == "d6" else move
+    note = f"Enemy unit ends move within {rng}\": optional {move_label}\" Normal move"
+    if "not within engagement range" in norm:
+        note += " if not in Engagement Range."
+    else:
+        note += "."
+    return ("Supported", note)
 
 
 def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[str, str]]:

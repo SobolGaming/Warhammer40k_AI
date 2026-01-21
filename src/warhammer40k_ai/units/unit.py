@@ -884,8 +884,9 @@ class Unit:
     )
     _ENEMY_MOVE_REACTIVE_D6_RE = re.compile(
         r"once\s+per\s+turn,?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
-        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model|unit).*?"
-        r"not\s+within\s+engagement\s+range.*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+d6",
+        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model(?: s)? unit|unit|model)"
+        r"(?:\s+if\s+this\s+unit\s+is\s+not\s+within\s+engagement\s+range\s+of\s+(?:one\s+or\s+more|any)\s+enemy\s+units?)?"
+        r".*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move>d6|\d+)",
         re.IGNORECASE,
     )
     _SETUP_REACTIVE_SHOOT_CHARGE_RE = re.compile(
@@ -16073,8 +16074,19 @@ class Unit:
                     rng = 0
                 if rng <= 0:
                     rng = 9
+                move_token = str(m.group("move") or "").strip().lower()
                 source = str(name or "Loping Speed").strip() or "Loping Speed"
                 rule = {"range": int(rng), "source": source}
+                if move_token:
+                    if move_token.isdigit():
+                        try:
+                            move_value = int(move_token)
+                        except Exception:
+                            move_value = 0
+                        if move_value > 0:
+                            rule["max_distance"] = int(move_value)
+                    else:
+                        rule["distance_roll"] = move_token.upper()
                 break
             if rule is not None:
                 break
