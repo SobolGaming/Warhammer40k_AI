@@ -170,7 +170,7 @@ Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
 - shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]}
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
-- overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id}
+- overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)
 - roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
 
 Charge:

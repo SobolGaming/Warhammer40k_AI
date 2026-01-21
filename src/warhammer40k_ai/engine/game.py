@@ -7770,6 +7770,15 @@ class Game:
 
             if final_distance <= 1.0:
                 charging_unit.round_state.charged_this_round = True
+                try:
+                    charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
+                except Exception:
+                    charging_unit.round_state.charged_turn = int(getattr(self, "turn", 0) or 0)
+                try:
+                    current_player = self.get_current_player()
+                    charging_unit.round_state.charged_turn_owner = str(getattr(current_player, "id", "") or "")
+                except Exception:
+                    charging_unit.round_state.charged_turn_owner = ""
                 if not count_as_charged:
                     try:
                         charging_unit.mark_charge_bonus_suppressed(self)

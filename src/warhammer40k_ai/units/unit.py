@@ -50,6 +50,8 @@ class UnitRoundState:
     reinforced_this_round: bool = False
     attempted_charge_this_round: bool = False  # Track if unit attempted a charge (prevents multiple attempts)
     charged_this_round: bool = False  # Track if unit successfully made a charge move (charge bonus may be suppressed)
+    charged_turn: Optional[int] = None
+    charged_turn_owner: Optional[str] = None
     charge_bonus_suppressed_turn: Optional[int] = None
     charge_bonus_suppressed_turn_owner: Optional[str] = None
     moved_this_round: bool = False  # Track if unit has moved during movement phase
@@ -4441,6 +4443,36 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # EMPEROR'S CHILDREN: Death Ecstasy (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("death_ecstasy_active"):
+                        exp = str(sr.get("death_ecstasy_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    pending = getattr(root, "_death_ecstasy_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._death_ecstasy_pending_models = pending
+                                    return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
         original_wounds = getattr(model, "_wounds", None)
         try:
@@ -4486,8 +4518,40 @@ class Unit:
         if getattr(model, "_fight_on_death_used", False):
             return False
 
-        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
-        engaged = [u for u in enemy_units if game_map.is_within_engagement_range(self, u)]
+        try:
+            enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        except Exception:
+            try:
+                enemy_units = [u for u in list(getattr(game_map, "units", []) or []) if u is not None and getattr(u, "faction", None) != getattr(self, "faction", None) and u.is_alive()]
+            except Exception:
+                enemy_units = []
+        if not enemy_units:
+            return False
+
+        from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+
+        engaged = []
+        for enemy in enemy_units:
+            try:
+                if enemy is None or not enemy.is_alive():
+                    continue
+            except Exception:
+                continue
+            for em in list(getattr(enemy, "models", []) or []):
+                try:
+                    if not em.is_alive:
+                        continue
+                except Exception:
+                    continue
+                try:
+                    horiz = float(horizontal_distance_between_bases_2d(model.model_base, em.model_base))
+                    vert = float(vertical_distance_between_bases(model.model_base, em.model_base))
+                except Exception:
+                    continue
+                if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                    engaged.append(enemy)
+                    break
         if not engaged:
             return False
 
@@ -4886,6 +4950,10 @@ class Unit:
     def initialize_round(self) -> None:
         """Reset round-tracked variables to default state."""
         self.round_state = UnitRoundState()
+        try:
+            self._death_ecstasy_pending_models = []
+        except Exception:
+            pass
         # Check status effects expiration (with safe defaults)
         for status_effect in list(getattr(self, "status_effects", []) or []):
             try:
@@ -12275,6 +12343,30 @@ class Unit:
         if not alive_models:
             return
 
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("battle_shock_suppress_other_tests_phase"):
+                phase_name = ""
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                suppress_phase = str(sr.get("battle_shock_suppress_other_tests_phase", "") or "").strip().upper()
+                if suppress_phase and phase_name and phase_name != suppress_phase:
+                    sr.pop("battle_shock_suppress_other_tests_phase", None)
+                    sr.pop("battle_shock_suppress_other_tests_source", None)
+                    sr.pop("battle_shock_allow_suppressed_test", None)
+                    self.special_rules = sr
+                else:
+                    allow = bool(sr.pop("battle_shock_allow_suppressed_test", False))
+                    self.special_rules = sr
+                    if not allow:
+                        return
+        except Exception:
+            pass
+
         is_already_battle_shocked = bool(self.is_battle_shocked())
 
         # Resolve event system (best-effort; avoid crashing on partial test stubs).
@@ -13909,6 +14001,31 @@ class Unit:
                         mgr.resolve_total_carnage_queue(owning_unit=root, game_map=game_map)
             except Exception:
                 pass
+            try:
+                root._resolve_death_ecstasy_queue(game_map=game_map)
+            except Exception:
+                pass
+
+    def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
+        pending = getattr(self, "_death_ecstasy_pending_models", None)
+        if not pending:
+            return
+        if not isinstance(pending, list):
+            self._death_ecstasy_pending_models = []
+            return
+        self._death_ecstasy_pending_models = []
+        for model in list(pending):
+            if model is None:
+                continue
+            original_wounds = getattr(model, "_wounds", None)
+            try:
+                if original_wounds is not None and original_wounds <= 0:
+                    model._wounds = 1
+                self._try_fight_on_death(model=model, game_map=game_map)
+            finally:
+                if original_wounds is not None:
+                    model._wounds = original_wounds
 
     def attached_unit_has_blessings_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member (bodyguard or leader) has Blessings of Khorne ability."""

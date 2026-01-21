@@ -60,6 +60,7 @@ _UNIT_STATE_EXCLUDE = {
     "round_state",
     "_ability_cache",
     "enhancement",
+    "_death_ecstasy_pending_models",
 }
 
 _MODEL_STATE_EXCLUDE = {
@@ -109,6 +110,8 @@ _UNIT_ROUND_FIELDS = [
     "reinforced_this_round",
     "attempted_charge_this_round",
     "charged_this_round",
+    "charged_turn",
+    "charged_turn_owner",
     "charge_bonus_suppressed_turn",
     "charge_bonus_suppressed_turn_owner",
     "moved_this_round",

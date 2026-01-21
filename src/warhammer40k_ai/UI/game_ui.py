@@ -586,6 +586,188 @@ class GameView:
             )
         self._request_frenzied_resilience_unit = _request_frenzied_resilience_unit
 
+        def _request_cruel_bladesman_unit(player, game, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = []
+            try:
+                from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
+            except Exception:
+                _unit_cannot_be_target_of_stratagem = None
+            try:
+                army = player.get_army()
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                    on_chosen(None)
+                    return
+            except Exception:
+                on_chosen(None)
+                return
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                uid = get_entity_id(root)
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                    continue
+                try:
+                    if not mgr.is_emperors_children_unit(root):
+                        continue
+                except Exception:
+                    continue
+                charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
+                if not charged:
+                    continue
+                if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                    continue
+                cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Cruel Bladesman unit.",
+                title="Select Cruel Bladesman Unit",
+                subtitle="Charged this turn; has not fought",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_cruel_bladesman_unit = _request_cruel_bladesman_unit
+
+        def _request_death_ecstasy_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Death Ecstasy unit.",
+                title="Select Death Ecstasy Unit",
+                subtitle="Targeted by enemy in Fight phase",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_death_ecstasy_unit = _request_death_ecstasy_unit
+
+        def _request_terrifying_spectacle_unit(player, game, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = []
+            try:
+                from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
+            except Exception:
+                _unit_cannot_be_target_of_stratagem = None
+            try:
+                army = player.get_army()
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                    on_chosen(None)
+                    return
+            except Exception:
+                on_chosen(None)
+                return
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                uid = get_entity_id(root)
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                    continue
+                try:
+                    if not mgr.is_emperors_children_unit(root):
+                        continue
+                except Exception:
+                    continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not sr.get("ec_last_turn_charged", False):
+                    continue
+                if not sr.get("ec_last_turn_destroyed_enemy_in_fight", False):
+                    continue
+                cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Terrifying Spectacle unit.",
+                title="Select Terrifying Spectacle Unit",
+                subtitle="Charged last turn and destroyed an enemy unit",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_terrifying_spectacle_unit = _request_terrifying_spectacle_unit
+
+        def _request_cut_down_the_weak_unit(player, game, candidates, enemy_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Cut Down the Weak unit.",
+                title="Select Cut Down the Weak Unit",
+                subtitle="Within 6\" of the enemy that Fell Back",
+                enemy_unit=enemy_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_cut_down_the_weak_unit = _request_cut_down_the_weak_unit
+
         def _request_murder_call_unit(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
@@ -9717,6 +9899,15 @@ class GameView:
                 )
             return
 
+        if name_u == "CRUEL BLADESMAN" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_cruel_bladesman_unit", None)):
+                self._request_cruel_bladesman_unit(
+                    player,
+                    self.game,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
         if name_u == "FRENZIED RESILIENCE" and "target_unit" not in context and "unit" not in context:
             if callable(getattr(self, "_request_frenzied_resilience_unit", None)):
                 candidates = context.get("candidates") or []
@@ -9728,6 +9919,26 @@ class GameView:
                 )
             return
 
+        if name_u == "DEATH ECSTASY" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_death_ecstasy_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_death_ecstasy_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "TERRIFYING SPECTACLE" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_terrifying_spectacle_unit", None)):
+                self._request_terrifying_spectacle_unit(
+                    player,
+                    self.game,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
         if name_u == "DAEMONIC FURY" and ("target_unit" not in context or "world_eaters_unit" not in context):
             if callable(getattr(self, "_request_daemonic_fury_targets", None)):
                 candidates = context.get("candidates") or []
@@ -9736,6 +9947,19 @@ class GameView:
                     self.game,
                     candidates,
                     lambda bl_unit, we_unit: self._finalize_daemonic_fury(player, name, context, bl_unit, we_unit),
+                )
+            return
+
+        if name_u == "CUT DOWN THE WEAK" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_cut_down_the_weak_unit", None)):
+                enemy = context.get("enemy_unit")
+                candidates = context.get("candidates") or []
+                self._request_cut_down_the_weak_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    enemy,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
                 )
             return
 
@@ -9931,6 +10155,22 @@ class GameView:
             return
         ctx = dict(context)
         ctx["secondary_card"] = selected_card
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_generic_stratagem(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print(f"{name}: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
             print(f"Used stratagem: {name}")
