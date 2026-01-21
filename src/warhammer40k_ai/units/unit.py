@@ -2552,7 +2552,7 @@ class Unit:
                 u.special_rules = sr
 
     def _refresh_move_over_friendly_monster_vehicle_flags(self) -> None:
-        """Parse move-over friendly MONSTER/VEHICLE + low-terrain traversal rules into special_rules."""
+        """Parse move-over friendly MONSTER/VEHICLE and low-terrain traversal rules into special_rules."""
         if getattr(self, "special_rules", None) is None:
             self.special_rules = {}
         sr = self.special_rules
@@ -2570,9 +2570,29 @@ class Unit:
             r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
             r"(?: as if they were not there)?"
         )
-        move_types: set[str] = set()
+        terrain_only_pattern = (
+            r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+            r"it can move (?:over|through) (?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+            r"(?: as if they were not there)?"
+        )
+        friendly_move_types: set[str] = set()
+        low_terrain_move_types: set[str] = set()
         height_value: Optional[int] = None
         seen: set[str] = set()
+
+        def _parse_move_types(moves_text: str) -> Optional[set[str]]:
+            tokens = [t for t in moves_text.split() if t]
+            allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+            if not tokens or any(t not in allowed for t in tokens):
+                return None
+            if "normal" not in tokens:
+                return None
+            parsed: set[str] = {"move"}
+            if "advance" in tokens:
+                parsed.add("advance")
+            if "fallback" in tokens or "fall back" in moves_text:
+                parsed.add("fall_back")
+            return parsed
 
         for name, desc in self._iter_ability_entries_for_rules(model=None):
             text = str(desc or name or "")
@@ -2588,20 +2608,29 @@ class Unit:
                 continue
             seen.add(norm)
             m = re.fullmatch(pattern, norm)
+            if m:
+                moves_text = (m.group("moves") or "").strip()
+                move_types = _parse_move_types(moves_text or "")
+                if move_types is None:
+                    continue
+                friendly_move_types.update(move_types)
+                low_terrain_move_types.update(move_types)
+                try:
+                    height = int(m.group("height"))
+                except Exception:
+                    height = None
+                if height is not None:
+                    if height_value is None or height > height_value:
+                        height_value = height
+                continue
+            m = re.fullmatch(terrain_only_pattern, norm)
             if not m:
                 continue
             moves_text = (m.group("moves") or "").strip()
-            tokens = [t for t in moves_text.split() if t]
-            allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
-            if not tokens or any(t not in allowed for t in tokens):
+            move_types = _parse_move_types(moves_text or "")
+            if move_types is None:
                 continue
-            if "normal" not in tokens:
-                continue
-            move_types.add("move")
-            if "advance" in tokens:
-                move_types.add("advance")
-            if "fallback" in tokens or "fall back" in moves_text:
-                move_types.add("fall_back")
+            low_terrain_move_types.update(move_types)
             try:
                 height = int(m.group("height"))
             except Exception:
@@ -2610,11 +2639,11 @@ class Unit:
                 if height_value is None or height > height_value:
                     height_value = height
 
-        if move_types:
-            sr["move_over_friendly_monster_vehicle_types"] = sorted(move_types)
+        if friendly_move_types:
+            sr["move_over_friendly_monster_vehicle_types"] = sorted(friendly_move_types)
         if height_value is not None:
             sr["move_over_low_terrain_height_value"] = float(height_value)
-            sr["move_over_low_terrain_height_types"] = sorted(move_types or {"move", "advance"})
+            sr["move_over_low_terrain_height_types"] = sorted(low_terrain_move_types or {"move", "advance"})
         self.special_rules = sr
 
     def _unit_contains_model_named(self, target: str) -> bool:

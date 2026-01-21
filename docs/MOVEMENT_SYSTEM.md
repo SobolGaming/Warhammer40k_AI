@@ -278,7 +278,8 @@ rejected even if each individual model stayed within its movement allowance.
 
 Several abilities encode movement exceptions as `special_rules` flags and are folded
 into validation or distance logic:
-- `move_over_low_terrain_height_*` modifies the climbable threshold.
+- `move_over_low_terrain_height_*` raises the freely climbable threshold for specific
+  move types (e.g., Normal/Advance/Fall Back) so terrain <= X" is treated as "move over".
 - `has_flip_belt` ignores vertical distance for allowed move types.
 - `has_super_heavy_walker` extends the freely climbable height.
 - `move_over_friendly_monster_vehicle_*` permits moving through friendly MONSTER/VEHICLE.

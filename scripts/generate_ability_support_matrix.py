@@ -1295,6 +1295,7 @@ def _classify_ability(
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
     move_over_friendly_support = _move_over_friendly_monster_vehicle_support(description)
+    move_over_low_terrain_support = _move_over_low_terrain_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
@@ -1347,6 +1348,8 @@ def _classify_ability(
         return battlesuit_support_system_support
     if move_over_friendly_support:
         return move_over_friendly_support
+    if move_over_low_terrain_support:
+        return move_over_low_terrain_support
     if move_over_mortal_support:
         return move_over_mortal_support
 
@@ -3223,6 +3226,39 @@ def _move_over_friendly_monster_vehicle_support(description: str) -> Optional[Tu
     height = m.group("height")
     type_label = "/".join(move_types)
     return ("Supported", f"{type_label}: move through friendly MONSTER/VEHICLE models and terrain <= {height}\".")
+
+
+def _move_over_low_terrain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+        r"it can move (?:over|through) (?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+        r"(?: as if they were not there)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    moves_text = (m.group("moves") or "").strip()
+    tokens = [t for t in moves_text.split() if t]
+    allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+    if not tokens or any(t not in allowed for t in tokens):
+        return None
+    if "normal" not in tokens:
+        return None
+    move_types = ["Normal"]
+    if "advance" in tokens:
+        move_types.append("Advance")
+    if "fallback" in tokens or "fall back" in moves_text:
+        move_types.append("Fall Back")
+    if not move_types:
+        return None
+    height = m.group("height")
+    type_label = "/".join(move_types)
+    return ("Supported", f"{type_label}: move over terrain features <= {height}\".")
 
 
 def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
