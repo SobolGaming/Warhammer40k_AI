@@ -63,6 +63,8 @@ class Player:
         self._next_optional_decisions: dict[str, bool] = {}
         # One-shot selection overrides for optional ability choices.
         self._next_optional_selections: dict[str, object] = {}
+        # Optional controller hook for reactive move placement (non-local control).
+        self.reactive_move_position_hook = None
         #print(f"Player {self.name} created with army: {self.army}")
 
     @property
@@ -580,6 +582,16 @@ class Player:
         overrides = getattr(self, "_next_optional_selections", None)
         if isinstance(overrides, dict) and k in overrides:
             return overrides.pop(k)
+        return None
+
+    def choose_reactive_move_positions(self, context: dict):
+        """
+        Optional controller hook for reactive move placements.
+        Expected to return a list of model position dicts or None to leave pending.
+        """
+        hook = getattr(self, "reactive_move_position_hook", None)
+        if callable(hook):
+            return hook(self, dict(context or {}))
         return None
 
     def set_next_optional_decision(self, key: str, value: bool) -> None:

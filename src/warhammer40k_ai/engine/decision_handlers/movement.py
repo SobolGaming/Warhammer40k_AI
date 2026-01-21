@@ -34,6 +34,19 @@ def _movement_members(unit) -> list:
     return members or [unit]
 
 
+def _clear_battle_focus_reactive_flags(unit) -> None:
+    for member in _movement_members(unit):
+        sr = getattr(member, "special_rules", None)
+        if not isinstance(sr, dict):
+            continue
+        for key in (
+            "battle_focus_reactive_move_max",
+            "battle_focus_reactive_move_source",
+            "battle_focus_reactive_move_expires_phase",
+        ):
+            sr.pop(key, None)
+
+
 def _validate_select_movement_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -95,9 +108,11 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
     unit = get_unit(game, unit_id)
     if unit is None:
         raise RuntimeError("Move unit: unit not found.")
-    if bool(result.payload.get("skipped", False)):
-        return None
     movement_type = str(payload.get("movement_type", "") or request.context.get("movement_type", "") or "")
+    if bool(result.payload.get("skipped", False)):
+        if movement_type == "reactive":
+            _clear_battle_focus_reactive_flags(unit)
+        return None
     model_positions = list(result.payload.get("model_positions") or [])
     apply_model_positions(game, model_positions)
 
@@ -110,6 +125,12 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         elif movement_type in ("move", "pile_in", "consolidate", "charge"):
             member.round_state.moved_this_round = True
             member.round_state.remained_stationary_this_round = False
+        if movement_type == "loping_speed":
+            member.mark_loping_speed_used(game)
+        if movement_type == "blood_surge":
+            member.mark_blood_surge_used(game)
+    if movement_type == "reactive":
+        _clear_battle_focus_reactive_flags(unit)
     return None
 
 

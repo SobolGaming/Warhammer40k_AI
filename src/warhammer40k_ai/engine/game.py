@@ -23,7 +23,13 @@ from .command_kinds import (
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from .decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
-from .decision_kinds import DECISION_CHOOSE_MISSION
+from .decision_kinds import (
+    DECISION_CHOOSE_MISSION,
+    DECISION_CONFIRM_YES_NO,
+    DECISION_DISEMBARK,
+    DECISION_MOVE_UNIT,
+    DECISION_SELECT_OVERWATCH_SHOOTER,
+)
 from .random_source import RandomSource
 from .ref_codec import encode_refs
 from ..rules.lifecycle import AbilityLifecycle
@@ -33,7 +39,7 @@ from ..utility.calcs import get_dist, clear_enemy_model_cache
 from ..utility.charge_roll import ChargeRollResult, ChargeRollSpec
 from ..utility.dice import DiceCollection, get_roll
 from ..utility.constants import TOTAL_ROUNDS, ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from ..utility.entity_registry import EntityRegistry, rebuild_registry_from_game
 from ..utility.game_context import game_context
 
@@ -1469,7 +1475,439 @@ class Game:
                         manager=mgr,
                     )
             else:
-                mgr.maybe_trigger_opportunity_seized(unit, self)
+                candidates = mgr.consume_opportunity_seized_candidates(unit, self)
+                if not candidates:
+                    continue
+                self._queue_battle_focus_reactive_selection(
+                    player=p,
+                    candidates=list(candidates),
+                    manager=mgr,
+                    maneuver="opportunity",
+                    moving_unit=unit,
+                )
+
+    def _player_has_optional_decision_hook(self, player, key: str) -> bool:
+        if player is None:
+            return False
+        k = str(key or "").strip().upper()
+        if not k:
+            return False
+        overrides = getattr(player, "_next_optional_decisions", None)
+        if isinstance(overrides, dict) and k in overrides:
+            return True
+        return callable(getattr(player, "decision_hook", None))
+
+    def _resolve_player_by_id(self, player_id: str | None):
+        if not player_id:
+            return None
+        for p in list(self.players or []):
+            pid = maybe_entity_id(p)
+            if pid and str(pid) == str(player_id):
+                return p
+        return None
+
+    def _resolve_unit_by_id(self, unit_id: str | None):
+        if not unit_id:
+            return None
+        registry = getattr(self, "entity_registry", None)
+        if registry is not None:
+            unit = registry.get(str(unit_id), kind="unit")
+            if unit is not None:
+                return unit
+        for p in list(self.players or []):
+            army = p.get_army()
+            if army is None:
+                continue
+            for u in list(getattr(army, "units", []) or []):
+                uid = maybe_entity_id(u)
+                if uid and str(uid) == str(unit_id):
+                    return u
+        return None
+
+    def _option_id_for_payload(self, request: DecisionRequest, key: str, value: object) -> str | None:
+        if request is None:
+            return None
+        for opt in list(getattr(request, "options", []) or []):
+            payload = getattr(opt, "payload", {}) or {}
+            if payload.get(key) == value:
+                return opt.option_id
+        return None
+
+    def _reactive_move_context(
+        self,
+        *,
+        kind: str,
+        unit_id: str,
+        movement_type: str,
+        source: str,
+        moving_unit_id: str | None = None,
+        attacker_unit_id: str | None = None,
+        range_value: int | None = None,
+    ) -> dict:
+        ctx = {
+            "reactive_move_kind": str(kind or "").strip(),
+            "reactive_move_unit_id": unit_id,
+            "reactive_move_source": str(source or "").strip() or "Reactive Move",
+            "reactive_move_movement_type": str(movement_type or "").strip(),
+        }
+        if moving_unit_id:
+            ctx["reactive_move_moving_unit_id"] = moving_unit_id
+        if attacker_unit_id:
+            ctx["reactive_move_attacker_unit_id"] = attacker_unit_id
+        if range_value is not None:
+            ctx["reactive_move_range"] = int(range_value)
+        return ctx
+
+    def _queue_reactive_move_confirmation(
+        self,
+        *,
+        player,
+        unit,
+        kind: str,
+        movement_type: str,
+        source: str | None,
+        message: str | None,
+        moving_unit=None,
+        attacker_unit=None,
+        range_value: int | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        moving_unit_id = maybe_entity_id(moving_unit) if moving_unit is not None else None
+        attacker_unit_id = maybe_entity_id(attacker_unit) if attacker_unit is not None else None
+        source = str(source or "").strip() or "Reactive Move"
+        if not message and moving_unit is not None and range_value is not None:
+            enemy_name = getattr(moving_unit, "name", "Enemy unit")
+            message = (
+                f"{enemy_name} ended a move within {int(range_value)}\" of {getattr(unit, 'name', 'unit')}.\n\n"
+                f"{source}: Make a Normal move of up to D6\"?"
+            )
+        options = [
+            DecisionOption.create("Move", payload={"choice": True}),
+            DecisionOption.create("Skip", payload={"choice": False}),
+        ]
+        ctx = self._reactive_move_context(
+            kind=str(kind or "").strip() or "reactive",
+            unit_id=unit_id,
+            movement_type=movement_type,
+            source=source,
+            moving_unit_id=moving_unit_id,
+            attacker_unit_id=attacker_unit_id,
+            range_value=range_value,
+        )
+        if message:
+            ctx["message"] = message
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            source,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_reactive_move_movement_decision(
+        self,
+        *,
+        player,
+        unit,
+        max_distance: int,
+        kind: str,
+        movement_type: str,
+        source: str | None,
+        moving_unit=None,
+        attacker_unit=None,
+        range_value: int | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        moving_unit_id = maybe_entity_id(moving_unit) if moving_unit is not None else None
+        attacker_unit_id = maybe_entity_id(attacker_unit) if attacker_unit is not None else None
+        source = str(source or "").strip() or "Reactive Move"
+        options = [
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit_id, "movement_type": movement_type, "action": "confirm"},
+            ),
+            DecisionOption.create(
+                "Skip",
+                payload={"unit_id": unit_id, "movement_type": movement_type, "action": "skip"},
+            ),
+        ]
+        ctx = self._reactive_move_context(
+            kind=str(kind or "").strip() or "reactive",
+            unit_id=unit_id,
+            movement_type=movement_type,
+            source=source,
+            moving_unit_id=moving_unit_id,
+            attacker_unit_id=attacker_unit_id,
+            range_value=range_value,
+        )
+        ctx["unit_id"] = unit_id
+        ctx["movement_type"] = movement_type
+        ctx["max_distance"] = int(max_distance)
+        request = DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+
+        positions = None
+        if callable(getattr(player, "choose_reactive_move_positions", None)):
+            positions = player.choose_reactive_move_positions(ctx)
+        if isinstance(positions, list) and positions:
+            from ..utility.decision_utils import resolve_decision_command
+
+            option_id = self._option_id_for_payload(request, "action", "confirm")
+            if option_id:
+                resolve_decision_command(
+                    self,
+                    request,
+                    option_id,
+                    result_payload={"model_positions": positions},
+                    player_id=getattr(player, "id", None),
+                )
+        return request
+
+    def _queue_battle_focus_reactive_selection(
+        self,
+        *,
+        player,
+        candidates: list,
+        manager,
+        maneuver: str,
+        moving_unit=None,
+        attacker_unit=None,
+        hits_by_unit: dict | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or not candidates:
+            return None
+        if manager is None:
+            return None
+        maneuver_key = str(maneuver or "").strip().lower()
+        if maneuver_key not in ("opportunity", "fade_back"):
+            return None
+        try:
+            sorted_candidates = sorted(
+                [c for c in candidates if c is not None],
+                key=lambda c: str(maybe_entity_id(c) or ""),
+            )
+        except Exception:
+            sorted_candidates = [c for c in candidates if c is not None]
+        prompt = "Select Battle Focus reactive unit." if maneuver_key == "opportunity" else "Select Battle Focus unit to fade back."
+        options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+        used_labels = set()
+        for unit in sorted_candidates:
+            label = str(getattr(unit, "name", "") or "Unit")
+            if maneuver_key == "fade_back":
+                try:
+                    hits = int((hits_by_unit or {}).get(unit, 0) or 0)
+                except Exception:
+                    hits = 0
+                label = f"{label} (Hits: {hits})"
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used_labels.add(label)
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"unit_id": get_entity_id(unit)},
+                )
+            )
+        ctx = {
+            "ability": "battle_focus",
+            "maneuver": maneuver_key,
+            "reactive_move_kind": "battle_focus",
+            "reactive_move_movement_type": "reactive",
+        }
+        if moving_unit is not None:
+            moving_unit_id = maybe_entity_id(moving_unit)
+            if moving_unit_id:
+                ctx["reactive_move_moving_unit_id"] = moving_unit_id
+        if attacker_unit is not None:
+            attacker_unit_id = maybe_entity_id(attacker_unit)
+            if attacker_unit_id:
+                ctx["reactive_move_attacker_unit_id"] = attacker_unit_id
+        request = DecisionRequest.create(
+            DECISION_SELECT_OVERWATCH_SHOOTER,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+
+        try:
+            chooser = getattr(manager, "_choose_from_options", None)
+            if callable(chooser):
+                key = f"BATTLE_FOCUS_{maneuver_key.upper()}"
+                choice = chooser(player, key, list(sorted_candidates), dict(ctx))
+            else:
+                choice = None
+        except Exception:
+            choice = None
+        if choice is not None:
+            try:
+                choice_id = get_entity_id(choice)
+            except Exception:
+                choice_id = None
+            if choice_id:
+                option_id = self._option_id_for_payload(request, "unit_id", choice_id)
+                if option_id:
+                    from ..utility.decision_utils import resolve_decision_command
+
+                    resolve_decision_command(
+                        self,
+                        request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+        return request
+
+    def _maybe_queue_reactive_move_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type == DECISION_CONFIRM_YES_NO:
+            ctx = dict(getattr(request, "context", {}) or {})
+            kind = str(ctx.get("reactive_move_kind", "") or "").strip()
+            if kind not in ("loping_speed", "blood_surge"):
+                return
+            opt = None
+            for candidate in list(getattr(request, "options", []) or []):
+                if getattr(candidate, "option_id", None) == getattr(result, "option_id", None):
+                    opt = candidate
+                    break
+            if opt is None:
+                return
+            payload = getattr(opt, "payload", {}) or {}
+            choice = bool(payload.get("choice", False))
+            if not choice:
+                return
+            unit_id = str(ctx.get("reactive_move_unit_id") or ctx.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if unit is None or player is None:
+                return
+            source = str(ctx.get("reactive_move_source", "") or "Reactive Move").strip() or "Reactive Move"
+            movement_type = str(ctx.get("reactive_move_movement_type", "") or "")
+            if kind == "loping_speed":
+                moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+                moving_unit = self._resolve_unit_by_id(moving_unit_id)
+                if moving_unit is None:
+                    return
+                rng = int(ctx.get("reactive_move_range") or 9)
+                if not unit.can_loping_speed(
+                    game=self,
+                    game_map=getattr(self, "map", None),
+                    moving_unit=moving_unit,
+                    range_override=rng,
+                ):
+                    return
+                max_distance = int(self.roll_loping_speed_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    moving_unit=moving_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "loping_speed",
+                    source=source,
+                    range_value=rng,
+                )
+                return
+            if kind == "blood_surge":
+                if not unit.can_blood_surge(game=self, game_map=getattr(self, "map", None)):
+                    return
+                max_distance = int(self.roll_blood_surge_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    attacker_unit=attacker_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "blood_surge",
+                    source=source,
+                )
+                return
+        if decision_type == DECISION_SELECT_OVERWATCH_SHOOTER:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "battle_focus":
+                return
+            opt = None
+            for candidate in list(getattr(request, "options", []) or []):
+                if getattr(candidate, "option_id", None) == getattr(result, "option_id", None):
+                    opt = candidate
+                    break
+            if opt is None:
+                return
+            payload = getattr(opt, "payload", {}) or {}
+            if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
+                return
+            unit_id = str(payload.get("unit_id", "") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if unit is None or player is None:
+                return
+            army = player.get_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is None:
+                return
+            maneuver = str(ctx.get("maneuver", "") or "").strip().lower()
+            if maneuver == "opportunity":
+                applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_OPPORTUNITY, self))
+            elif maneuver == "fade_back":
+                applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, self))
+            else:
+                return
+            if not applied:
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                return
+            try:
+                max_distance = int(sr.get("battle_focus_reactive_move_max", 0) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                return
+            source = str(sr.get("battle_focus_reactive_move_source", "") or "Battle Focus").strip() or "Battle Focus"
+            moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+            attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+            moving_unit = self._resolve_unit_by_id(moving_unit_id) if moving_unit_id else None
+            attacker_unit = self._resolve_unit_by_id(attacker_unit_id) if attacker_unit_id else None
+            self._queue_reactive_move_movement_decision(
+                player=player,
+                unit=unit,
+                moving_unit=moving_unit,
+                attacker_unit=attacker_unit,
+                max_distance=max_distance,
+                kind="battle_focus",
+                movement_type="reactive",
+                source=source,
+            )
+        return
 
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -1529,7 +1967,32 @@ class Game:
                             game=self,
                         )
                         continue
-                # Non-human players: no auto movement wired (skip).
+                source = str((rule or {}).get("source", "") or "Reactive Move").strip() or "Reactive Move"
+                request = self._queue_reactive_move_confirmation(
+                    player=p,
+                    unit=root,
+                    kind="loping_speed",
+                    movement_type="loping_speed",
+                    source=source,
+                    message=None,
+                    moving_unit=moving_root,
+                    range_value=rng,
+                )
+                if request is None:
+                    continue
+                if self._player_has_optional_decision_hook(p, "LOPING_SPEED"):
+                    ctx = dict(getattr(request, "context", {}) or {})
+                    choice = bool(p._should_use_optional_ability("LOPING_SPEED", ctx))
+                    option_id = self._option_id_for_payload(request, "choice", bool(choice))
+                    if option_id:
+                        from ..utility.decision_utils import resolve_decision_command
+
+                        resolve_decision_command(
+                            self,
+                            request,
+                            option_id,
+                            player_id=getattr(p, "id", None),
+                        )
 
     def _on_fight_unit_selected_battle_focus(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None or selecting_player is None:
@@ -1595,8 +2058,17 @@ class Game:
                         manager=mgr,
                     )
             else:
-                for target_unit, hits in hits_map.items():
-                    mgr.maybe_trigger_fade_back(attacker_unit, target_unit, hits, self)
+                candidates = mgr.get_fade_back_candidates(hit_units, self)
+                if not candidates:
+                    continue
+                self._queue_battle_focus_reactive_selection(
+                    player=player,
+                    candidates=list(candidates),
+                    manager=mgr,
+                    maneuver="fade_back",
+                    attacker_unit=attacker_unit,
+                    hits_by_unit=dict(hits_map),
+                )
 
     def _on_unit_shooting_resolved_post_shoot_battleshock(
         self,
@@ -2555,7 +3027,119 @@ class Game:
                             continue
                         self.resolve_fight_phase_end_mortal_wounds(unit, model, target, spec)
 
-    def _maybe_prompt_transport_reactive_disembark(self, unit=None) -> None:
+    def _queue_transport_reactive_disembark_decisions(
+        self,
+        *,
+        player,
+        transport,
+        enemy_unit=None,
+        ability: dict | None = None,
+        trigger: str | None = None,
+    ) -> list[DecisionRequest]:
+        if player is None or transport is None:
+            return []
+        transport_id = maybe_entity_id(transport)
+        if not transport_id:
+            return []
+        enemy_unit_id = maybe_entity_id(enemy_unit) if enemy_unit is not None else None
+        ability_name = str((ability or {}).get("name", "") or "Reactive Disembark").strip() or "Reactive Disembark"
+        try:
+            rng = int((ability or {}).get("range", 0) or 0)
+        except Exception:
+            rng = 0
+
+        pending = [
+            req
+            for req in list(self.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_DISEMBARK
+            and str(getattr(req, "context", {}).get("transport_id", "")) == transport_id
+        ]
+        pending_units = {
+            str(getattr(req, "context", {}).get("unit_id", "") or "")
+            for req in pending
+            if str(getattr(req, "context", {}).get("unit_id", "") or "")
+        }
+
+        eligible = []
+        seen = set()
+        for passenger in list(getattr(transport, "transport_passengers", []) or []):
+            if passenger is None:
+                continue
+            unit_id = maybe_entity_id(passenger)
+            if not unit_id:
+                continue
+            if unit_id in seen or unit_id in pending_units:
+                continue
+            seen.add(unit_id)
+            try:
+                if getattr(passenger.round_state, "embarked_this_round", False):
+                    continue
+                if getattr(passenger.round_state, "disembarked_this_round", False):
+                    continue
+            except Exception:
+                pass
+            try:
+                if getattr(passenger, "embarked_in", None) is not transport:
+                    continue
+            except Exception:
+                pass
+            eligible.append(passenger)
+        if not eligible:
+            return []
+
+        requests: list[DecisionRequest] = []
+        for passenger in eligible:
+            unit_id = maybe_entity_id(passenger)
+            if not unit_id:
+                continue
+            options = [
+                DecisionOption.create(
+                    "Disembark",
+                    payload={"unit_id": unit_id, "transport_id": transport_id},
+                ),
+                DecisionOption.create(
+                    "Remain embarked",
+                    payload={"unit_id": unit_id, "transport_id": None},
+                ),
+            ]
+            ctx = {
+                "unit_id": unit_id,
+                "transport_id": transport_id,
+                "reactive_disembark": True,
+                "reactive_disembark_source": ability_name,
+            }
+            if enemy_unit_id:
+                ctx["reactive_disembark_enemy_unit_id"] = enemy_unit_id
+            if rng:
+                ctx["reactive_disembark_range"] = int(rng)
+            if trigger:
+                ctx["reactive_disembark_trigger"] = str(trigger)
+            request = DecisionRequest.create(
+                DECISION_DISEMBARK,
+                f"Disembark {getattr(passenger, 'name', 'Unit')}",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(request)
+            requests.append(request)
+
+            if self._player_has_optional_decision_hook(player, "TRANSPORT_REACTIVE_DISEMBARK"):
+                choice = bool(player._should_use_optional_ability("TRANSPORT_REACTIVE_DISEMBARK", dict(ctx)))
+                desired_transport = transport_id if choice else None
+                option_id = self._option_id_for_payload(request, "transport_id", desired_transport)
+                if option_id:
+                    from ..utility.decision_utils import resolve_decision_command
+
+                    resolve_decision_command(
+                        self,
+                        request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+        return requests
+
+    def _maybe_prompt_transport_reactive_disembark(self, unit=None, *, trigger: str | None = None) -> None:
         if unit is None:
             return
         if not self.is_movement_phase():
@@ -2610,21 +3194,29 @@ class Game:
             player = transport.get_parent_army().player
             if player is None:
                 raise RuntimeError("Transport reactive disembark requires a player.")
-
-            es = getattr(self, "event_system", None)
-            if es is None or not hasattr(es, "subscribers"):
-                raise RuntimeError("Event system missing for transport reactive disembark prompt.")
-            subs = getattr(es, "subscribers", None)
-            if not isinstance(subs, dict):
-                raise RuntimeError("Event system subscribers not configured.")
-            if subs.get("transport_reactive_disembark_prompt"):
-                es.publish(
-                    "transport_reactive_disembark_prompt",
+            if bool(getattr(player, "has_control", lambda: False)()):
+                es = getattr(self, "event_system", None)
+                if es is None or not hasattr(es, "subscribers"):
+                    raise RuntimeError("Event system missing for transport reactive disembark prompt.")
+                subs = getattr(es, "subscribers", None)
+                if not isinstance(subs, dict):
+                    raise RuntimeError("Event system subscribers not configured.")
+                if subs.get("transport_reactive_disembark_prompt"):
+                    es.publish(
+                        "transport_reactive_disembark_prompt",
+                        player=player,
+                        transport=transport,
+                        enemy_unit=unit,
+                        ability=ability,
+                        game=self,
+                    )
+            else:
+                self._queue_transport_reactive_disembark_decisions(
                     player=player,
                     transport=transport,
                     enemy_unit=unit,
                     ability=ability,
-                    game=self,
+                    trigger=trigger,
                 )
 
     def _on_unit_move_ended_transport_reactive_disembark(self, unit=None, action: str | None = None, **_kwargs) -> None:
@@ -2633,12 +3225,12 @@ class Game:
         action_name = (action or "").strip().lower()
         if action_name not in ("move", "advance", "fall_back"):
             return
-        self._maybe_prompt_transport_reactive_disembark(unit)
+        self._maybe_prompt_transport_reactive_disembark(unit, trigger=action_name)
 
     def _on_unit_set_up_transport_reactive_disembark(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
-        self._maybe_prompt_transport_reactive_disembark(unit)
+        self._maybe_prompt_transport_reactive_disembark(unit, trigger="set_up")
 
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
@@ -3113,6 +3705,34 @@ class Game:
                 )
                 if has_sub:
                     continue
+            if not is_human:
+                msg = (
+                    "Blood Surge: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                    "This unit cannot Blood Surge while Battle-shocked or within Engagement Range."
+                )
+                request = self._queue_reactive_move_confirmation(
+                    player=player,
+                    unit=target,
+                    kind="blood_surge",
+                    movement_type="blood_surge",
+                    source="Blood Surge",
+                    message=msg,
+                    attacker_unit=attacker_unit,
+                )
+                if request is not None and self._player_has_optional_decision_hook(player, "BLOOD_SURGE"):
+                    ctx = dict(getattr(request, "context", {}) or {})
+                    choice = bool(player._should_use_optional_ability("BLOOD_SURGE", ctx))
+                    option_id = self._option_id_for_payload(request, "choice", bool(choice))
+                    if option_id:
+                        from ..utility.decision_utils import resolve_decision_command
+
+                        resolve_decision_command(
+                            self,
+                            request,
+                            option_id,
+                            player_id=getattr(player, "id", None),
+                        )
+                continue
             move_fn = getattr(target, "auto_blood_surge_move", None)
             if callable(move_fn):
                 max_dist = int(self.roll_blood_surge_distance(target) or 0)
@@ -3745,6 +4365,7 @@ class Game:
         if apply_result.ok:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
+            self._maybe_queue_reactive_move_followup(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:
