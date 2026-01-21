@@ -6544,6 +6544,10 @@ class WargearProfile:
         """Check if weapon has Plasma Warhead keyword."""
         return 'plasma warhead' in [keyword.lower() for keyword in self.get_keywords()]
 
+    def is_linked_fire(self) -> bool:
+        """Check if weapon has Linked Fire keyword."""
+        return 'linked fire' in [keyword.lower() for keyword in self.get_keywords()]
+
     def can_shoot_plasma_warhead(self, attacker: 'Model', *, game_map: Optional['Map'] = None) -> Tuple[bool, str]:
         """
         Check if Plasma Warhead weapon can be fired this phase.

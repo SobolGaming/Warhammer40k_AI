@@ -46,6 +46,7 @@ from .dark_pacts_dialog import DarkPactsDialog
 from .martial_katah_dialog import MartialKatahDialog
 from .cabal_of_sorcerers_dialog import CabalOfSorcerersDialog
 from .deathstrike_action_dialog import DeathstrikeActionDialog
+from .linked_fire_origin_dialog import LinkedFireOriginDialog
 
 __all__ = [
     'BaseDialog',
@@ -96,4 +97,5 @@ __all__ = [
     'MartialKatahDialog',
     'CabalOfSorcerersDialog',
     'DeathstrikeActionDialog',
+    'LinkedFireOriginDialog',
 ]

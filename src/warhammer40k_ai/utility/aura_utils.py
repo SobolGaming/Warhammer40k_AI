@@ -392,3 +392,102 @@ def unit_within_horizontal_distance_of_point(unit, x: float, y: float, radius: f
             return True
     return False
 
+
+def get_eligible_linked_fire_origin_units(bearer_unit, *, game_map=None):
+    """
+    Find eligible Fire Prism units for Linked Fire origin selection.
+
+    Per Linked Fire rule: "you can measure range and determine visibility from another
+    friendly FIRE PRISM model that is visible to the bearer."
+
+    Returns list of units that are:
+    - Friendly (same army as bearer)
+    - Alive and deployed
+    - Have FIRE PRISM keywords
+    - Not the bearer unit itself
+    - Visible to the bearer (at least one model of origin visible to at least one model of bearer)
+
+    Args:
+        bearer_unit: The unit with the Linked Fire weapon
+        game_map: Optional game map for visibility checks
+
+    Returns:
+        List of eligible Fire Prism units
+    """
+    if bearer_unit is None:
+        return []
+
+    if game_map is None:
+        return []
+
+    # Get all friendly units
+    try:
+        friendly_units = list(game_map.get_friendly_units(bearer_unit))
+    except Exception:
+        return []
+
+    eligible = []
+
+    for unit in friendly_units:
+        # Skip the bearer itself
+        try:
+            from .entity_ids import get_entity_id
+            if get_entity_id(unit) == get_entity_id(bearer_unit):
+                continue
+        except Exception:
+            if unit is bearer_unit:
+                continue
+
+        # Must be alive and deployed
+        try:
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", False):
+                continue
+        except Exception:
+            continue
+
+        # Must have FIRE PRISM keywords
+        try:
+            has_fire = bool(unit.has_any_keyword("FIRE"))
+            has_prism = bool(unit.has_any_keyword("PRISM"))
+            if not (has_fire and has_prism):
+                continue
+        except Exception:
+            # Fallback: check keywords list directly
+            try:
+                keywords = [str(k).upper() for k in (getattr(unit, "keywords", []) or [])]
+                if "FIRE" not in keywords or "PRISM" not in keywords:
+                    continue
+            except Exception:
+                continue
+
+        # Must be visible to bearer (at least one model of origin visible to at least one bearer model)
+        try:
+            bearer_models = [m for m in (getattr(bearer_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            origin_models = [m for m in (getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
+
+            if not bearer_models or not origin_models:
+                continue
+
+            # Check if any bearer model can see any origin model
+            can_see_fn = getattr(game_map, "can_model_see_model", None)
+            if callable(can_see_fn):
+                visible = False
+                for bearer_model in bearer_models:
+                    for origin_model in origin_models:
+                        if can_see_fn(bearer_model, origin_model):
+                            visible = True
+                            break
+                    if visible:
+                        break
+                if not visible:
+                    continue
+        except Exception:
+            # If visibility check fails, be permissive and allow it
+            pass
+
+        eligible.append(unit)
+
+    return eligible
+

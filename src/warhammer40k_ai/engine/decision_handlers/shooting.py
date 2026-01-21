@@ -110,6 +110,56 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             model = get_model(game, str(model_id or ""))
             if model is None:
                 return ("Declaration model not found.",)
+
+        # Validate Linked Fire origin unit if present
+        linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+        if linked_fire_origin_id is not None:
+            origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
+            if origin_unit is None:
+                return ("Linked Fire origin unit not found.",)
+
+            # Get the shooting unit
+            unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
+            shooting_unit = get_unit(game, unit_id)
+            if shooting_unit is None:
+                return ("Shooting unit not found for Linked Fire validation.",)
+
+            # Validate origin unit is not the bearer
+            try:
+                from ...utility.entity_ids import get_entity_id
+                if get_entity_id(origin_unit) == get_entity_id(shooting_unit):
+                    return ("Linked Fire origin cannot be the bearer unit.",)
+            except Exception:
+                if origin_unit is shooting_unit:
+                    return ("Linked Fire origin cannot be the bearer unit.",)
+
+            # Validate origin unit is friendly
+            try:
+                shooter_army = getattr(shooting_unit, "parent_army", None) or shooting_unit.get_parent_army()
+                origin_army = getattr(origin_unit, "parent_army", None) or origin_unit.get_parent_army()
+                if shooter_army is None or origin_army is None or shooter_army is not origin_army:
+                    return ("Linked Fire origin must be friendly.",)
+            except Exception:
+                return ("Linked Fire origin must be friendly.",)
+
+            # Validate origin unit has FIRE PRISM keywords
+            try:
+                has_fire = bool(origin_unit.has_any_keyword("FIRE"))
+                has_prism = bool(origin_unit.has_any_keyword("PRISM"))
+                if not (has_fire and has_prism):
+                    return ("Linked Fire origin must have FIRE PRISM keywords.",)
+            except Exception:
+                return ("Linked Fire origin must have FIRE PRISM keywords.",)
+
+            # Validate origin unit is alive and deployed
+            try:
+                if not getattr(origin_unit, "is_alive", lambda: False)():
+                    return ("Linked Fire origin must be alive.",)
+                if not getattr(origin_unit, "deployed", False):
+                    return ("Linked Fire origin must be deployed.",)
+            except Exception:
+                return ("Linked Fire origin must be alive and deployed.",)
+
     return ()
 
 
@@ -192,6 +242,12 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         else:
             # Normal single-target shooting
             entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
+            # Linked Fire: add origin unit if present
+            linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+            if linked_fire_origin_id is not None:
+                origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
+                if origin_unit is not None:
+                    entry["linked_fire_origin_unit"] = origin_unit
             fd_ids = decl.get("firing_deck_source_model_ids")
             if isinstance(fd_ids, list) and fd_ids:
                 fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]

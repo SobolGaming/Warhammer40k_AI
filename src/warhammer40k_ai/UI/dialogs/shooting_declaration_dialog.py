@@ -1057,6 +1057,10 @@ class ShootingDeclarationDialog(BaseDialog):
                 "target_unit_id": get_entity_id(target_unit),
                 "model_ids": model_ids,
             }
+            # Linked Fire: add origin unit ID if present
+            linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+            if linked_fire_origin_id is not None:
+                entry["linked_fire_origin_unit_id"] = str(linked_fire_origin_id)
             fd_models = list(decl.get("firing_deck_source_models") or [])
             if fd_models:
                 entry["firing_deck_source_model_ids"] = [get_entity_id(m) for m in fd_models if m is not None]
@@ -1290,6 +1294,12 @@ class ShootingDeclarationDialog(BaseDialog):
     def select_weapon_for_targeting(self, weapon_profile, weapon_instance=1):
         """Select a weapon and enter targeting mode"""
         print(f"INFO: select_weapon_for_targeting called with {weapon_profile.parent_wargear.name} #{weapon_instance}")
+
+        # Check if weapon has Linked Fire - if so, open origin selection dialog
+        if hasattr(weapon_profile, 'is_linked_fire') and weapon_profile.is_linked_fire():
+            self._open_linked_fire_origin_dialog(weapon_profile, weapon_instance)
+            return
+
         self.selected_weapon = weapon_profile
         self.selected_weapon_instance = weapon_instance
         self.selected_weapon_group = None
@@ -1380,6 +1390,9 @@ class ShootingDeclarationDialog(BaseDialog):
                     'models': [weapon_info['model']],  # Single model per declaration
                     'weapon_instance': weapon_info['weapon_instance']
                 }
+                # Linked Fire: add origin unit ID if present
+                if hasattr(self, '_linked_fire_origin_unit_id') and self._linked_fire_origin_unit_id is not None:
+                    decl['linked_fire_origin_unit_id'] = self._linked_fire_origin_unit_id
                 # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
                 try:
                     sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
@@ -1410,6 +1423,9 @@ class ShootingDeclarationDialog(BaseDialog):
                 'models': assigned_model,
                 'weapon_instance': weapon_instance
             }
+            # Linked Fire: add origin unit ID if present
+            if hasattr(self, '_linked_fire_origin_unit_id') and self._linked_fire_origin_unit_id is not None:
+                decl['linked_fire_origin_unit_id'] = self._linked_fire_origin_unit_id
             # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
             try:
                 sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
@@ -1438,7 +1454,72 @@ class ShootingDeclarationDialog(BaseDialog):
             self.selected_weapon = None
             self.selected_weapon_instance = None
             self.selected_weapon_group = None
+            self._linked_fire_origin_unit_id = None  # Clear Linked Fire state
             self.visible = True  # Reopen dialog
+
+    def _open_linked_fire_origin_dialog(self, weapon_profile, weapon_instance=1):
+        """Open dialog to select Linked Fire origin unit."""
+        print(f"INFO: Opening Linked Fire origin selection for {weapon_profile.parent_wargear.name}")
+
+        # Get eligible Fire Prism units
+        from ...utility.aura_utils import get_eligible_linked_fire_origin_units
+        eligible_units = get_eligible_linked_fire_origin_units(self.unit, game_map=self.game_map)
+
+        # Store weapon selection for after dialog closes
+        self._pending_linked_fire_weapon = weapon_profile
+        self._pending_linked_fire_instance = weapon_instance
+
+        def on_confirm(origin_unit_id):
+            """Handle Linked Fire origin selection."""
+            # Store the origin unit ID for this weapon
+            self._linked_fire_origin_unit_id = origin_unit_id
+
+            # Continue to normal targeting mode
+            self.selected_weapon = self._pending_linked_fire_weapon
+            self.selected_weapon_instance = self._pending_linked_fire_instance
+            self.selected_weapon_group = None
+            self.is_targeting_mode = True
+            self.visible = False
+
+            # Set weapon profile on game view for range visualization
+            if hasattr(self, 'game_view') and self.game_view:
+                self.game_view.selected_weapon_profile = self._pending_linked_fire_weapon
+
+            if origin_unit_id is None:
+                print(f"INFO: Linked Fire: using bearer position (normal Attacks)")
+            else:
+                print(f"INFO: Linked Fire: using origin unit {origin_unit_id} (Attacks=1)")
+
+            print(f"INFO: Selected {self._pending_linked_fire_weapon.parent_wargear.name} #{self._pending_linked_fire_instance} for targeting - click on battlefield")
+
+        def on_cancel():
+            """Handle Linked Fire dialog cancel."""
+            self._pending_linked_fire_weapon = None
+            self._pending_linked_fire_instance = None
+            self._linked_fire_origin_unit_id = None
+            self.visible = True  # Reopen shooting dialog
+
+        # Create and show dialog
+        from .linked_fire_origin_dialog import LinkedFireOriginDialog
+        if not hasattr(self, '_linked_fire_dialog'):
+            self._linked_fire_dialog = LinkedFireOriginDialog(self.screen_width, self.screen_height)
+
+        self._linked_fire_dialog.show(
+            title="Linked Fire Origin",
+            header=f"Select Fire Prism origin for {weapon_profile.parent_wargear.name}",
+            subtitle="Choose 'None' to use bearer position with normal Attacks, or select a Fire Prism to measure from.",
+            eligible_units=eligible_units,
+            on_confirm=on_confirm,
+            on_cancel=on_cancel
+        )
+
+        # Open dialog via dialog manager
+        if hasattr(self, 'game_view') and self.game_view and hasattr(self.game_view, 'dialog_manager'):
+            try:
+                self.game_view.dialog_manager.open(self._linked_fire_dialog, modal=True)
+            except Exception as e:
+                print(f"ERROR: Failed to open Linked Fire dialog: {e}")
+                on_cancel()
 
             # Clear weapon profile on game view to remove range visualization
             if hasattr(self, 'game_view') and self.game_view:

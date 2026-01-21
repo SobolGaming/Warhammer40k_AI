@@ -46,7 +46,7 @@ class TestOneShot(unittest.TestCase):
 
         u = Unit.__new__(Unit)
         u.name = "Shooter"
-        u._can_model_shoot_weapon_at_target = lambda model, weapon_profile, target_unit, game_map: True
+        u._can_model_shoot_weapon_at_target = lambda model, weapon_profile, target_unit, game_map, *, origin_unit=None: True
 
         profile = _DummyProfile(key="Hunter-killer missile")
         wargear = _DummyWargear(profile)

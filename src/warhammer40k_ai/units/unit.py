@@ -11357,9 +11357,10 @@ class Unit:
             target_unit = declaration['target_unit']
             models_with_weapon = declaration['models']
             weapon_instance = declaration.get('weapon_instance', None)
+            linked_fire_origin_unit = declaration.get('linked_fire_origin_unit', None)
             try:
                 # Validate this declaration
-                validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map)
+                validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map, linked_fire_origin_unit=linked_fire_origin_unit)
                 if not validation['valid']:
                     print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
                     continue
@@ -11374,6 +11375,7 @@ class Unit:
                     hit_tracker=hit_tracker,
                     hit_models_by_target=hit_models_by_target,
                     attack_context=attack_context,
+                    linked_fire_origin_unit=linked_fire_origin_unit,
                 )
                 successful_attacks += weapon_attacks
             finally:
@@ -11430,22 +11432,22 @@ class Unit:
 
         return successful_attacks > 0
     
-    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map) -> dict:
+    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None) -> dict:
         """Validate a shooting declaration"""
         # Check if target is an enemy unit
         if target_unit.get_parent_army() == self.get_parent_army():
             return {"valid": False, "reason": "Cannot target friendly units"}
-        
+
         # Check if target is alive
         if not target_unit.is_alive():
             return {"valid": False, "reason": "Target unit is destroyed"}
-        
+
         # Check if unit can shoot after advancing
         if self.round_state.advanced_this_round:
             # Unit method already checks both weapon-specific and unit-specific abilities
             if not self.can_shoot_after_advance(weapon_profile):
                 return {"valid": False, "reason": "Unit advanced and cannot shoot with this weapon"}
-        
+
         # Check if unit can shoot after falling back
         if self.round_state.fell_back_this_round:
             if not self.can_shoot_after_fall_back(weapon_profile):
@@ -11460,20 +11462,20 @@ class Unit:
         reason = self._thrill_seekers_restriction_reason(target_unit, game)
         if reason:
             return {"valid": False, "reason": reason}
-        
+
         # Check if any models can actually shoot this weapon at the target
         models_in_range = []
         for model in models_with_weapon:
             if not model.is_alive:
                 continue
-                
+
             # Check if this model has the weapon
             has_weapon = False
             for wargear in model.wargear:
                 if weapon_profile.parent_wargear == wargear:
                     has_weapon = True
                     break
-            
+
             if not has_weapon:
                 continue
 
@@ -11487,18 +11489,26 @@ class Unit:
             except Exception:
                 # If anything goes wrong, do not block the shot.
                 pass
-                
-            # Check range and line of sight
-            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map):
+
+            # Check range and line of sight (use origin unit for Linked Fire if provided)
+            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
                 models_in_range.append(model)
-        
+
         if not models_in_range:
             return {"valid": False, "reason": "No models in range or line of sight"}
-            
+
         return {"valid": True, "reason": "Valid shooting declaration"}
     
-    def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map) -> bool:
-        """Check if a specific model can shoot a weapon at a target"""
+    def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map, *, origin_unit=None) -> bool:
+        """Check if a specific model can shoot a weapon at a target
+
+        Args:
+            model: The model shooting
+            weapon_profile: The weapon being used
+            target_unit: The target unit
+            game_map: The game map
+            origin_unit: Optional origin unit for Linked Fire (measure range/LOS from this unit instead of bearer)
+        """
         # INDIRECT FIRE + TORRENT: Torrent weapons cannot be used "via Indirect Fire" when no target models are visible.
         # Practical enforcement: if a weapon has both keywords, require visibility to at least one target model.
         try:
@@ -11546,29 +11556,51 @@ class Unit:
                 if game_map.is_within_engagement_range(friendly, target_unit):
                     return False
 
+        # Linked Fire: measure range and LOS from origin unit models instead of bearer
+        # When origin_unit is provided, use its models for range/LOS measurement
+        measuring_models = [model]  # Default: measure from the shooting model
+        if origin_unit is not None:
+            # Use origin unit's models for measurement
+            measuring_models = [m for m in origin_unit.models if getattr(m, "is_alive", False)]
+            if not measuring_models:
+                return False  # Origin unit has no alive models
+
         # Check range using base-to-base closest-point distance (not centroid-to-centroid, not model height)
         min_distance = float('inf')
         target_models = target_unit.get_models_for_collision()
         from ..utility.aura_utils import distance_between_models_bases_3d
-        for target_model in target_models:
-            if not target_model.is_alive:
-                continue
-            distance = float(distance_between_models_bases_3d(model, target_model))
-            min_distance = min(min_distance, distance)
-        
+        for measuring_model in measuring_models:
+            for target_model in target_models:
+                if not target_model.is_alive:
+                    continue
+                distance = float(distance_between_models_bases_3d(measuring_model, target_model))
+                min_distance = min(min_distance, distance)
+
         if min_distance > weapon_profile.range.max:
             return False
 
         # Check line of sight (INDIRECT FIRE weapons can target without LOS)
+        # For Linked Fire, check LOS from origin unit models
+        has_los = False
         try:
             if not getattr(weapon_profile, "is_indirect_fire", lambda: False)():
-                if not self._has_line_of_sight_to_target(model, target_unit, game_map):
+                for measuring_model in measuring_models:
+                    if self._has_line_of_sight_to_target(measuring_model, target_unit, game_map):
+                        has_los = True
+                        break
+                if not has_los:
                     return False
+            else:
+                has_los = True  # Indirect fire doesn't need LOS
         except Exception:
             # If anything goes wrong determining indirect/LOS, fall back to requiring LOS
-            if not self._has_line_of_sight_to_target(model, target_unit, game_map):
+            for measuring_model in measuring_models:
+                if self._has_line_of_sight_to_target(measuring_model, target_unit, game_map):
+                    has_los = True
+                    break
+            if not has_los:
                 return False
-            
+
         # Check Lone Operative restriction
         if target_unit.has_lone_operative():
             # Lone Operative units can only be targeted if the attacking model is within 12 inches
@@ -11583,11 +11615,11 @@ class Unit:
                     return False
         except Exception:
             pass
-            
+
         # Check engagement range restrictions
         if not self._can_shoot_while_engaged(model, weapon_profile, target_unit, game_map):
             return False
-            
+
         return True
 
     def is_target_closest_eligible(
@@ -11989,10 +12021,15 @@ class Unit:
         hit_tracker=None,
         hit_models_by_target=None,
         attack_context: Optional[dict] = None,
+        linked_fire_origin_unit=None,
     ) -> int:
-        """Execute attacks with a specific weapon profile"""
+        """Execute attacks with a specific weapon profile
+
+        Args:
+            linked_fire_origin_unit: Optional origin unit for Linked Fire (measure range/LOS from this unit, Attacks=1)
+        """
         successful_attacks = 0
-        
+
         for model in models_with_weapon:
             if not model.is_alive:
                 continue
@@ -12015,9 +12052,9 @@ class Unit:
                 used = getattr(model, "_one_shot_used", set())
                 if key and key in used:
                     continue
-                
-            # Check if this model can still shoot this weapon at this target
-            if not self._can_model_shoot_weapon_at_target(model, active_profile, target_unit, game_map):
+
+            # Check if this model can still shoot this weapon at this target (use origin unit for Linked Fire)
+            if not self._can_model_shoot_weapon_at_target(model, active_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
                 continue
                 
             # Verify the model has this weapon
@@ -12038,15 +12075,30 @@ class Unit:
                 weapon_display = f"{active_profile.parent_wargear.name}"
                 if weapon_instance:
                     weapon_display += f" #{weapon_instance}"
-                print(f"{model.name} attacking with {weapon_display}")
-                
+
+                # Linked Fire: apply Attacks=1 override when using origin unit
+                attacks_override = None
+                attacks_override_note = None
+                if linked_fire_origin_unit is not None:
+                    attacks_override = 1
+                    attacks_override_note = "Linked Fire"
+                    print(f"{model.name} attacking with {weapon_display} (Linked Fire from {linked_fire_origin_unit.name})")
+                else:
+                    print(f"{model.name} attacking with {weapon_display}")
+
                 # Execute the attack using the weapon profile (pass game_map for cover/terrain context)
                 try:
                     attack_result = active_profile.attack(
-                        target_unit, model, game_map=game_map, attack_context=attack_context
+                        target_unit,
+                        model,
+                        game_map=game_map,
+                        attack_context=attack_context,
+                        attacks_override=attacks_override,
+                        attacks_override_note=attacks_override_note,
                     )
                 except TypeError as exc:
-                    if "attack_context" in str(exc):
+                    if "attack_context" in str(exc) or "attacks_override" in str(exc):
+                        # Fallback for older attack signatures
                         attack_result = active_profile.attack(
                             target_unit, model, game_map=game_map
                         )
