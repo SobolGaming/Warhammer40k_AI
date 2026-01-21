@@ -1,1 +1,3 @@
-* text=auto eol=lf
+# Treat PDFs as binary to prevent line-ending normalization and stop diff/merge drivers
+# from touching the file contents (avoids corruption on checkout/merge).
+*.pdf binary
