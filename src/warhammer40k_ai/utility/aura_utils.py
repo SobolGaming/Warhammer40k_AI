@@ -155,32 +155,18 @@ def unit_within_range_of_point_3d(
     if not alive_models:
         return False
 
-    # Check if any model is within radius of the point
+    # Check if any model is within radius of the point (edge-to-point distance)
     for model in alive_models:
         base = getattr(model, "model_base", None)
         if base is None:
             continue
-
-        try:
-            # Get model position
-            mx = float(getattr(base, "x", 0.0))
-            my = float(getattr(base, "y", 0.0))
-            mz = float(getattr(base, "z", 0.0))
-
-            # Calculate 2D distance from point to model center
-            dxy = float(math.hypot(mx - px, my - py))
-
-            # For 3D distance, we need to account for vertical separation
-            # The point is on the ground (z=0), so vertical distance is just model's z
-            dz = abs(mz)
-
-            # 3D distance
-            dist_3d = float(math.hypot(dxy, dz))
-
-            if dist_3d <= r:
-                return True
-        except Exception:
+        dxy = float(horizontal_distance_point_to_base_2d(base, px, py))
+        if math.isinf(dxy):
             continue
+        dz = abs(float(getattr(base, "z", 0.0)))
+        dist_3d = float(math.hypot(dxy, dz))
+        if dist_3d <= r:
+            return True
 
     return False
 
@@ -414,10 +400,7 @@ def get_eligible_linked_fire_origin_units(bearer_unit, *, game_map=None):
     Returns:
         List of eligible Fire Prism units
     """
-    if bearer_unit is None:
-        return []
-
-    if game_map is None:
+    if bearer_unit is None or game_map is None:
         return []
 
     # Get all friendly units
@@ -427,67 +410,79 @@ def get_eligible_linked_fire_origin_units(bearer_unit, *, game_map=None):
         return []
 
     eligible = []
-
     for unit in friendly_units:
-        # Skip the bearer itself
-        try:
-            from .entity_ids import get_entity_id
-            if get_entity_id(unit) == get_entity_id(bearer_unit):
-                continue
-        except Exception:
-            if unit is bearer_unit:
-                continue
-
-        # Must be alive and deployed
-        try:
-            if not getattr(unit, "is_alive", lambda: False)():
-                continue
-            if not getattr(unit, "deployed", False):
-                continue
-        except Exception:
-            continue
-
-        # Must have FIRE PRISM keywords
-        try:
-            has_fire = bool(unit.has_any_keyword("FIRE"))
-            has_prism = bool(unit.has_any_keyword("PRISM"))
-            if not (has_fire and has_prism):
-                continue
-        except Exception:
-            # Fallback: check keywords list directly
-            try:
-                keywords = [str(k).upper() for k in (getattr(unit, "keywords", []) or [])]
-                if "FIRE" not in keywords or "PRISM" not in keywords:
-                    continue
-            except Exception:
-                continue
-
-        # Must be visible to bearer (at least one model of origin visible to at least one bearer model)
-        try:
-            bearer_models = [m for m in (getattr(bearer_unit, "models", []) or []) if getattr(m, "is_alive", True)]
-            origin_models = [m for m in (getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
-
-            if not bearer_models or not origin_models:
-                continue
-
-            # Check if any bearer model can see any origin model
-            can_see_fn = getattr(game_map, "can_model_see_model", None)
-            if callable(can_see_fn):
-                visible = False
-                for bearer_model in bearer_models:
-                    for origin_model in origin_models:
-                        if can_see_fn(bearer_model, origin_model):
-                            visible = True
-                            break
-                    if visible:
-                        break
-                if not visible:
-                    continue
-        except Exception:
-            # If visibility check fails, be permissive and allow it
-            pass
-
-        eligible.append(unit)
+        if _is_linked_fire_origin_eligible(bearer_unit, unit, game_map=game_map):
+            eligible.append(unit)
 
     return eligible
 
+
+def _unit_is_alive(unit) -> bool:
+    if unit is None:
+        return False
+    alive = getattr(unit, "is_alive", None)
+    if callable(alive):
+        return bool(alive())
+    return bool(alive)
+
+
+def _model_is_alive(model) -> bool:
+    alive = getattr(model, "is_alive", True)
+    if callable(alive):
+        return bool(alive())
+    return bool(alive)
+
+
+def unit_has_fire_prism_keyword(unit) -> bool:
+    if unit is None:
+        return False
+    try:
+        if unit.has_any_keyword("Fire Prism"):
+            return True
+    except AttributeError:
+        pass
+    keywords = []
+    try:
+        keywords = list(getattr(unit, "get_effective_keywords")() or [])
+    except AttributeError:
+        keywords = list(getattr(unit, "keywords", []) or [])
+    keyword_set = {str(k or "").strip().lower() for k in keywords if str(k or "").strip()}
+    if "fire prism" in keyword_set:
+        return True
+    return "fire" in keyword_set and "prism" in keyword_set
+
+
+def linked_fire_origin_is_visible(bearer_unit, origin_unit, *, game_map=None) -> bool:
+    if bearer_unit is None or origin_unit is None or game_map is None:
+        return False
+    can_see_fn = getattr(game_map, "can_model_see_model", None)
+    if not callable(can_see_fn):
+        return False
+    bearer_models = [m for m in (getattr(bearer_unit, "models", []) or []) if _model_is_alive(m)]
+    origin_models = [m for m in (getattr(origin_unit, "models", []) or []) if _model_is_alive(m)]
+    if not bearer_models or not origin_models:
+        return False
+    for bearer_model in bearer_models:
+        for origin_model in origin_models:
+            if can_see_fn(bearer_model, origin_model):
+                return True
+    return False
+
+
+def _is_linked_fire_origin_eligible(bearer_unit, origin_unit, *, game_map=None) -> bool:
+    if bearer_unit is None or origin_unit is None or game_map is None:
+        return False
+    try:
+        from .entity_ids import get_entity_id
+        if get_entity_id(origin_unit) == get_entity_id(bearer_unit):
+            return False
+    except ValueError:
+        if origin_unit is bearer_unit:
+            return False
+    if not _unit_is_alive(origin_unit):
+        return False
+    if not bool(getattr(origin_unit, "deployed", False)):
+        return False
+    if not unit_has_fire_prism_keyword(origin_unit):
+        return False
+    return linked_fire_origin_is_visible(bearer_unit, origin_unit, game_map=game_map)

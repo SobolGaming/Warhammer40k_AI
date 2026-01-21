@@ -88,31 +88,49 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     if not isinstance(declarations, list) or not declarations:
         return ("Shooting declaration requires declarations list.",)
     force_target_id = str(request.context.get("force_target_unit_id", "") or "")
+    out_of_phase = bool(request.context.get("out_of_phase", False))
     for decl in declarations:
         if not isinstance(decl, dict):
             return ("Declaration entry must be a dict.",)
         wargear_id = str(decl.get("wargear_id", "") or "")
         profile_name = str(decl.get("profile_name", "") or "")
-        target_id = str(decl.get("target_unit_id", "") or "")
         model_ids = decl.get("model_ids")
-        if not wargear_id or not profile_name or not target_id:
-            return ("Declaration missing wargear_id/profile_name/target_unit_id.",)
-        if force_target_id and target_id != force_target_id:
-            return ("Declaration target must match forced target unit.",)
+        if not wargear_id or not profile_name:
+            return ("Declaration missing wargear_id/profile_name.",)
         wargear = get_wargear(game, wargear_id)
         if wargear is None:
             return ("Declaration wargear not found.",)
         profiles = getattr(wargear, "profiles", {}) or {}
         if profile_name not in profiles:
             return ("Declaration weapon profile not found.",)
-        if get_unit(game, target_id) is None:
-            return ("Declaration target unit not found.",)
+        profile = profiles.get(profile_name)
+        is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
+        target_id = str(decl.get("target_unit_id", "") or "")
+        if not is_plasma_warhead:
+            if not target_id:
+                return ("Declaration missing target_unit_id.",)
+            if force_target_id and target_id != force_target_id:
+                return ("Declaration target must match forced target unit.",)
+            if get_unit(game, target_id) is None:
+                return ("Declaration target unit not found.",)
+        else:
+            if force_target_id:
+                return ("Plasma Warhead cannot be used with a forced target unit.",)
         if not isinstance(model_ids, list) or not model_ids:
             return ("Declaration requires model_ids list.",)
+        models = []
         for model_id in model_ids:
             model = get_model(game, str(model_id or ""))
             if model is None:
                 return ("Declaration model not found.",)
+            models.append(model)
+
+        if is_plasma_warhead and profile is not None:
+            can_shoot_fn = getattr(profile, "can_shoot_plasma_warhead", None)
+            if callable(can_shoot_fn):
+                can_shoot, reason = can_shoot_fn(models[0], out_of_phase=out_of_phase)
+                if not can_shoot:
+                    return (str(reason or "Plasma Warhead cannot be fired."),)
 
         # Validate Linked Fire origin unit if present
         linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
@@ -128,31 +146,30 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 return ("Shooting unit not found for Linked Fire validation.",)
 
             # Validate origin unit is not the bearer
-            try:
-                from ...utility.entity_ids import get_entity_id
-                if get_entity_id(origin_unit) == get_entity_id(shooting_unit):
+            from ...utility.entity_ids import maybe_entity_id
+            origin_entity_id = maybe_entity_id(origin_unit)
+            shooting_entity_id = maybe_entity_id(shooting_unit)
+            if origin_entity_id and shooting_entity_id:
+                if origin_entity_id == shooting_entity_id:
                     return ("Linked Fire origin cannot be the bearer unit.",)
-            except Exception:
-                if origin_unit is shooting_unit:
-                    return ("Linked Fire origin cannot be the bearer unit.",)
+            elif origin_unit is shooting_unit:
+                return ("Linked Fire origin cannot be the bearer unit.",)
 
             # Validate origin unit is friendly
-            try:
-                shooter_army = getattr(shooting_unit, "parent_army", None) or shooting_unit.get_parent_army()
-                origin_army = getattr(origin_unit, "parent_army", None) or origin_unit.get_parent_army()
-                if shooter_army is None or origin_army is None or shooter_army is not origin_army:
-                    return ("Linked Fire origin must be friendly.",)
-            except Exception:
+            shooter_army = getattr(shooting_unit, "parent_army", None)
+            if shooter_army is None and hasattr(shooting_unit, "get_parent_army"):
+                shooter_army = shooting_unit.get_parent_army()
+            origin_army = getattr(origin_unit, "parent_army", None)
+            if origin_army is None and hasattr(origin_unit, "get_parent_army"):
+                origin_army = origin_unit.get_parent_army()
+            if shooter_army is None or origin_army is None or shooter_army is not origin_army:
                 return ("Linked Fire origin must be friendly.",)
 
-            # Validate origin unit has FIRE PRISM keywords
-            try:
-                has_fire = bool(origin_unit.has_any_keyword("FIRE"))
-                has_prism = bool(origin_unit.has_any_keyword("PRISM"))
-                if not (has_fire and has_prism):
-                    return ("Linked Fire origin must have FIRE PRISM keywords.",)
-            except Exception:
-                return ("Linked Fire origin must have FIRE PRISM keywords.",)
+            from ...utility.aura_utils import unit_has_fire_prism_keyword, linked_fire_origin_is_visible
+
+            # Validate origin unit has FIRE PRISM keyword
+            if not unit_has_fire_prism_keyword(origin_unit):
+                return ("Linked Fire origin must have FIRE PRISM keyword.",)
 
             # Validate origin unit is alive and deployed
             try:
@@ -162,6 +179,11 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                     return ("Linked Fire origin must be deployed.",)
             except Exception:
                 return ("Linked Fire origin must be alive and deployed.",)
+
+            # Validate origin unit is visible to bearer (visibility is required)
+            game_map = getattr(game, "map", None)
+            if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
+                return ("Linked Fire origin must be visible to the bearer unit.",)
 
     return ()
 
@@ -186,9 +208,12 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         profile = getattr(wargear, "profiles", {}).get(profile_name)
         if profile is None:
             continue
-        target_unit = get_unit(game, str(decl.get("target_unit_id", "") or ""))
-        if target_unit is None:
-            continue
+        is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
+        target_unit = None
+        if not is_plasma_warhead:
+            target_unit = get_unit(game, str(decl.get("target_unit_id", "") or ""))
+            if target_unit is None:
+                continue
         models = []
         for model_id in list(decl.get("model_ids") or []):
             model = get_model(game, str(model_id or ""))
@@ -197,66 +222,19 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         if not models:
             continue
 
-        # Check if this is a Plasma Warhead weapon (AoE around marker)
-        is_plasma_warhead = bool(getattr(profile, "is_plasma_warhead", lambda: False)())
-        if is_plasma_warhead:
-            # Plasma Warhead hits ALL units within 6" of the marker (3D distance)
-            army = unit.get_parent_army()
-            deathstrike_mgr = getattr(army, "deathstrike", None)
-            if deathstrike_mgr is None:
-                print(f"⚠️ Plasma Warhead: No Deathstrike manager found")
-                continue
-
-            marker_pos = deathstrike_mgr.get_marker_position(unit_id)
-            if marker_pos is None:
-                print(f"⚠️ Plasma Warhead: No marker found for {unit.name}")
-                continue
-
-            # Get all units within 6" of marker (both friendly and enemy)
-            from ...utility.aura_utils import get_units_within_range_of_point_3d
-            all_units = list(getattr(game_map, "units", []) or [])
-            units_in_aoe = get_units_within_range_of_point_3d(
-                marker_pos,
-                6.0,  # 6" radius
-                all_units,
-                use_attached_aggregate=True
-            )
-
-            if not units_in_aoe:
-                print(f"⚠️ Plasma Warhead: No units within 6\" of marker at ({marker_pos[0]:.1f}\", {marker_pos[1]:.1f}\")")
-                continue
-
-            print(f"💥 Plasma Warhead: Hitting {len(units_in_aoe)} units within 6\" of marker")
-
-            # Create a separate declaration for each unit in the AoE
-            for aoe_target in units_in_aoe:
-                if not getattr(aoe_target, "is_alive", lambda: False)():
-                    continue
-                entry = {"weapon_profile": profile, "target_unit": aoe_target, "models": models}
-                fd_ids = decl.get("firing_deck_source_model_ids")
-                if isinstance(fd_ids, list) and fd_ids:
-                    fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
-                    if fd_models:
-                        entry["firing_deck_source_models"] = fd_models
-                declarations.append(entry)
-
-            # Mark Deathstrike as fired (ONE SHOT)
-            deathstrike_mgr.mark_deathstrike_fired(unit_id)
-        else:
-            # Normal single-target shooting
-            entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
-            # Linked Fire: add origin unit if present
-            linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
-            if linked_fire_origin_id is not None:
-                origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
-                if origin_unit is not None:
-                    entry["linked_fire_origin_unit"] = origin_unit
-            fd_ids = decl.get("firing_deck_source_model_ids")
-            if isinstance(fd_ids, list) and fd_ids:
-                fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
-                if fd_models:
-                    entry["firing_deck_source_models"] = fd_models
-            declarations.append(entry)
+        entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
+        # Linked Fire: add origin unit if present
+        linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+        if linked_fire_origin_id is not None:
+            origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
+            if origin_unit is not None:
+                entry["linked_fire_origin_unit"] = origin_unit
+        fd_ids = decl.get("firing_deck_source_model_ids")
+        if isinstance(fd_ids, list) and fd_ids:
+            fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]
+            if fd_models:
+                entry["firing_deck_source_models"] = fd_models
+        declarations.append(entry)
     if not declarations:
         return False
     return bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
@@ -342,6 +320,23 @@ def _validate_deathstrike_action(game: object, request: DecisionRequest, result:
     unit = get_unit(game, unit_id)
     if unit is None:
         return ("Unit not found.",)
+    if not bool(getattr(unit, "has_plasma_warhead_weapon", lambda: False)()):
+        return ("Deathstrike action requires a Plasma Warhead weapon.",)
+    if not bool(getattr(unit, "_is_controlling_players_shooting_phase", lambda: False)()):
+        return ("Deathstrike action must be used in your Shooting phase.",)
+
+    army = unit.get_parent_army()
+    deathstrike_mgr = getattr(army, "deathstrike", None)
+    if deathstrike_mgr is None:
+        return ("Deathstrike manager not found for army.",)
+    if action == "designate":
+        can_designate, reason = deathstrike_mgr.can_designate_target(unit_id)
+        if not can_designate:
+            return (str(reason or "Cannot Designate Target."),)
+    if action == "adjust":
+        can_adjust, reason = deathstrike_mgr.can_adjust_target(unit_id)
+        if not can_adjust:
+            return (str(reason or "Cannot Adjust Target."),)
 
     # Validate position if designate or adjust
     if action in ("designate", "adjust"):
@@ -349,10 +344,19 @@ def _validate_deathstrike_action(game: object, request: DecisionRequest, result:
         if not isinstance(position, (list, tuple)) or len(position) != 2:
             return ("Deathstrike action requires position as [x, y].",)
         try:
-            float(position[0])
-            float(position[1])
+            x = float(position[0])
+            y = float(position[1])
         except (TypeError, ValueError):
             return ("Position coordinates must be numeric.",)
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return ("Deathstrike action requires a battlefield map.",)
+        width = getattr(game_map, "width", None)
+        height = getattr(game_map, "height", None)
+        if not isinstance(width, (int, float)) or not isinstance(height, (int, float)):
+            return ("Deathstrike action requires battlefield bounds.",)
+        if x < 0 or y < 0 or x > float(width) or y > float(height):
+            return ("Position must be on the battlefield.",)
 
     return ()
 
@@ -382,10 +386,10 @@ def _apply_deathstrike_action(game: object, request: DecisionRequest, result: De
 
     if action == "designate":
         deathstrike_mgr.place_marker(unit_id, position)
-        print(f"✅ Deathstrike marker placed at ({position[0]:.1f}\", {position[1]:.1f}\")")
+        print(f"INFO: Deathstrike marker placed at ({position[0]:.1f}, {position[1]:.1f})")
     elif action == "adjust":
         deathstrike_mgr.move_marker(unit_id, position)
-        print(f"✅ Deathstrike marker moved to ({position[0]:.1f}\", {position[1]:.1f}\")")
+        print(f"INFO: Deathstrike marker moved to ({position[0]:.1f}, {position[1]:.1f})")
 
     return None
 

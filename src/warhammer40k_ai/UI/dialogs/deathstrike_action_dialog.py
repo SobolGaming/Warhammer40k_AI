@@ -49,9 +49,9 @@ class DeathstrikeActionDialog(BaseDialog):
         # Get Deathstrike manager
         army = unit.get_parent_army()
         self.deathstrike_mgr = getattr(army, "deathstrike", None)
-        
-        if self.deathstrike_mgr is None:
-            print("❌ Deathstrike: No manager found")
+
+        if self.deathstrike_mgr is None or not bool(getattr(unit, "has_plasma_warhead_weapon", lambda: False)()):
+            print("ERROR: Deathstrike: No manager found")
             self.hide()
             return
         
@@ -263,4 +263,3 @@ class DeathstrikeActionDialog(BaseDialog):
         self.draw_button(screen, 'adjust', "Adjust", disabled=not self.can_adjust)
         self.draw_button(screen, 'none', "None")
         self.draw_button(screen, 'cancel', "Cancel")
-

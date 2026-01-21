@@ -29,6 +29,7 @@ Issue checklist for implementing the `Linked Fire` wargear keyword:
     - Validates origin is friendly (same army)
     - Validates origin has FIRE + PRISM keywords
     - Validates origin is alive and deployed
+    - Validates origin is visible to the bearer (server-side LOS check)
 - [x] **Engine: Pass origin unit through declaration chain**
   - Modified `_apply_declare_shots()` in `shooting.py` to extract origin unit from payload and add to declaration entry
   - Modified `execute_shooting_declarations()` in `unit.py` to extract origin unit and pass to validation and attack methods

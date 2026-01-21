@@ -47,7 +47,7 @@ class TestLinkedFireEligibility(unittest.TestCase):
         unit = Unit.__new__(Unit)
         unit.name = name
         unit._id = name.lower().replace(" ", "_")
-        unit.keywords = ["FIRE", "PRISM", "VEHICLE"]
+        unit.keywords = ["Fire Prism", "Vehicle"]
         unit.deployed = True
         
         # Create a model
@@ -103,7 +103,7 @@ class TestLinkedFireEligibility(unittest.TestCase):
         other_unit = Unit.__new__(Unit)
         other_unit.name = "Other Unit"
         other_unit._id = "other_unit"
-        other_unit.keywords = ["VEHICLE"]
+        other_unit.keywords = ["Vehicle"]
         other_unit.deployed = True
         other_unit.models = [SimpleNamespace(is_alive=True, x=15.0, y=0.0, z=0.0, facing=0.0, base_size=1.0, height=5.0)]
         other_unit.is_alive = lambda: True
@@ -122,6 +122,24 @@ class TestLinkedFireEligibility(unittest.TestCase):
 
         self.assertEqual(len(eligible), 1)
         self.assertEqual(eligible[0], fire_prism)
+
+    def test_eligible_units_requires_visibility(self):
+        """Test that visibility is required for Linked Fire origin."""
+        army = SimpleNamespace()
+        army.units = []
+
+        bearer = self._create_fire_prism("Bearer Prism", army)
+        other = self._create_fire_prism("Other Prism", army, x=10.0)
+
+        army.units = [bearer, other]
+
+        game_map = SimpleNamespace()
+        game_map.can_model_see_model = lambda m1, m2: False
+        game_map.get_friendly_units = lambda u: [bearer, other]
+
+        eligible = get_eligible_linked_fire_origin_units(bearer, game_map=game_map)
+
+        self.assertEqual(len(eligible), 0)
     
     def test_eligible_units_requires_same_army(self):
         """Test that only friendly units (same army) are eligible."""
@@ -158,7 +176,7 @@ class TestLinkedFireRangeAndLOS(unittest.TestCase):
         unit = Unit.__new__(Unit)
         unit.name = name
         unit._id = name.lower().replace(" ", "_")
-        unit.keywords = ["FIRE", "PRISM", "VEHICLE"] if "Prism" in name else ["VEHICLE"]
+        unit.keywords = ["Fire Prism", "Vehicle"] if "Prism" in name else ["Vehicle"]
         unit.deployed = True
         # is_vehicle and is_monster are properties, so we can't set them directly
         # They are derived from keywords, so setting keywords is sufficient
@@ -324,4 +342,3 @@ class TestLinkedFireAttacksOverride(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

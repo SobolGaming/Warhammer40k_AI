@@ -230,30 +230,34 @@ class TestPlasmaWarheadEligibility:
 class TestAoEResolution:
     """Test AoE resolution around marker using 3D distance."""
 
+    def _make_model(self, x: float, y: float, z: float):
+        from types import SimpleNamespace
+        from src.warhammer40k_ai.utility.model_base import Base, BaseType
+
+        base = Base(BaseType.CIRCULAR, 1.0)
+        base.set_position(x, y, z)
+        return SimpleNamespace(is_alive=True, model_base=base)
+
     def test_unit_within_range_of_point_2d(self):
         """Test unit within range of point (2D, z=0)."""
         from types import SimpleNamespace
 
         # Mock unit with model at (35, 20, 0)
-        model = SimpleNamespace()
-        model.is_alive = True
-        model.model_base = SimpleNamespace(x=35.0, y=20.0, z=0.0)
+        model = self._make_model(35.0, 20.0, 0.0)
 
         unit = SimpleNamespace()
         unit.get_attached_unit_models = lambda: [model]
 
-        # Marker at (30, 20) - 5" away horizontally
-        assert unit_within_range_of_point_3d(unit, (30.0, 20.0), 6.0)
-        assert not unit_within_range_of_point_3d(unit, (30.0, 20.0), 4.0)
+        # Marker at (30, 20): 5" from center, 4" from base edge
+        assert unit_within_range_of_point_3d(unit, (30.0, 20.0), 4.0)
+        assert not unit_within_range_of_point_3d(unit, (30.0, 20.0), 3.0)
 
     def test_unit_within_range_of_point_3d(self):
         """Test unit within range of point (3D distance)."""
         from types import SimpleNamespace
 
         # Mock unit with model at (30, 20, 4) - 4" above ground
-        model = SimpleNamespace()
-        model.is_alive = True
-        model.model_base = SimpleNamespace(x=30.0, y=20.0, z=4.0)
+        model = self._make_model(30.0, 20.0, 4.0)
 
         unit = SimpleNamespace()
         unit.get_attached_unit_models = lambda: [model]
@@ -268,9 +272,7 @@ class TestAoEResolution:
 
         # Create 3 mock units at different distances
         def make_unit(x, y, z):
-            model = SimpleNamespace()
-            model.is_alive = True
-            model.model_base = SimpleNamespace(x=x, y=y, z=z)
+            model = self._make_model(x, y, z)
             unit = SimpleNamespace()
             unit.get_attached_unit_models = lambda: [model]
             return unit
@@ -287,4 +289,3 @@ class TestAoEResolution:
         assert unit1 in units_in_range
         assert unit2 in units_in_range
         assert unit3 not in units_in_range
-

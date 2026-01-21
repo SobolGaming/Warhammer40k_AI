@@ -6432,6 +6432,26 @@ class Unit:
             pass
         return False
 
+    def get_plasma_warhead_models(self) -> list:
+        """Return alive models in this unit that have a Plasma Warhead weapon."""
+        models = []
+        for model in list(getattr(self, "models", []) or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for wargear in list(getattr(model, "wargear", []) or []):
+                profiles = getattr(wargear, "profiles", {}) or {}
+                for profile in profiles.values():
+                    if bool(getattr(profile, "is_plasma_warhead", lambda: False)()):
+                        models.append(model)
+                        break
+                if models and models[-1] is model:
+                    break
+        return models
+
+    def has_plasma_warhead_weapon(self) -> bool:
+        """Return True if any alive model in this unit has a Plasma Warhead weapon."""
+        return bool(self.get_plasma_warhead_models())
+
     @property
     def movement(self) -> int:
         if not getattr(self, "models", None):
@@ -11603,6 +11623,19 @@ class Unit:
             models_with_weapon = declaration['models']
             weapon_instance = declaration.get('weapon_instance', None)
             linked_fire_origin_unit = declaration.get('linked_fire_origin_unit', None)
+            if target_unit is None and bool(getattr(weapon_profile, "is_plasma_warhead", lambda: False)()):
+                weapon_attacks = self._resolve_plasma_warhead_declaration(
+                    weapon_profile,
+                    models_with_weapon,
+                    game_map,
+                    hit_tracker=hit_tracker,
+                    hit_models_by_target=hit_models_by_target,
+                    attack_context=attack_context,
+                    out_of_phase=out_of_phase,
+                    weapon_instance=weapon_instance,
+                )
+                successful_attacks += weapon_attacks
+                continue
             try:
                 # Validate this declaration
                 validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map, linked_fire_origin_unit=linked_fire_origin_unit)
@@ -11624,12 +11657,13 @@ class Unit:
                 )
                 successful_attacks += weapon_attacks
             finally:
-                tid = get_entity_id(target_unit)
-                entry = remaining_by_target.get(tid)
-                if entry is not None:
-                    entry["count"] = int(entry.get("count", 0) or 0) - 1
-                    if entry["count"] <= 0:
-                        self._resolve_pending_attack_mortal_wounds(attack_context, entry["unit"], game_map=game_map)
+                if target_unit is not None:
+                    tid = get_entity_id(target_unit)
+                    entry = remaining_by_target.get(tid)
+                    if entry is not None:
+                        entry["count"] = int(entry.get("count", 0) or 0) - 1
+                        if entry["count"] <= 0:
+                            self._resolve_pending_attack_mortal_wounds(attack_context, entry["unit"], game_map=game_map)
 
         try:
             game = self.get_parent_army().player.game
@@ -11743,6 +11777,100 @@ class Unit:
             return {"valid": False, "reason": "No models in range or line of sight"}
 
         return {"valid": True, "reason": "Valid shooting declaration"}
+
+    def _resolve_plasma_warhead_declaration(
+        self,
+        weapon_profile,
+        models_with_weapon,
+        game_map,
+        *,
+        hit_tracker=None,
+        hit_models_by_target=None,
+        attack_context: Optional[dict] = None,
+        out_of_phase: bool = False,
+        weapon_instance=None,
+    ) -> int:
+        if weapon_profile is None or game_map is None:
+            return 0
+        if not models_with_weapon:
+            return 0
+
+        eligible_models = []
+        one_shot_key = ""
+        if getattr(weapon_profile, "is_one_shot", lambda: False)():
+            one_shot_key = getattr(weapon_profile, "one_shot_key", lambda: "")()
+        for model in models_with_weapon:
+            if not getattr(model, "is_alive", False):
+                continue
+            if one_shot_key:
+                used = getattr(model, "_one_shot_used", set())
+                if one_shot_key in used:
+                    continue
+            if not self._model_has_weapon_profile(model, weapon_profile):
+                continue
+            eligible_models.append(model)
+
+        if not eligible_models:
+            return 0
+
+        can_shoot_fn = getattr(weapon_profile, "can_shoot_plasma_warhead", None)
+        if callable(can_shoot_fn):
+            can_shoot, reason = can_shoot_fn(eligible_models[0], out_of_phase=out_of_phase)
+            if not can_shoot:
+                print(f"{self.name} - {weapon_profile.name}: {reason}")
+                return 0
+
+        army = self.get_parent_army()
+        deathstrike_mgr = getattr(army, "deathstrike", None)
+        if deathstrike_mgr is None:
+            print(f"{self.name} - {weapon_profile.name}: Deathstrike manager missing")
+            return 0
+        from ..utility.entity_ids import get_entity_id
+        unit_id = get_entity_id(self)
+        marker_pos = deathstrike_mgr.get_marker_position(unit_id)
+        if marker_pos is None:
+            print(f"{self.name} - {weapon_profile.name}: No Deathstrike marker")
+            return 0
+
+        from ..utility.aura_utils import get_units_within_range_of_point_3d
+        all_units = list(getattr(game_map, "units", []) or [])
+        units_in_aoe = get_units_within_range_of_point_3d(
+            marker_pos,
+            6.0,
+            all_units,
+            use_attached_aggregate=True,
+        )
+
+        if not units_in_aoe:
+            for model in eligible_models:
+                self._mark_one_shot_used(model, one_shot_key)
+            deathstrike_mgr.mark_deathstrike_fired(unit_id)
+            print(f"{self.name} - {weapon_profile.name}: No units within 6\" of marker")
+            return 0
+
+        successful_attacks = 0
+        for target_unit in units_in_aoe:
+            if not getattr(target_unit, "is_alive", lambda: False)():
+                continue
+            successful_attacks += self._execute_weapon_attacks(
+                weapon_profile,
+                target_unit,
+                eligible_models,
+                game_map,
+                weapon_instance=weapon_instance,
+                hit_tracker=hit_tracker,
+                hit_models_by_target=hit_models_by_target,
+                attack_context=attack_context,
+                skip_one_shot=True,
+                skip_target_checks=True,
+            )
+            if attack_context is not None:
+                self._resolve_pending_attack_mortal_wounds(attack_context, target_unit, game_map=game_map)
+
+        for model in eligible_models:
+            self._mark_one_shot_used(model, one_shot_key)
+        deathstrike_mgr.mark_deathstrike_fired(unit_id)
+        return successful_attacks
     
     def _can_model_shoot_weapon_at_target(self, model, weapon_profile, target_unit, game_map, *, origin_unit=None) -> bool:
         """Check if a specific model can shoot a weapon at a target
@@ -11866,6 +11994,23 @@ class Unit:
             return False
 
         return True
+
+    def _model_has_weapon_profile(self, model, weapon_profile) -> bool:
+        """Return True if the model has the specified weapon profile equipped."""
+        for wargear in list(getattr(model, "wargear", []) or []):
+            for profile in (getattr(wargear, "profiles", {}) or {}).values():
+                if profile is weapon_profile:
+                    return True
+        return False
+
+    def _mark_one_shot_used(self, model, key: str) -> None:
+        if not key:
+            return
+        used = getattr(model, "_one_shot_used", set())
+        if not isinstance(used, set):
+            used = set()
+        used.add(key)
+        setattr(model, "_one_shot_used", used)
 
     def is_target_closest_eligible(
         self,
@@ -12267,6 +12412,8 @@ class Unit:
         hit_models_by_target=None,
         attack_context: Optional[dict] = None,
         linked_fire_origin_unit=None,
+        skip_one_shot: bool = False,
+        skip_target_checks: bool = False,
     ) -> int:
         """Execute attacks with a specific weapon profile
 
@@ -12292,25 +12439,19 @@ class Unit:
                         append_dice(player, f"Bubblechukka rolled {roll}: using {selected.name}")
 
             # ONE SHOT: prevent repeated use (per model)
-            if getattr(active_profile, "is_one_shot", lambda: False)():
+            if not skip_one_shot and getattr(active_profile, "is_one_shot", lambda: False)():
                 key = getattr(active_profile, "one_shot_key", lambda: "")()
                 used = getattr(model, "_one_shot_used", set())
                 if key and key in used:
                     continue
 
             # Check if this model can still shoot this weapon at this target (use origin unit for Linked Fire)
-            if not self._can_model_shoot_weapon_at_target(model, active_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
-                continue
-                
+            if not skip_target_checks:
+                if not self._can_model_shoot_weapon_at_target(model, active_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
+                    continue
+
             # Verify the model has this weapon
-            has_weapon = False
-            for wargear in model.wargear:
-                for profile_name, profile in wargear.profiles.items():
-                    if profile == active_profile:
-                        has_weapon = True
-                        break
-                if has_weapon:
-                    break
+            has_weapon = self._model_has_weapon_profile(model, active_profile)
             
             if not has_weapon:
                 continue
@@ -12374,14 +12515,9 @@ class Unit:
                 successful_attacks += 1
 
                 # Mark ONE SHOT weapons as expended after firing (hit or miss).
-                if getattr(active_profile, "is_one_shot", lambda: False)():
+                if not skip_one_shot and getattr(active_profile, "is_one_shot", lambda: False)():
                     key = getattr(active_profile, "one_shot_key", lambda: "")()
-                    if key:
-                        used = getattr(model, "_one_shot_used", set())
-                        if not isinstance(used, set):
-                            used = set()
-                        used.add(key)
-                        setattr(model, "_one_shot_used", used)
+                    self._mark_one_shot_used(model, key)
             except Exception as e:
                 print(f"Error executing attack with {weapon_profile.name}: {e}")
                 # Don't increment successful_attacks if there was an exception

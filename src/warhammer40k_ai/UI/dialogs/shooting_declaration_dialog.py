@@ -131,7 +131,7 @@ class ShootingDeclarationDialog(BaseDialog):
             if self.unit:
                 army = self.unit.get_parent_army()
                 deathstrike_mgr = getattr(army, "deathstrike", None)
-                if deathstrike_mgr is not None:
+                if deathstrike_mgr is not None and bool(getattr(self.unit, "has_plasma_warhead_weapon", lambda: False)()):
                     has_deathstrike = True
 
             # Add Deathstrike button if available
@@ -371,6 +371,15 @@ class ShootingDeclarationDialog(BaseDialog):
             return False
         if self.unit.round_state.fell_back_this_round and not self.unit.can_shoot_after_fall_back(weapon_profile):
             return False
+        if hasattr(weapon_profile, "is_plasma_warhead") and weapon_profile.is_plasma_warhead():
+            models = list(getattr(self.unit, "get_plasma_warhead_models", lambda: [])() or [])
+            if not models:
+                return False
+            can_shoot_fn = getattr(weapon_profile, "can_shoot_plasma_warhead", None)
+            if callable(can_shoot_fn):
+                can_shoot, _reason = can_shoot_fn(models[0], out_of_phase=self.out_of_phase)
+                if not can_shoot:
+                    return False
         return True
 
     def _try_start_deathstrike(self) -> bool:
@@ -382,8 +391,8 @@ class ShootingDeclarationDialog(BaseDialog):
         # Check if unit has Deathstrike capability
         army = self.unit.get_parent_army()
         deathstrike_mgr = getattr(army, "deathstrike", None)
-        if deathstrike_mgr is None:
-            print("❌ Deathstrike: No Deathstrike manager found")
+        if deathstrike_mgr is None or not bool(getattr(self.unit, "has_plasma_warhead_weapon", lambda: False)()):
+            print("ERROR: Deathstrike: No Deathstrike manager found")
             return False
 
         # Import the Deathstrike dialog
@@ -1045,8 +1054,6 @@ class ShootingDeclarationDialog(BaseDialog):
             if not profile_name:
                 continue
             target_unit = decl.get("target_unit")
-            if target_unit is None:
-                continue
             models = list(decl.get("models") or [])
             model_ids = [get_entity_id(m) for m in models if m is not None]
             if not model_ids:
@@ -1054,9 +1061,13 @@ class ShootingDeclarationDialog(BaseDialog):
             entry = {
                 "wargear_id": get_entity_id(wargear),
                 "profile_name": profile_name,
-                "target_unit_id": get_entity_id(target_unit),
                 "model_ids": model_ids,
             }
+            if target_unit is not None:
+                entry["target_unit_id"] = get_entity_id(target_unit)
+            else:
+                if not bool(getattr(weapon_profile, "is_plasma_warhead", lambda: False)()):
+                    continue
             # Linked Fire: add origin unit ID if present
             linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
             if linked_fire_origin_id is not None:
@@ -1284,7 +1295,11 @@ class ShootingDeclarationDialog(BaseDialog):
                 weapon_name += f" - {declaration['weapon_profile'].name}"
             weapon_instance = declaration.get('weapon_instance', 1)
             weapon_name += f" #{weapon_instance}"
-            target_name = declaration['target_unit'].name[:15] + "..." if len(declaration['target_unit'].name) > 15 else declaration['target_unit'].name
+            target_unit = declaration.get('target_unit')
+            if target_unit is None:
+                target_name = "Deathstrike marker"
+            else:
+                target_name = target_unit.name[:15] + "..." if len(target_unit.name) > 15 else target_unit.name
             declaration_text = f"{weapon_name} -> {target_name}"
             text_surface = font_small.render(declaration_text, True, self.text_color)
             screen.blit(text_surface, (x + 5, declaration_y + 5))
@@ -1294,6 +1309,11 @@ class ShootingDeclarationDialog(BaseDialog):
     def select_weapon_for_targeting(self, weapon_profile, weapon_instance=1):
         """Select a weapon and enter targeting mode"""
         print(f"INFO: select_weapon_for_targeting called with {weapon_profile.parent_wargear.name} #{weapon_instance}")
+
+        # Plasma Warhead: no target selection, resolve from marker
+        if hasattr(weapon_profile, 'is_plasma_warhead') and weapon_profile.is_plasma_warhead():
+            self._add_plasma_warhead_declaration(weapon_profile, weapon_instance=weapon_instance)
+            return
 
         # Check if weapon has Linked Fire - if so, open origin selection dialog
         if hasattr(weapon_profile, 'is_linked_fire') and weapon_profile.is_linked_fire():
@@ -1316,6 +1336,9 @@ class ShootingDeclarationDialog(BaseDialog):
     def select_weapon_group_for_targeting(self, weapon_group_info):
         """Select a weapon group and enter targeting mode"""
         print(f"INFO: select_weapon_group_for_targeting called with {weapon_group_info['profile'].parent_wargear.name} (x{weapon_group_info['count']})")
+        if hasattr(weapon_group_info['profile'], 'is_plasma_warhead') and weapon_group_info['profile'].is_plasma_warhead():
+            self._add_plasma_warhead_group_declarations(weapon_group_info)
+            return
         self.selected_weapon = weapon_group_info['profile']
         self.selected_weapon_group = weapon_group_info
         self.selected_weapon_instance = None
@@ -1456,6 +1479,35 @@ class ShootingDeclarationDialog(BaseDialog):
             self.selected_weapon_group = None
             self._linked_fire_origin_unit_id = None  # Clear Linked Fire state
             self.visible = True  # Reopen dialog
+
+    def _add_plasma_warhead_declaration(self, weapon_profile, *, weapon_instance=1):
+        """Add a Plasma Warhead declaration without selecting a target."""
+        assigned_model = self._get_model_for_weapon_instance(weapon_profile, weapon_instance)
+        if not assigned_model:
+            print("ERROR: Plasma Warhead: no model assigned")
+            return
+        decl = {
+            'weapon_profile': weapon_profile,
+            'target_unit': None,
+            'models': assigned_model,
+            'weapon_instance': weapon_instance,
+        }
+        self.weapon_declarations.append(decl)
+        print(f"INFO: {self.unit.name} declared Plasma Warhead (marker-based) with {weapon_profile.parent_wargear.name} #{weapon_instance}")
+        self.visible = True
+
+    def _add_plasma_warhead_group_declarations(self, weapon_group_info):
+        """Add Plasma Warhead declarations for each weapon instance in a group."""
+        for weapon_info in weapon_group_info['individual_weapons']:
+            decl = {
+                'weapon_profile': weapon_group_info['profile'],
+                'target_unit': None,
+                'models': [weapon_info['model']],
+                'weapon_instance': weapon_info['weapon_instance'],
+            }
+            self.weapon_declarations.append(decl)
+        print(f"INFO: {self.unit.name} declared Plasma Warhead group (x{weapon_group_info['count']})")
+        self.visible = True
 
     def _open_linked_fire_origin_dialog(self, weapon_profile, weapon_instance=1):
         """Open dialog to select Linked Fire origin unit."""

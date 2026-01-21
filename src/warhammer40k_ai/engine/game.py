@@ -1075,6 +1075,10 @@ class Game:
             army = p.get_army()
             if army is None:
                 raise RuntimeError(f"Phase-end cleanup requires an army for {p.name}.")
+            if pname == "SHOOTING_PHASE":
+                deathstrike_mgr = getattr(army, "deathstrike", None)
+                if deathstrike_mgr is not None:
+                    deathstrike_mgr.clear_phase_usage()
             for u in list(army.units):
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):

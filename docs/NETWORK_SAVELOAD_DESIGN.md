@@ -169,9 +169,13 @@ Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `f
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
 - shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]}
+- linked_fire_origin_dialog: DECLARE_SHOTS {unit_id, declarations[].linked_fire_origin_unit_id | None}
+- deathstrike_action_dialog: DEATHSTRIKE_ACTION {unit_id, action, position?}
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
 - overwatch_shooter_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (also used for stratagem unit selection; context may include enemy_unit_id)
 - roll_reroll_dialog: REROLL_ROLL {roll_id, reroll_all_or_one, die_index}
+Notes:
+- DECLARE_SHOTS declarations include wargear_id, profile_name, model_ids, target_unit_id (optional for Plasma Warhead), linked_fire_origin_unit_id (optional for Linked Fire).
 
 Charge:
 - charge_declaration_dialog: DECLARE_CHARGE {unit_id, target_unit_ids[]}

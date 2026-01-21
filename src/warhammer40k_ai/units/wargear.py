@@ -6578,7 +6578,13 @@ class WargearProfile:
         """Check if weapon has Psychic Assassin keyword."""
         return 'psychic assassin' in [keyword.lower() for keyword in self.get_keywords()]
 
-    def can_shoot_plasma_warhead(self, attacker: 'Model', *, game_map: Optional['Map'] = None) -> Tuple[bool, str]:
+    def can_shoot_plasma_warhead(
+        self,
+        attacker: 'Model',
+        *,
+        game_map: Optional['Map'] = None,
+        out_of_phase: bool = False,
+    ) -> Tuple[bool, str]:
         """
         Check if Plasma Warhead weapon can be fired this phase.
 
@@ -6593,33 +6599,35 @@ class WargearProfile:
         if not self.is_plasma_warhead():
             return True, "Not a Plasma Warhead weapon"
 
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False, "Plasma Warhead requires a parent unit"
+        if out_of_phase or not bool(getattr(unit, "_is_controlling_players_shooting_phase", lambda: False)()):
+            return False, "Plasma Warhead can only be fired in your Shooting phase"
+
+        # Check Remained Stationary
+        if not bool(getattr(getattr(unit, "round_state", None), "remained_stationary_this_round", False)):
+            return False, "Plasma Warhead requires unit to Remain Stationary"
+
+        army = getattr(unit, "get_parent_army", lambda: None)()
+        deathstrike_mgr = getattr(army, "deathstrike", None)
+        if deathstrike_mgr is None:
+            return False, "No Deathstrike manager found"
+
         try:
-            unit = attacker.parent_unit
-            army = unit.get_parent_army()
+            from ..utility.entity_ids import get_entity_id
+            unit_id = get_entity_id(unit)
+        except ValueError:
+            return False, "Unit ID not found"
 
-            # Check Remained Stationary
-            if not getattr(unit.round_state, "remained_stationary_this_round", False):
-                return False, "Plasma Warhead requires unit to Remain Stationary"
+        if not deathstrike_mgr.has_marker(unit_id):
+            return False, "No Deathstrike marker placed (use Designate Target first)"
 
-            # Check for Deathstrike marker
-            deathstrike_mgr = getattr(army, "deathstrike", None)
-            if deathstrike_mgr is None:
-                return False, "No Deathstrike manager found"
+        # Check if Designate/Adjust was used this phase
+        if deathstrike_mgr.used_designate_adjust_this_phase(unit_id):
+            return False, "Cannot fire Plasma Warhead in same phase as Designate/Adjust"
 
-            unit_id = getattr(unit, "_id", None)
-            if not unit_id:
-                return False, "Unit ID not found"
-
-            if not deathstrike_mgr.has_marker(unit_id):
-                return False, "No Deathstrike marker placed (use Designate Target first)"
-
-            # Check if Designate/Adjust was used this phase
-            if deathstrike_mgr.used_designate_adjust_this_phase(unit_id):
-                return False, "Cannot fire Plasma Warhead in same phase as Designate/Adjust"
-
-            return True, "OK"
-        except Exception as e:
-            return False, f"Error checking Plasma Warhead eligibility: {e}"
+        return True, "OK"
 
     def is_conversion(self) -> bool:
         """Check if weapon has Conversion keyword."""
