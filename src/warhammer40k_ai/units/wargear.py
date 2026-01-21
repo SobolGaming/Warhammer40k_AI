@@ -5392,7 +5392,20 @@ class WargearProfile:
             pass
 
         # Calculate save value
-        save_value = target_model.save - ap
+        save_base = target_model.save
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None and hasattr(t_unit, "get_model_save_characteristic_override"):
+                save_override, save_reason = t_unit.get_model_save_characteristic_override(target_model)
+                if save_override:
+                    save_base = int(save_override)
+                    save_result["base_save"] = int(save_override)
+                    if save_reason:
+                        save_result["special_effects"].append(f"Save characteristic set ({save_reason})")
+        except Exception:
+            save_base = target_model.save
+
+        save_value = save_base - ap
         save_result['final_save'] = save_value
         inv_save, inv_save_condition = target_model.inv_save
 

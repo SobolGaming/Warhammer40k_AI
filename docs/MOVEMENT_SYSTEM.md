@@ -184,6 +184,14 @@ Currently supported pattern:
 - “Each time this model ends a Normal or Advance move … roll X D6; for each Y+, that enemy
   unit suffers Z mortal wounds.” (fixed dice count and fixed mortal-per-success only).
 
+#### Reactive enemy-move D6 triggers
+
+Some abilities allow a reactive Normal move when an enemy unit ends a Normal, Advance, or
+Fall Back move within range (e.g., Trail Finding / Loping Speed). The engine:
+- Parses matching ability text via `_ENEMY_MOVE_REACTIVE_D6_RE`.
+- Listens for `unit_move_ended` (move/advance/fall_back) and checks 3D range + engagement.
+- Prompts the controlling player and rolls D6 for max distance, enforcing once per turn.
+
 ### Aircraft movement
 
 AIRCRAFT movement uses a dedicated path (see `Unit._aircraft_normal_move()`):

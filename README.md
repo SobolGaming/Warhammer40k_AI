@@ -89,6 +89,7 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
   - [Dialog manager](docs/DIALOG_MANAGER.md): modal dialog routing and stacking behavior.
   - [Player configuration](docs/PLAYER_CONFIGURATION.md): controller ownership and UI enablement.
 - **Networking and save/load**
+  - [Network gameplay plan](docs/NETWORK_GAMEPLAY.md): asyncio WebSocket architecture, lobby flow, and role-based play.
   - [Network + save/load design](docs/NETWORK_SAVELOAD_DESIGN.md): snapshot, event log, and decision API plan.
 - **Faction support docs**
   - [Adepta Sororitas](docs/factions/adepta_sororitas.md): faction abilities, detachments, stratagems, enhancements, datasheets.

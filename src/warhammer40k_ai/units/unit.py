@@ -49,7 +49,9 @@ class UnitRoundState:
     fell_back_this_round: bool = False
     reinforced_this_round: bool = False
     attempted_charge_this_round: bool = False  # Track if unit attempted a charge (prevents multiple attempts)
-    charged_this_round: bool = False  # Track if unit successfully charged (determines fight eligibility)
+    charged_this_round: bool = False  # Track if unit successfully made a charge move (charge bonus may be suppressed)
+    charge_bonus_suppressed_turn: Optional[int] = None
+    charge_bonus_suppressed_turn_owner: Optional[str] = None
     moved_this_round: bool = False  # Track if unit has moved during movement phase
     num_lost_models_this_round: int = 0
     advance_roll: int = None  # Store advance roll for the round
@@ -882,8 +884,17 @@ class Unit:
     )
     _ENEMY_MOVE_REACTIVE_D6_RE = re.compile(
         r"once\s+per\s+turn,?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
-        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model|unit).*?"
-        r"not\s+within\s+engagement\s+range.*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+d6",
+        r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model(?: s)? unit|unit|model)"
+        r"(?:\s+if\s+this\s+unit\s+is\s+not\s+within\s+engagement\s+range\s+of\s+(?:one\s+or\s+more|any)\s+enemy\s+units?)?"
+        r".*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move>d6|\d+)",
+        re.IGNORECASE,
+    )
+    _SETUP_REACTIVE_SHOOT_CHARGE_RE = re.compile(
+        r"at\s+the\s+end\s+of\s+your\s+opponent'?s?\s+movement\s+phase.*?"
+        r"select\s+one\s+enemy\s+unit\s+that\s+was\s+set\s+up\s+on\s+the\s+battlefield\s+within\s+(?P<range>\d+).*?"
+        r"(?:this\s+model|this\s+unit)\s+can\s+then\s+either.*?"
+        r"shoot\s+at\s+that\s+unit.*?eligible\s+target.*?"
+        r"declare\s+a\s+charge\s+against\s+that\s+unit.*?does\s+not\s+receive\s+any\s+charge\s+bonus",
         re.IGNORECASE,
     )
     _REROLL_ADVANCE_CHARGE_RE = re.compile(
@@ -1067,6 +1078,10 @@ class Unit:
     }
     _BEARER_INVULNERABLE_SAVE_RE = re.compile(
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
+        re.IGNORECASE,
+    )
+    _BEARER_SAVE_CHARACTERISTIC_RE = re.compile(
+        r"^the bearer has a save characteristic of (\d)\+\.?$",
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(
@@ -2080,6 +2095,8 @@ class Unit:
                 if isinstance(cache, dict):
                     for k in list(cache.keys()):
                         if k == "feel_no_pain" or k == "deep_strike" or k.startswith("target_hit_penalty:") or k.startswith("model_invulnerable_save:"):
+                            del cache[k]
+                        if k.startswith("model_save_characteristic:"):
                             del cache[k]
             except Exception:
                 pass
@@ -7017,6 +7034,22 @@ class Unit:
         except Exception:
             return None
 
+    def _parse_bearer_save_characteristic(self, text: str) -> Optional[int]:
+        if not text:
+            return None
+        normalized = self._normalize_rules_text(text)
+        if not normalized:
+            return None
+        normalized = normalized.replace("\u2019", "'")
+        normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
+        m = self._BEARER_SAVE_CHARACTERISTIC_RE.match(normalized)
+        if not m:
+            return None
+        try:
+            return int(m.group(1))
+        except Exception:
+            return None
+
     def get_model_invulnerable_save_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
         """
         Return (invulnerable_save_value, source_name) for bearer-only invuln wargear abilities.
@@ -7090,6 +7123,82 @@ class Unit:
                     if best_value is None or val < best_value:
                         best_value = int(val)
                         best_source = str(source or "Bearer unit ability")
+        except Exception:
+            pass
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = (best_value, best_source)
+        return best_value, best_source
+
+    def get_model_save_characteristic_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
+        """
+        Return (save_value, source_name) for bearer-only save characteristic overrides.
+        """
+        if model is None:
+            return None, None
+        cache_key = f"model_save_characteristic:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        best_value: Optional[int] = None
+        best_source: Optional[str] = None
+
+        # Model-level abilities (if any)
+        try:
+            for ab in getattr(model, "abilities", {}).values():
+                try:
+                    desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                    name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Model ability")
+                except Exception:
+                    desc = ""
+                    name = "Model ability"
+                val = self._parse_bearer_save_characteristic(desc)
+                if val is None:
+                    continue
+                if best_value is None or val < best_value:
+                    best_value = val
+                    best_source = str(name or "Model ability")
+        except Exception:
+            pass
+
+        # Wargear abilities tied to equipped items.
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = getattr(ab, "name", "") or ""
+                if not name:
+                    continue
+                if not self._model_has_wargear_named(model, name):
+                    continue
+                desc = getattr(ab, "description", "") or ""
+                val = self._parse_bearer_save_characteristic(desc)
+                if val is None:
+                    continue
+                if best_value is None or val < best_value:
+                    best_value = val
+                    best_source = str(name)
+            except Exception:
+                continue
+
+        # Unit-level abilities on single-model units.
+        try:
+            if len(list(getattr(self, "models", []) or [])) == 1:
+                for ab in list(getattr(self, "possible_abilities", []) or []):
+                    try:
+                        desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                        name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Unit ability")
+                    except Exception:
+                        desc = ""
+                        name = "Unit ability"
+                    val = self._parse_bearer_save_characteristic(desc)
+                    if val is None:
+                        continue
+                    if best_value is None or val < best_value:
+                        best_value = val
+                        best_source = str(name or "Unit ability")
         except Exception:
             pass
 
@@ -16017,7 +16126,73 @@ class Unit:
                     rng = 0
                 if rng <= 0:
                     rng = 9
+                move_token = str(m.group("move") or "").strip().lower()
                 source = str(name or "Loping Speed").strip() or "Loping Speed"
+                rule = {"range": int(rng), "source": source}
+                if move_token:
+                    if move_token.isdigit():
+                        try:
+                            move_value = int(move_token)
+                        except Exception:
+                            move_value = 0
+                        if move_value > 0:
+                            rule["max_distance"] = int(move_value)
+                    else:
+                        rule["distance_roll"] = move_token.upper()
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_setup_reactive_shoot_or_charge_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "At the end of your opponent's Movement phase, you can select one enemy unit that was set up on the battlefield
+        within 12\" of this model; this model can then either shoot at that unit (if eligible) or declare a charge
+        against that unit (no Charge bonus)."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "setup_reactive_shoot_or_charge_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                m = self._SETUP_REACTIVE_SHOOT_CHARGE_RE.search(text)
+                if not m:
+                    continue
+                try:
+                    rng = int(m.group("range") or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0:
+                    rng = 12
+                source = str(name or "Reactive Response").strip() or "Reactive Response"
                 rule = {"range": int(rng), "source": source}
                 break
             if rule is not None:
@@ -16044,6 +16219,152 @@ class Unit:
             current_player = None
         owner = str(getattr(current_player, "name", "") or "")
         return f"{br}:{owner}"
+
+    def _setup_reactive_shoot_or_charge_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        try:
+            owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            owner = ""
+        phase = ""
+        try:
+            phase = str(getattr(getattr(game, "phase", None), "name", "") or "")
+        except Exception:
+            phase = ""
+        return f"{br}:{owner}:{phase}"
+
+    def setup_reactive_shoot_or_charge_used_this_phase(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._setup_reactive_shoot_or_charge_turn_key(game)
+        return str(sr.get("setup_reactive_shoot_or_charge_used_key", "")) == key
+
+    def mark_setup_reactive_shoot_or_charge_used(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["setup_reactive_shoot_or_charge_used_key"] = self._setup_reactive_shoot_or_charge_turn_key(game)
+        root.special_rules = sr
+
+    def record_setup_reactive_shoot_or_charge_candidate(self, enemy_unit, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if enemy_unit is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        key = self._setup_reactive_shoot_or_charge_turn_key(game)
+        if str(sr.get("setup_reactive_shoot_or_charge_candidates_key", "")) != key:
+            sr["setup_reactive_shoot_or_charge_candidates"] = []
+        sr["setup_reactive_shoot_or_charge_candidates_key"] = key
+        try:
+            enemy_id = get_entity_id(enemy_unit)
+        except Exception:
+            enemy_id = None
+        if not enemy_id:
+            root.special_rules = sr
+            return
+        candidates = list(sr.get("setup_reactive_shoot_or_charge_candidates", []) or [])
+        if enemy_id not in candidates:
+            candidates.append(enemy_id)
+        sr["setup_reactive_shoot_or_charge_candidates"] = candidates
+        root.special_rules = sr
+
+    def get_setup_reactive_shoot_or_charge_candidates(self, game=None) -> list[str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return []
+        key = self._setup_reactive_shoot_or_charge_turn_key(game)
+        if str(sr.get("setup_reactive_shoot_or_charge_candidates_key", "")) != key:
+            return []
+        return list(sr.get("setup_reactive_shoot_or_charge_candidates", []) or [])
+
+    def clear_setup_reactive_shoot_or_charge_candidates(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        key = self._setup_reactive_shoot_or_charge_turn_key(game)
+        if str(sr.get("setup_reactive_shoot_or_charge_candidates_key", "")) != key:
+            return
+        sr.pop("setup_reactive_shoot_or_charge_candidates", None)
+        sr.pop("setup_reactive_shoot_or_charge_candidates_key", None)
+        root.special_rules = sr
+
+    def can_setup_reactive_shoot_or_charge(
+        self,
+        game=None,
+        game_map=None,
+        *,
+        enemy_unit=None,
+        range_override: Optional[int] = None,
+    ) -> bool:
+        rule = self.get_setup_reactive_shoot_or_charge_rule()
+        if not rule:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        if not root.is_alive() or not getattr(root, "deployed", False):
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if root.setup_reactive_shoot_or_charge_used_this_phase(game):
+            return False
+        if enemy_unit is not None and game_map is not None:
+            try:
+                rng = int(range_override or rule.get("range", 12) or 12)
+            except Exception:
+                rng = 12
+            try:
+                from ..utility.aura_utils import unit_within_range_of_unit
+                if not unit_within_range_of_unit(root, enemy_unit, float(rng), use_attached_aggregate=True):
+                    return False
+            except Exception:
+                return False
+        return True
 
     def loping_speed_used_this_turn(self, game=None) -> bool:
         try:
@@ -17532,6 +17853,48 @@ class Unit:
             if allow_within_3 and self._model_within_range_of_unit(model, target_unit, 3.0):
                 eligible.append(model)
         return eligible
+
+    def _charge_bonus_suppressed_key(self, game=None) -> tuple[int, str]:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            owner = ""
+        return turn, owner
+
+    def mark_charge_bonus_suppressed(self, game=None) -> None:
+        turn, owner = self._charge_bonus_suppressed_key(game)
+        try:
+            self.round_state.charge_bonus_suppressed_turn = int(turn or 0)
+        except Exception:
+            self.round_state.charge_bonus_suppressed_turn = int(turn or 0)
+        try:
+            self.round_state.charge_bonus_suppressed_turn_owner = str(owner or "")
+        except Exception:
+            self.round_state.charge_bonus_suppressed_turn_owner = str(owner or "")
+
+    def charge_bonus_suppressed(self, game=None) -> bool:
+        try:
+            sup_turn = int(getattr(self.round_state, "charge_bonus_suppressed_turn", 0) or 0)
+        except Exception:
+            sup_turn = 0
+        try:
+            sup_owner = str(getattr(self.round_state, "charge_bonus_suppressed_turn_owner", "") or "")
+        except Exception:
+            sup_owner = ""
+        if not sup_turn or not sup_owner:
+            return False
+        turn, owner = self._charge_bonus_suppressed_key(game)
+        return sup_turn == int(turn or 0) and sup_owner == str(owner or "")
     
     def should_fight_first(self) -> bool:
         """Check if this unit should fight in the Fight First stage.
@@ -17546,7 +17909,12 @@ class Unit:
         if self._seductive_gambit_active():
             return False
         # Units that charged this turn fight first
-        if self.round_state.charged_this_round:
+        game = None
+        try:
+            game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        if self.round_state.charged_this_round and not self.charge_bonus_suppressed(game):
             return True
             
         # Units with Fight First abilities fight first

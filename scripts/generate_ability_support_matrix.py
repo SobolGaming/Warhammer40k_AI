@@ -1299,6 +1299,7 @@ def _classify_ability(
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
+    bearer_save_support = _bearer_save_characteristic_support(description)
     model_fnp_support = _model_fnp_support(description)
     bearer_smoke_support = _bearer_smoke_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
@@ -1309,6 +1310,8 @@ def _classify_ability(
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     transport_support = _transport_disembark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
+    enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
+    setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
@@ -1389,6 +1392,8 @@ def _classify_ability(
         return leading_support
     if bearer_invuln_support:
         return bearer_invuln_support
+    if bearer_save_support:
+        return bearer_save_support
     if model_fnp_support:
         return model_fnp_support
     if bearer_smoke_support:
@@ -1409,6 +1414,10 @@ def _classify_ability(
         return transport_support
     if transport_reactive_disembark_support:
         return transport_reactive_disembark_support
+    if enemy_move_reactive_d6_support:
+        return enemy_move_reactive_d6_support
+    if setup_reactive_shoot_charge_support:
+        return setup_reactive_shoot_charge_support
     if sticky_support:
         return sticky_support
     if bodyguard_return_support:
@@ -1837,6 +1846,21 @@ def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, s
     if not m:
         return None
     return ("Supported", f"Bearer has a {m.group(1)}+ invulnerable save.")
+
+
+def _bearer_save_characteristic_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    text = _strip_html(description)
+    text = text.replace("\u2019", "'")
+    text = re.sub(r"\s+", " ", text).strip()
+    if not text:
+        return None
+    text = re.sub(r"\s+([.])", r"\1", text)
+    m = re.fullmatch(r"the bearer has a save characteristic of (\d)\+\.?", text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return ("Supported", f"Bearer has a Save characteristic of {m.group(1)}+.")
 
 
 def _model_fnp_support(description: str) -> Optional[Tuple[str, str]]:
@@ -2575,6 +2599,54 @@ def _transport_reactive_disembark_support(description: str) -> Optional[Tuple[st
         return None
     rng = m.group("range")
     return ("Supported", f"Enemy unit set up/move within {rng}\": disembark embarked units.")
+
+
+def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
+        r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of "
+        r"(?:one or more|any) enemy units?)? (?:this unit |this model |it )?can make a normal move of up to (?P<move>d6|\d+)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    rng = m.group("range")
+    move = str(m.group("move") or "").strip().lower()
+    move_label = "D6" if move == "d6" else move
+    note = f"Enemy unit ends move within {rng}\": optional {move_label}\" Normal move"
+    if "not within engagement range" in norm:
+        note += " if not in Engagement Range."
+    else:
+        note += "."
+    return ("Supported", note)
+
+
+def _setup_reactive_shoot_or_charge_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your opponents movement phase.*?"
+        r"select one enemy unit that was set up on the battlefield within (?P<range>\d+) of this (?:model|unit).*?"
+        r"can then either shoot at that unit but only if it is an eligible target.*?"
+        r"declare a charge against that unit.*?"
+        r"does not receive any charge bonus"
+    )
+    m = re.search(pattern, norm)
+    if not m:
+        return None
+    rng = m.group("range")
+    return (
+        "Supported",
+        f"End of opponent Movement phase: select enemy set up within {rng}\" to shoot (if eligible) or charge without charge bonus.",
+    )
 
 
 def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:

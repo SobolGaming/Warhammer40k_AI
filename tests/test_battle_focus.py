@@ -3,6 +3,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_SELECT_OVERWATCH_SHOOTER
+from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize, BattleRoundPhases
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.model import Model
+from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
+from warhammer40k_ai.utility.model_base import Base, BaseType
 
 class _DummyPlayer:
     def __init__(self, name="Player"):
@@ -249,6 +257,159 @@ class TestBattleFocus(unittest.TestCase):
 
         manager._maybe_queue_overwatch(moving_unit, action="move", when="end")
         self.assertEqual(manager._pending_reactions, [])
+
+
+class TestBattleFocusRemoteDecisions(unittest.TestCase):
+    def _make_unit(self, name, army, *, keywords=None):
+        unit = Unit.__new__(Unit)
+        unit.name = name
+        unit._id = name
+        unit.parent_army = army
+        unit.faction = getattr(army, "faction_id", "")
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        unit.models = []
+        unit.keywords = list(keywords or [])
+        unit.faction_keywords = []
+        unit.possible_abilities = []
+        unit.status_effects = []
+        unit.special_rules = {}
+        unit.round_state = SimpleNamespace()
+        unit.attached_leaders = []
+        unit.attached_to = None
+        unit.can_be_attached_to = []
+        unit.embarked_in = None
+        unit._ability_cache = {}
+        return unit
+
+    def _make_model(self, name, unit, x, y):
+        model = Model(
+            name=name,
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=2,
+            leadership=7,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        model.parent_unit = unit
+        model.set_location(x, y, 0.0, 0.0)
+        return model
+
+    def _build_game(self, *, reacting_control=PlayerControl.REMOTE):
+        army_move = Army("Moving Army", detachment_type="Other")
+        army_move.faction_id = "OT"
+        army_react = Army("Aeldari", detachment_type="Other")
+        army_react.faction_id = "AE"
+
+        moving_player = Player("Mover", PlayerControl.LOCAL, army=army_move)
+        reacting_player = Player("Reactor", reacting_control, army=army_react)
+
+        battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield, players=[moving_player, reacting_player])
+        game.current_player_index = 0
+        game.turn = 1
+        return game, moving_player, reacting_player, army_move, army_react
+
+    def test_battle_focus_opportunity_remote_queues_move(self):
+        game, moving_player, reacting_player, army_move, army_react = self._build_game()
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+
+        moving_unit = self._make_unit("Falling Back", army_move)
+        reacting_unit = self._make_unit("Defenders", army_react, keywords=["ASURYANI"])
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Aeldari", reacting_unit, 0.5, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+        game.map.units = [moving_unit, reacting_unit]
+        game.rebuild_entity_registry()
+
+        army_react.battle_focus.tokens = 1
+
+        game.event_system.publish(
+            "unit_move_started",
+            unit=moving_unit,
+            action="fall_back",
+        )
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="fall_back",
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_SELECT_OVERWATCH_SHOOTER)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "battle_focus")
+        self.assertEqual(ctx.get("maneuver"), "opportunity")
+
+        option_id = None
+        for opt in list(request.options or []):
+            if (opt.payload or {}).get("unit_id") == get_entity_id(reacting_unit):
+                option_id = opt.option_id
+                break
+        self.assertIsNotNone(option_id)
+        resolve_decision_command(game, request, option_id, player_id=reacting_player.id)
+
+        move_request = game.decision_queue.peek()
+        self.assertIsNotNone(move_request)
+        self.assertEqual(move_request.decision_type, DECISION_MOVE_UNIT)
+        move_ctx = move_request.context or {}
+        self.assertEqual(move_ctx.get("movement_type"), "reactive")
+        self.assertGreater(int(move_ctx.get("max_distance") or 0), 0)
+
+    def test_battle_focus_fade_back_remote_queues_move(self):
+        game, moving_player, reacting_player, army_move, army_react = self._build_game()
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+
+        attacker = self._make_unit("Shooter", army_move)
+        target = self._make_unit("Defenders", army_react, keywords=["ASURYANI"])
+        army_move.units = [attacker]
+        army_react.units = [target]
+
+        attacker_model = self._make_model("Shooter", attacker, 0.0, 0.0)
+        target_model = self._make_model("Defender", target, 10.0, 0.0)
+        attacker.models = [attacker_model]
+        target.models = [target_model]
+        game.map.units = [attacker, target]
+        game.rebuild_entity_registry()
+
+        army_react.battle_focus.tokens = 1
+
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=attacker,
+            hits_by_target={target: 1},
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_SELECT_OVERWATCH_SHOOTER)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "battle_focus")
+        self.assertEqual(ctx.get("maneuver"), "fade_back")
+
+        option_id = None
+        for opt in list(request.options or []):
+            if (opt.payload or {}).get("unit_id") == get_entity_id(target):
+                option_id = opt.option_id
+                break
+        self.assertIsNotNone(option_id)
+        resolve_decision_command(game, request, option_id, player_id=reacting_player.id)
+
+        move_request = game.decision_queue.peek()
+        self.assertIsNotNone(move_request)
+        self.assertEqual(move_request.decision_type, DECISION_MOVE_UNIT)
+        move_ctx = move_request.context or {}
+        self.assertEqual(move_ctx.get("movement_type"), "reactive")
+        self.assertGreater(int(move_ctx.get("max_distance") or 0), 0)
 
 
 if __name__ == "__main__":

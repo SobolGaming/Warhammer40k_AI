@@ -8,6 +8,7 @@ Status: Draft
 - Support save/load at any point once battle round 1 has started.
 - Ensure every UI dialog is a thin view over a decision/action API so headless play is possible.
 - Keep engine state fully serializable, with stable references and predictable ordering.
+- See `docs/NETWORK_GAMEPLAY.md` for lobby, role selection, and asyncio transport planning.
 
 ## Non-Goals
 
@@ -150,8 +151,20 @@ Movement:
 - coherency_violation_dialog: RESOLVE_COHERENCY {unit_id, fix_choice}
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
+- transport_reactive_disembark_dialog: DISEMBARK {unit_id, transport_id, positions} (context `reactive_disembark_*`)
+- battle_focus_opportunity_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="opportunity"`)
+- battle_focus_fade_back_dialog: SELECT_OVERWATCH_SHOOTER {unit_id} (context `ability="battle_focus"`, `maneuver="fade_back"`)
+- setup_reactive_target_dialog: SELECT_SETUP_REACTIVE_TARGET {unit_id, target_unit_id | skip}
+- setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
 - battlefield_point_pick_dialog: PICK_POINT {point}
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
+Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use `CONFIRM_YES_NO` with
+`reactive_move_*` context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_distance`
+(rolled or fixed).
+Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
+Battle Focus reactive maneuvers first use `SELECT_OVERWATCH_SHOOTER` (context `ability="battle_focus"`),
+then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`.
+Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.
 
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
@@ -173,6 +186,7 @@ Fight:
 - target_model_selection_dialog: SELECT_TARGET_MODEL {unit_id, target_model_id}
 - precision_allocation_dialog: SELECT_PRECISION_TARGET {unit_id, target_model_id}
 - damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id, amount}
+- overwatch_shooter_dialog: SELECT_RISE_TO_CHALLENGE {unit_id | skip}
 
 Faction / Detachment / Ability choices:
 - blessings_of_khorne_dialog: CHOOSE_BLESSINGS {choices[]}

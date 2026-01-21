@@ -741,6 +741,8 @@ class StratagemManager:
         # Core rules: a player cannot use the same Stratagem more than once in the same phase.
         # (Unless an ability explicitly names the Stratagem; we do not implement such bypasses generically.)
         self._used_stratagems_this_phase: set[str] = set()
+        # Track Heroic Intervention targets per phase for named exceptions.
+        self._heroic_intervention_units_this_phase: set[str] = set()
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
         self._used_once_per_battle: Dict[str, bool] = {
             'INSANE BRAVERY': False,
@@ -1404,6 +1406,62 @@ class StratagemManager:
             raise
         return cost
 
+    @staticmethod
+    def _heroic_intervention_target_id(unit) -> Optional[str]:
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            return get_entity_id(root) or getattr(root, "_id", None)
+        except Exception:
+            return getattr(root, "_id", None)
+
+    @staticmethod
+    def _unit_has_faultless_opportunist(unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            members = list(unit.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [unit]
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("enhancement_faultless_opportunist", False):
+                continue
+            try:
+                if callable(getattr(u, "is_alive", None)) and not u.is_alive():
+                    continue
+            except Exception:
+                continue
+            return True
+        return False
+
+    def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+        if target_unit is not None:
+            if not self._unit_has_faultless_opportunist(target_unit):
+                return False
+            uid = self._heroic_intervention_target_id(target_unit)
+            return bool(uid and uid not in self._heroic_intervention_units_this_phase)
+        for cand in list(candidates or []):
+            if not self._unit_has_faultless_opportunist(cand):
+                continue
+            uid = self._heroic_intervention_target_id(cand)
+            if uid and uid not in self._heroic_intervention_units_this_phase:
+                return True
+        return False
+
+    def _record_heroic_intervention_use(self, unit) -> None:
+        uid = self._heroic_intervention_target_id(unit)
+        if uid:
+            self._heroic_intervention_units_this_phase.add(uid)
+
     def _evaluate_availability(
         self,
         stratagem: Stratagem,
@@ -1416,8 +1474,18 @@ class StratagemManager:
         phase_name = context.get("phase_name") or self._current_phase_name or ""
 
         if name_u and name_u in self._used_stratagems_this_phase:
-            result["reason"] = "Already used this phase"
-            return result
+            if name_u == "HEROIC INTERVENTION":
+                if self._heroic_intervention_repeat_allowed(
+                    target_unit=context.get("target_unit") or context.get("unit"),
+                    candidates=context.get("candidates"),
+                ):
+                    pass
+                else:
+                    result["reason"] = "Already used this phase"
+                    return result
+            else:
+                result["reason"] = "Already used this phase"
+                return result
         if name_u and self._used_once_per_battle.get(name_u, False):
             result["reason"] = "Once per battle used"
             return result
@@ -1913,6 +1981,13 @@ class StratagemManager:
             raise
         try:
             self._used_stratagems_this_phase.clear()
+        except Exception:
+            raise
+        try:
+            if not hasattr(self, "_heroic_intervention_units_this_phase"):
+                self._heroic_intervention_units_this_phase = set()
+            else:
+                self._heroic_intervention_units_this_phase.clear()
         except Exception:
             raise
     def _on_phase_end(self, player, phase, **kwargs):
@@ -2614,8 +2689,6 @@ class StratagemManager:
         s = self.get_by_name("HEROIC INTERVENTION")
         if not s:
             return
-        if self.player.command_points < s.cp_cost:
-            return
 
         # Find eligible friendly units within 6" that could charge that enemy unit.
         candidates = []
@@ -2645,6 +2718,14 @@ class StratagemManager:
                         continue
                 except Exception:
                     raise
+                eff_cost = s.cp_cost
+                try:
+                    if hasattr(self.player, "preview_stratagem_cp_cost"):
+                        eff_cost = int(self.player.preview_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+                except Exception:
+                    raise
+                if self.player.command_points < eff_cost:
+                    continue
                 candidates.append(unit)
         except Exception:
             raise
@@ -4264,8 +4345,14 @@ class StratagemManager:
             if phase_name:
                 key = (s.name or "").strip().upper()
                 if key and key in self._used_stratagems_this_phase:
-                    print(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")
-                    return False
+                    if key == "HEROIC INTERVENTION" and self._heroic_intervention_repeat_allowed(
+                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                        candidates=kwargs.get("candidates"),
+                    ):
+                        pass
+                    else:
+                        print(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")
+                        return False
         except Exception:
             raise
         # Targeting restrictions (manager layer too, since several special-cases bypass Stratagem.use()).
@@ -4313,7 +4400,13 @@ class StratagemManager:
                 print("ERROR: INSANE BRAVERY: no target unit provided")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Mark auto-pass flag to be consumed by Unit.take_battle_shock_test()
             try:
@@ -4434,7 +4527,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(target_unit, "special_rules", None)
@@ -5185,6 +5284,7 @@ class StratagemManager:
                 self._dequeue_reaction_by_name(s.name)
             try:
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                self._record_heroic_intervention_use(unit)
             except Exception:
                 raise
             if not ok:

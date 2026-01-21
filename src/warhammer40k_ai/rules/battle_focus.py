@@ -27,6 +27,7 @@ class BattleFocusManager:
         self._phase_key: Optional[tuple] = None
         self._units_used_this_phase: set[str] = set()
         self._maneuvers_used_this_phase: set[str] = set()
+        self._opportunity_seized_candidates: dict[str, list] = {}
 
     def _army_has_battle_focus(self) -> bool:
         army = self.army
@@ -79,6 +80,107 @@ class BattleFocusManager:
             self._phase_key = key
             self._units_used_this_phase = set()
             self._maneuvers_used_this_phase = set()
+            self._opportunity_seized_candidates = {}
+
+    def record_enemy_fall_back_start(self, moving_unit, game) -> None:
+        if moving_unit is None or game is None:
+            return
+        if not self._army_has_battle_focus():
+            return
+        if int(self.tokens or 0) <= 0:
+            return
+        self._sync_phase(game)
+        if self._maneuver_used_this_phase(self.MANEUVER_OPPORTUNITY):
+            return
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return
+        try:
+            enemy_root = moving_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = moving_unit
+        if enemy_root is None:
+            return
+        enemy_id = self._unit_id(enemy_root)
+
+        candidates = []
+        seen = set()
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            uid = self._unit_id(root)
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                if not root.is_alive() or not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            if not self._unit_has_battle_focus(root):
+                continue
+            if bool(getattr(root, "is_titanic", False)):
+                continue
+            if not self._can_use_unit_this_phase(root):
+                continue
+            try:
+                if not game_map.is_within_engagement_range(root, enemy_root):
+                    continue
+            except Exception:
+                continue
+            candidates.append(root)
+
+        if candidates:
+            try:
+                candidates = sorted(candidates, key=lambda u: self._unit_id(u))
+            except Exception:
+                pass
+            self._opportunity_seized_candidates[enemy_id] = candidates
+
+    def consume_opportunity_seized_candidates(self, moving_unit, game) -> list:
+        if moving_unit is None or game is None:
+            return []
+        if not self._army_has_battle_focus():
+            return []
+        if int(self.tokens or 0) <= 0:
+            return []
+        self._sync_phase(game)
+        if self._maneuver_used_this_phase(self.MANEUVER_OPPORTUNITY):
+            return []
+        try:
+            enemy_root = moving_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = moving_unit
+        if enemy_root is None:
+            return []
+        enemy_id = self._unit_id(enemy_root)
+        candidates = list(self._opportunity_seized_candidates.pop(enemy_id, []) or [])
+        if not candidates:
+            return []
+
+        filtered = []
+        for unit in candidates:
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            if not self._unit_has_battle_focus(unit):
+                continue
+            if bool(getattr(unit, "is_titanic", False)):
+                continue
+            if not self._can_use_unit_this_phase(unit):
+                continue
+            filtered.append(unit)
+        return filtered
 
     def _tokens_for_battlefield(self, game) -> int:
         size_name = ""

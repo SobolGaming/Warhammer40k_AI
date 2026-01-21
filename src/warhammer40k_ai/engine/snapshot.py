@@ -109,6 +109,8 @@ _UNIT_ROUND_FIELDS = [
     "reinforced_this_round",
     "attempted_charge_this_round",
     "charged_this_round",
+    "charge_bonus_suppressed_turn",
+    "charge_bonus_suppressed_turn_owner",
     "moved_this_round",
     "num_lost_models_this_round",
     "advance_roll",

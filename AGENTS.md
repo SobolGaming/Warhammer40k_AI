@@ -112,6 +112,14 @@ This rule exists to reduce UI friction and to keep decision/action modeling clea
 
 ---
 
+## Local and Remote play parity (mandatory)
+When implementing any rule/ability/feature that involves player choices or prompts:
+- Support both **local** (same-machine UI) and **remote** (networked) player flows.
+- Ensure every decision point is available through the deterministic decision/action interface used by remote play.
+- Do not ship abilities that only work in local play; if remote support is unclear or blocked, stop and ask the developer.
+
+---
+
 ## Testing requirements (pytest)
 
 ### Test location
@@ -192,6 +200,16 @@ Design constraints now:
 
 Practical expectation:
 - When adding new state or events, consider how they will be encoded/decoded and validated across a network boundary.
+
+---
+
+## UI dialog decision mapping (mandatory)
+All new UI dialogs must have a deterministic decision mapping to preserve networked play determinism.
+
+Practical expectations:
+- Every new UI dialog must map to a specific, serializable decision/action in the engine.
+- When adding a new dialog, update the UI dialog-to-decision mapping entries in `docs/NETWORK_SAVELOAD_DESIGN.md`
+  (see <https://github.com/SobolGaming/Warhammer40k_AI/blob/dev/docs/NETWORK_SAVELOAD_DESIGN.md#ui-dialog-to-decision-mapping>).
 
 ---
 

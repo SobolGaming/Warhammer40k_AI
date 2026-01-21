@@ -87,6 +87,7 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     declarations = result.payload.get("declarations")
     if not isinstance(declarations, list) or not declarations:
         return ("Shooting declaration requires declarations list.",)
+    force_target_id = str(request.context.get("force_target_unit_id", "") or "")
     for decl in declarations:
         if not isinstance(decl, dict):
             return ("Declaration entry must be a dict.",)
@@ -96,6 +97,8 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
         model_ids = decl.get("model_ids")
         if not wargear_id or not profile_name or not target_id:
             return ("Declaration missing wargear_id/profile_name/target_unit_id.",)
+        if force_target_id and target_id != force_target_id:
+            return ("Declaration target must match forced target unit.",)
         wargear = get_wargear(game, wargear_id)
         if wargear is None:
             return ("Declaration wargear not found.",)

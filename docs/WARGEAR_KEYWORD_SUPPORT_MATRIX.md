@@ -96,16 +96,9 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>hazardous</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">399</td>
+<td bgcolor="#d4edda">400</td>
 <td bgcolor="#d4edda">HAZARDOUS<br/>HAzARDOUS<br/>hazardous</td>
 <td bgcolor="#d4edda">Hazardous test after attacking; on 1 suffer mortal wounds.</td>
-</tr>
-<tr>
-<td bgcolor="#f8d7da"><code>hazardous. ignores cover. psychic</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">HAZARDOUS. IGNORES COVER. PSYCHIC</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>heavy</code></td>
@@ -124,7 +117,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>ignores cover</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">623</td>
+<td bgcolor="#d4edda">624</td>
 <td bgcolor="#d4edda">IGNORES COVER<br/>IGNORES COvER<br/>Ignores Cover</td>
 <td bgcolor="#d4edda">Cancels Benefit of Cover from terrain and Indirect Fire.</td>
 </tr>
@@ -208,7 +201,7 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <tr>
 <td bgcolor="#d4edda"><code>psychic</code></td>
 <td bgcolor="#d4edda"><b>🟩 Supported</b></td>
-<td bgcolor="#d4edda">336</td>
+<td bgcolor="#d4edda">337</td>
 <td bgcolor="#d4edda">PSYCHIC<br/>psychic</td>
 <td bgcolor="#d4edda">Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.</td>
 </tr>
