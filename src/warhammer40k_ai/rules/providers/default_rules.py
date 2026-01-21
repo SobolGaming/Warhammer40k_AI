@@ -46,6 +46,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("model_destroyed", "_on_model_destroyed_rules"),
                 ("unit_destroyed", "_on_unit_destroyed_rules"),
+                ("unit_destroyed", "_on_unit_destroyed_phase_kill_tracking"),
                 ("unit_destroyed", "_on_unit_destroyed_transport_rules"),
                 ("unit_move_ended", "_on_unit_move_ended_detachment_rules"),
                 ("unit_move_ended", "_on_unit_move_ended_charge_mortal_wounds"),
@@ -69,6 +70,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_engagement_battleshock"),
                 ("phase_end", "_on_phase_end_fight_phase_mortal_wounds"),
                 ("phase_end", "_on_phase_end_charge_phase_bodyguard_loss"),
+                ("phase_end", "_on_phase_end_leadership_cp_gain"),
                 ("phase_end", "_on_phase_end_setup_reactive_shoot_or_charge"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),

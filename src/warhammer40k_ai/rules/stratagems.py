@@ -18,6 +18,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLOOD OFFERING",
     "DAEMONIC FURY",
     "DAEMONTIDE",
+    "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
@@ -39,8 +40,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
+    "TERRIFYING SPECTACLE",
     "TANK SHOCK",
     "THE FOE FORESEEN",
+    "CUT DOWN THE WEAK",
     "UNBOUND ARROGANCE",
     "WEBWAY TUNNEL",
 }
@@ -53,6 +56,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BERZERKER\u2019S WRATH",
     "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
+    "CUT DOWN THE WEAK",
+    "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
     "FEIGNED RETREAT",
     "COMMAND RE-ROLL",
@@ -402,7 +407,7 @@ def parse_charge_melee_ap_stratagem(name: str, description: str) -> Optional[Dic
 
     keywords = _extract_kwb_keywords(target_html)
     return {
-        "ap_bonus": int(m.group(1)),
+        "ap_bonus": int(m.group(2)),
         "phases": ["fight"],
         "requires_charge": True,
         "requires_not_fought": True,
@@ -452,10 +457,12 @@ def parse_consolidate_move_stratagem(name: str, description: str) -> Optional[Di
     if not m:
         return None
     try:
-        max_dist = int(m.group(1))
+        max_dist = int(m.group(2))
     except Exception:
         raise
     tail = rest[m.end() :].strip().rstrip(".")
+    if tail.startswith(","):
+        tail = tail[1:].strip()
     requires_engagement = False
     if tail:
         if re.fullmatch(
@@ -727,6 +734,8 @@ class StratagemManager:
         self._epic_challenge_models: list[Any] = []
         # Fight-phase kill flags for "A WORTHY SKULL".
         self._worthy_skull_kills: Dict[Any, bool] = {}
+        # Emperor's Children: track units that destroyed enemies in their Fight phase.
+        self._ec_units_destroyed_enemy_in_fight: set[str] = set()
         # Cache parsed generic defensive reaction specs by stratagem id/name.
         self._defensive_reaction_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         # Cache parsed generic charge-based melee AP stratagem specs by stratagem id/name.
@@ -827,10 +836,10 @@ class StratagemManager:
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY"}:
             add("unit_move_started", self._on_unit_move_started)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "CUT DOWN THE WEAK"}:
             add("unit_move_ended", self._on_unit_move_ended)
 
-        if names & {"BLOOD OFFERING", "UNBOUND ARROGANCE"}:
+        if names & {"BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if "SKULLS FOR THE SKULL THRONE!" in names:
@@ -879,6 +888,7 @@ class StratagemManager:
             "LIGHTNING-FAST REACTIONS",
         }
         fight_reaction_names = {
+            "DEATH ECSTASY",
             "FRENZIED RESILIENCE",
             "ARMOUR OF CONTEMPT",
             "THE FOE FORESEEN",
@@ -1040,6 +1050,91 @@ class StratagemManager:
         if mode == "any":
             return any(_match_keyword(k) for k in keywords)
         return all(_match_keyword(k) for k in keywords)
+
+    def _consolidate_requires_engagement_possible(self, unit: Any, max_distance: float) -> bool:
+        if unit is None:
+            return False
+        game_map = getattr(self.game, "map", None) if self.game is not None else None
+        if game_map is None:
+            return True
+        try:
+            enemy_units = list(game_map.get_enemy_units(unit) or [])
+        except Exception:
+            try:
+                enemy_units = [u for u in list(getattr(game_map, "units", []) or []) if u is not None and getattr(u, "faction", None) != getattr(unit, "faction", None)]
+            except Exception:
+                enemy_units = []
+        if not enemy_units:
+            return False
+        try:
+            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
+        except Exception:
+            ENGAGEMENT_RANGE_HORIZONTAL = 1.0
+        try:
+            for enemy in enemy_units:
+                if enemy is None:
+                    continue
+                if not getattr(enemy, "is_alive", lambda: True)():
+                    continue
+                if getattr(enemy, "deployed", True) is False:
+                    continue
+                if hasattr(game_map, "is_within_engagement_range") and game_map.is_within_engagement_range(unit, enemy):
+                    return True
+        except Exception:
+            pass
+        min_dist = None
+        for enemy in enemy_units:
+            try:
+                if enemy is None or not enemy.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(unit, enemy))
+            except Exception:
+                continue
+            if min_dist is None or dist < min_dist:
+                min_dist = dist
+        if min_dist is None:
+            return False
+        return float(min_dist) <= float(max_distance or 0) + float(ENGAGEMENT_RANGE_HORIZONTAL or 1.0)
+
+    def _record_ec_last_turn_flags(self) -> None:
+        try:
+            army = self.player.get_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "emperors_children", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+            self._ec_units_destroyed_enemy_in_fight.clear()
+            return
+        seen = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            rid = get_entity_id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                charged_owner = str(getattr(getattr(root, "round_state", None), "charged_turn_owner", "") or "")
+                sr["ec_last_turn_charged"] = bool(
+                    getattr(getattr(root, "round_state", None), "charged_this_round", False)
+                    and charged_owner
+                    and charged_owner == str(getattr(self.player, "id", "") or "")
+                )
+            except Exception:
+                sr["ec_last_turn_charged"] = False
+            sr["ec_last_turn_destroyed_enemy_in_fight"] = rid in self._ec_units_destroyed_enemy_in_fight
+            root.special_rules = sr
+        self._ec_units_destroyed_enemy_in_fight.clear()
 
     def _append_defensive_effect(self, unit: Any, key: str, entry: Dict[str, Any]) -> None:
         try:
@@ -2016,6 +2111,26 @@ class StratagemManager:
                             }, use_timer=False)
         except Exception:
             raise
+        # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "COMMAND_PHASE" and self.game is not None:
+                for p in list(getattr(self.game, "players", []) or []):
+                    army = getattr(p, "get_army", lambda: None)()
+                    for u in list(getattr(army, "units", []) or []):
+                        try:
+                            sr = getattr(u, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                continue
+                            if "battle_shock_suppress_other_tests_phase" in sr:
+                                sr.pop("battle_shock_suppress_other_tests_phase", None)
+                                sr.pop("battle_shock_suppress_other_tests_source", None)
+                                sr.pop("battle_shock_allow_suppressed_test", None)
+                                u.special_rules = sr
+                        except Exception:
+                            raise
+        except Exception:
+            raise
         # Clear end-of-phase defensive buffs (e.g. GO TO GROUND) to avoid leaking into later phases (e.g. Overwatch).
         try:
             phase_name = getattr(phase, 'name', None)
@@ -2045,6 +2160,8 @@ class StratagemManager:
         try:
             phase_name = getattr(phase, 'name', None)
             if phase_name == 'FIGHT_PHASE':
+                if player is self.player:
+                    self._record_ec_last_turn_flags()
                 for u in list(getattr(self.player.get_army(), "units", []) or []):
                     try:
                         sr = getattr(u, "special_rules", None)
@@ -2058,6 +2175,10 @@ class StratagemManager:
                             sr.pop("daemonic_fury_lance_active", None)
                             sr.pop("daemonic_fury_lance_turn_owner", None)
                             sr.pop("daemonic_fury_lance_turn", None)
+                        if isinstance(sr, dict) and sr.get("death_ecstasy_active") is True:
+                            sr.pop("death_ecstasy_active", None)
+                            sr.pop("death_ecstasy_expires_phase", None)
+                            sr.pop("death_ecstasy_source", None)
                         u.special_rules = sr
                     except Exception:
                         raise
@@ -2545,6 +2666,7 @@ class StratagemManager:
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
         self._maybe_queue_feigned_retreat(unit, action)
+        self._maybe_queue_cut_down_the_weak(unit, action)
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
         """
@@ -3251,6 +3373,54 @@ class StratagemManager:
                             self._queue_reaction(payload)
         except Exception:
             raise
+        # EMPEROR'S CHILDREN: DEATH ECSTASY
+        try:
+            s = self.get_by_name("DEATH ECSTASY")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    raise
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is not None and getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                    candidates = []
+                    for unit in list(target_units or []):
+                        try:
+                            if unit is None or not unit.is_alive():
+                                continue
+                            if unit.get_parent_army().player is not self.player:
+                                continue
+                            if _unit_cannot_be_target_of_stratagem(unit):
+                                continue
+                            if not mgr.is_emperors_children_unit(unit):
+                                continue
+                            candidates.append(unit)
+                        except Exception:
+                            raise
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
         # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Fight phase, after targets selected).
         try:
             for strat_name in ("ARMOUR OF CONTEMPT", "THE FOE FORESEEN"):
@@ -3655,6 +3825,13 @@ class StratagemManager:
                     continue
                 if not self._unit_matches_defensive_target_spec(root, spec):
                     continue
+                if bool(spec.get("requires_engagement", False)):
+                    try:
+                        max_dist = float(spec.get("max_distance", 0) or 0)
+                    except Exception:
+                        max_dist = 0.0
+                    if max_dist > 0 and not self._consolidate_requires_engagement_possible(root, max_dist):
+                        continue
                 if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
                     continue
                 if not s.can_use(self.player, self.game, target_unit=root, phase_name=phase_name):
@@ -3880,6 +4057,115 @@ class StratagemManager:
             "target_unit": unit,
             "action": "fall_back",
         })
+
+    def _maybe_queue_cut_down_the_weak(self, unit, action: str) -> None:
+        try:
+            if str(action or "").strip().lower() != "fall_back":
+                return
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            owner = unit.get_parent_army().player
+            if owner is self.player:
+                return
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is self.player:
+                return
+            s = self.get_by_name("CUT DOWN THE WEAK")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            try:
+                army = self.player.get_army()
+            except Exception:
+                raise
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                return
+        except Exception:
+            raise
+
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return
+
+        candidates = []
+        seen = set()
+        for u in list(getattr(army, "units", []) or []):
+            try:
+                root = u.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                continue
+            uid = get_entity_id(root)
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                raise
+            try:
+                if not mgr.is_emperors_children_unit(root):
+                    continue
+            except Exception:
+                raise
+            try:
+                if root.has_keyword("Vehicle") and not root.has_keyword("Walker"):
+                    continue
+            except Exception:
+                raise
+            try:
+                dist = float(game_map.get_distance_between_units(root, unit))
+            except Exception:
+                continue
+            if dist > 6.0:
+                continue
+            try:
+                if not root.can_declare_charge_against(unit, self.game, out_of_turn=True):
+                    continue
+            except Exception:
+                raise
+            candidates.append(root)
+
+        if not candidates:
+            return
+        for r in self._pending_reactions:
+            if r.get("event") == "unit_move_ended" and r.get("stratagem") == s.name and r.get("enemy_unit") is unit:
+                return
+        payload = {
+            "event": "unit_move_ended",
+            "phase_name": "Movement phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "enemy_unit": unit,
+            "candidates": candidates,
+        }
+        if len(candidates) == 1:
+            payload["unit"] = candidates[0]
+            payload["target_unit"] = candidates[0]
+        self._queue_reaction(payload)
 
     # Command Re-roll trigger on roll_made for active player only
     def _on_roll_made(self, player, unit, roll_type: str, value, reroll, dice=None, **kwargs):
@@ -4171,6 +4457,31 @@ class StratagemManager:
         """
         Faction stratagem reactions that trigger when a unit is destroyed.
         """
+        # EMPEROR'S CHILDREN: track units that destroyed enemies in their Fight phase.
+        try:
+            destroyed_by_unit = kwargs.get("destroyed_by_unit")
+            if destroyed_by_unit is not None and self.game is not None:
+                phase_name = str(self._current_phase_name or "").strip().lower()
+                active_player = getattr(self.game, "get_current_player", lambda: None)()
+                if phase_name == "fight phase" and active_player is self.player:
+                    try:
+                        if destroyed_by_unit.get_parent_army().player is self.player:
+                            army = destroyed_by_unit.get_parent_army()
+                        else:
+                            army = None
+                    except Exception:
+                        army = None
+                    mgr = getattr(army, "emperors_children", None) if army is not None else None
+                    if mgr is not None and getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                        try:
+                            if mgr.is_emperors_children_unit(destroyed_by_unit):
+                                root = destroyed_by_unit.get_attached_unit_root()
+                                if root is not None:
+                                    self._ec_units_destroyed_enemy_in_fight.add(get_entity_id(root))
+                        except Exception:
+                            raise
+        except Exception:
+            raise
         # WORLD EATERS: BLOOD OFFERING
         try:
             s = self.get_by_name("BLOOD OFFERING")
@@ -4884,6 +5195,275 @@ class StratagemManager:
                     print(f"INFO: UNBOUND ARROGANCE: pledge increased to {new_val}")
                 except Exception:
                     raise
+            return True
+
+        # EMPEROR'S CHILDREN: DEATH ECSTASY
+        if s.name.upper() == "DEATH ECSTASY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DEATH ECSTASY":
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        if not candidates:
+                            candidates = list(r.get("candidates") or r.get("target_units") or [])
+                        break
+            if unit is None:
+                print("ERROR: DEATH ECSTASY: missing target unit context")
+                return False
+            try:
+                army = self.player.get_army()
+            except Exception:
+                raise
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                return False
+            try:
+                if not mgr.is_emperors_children_unit(unit):
+                    return False
+            except Exception:
+                raise
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: DEATH ECSTASY: wrong phase")
+                return False
+            if candidates:
+                try:
+                    if unit not in list(candidates or []):
+                        print("ERROR: DEATH ECSTASY: target was not selected by attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    print("ERROR: DEATH ECSTASY: attacker is not enemy")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("ERROR: DEATH ECSTASY: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["death_ecstasy_active"] = True
+                sr["death_ecstasy_expires_phase"] = "FIGHT_PHASE"
+                sr["death_ecstasy_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DEATH ECSTASY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            return True
+
+        # EMPEROR'S CHILDREN: TERRIFYING SPECTACLE
+        if s.name.upper() == "TERRIFYING SPECTACLE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: TERRIFYING SPECTACLE: missing target unit context")
+                return False
+            try:
+                army = self.player.get_army()
+            except Exception:
+                raise
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                return False
+            try:
+                if not mgr.is_emperors_children_unit(unit):
+                    return False
+            except Exception:
+                raise
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                print("ERROR: TERRIFYING SPECTACLE: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("ERROR: TERRIFYING SPECTACLE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            sr_root = getattr(root, "special_rules", None)
+            if not isinstance(sr_root, dict):
+                sr_root = {}
+            if not bool(sr_root.get("ec_last_turn_charged", False)) or not bool(sr_root.get("ec_last_turn_destroyed_enemy_in_fight", False)):
+                print("ERROR: TERRIFYING SPECTACLE: target did not charge and destroy in previous turn")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                return False
+            try:
+                enemy_units = list(game_map.get_enemy_units(root) or [])
+            except Exception:
+                enemy_units = []
+            affected = []
+            for enemy in enemy_units:
+                try:
+                    if enemy is None or not enemy.is_alive():
+                        continue
+                    if getattr(enemy, "deployed", True) is False:
+                        continue
+                    if getattr(enemy, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    dist = float(game_map.get_distance_between_units(root, enemy))
+                except Exception:
+                    continue
+                if dist > 6.0:
+                    continue
+                affected.append(enemy)
+            if not affected:
+                print("ERROR: TERRIFYING SPECTACLE: no enemy units within 6\"")
+                return False
+            for enemy in affected:
+                try:
+                    sr = getattr(enemy, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    if hasattr(enemy, "is_below_half_strength") and enemy.is_below_half_strength():
+                        sr["battle_shock_test_modifier"] = int(sr.get("battle_shock_test_modifier", 0) or 0) - 1
+                        sr.setdefault("battle_shock_test_modifier_reasons", []).append("Terrifying Spectacle (below half-strength)")
+                    sr["battle_shock_suppress_other_tests_phase"] = "COMMAND_PHASE"
+                    sr["battle_shock_suppress_other_tests_source"] = s.name
+                    sr["battle_shock_allow_suppressed_test"] = True
+                    enemy.special_rules = sr
+                except Exception:
+                    raise
+                try:
+                    enemy.take_battle_shock_test(int(getattr(self.game, "turn", 0) or 0))
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: TERRIFYING SPECTACLE: {len(affected)} enemy unit(s) tested for Battle-shock.")
+            return True
+
+        # EMPEROR'S CHILDREN: CUT DOWN THE WEAK
+        if s.name.upper() == "CUT DOWN THE WEAK":
+            enemy = kwargs.get("enemy_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if enemy is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "CUT DOWN THE WEAK":
+                        enemy = r.get("enemy_unit") or enemy
+                        if not candidates:
+                            candidates = list(r.get("candidates") or [])
+                        break
+            if enemy is None:
+                print("ERROR: CUT DOWN THE WEAK: no enemy unit context")
+                return False
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None and candidates:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: CUT DOWN THE WEAK: no eligible unit selected")
+                return False
+            try:
+                if unit.get_parent_army().player is not self.player:
+                    print("ERROR: CUT DOWN THE WEAK: target unit does not belong to player")
+                    return False
+            except Exception:
+                raise
+            try:
+                army = self.player.get_army()
+            except Exception:
+                raise
+            mgr = getattr(army, "emperors_children", None) if army is not None else None
+            if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                return False
+            try:
+                if not mgr.is_emperors_children_unit(unit):
+                    return False
+            except Exception:
+                raise
+            try:
+                if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
+                    print("WARN: CUT DOWN THE WEAK: only WALKER vehicles can be selected")
+                    return False
+            except Exception:
+                raise
+            dist = None
+            try:
+                if self.game and getattr(self.game, "map", None):
+                    dist = self.game.map.get_distance_between_units(unit, enemy)
+            except Exception:
+                raise
+            if dist is None or dist > 6.0:
+                print("ERROR: CUT DOWN THE WEAK: target not within 6\" of enemy")
+                return False
+            try:
+                if not unit.can_declare_charge_against(enemy, self.game, out_of_turn=True):
+                    print("ERROR: CUT DOWN THE WEAK: target cannot declare charge against enemy")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            ok = False
+            try:
+                ok = bool(self.game.attempt_charge(unit, enemy, out_of_turn=True, count_as_charged=False))
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            if not ok:
+                print("ERROR: CUT DOWN THE WEAK: charge failed")
             return True
 
         # Special-case: NEW ORDERS (discard one active Secondary and draw a new one)
@@ -6637,6 +7217,22 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
+            name_u = (s.name or "").strip().upper()
+            if name_u == "CRUEL BLADESMAN":
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    raise
+                mgr = getattr(army, "emperors_children", None) if army is not None else None
+                if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
+                    print(f"ERROR: {s.name}: wrong detachment")
+                    return False
+                try:
+                    if not mgr.is_emperors_children_unit(root):
+                        print(f"ERROR: {s.name}: target is not EMPEROR'S CHILDREN")
+                        return False
+                except Exception:
+                    raise
             try:
                 charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
             except Exception:
@@ -6709,6 +7305,14 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
+            if bool(spec.get("requires_engagement", False)):
+                try:
+                    max_dist = float(spec.get("max_distance", 0) or 0)
+                except Exception:
+                    max_dist = 0.0
+                if max_dist > 0 and not self._consolidate_requires_engagement_possible(root, max_dist):
+                    print(f"ERROR: {s.name}: no legal consolidation outcome")
+                    return False
             eff_cost = s.cp_cost
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):

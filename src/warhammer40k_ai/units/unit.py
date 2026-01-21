@@ -50,6 +50,8 @@ class UnitRoundState:
     reinforced_this_round: bool = False
     attempted_charge_this_round: bool = False  # Track if unit attempted a charge (prevents multiple attempts)
     charged_this_round: bool = False  # Track if unit successfully made a charge move (charge bonus may be suppressed)
+    charged_turn: Optional[int] = None
+    charged_turn_owner: Optional[str] = None
     charge_bonus_suppressed_turn: Optional[int] = None
     charge_bonus_suppressed_turn_owner: Optional[str] = None
     moved_this_round: bool = False  # Track if unit has moved during movement phase
@@ -980,6 +982,13 @@ class Unit:
         r"at the end of your charge phase if this model is leading a unit and that unit is not within "
         r"engagement range of (?:one or more|any) enemy units? you must take a leadership test for this model "
         r"if that test is failed one bodyguard model in that unit is destroyed",
+        re.IGNORECASE,
+    )
+    _PHASE_END_LEADERSHIP_CP_GAIN_RE = re.compile(
+        r"at the end of your shooting phase or the fight phase if "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) destroyed one or more enemy units? that phase "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) takes a leadership test "
+        r"if that test is passed you gain (?P<cp>\d+|one) ?(?:cp|command points?)",
         re.IGNORECASE,
     )
     _RETURN_ON_DEATH_RE = re.compile(
@@ -2545,7 +2554,7 @@ class Unit:
                 u.special_rules = sr
 
     def _refresh_move_over_friendly_monster_vehicle_flags(self) -> None:
-        """Parse move-over friendly MONSTER/VEHICLE + low-terrain traversal rules into special_rules."""
+        """Parse move-over friendly MONSTER/VEHICLE and low-terrain traversal rules into special_rules."""
         if getattr(self, "special_rules", None) is None:
             self.special_rules = {}
         sr = self.special_rules
@@ -2563,9 +2572,29 @@ class Unit:
             r"(?:sections of )?terrain features that are (?P<height>\d+) or less in height"
             r"(?: as if they were not there)?"
         )
-        move_types: set[str] = set()
+        terrain_only_pattern = (
+            r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+            r"it can move (?:over|through) (?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+            r"(?: as if they were not there)?"
+        )
+        friendly_move_types: set[str] = set()
+        low_terrain_move_types: set[str] = set()
         height_value: Optional[int] = None
         seen: set[str] = set()
+
+        def _parse_move_types(moves_text: str) -> Optional[set[str]]:
+            tokens = [t for t in moves_text.split() if t]
+            allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+            if not tokens or any(t not in allowed for t in tokens):
+                return None
+            if "normal" not in tokens:
+                return None
+            parsed: set[str] = {"move"}
+            if "advance" in tokens:
+                parsed.add("advance")
+            if "fallback" in tokens or "fall back" in moves_text:
+                parsed.add("fall_back")
+            return parsed
 
         for name, desc in self._iter_ability_entries_for_rules(model=None):
             text = str(desc or name or "")
@@ -2581,20 +2610,29 @@ class Unit:
                 continue
             seen.add(norm)
             m = re.fullmatch(pattern, norm)
+            if m:
+                moves_text = (m.group("moves") or "").strip()
+                move_types = _parse_move_types(moves_text or "")
+                if move_types is None:
+                    continue
+                friendly_move_types.update(move_types)
+                low_terrain_move_types.update(move_types)
+                try:
+                    height = int(m.group("height"))
+                except Exception:
+                    height = None
+                if height is not None:
+                    if height_value is None or height > height_value:
+                        height_value = height
+                continue
+            m = re.fullmatch(terrain_only_pattern, norm)
             if not m:
                 continue
             moves_text = (m.group("moves") or "").strip()
-            tokens = [t for t in moves_text.split() if t]
-            allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
-            if not tokens or any(t not in allowed for t in tokens):
+            move_types = _parse_move_types(moves_text or "")
+            if move_types is None:
                 continue
-            if "normal" not in tokens:
-                continue
-            move_types.add("move")
-            if "advance" in tokens:
-                move_types.add("advance")
-            if "fallback" in tokens or "fall back" in moves_text:
-                move_types.add("fall_back")
+            low_terrain_move_types.update(move_types)
             try:
                 height = int(m.group("height"))
             except Exception:
@@ -2603,11 +2641,11 @@ class Unit:
                 if height_value is None or height > height_value:
                     height_value = height
 
-        if move_types:
-            sr["move_over_friendly_monster_vehicle_types"] = sorted(move_types)
+        if friendly_move_types:
+            sr["move_over_friendly_monster_vehicle_types"] = sorted(friendly_move_types)
         if height_value is not None:
             sr["move_over_low_terrain_height_value"] = float(height_value)
-            sr["move_over_low_terrain_height_types"] = sorted(move_types or {"move", "advance"})
+            sr["move_over_low_terrain_height_types"] = sorted(low_terrain_move_types or {"move", "advance"})
         self.special_rules = sr
 
     def _unit_contains_model_named(self, target: str) -> bool:
@@ -4407,6 +4445,36 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # EMPEROR'S CHILDREN: Death Ecstasy (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("death_ecstasy_active"):
+                        exp = str(sr.get("death_ecstasy_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    pending = getattr(root, "_death_ecstasy_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._death_ecstasy_pending_models = pending
+                                    return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
         original_wounds = getattr(model, "_wounds", None)
         try:
@@ -4452,8 +4520,40 @@ class Unit:
         if getattr(model, "_fight_on_death_used", False):
             return False
 
-        enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
-        engaged = [u for u in enemy_units if game_map.is_within_engagement_range(self, u)]
+        try:
+            enemy_units = [u for u in game_map.get_enemy_units(self) if u.is_alive()]
+        except Exception:
+            try:
+                enemy_units = [u for u in list(getattr(game_map, "units", []) or []) if u is not None and getattr(u, "faction", None) != getattr(self, "faction", None) and u.is_alive()]
+            except Exception:
+                enemy_units = []
+        if not enemy_units:
+            return False
+
+        from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+
+        engaged = []
+        for enemy in enemy_units:
+            try:
+                if enemy is None or not enemy.is_alive():
+                    continue
+            except Exception:
+                continue
+            for em in list(getattr(enemy, "models", []) or []):
+                try:
+                    if not em.is_alive:
+                        continue
+                except Exception:
+                    continue
+                try:
+                    horiz = float(horizontal_distance_between_bases_2d(model.model_base, em.model_base))
+                    vert = float(vertical_distance_between_bases(model.model_base, em.model_base))
+                except Exception:
+                    continue
+                if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                    engaged.append(enemy)
+                    break
         if not engaged:
             return False
 
@@ -4852,6 +4952,10 @@ class Unit:
     def initialize_round(self) -> None:
         """Reset round-tracked variables to default state."""
         self.round_state = UnitRoundState()
+        try:
+            self._death_ecstasy_pending_models = []
+        except Exception:
+            pass
         # Check status effects expiration (with safe defaults)
         for status_effect in list(getattr(self, "status_effects", []) or []):
             try:
@@ -12332,6 +12436,30 @@ class Unit:
         if not alive_models:
             return
 
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("battle_shock_suppress_other_tests_phase"):
+                phase_name = ""
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                suppress_phase = str(sr.get("battle_shock_suppress_other_tests_phase", "") or "").strip().upper()
+                if suppress_phase and phase_name and phase_name != suppress_phase:
+                    sr.pop("battle_shock_suppress_other_tests_phase", None)
+                    sr.pop("battle_shock_suppress_other_tests_source", None)
+                    sr.pop("battle_shock_allow_suppressed_test", None)
+                    self.special_rules = sr
+                else:
+                    allow = bool(sr.pop("battle_shock_allow_suppressed_test", False))
+                    self.special_rules = sr
+                    if not allow:
+                        return
+        except Exception:
+            pass
+
         is_already_battle_shocked = bool(self.is_battle_shocked())
 
         # Resolve event system (best-effort; avoid crashing on partial test stubs).
@@ -13966,6 +14094,31 @@ class Unit:
                         mgr.resolve_total_carnage_queue(owning_unit=root, game_map=game_map)
             except Exception:
                 pass
+            try:
+                root._resolve_death_ecstasy_queue(game_map=game_map)
+            except Exception:
+                pass
+
+    def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
+        pending = getattr(self, "_death_ecstasy_pending_models", None)
+        if not pending:
+            return
+        if not isinstance(pending, list):
+            self._death_ecstasy_pending_models = []
+            return
+        self._death_ecstasy_pending_models = []
+        for model in list(pending):
+            if model is None:
+                continue
+            original_wounds = getattr(model, "_wounds", None)
+            try:
+                if original_wounds is not None and original_wounds <= 0:
+                    model._wounds = 1
+                self._try_fight_on_death(model=model, game_map=game_map)
+            finally:
+                if original_wounds is not None:
+                    model._wounds = original_wounds
 
     def attached_unit_has_blessings_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member (bodyguard or leader) has Blessings of Khorne ability."""
@@ -17537,6 +17690,67 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = (int(penalty), tuple(reasons))
         return int(penalty), tuple(reasons)
+
+    def _parse_phase_end_leadership_cp_gain_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """Parse end-of-phase Leadership test CP gain abilities."""
+        normalized = self._normalize_rules_text(ability_desc)
+        if not normalized:
+            return []
+        norm = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+        norm = norm.lower()
+        norm = re.sub(r"'s\b", "s", norm)
+        norm = re.sub(r"[^a-z0-9]+", " ", norm)
+        norm = re.sub(r"\s+", " ", norm).strip()
+        m = self._PHASE_END_LEADERSHIP_CP_GAIN_RE.fullmatch(norm)
+        if not m:
+            return []
+        token = str(m.group("cp") or "").strip().lower()
+        try:
+            cp = int(token)
+        except Exception:
+            cp = 1 if token == "one" else 1
+        return [
+            {
+                "type": "phase_end_leadership_cp_gain",
+                "cp": int(cp),
+                "source_ability": ability_name or "",
+            }
+        ]
+
+    def get_phase_end_leadership_cp_gain_specs(self) -> List[dict]:
+        """Return end-of-phase Leadership test CP gain specs for this unit group."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "phase_end_leadership_cp_gain_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        specs: List[dict] = []
+        seen = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                parsed = unit._parse_phase_end_leadership_cp_gain_specs_from_text(name, text_src)
+                for spec in parsed:
+                    key = (spec.get("source_ability", "").lower(), int(spec.get("cp", 1) or 1))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append(spec)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
 
     def _parse_cp_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
         """Parse partial support for 'gain CP when destroying enemy keyword unit/model' abilities.

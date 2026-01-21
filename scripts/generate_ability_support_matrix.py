@@ -39,6 +39,8 @@ from warhammer40k_ai.roster.army import SUPPORTED_FACTION_IDS
 from warhammer40k_ai.rules.stratagems import (
     IMPLEMENTED_STRATAGEM_NAMES,
     defensive_reaction_note,
+    parse_charge_melee_ap_stratagem,
+    parse_consolidate_move_stratagem,
     parse_defensive_reaction_stratagem,
 )
 from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
@@ -1296,6 +1298,7 @@ def _classify_ability(
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
     move_over_friendly_support = _move_over_friendly_monster_vehicle_support(description)
+    move_over_low_terrain_support = _move_over_low_terrain_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
@@ -1319,6 +1322,7 @@ def _classify_ability(
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
+    phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
@@ -1347,6 +1351,8 @@ def _classify_ability(
         return battlesuit_support_system_support
     if move_over_friendly_support:
         return move_over_friendly_support
+    if move_over_low_terrain_support:
+        return move_over_low_terrain_support
     if move_over_mortal_support:
         return move_over_mortal_support
 
@@ -1431,6 +1437,8 @@ def _classify_ability(
         return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
         return command_phase_bonus_cp_support
+    if phase_end_leadership_cp_gain_support:
+        return phase_end_leadership_cp_gain_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
     if post_shoot_battleshock_support:
@@ -2780,6 +2788,29 @@ def _command_phase_bonus_cp_support(description: str) -> Optional[Tuple[str, str
     return ("Supported", f"Start of Command phase: gain {m.group('cp')} CP while on the battlefield.")
 
 
+def _phase_end_leadership_cp_gain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your shooting phase or the fight phase if "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) destroyed one or more enemy units? that phase "
+        r"(?:the bearers unit|the bearer s unit|this unit|this models unit|this model s unit) takes a leadership test "
+        r"if that test is passed you gain (?P<cp>\d+|one) ?(?:cp|command points?)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    cp_token = str(m.group("cp") or "")
+    cp_label = "1" if cp_token == "one" else cp_token
+    return (
+        "Supported",
+        f"End of Shooting/Fight phase: if bearer unit destroyed enemy units, pass Leadership test to gain {cp_label} CP.",
+    )
+
+
 def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -3200,6 +3231,39 @@ def _move_over_friendly_monster_vehicle_support(description: str) -> Optional[Tu
     return ("Supported", f"{type_label}: move through friendly MONSTER/VEHICLE models and terrain <= {height}\".")
 
 
+def _move_over_low_terrain_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this model|this unit) makes a (?P<moves>.+?) move "
+        r"it can move (?:over|through) (?:sections of )?terrain features that are (?P<height>\d+) or less in height"
+        r"(?: as if they were not there)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    moves_text = (m.group("moves") or "").strip()
+    tokens = [t for t in moves_text.split() if t]
+    allowed = {"normal", "advance", "fall", "back", "fallback", "or", "and"}
+    if not tokens or any(t not in allowed for t in tokens):
+        return None
+    if "normal" not in tokens:
+        return None
+    move_types = ["Normal"]
+    if "advance" in tokens:
+        move_types.append("Advance")
+    if "fallback" in tokens or "fall back" in moves_text:
+        move_types.append("Fall Back")
+    if not move_types:
+        return None
+    height = m.group("height")
+    type_label = "/".join(move_types)
+    return ("Supported", f"{type_label}: move over terrain features <= {height}\".")
+
+
 def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -3339,6 +3403,8 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
         "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",
         "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
+        "000010002002": "Faultless Opportunist: Heroic Intervention for 0CP even if another unit was targeted this phase.",
+        "000010002005": "Rise to the Challenge: end of Fight phase (once per battle) fight one additional time and choose an Exquisite Swordsmanship ability.",
         "000010078002": "Icon of War: BLOOD LEGIONS within 6\" gain Blessings of Khorne; with Might of Khorne active, may re-roll Battle-shock tests.",
         "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
         "000010078004": "Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds; bearer gains Deep Strike and BLOOD LEGIONS (instead of WORLD EATERS) while leading; attached unit benefits from Blessings of Khorne (FAQ).",
@@ -3390,6 +3456,8 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "SUMMONED BY SLAUGHTER": "Any phase: set up BLOODLETTERS from Reserves wholly within 9\" of destroyed model; >6\" from enemies; once per battle round.",
         "THE FOE FORESEEN": "Shooting/Fight phase: targeted ADEPTUS ASTARTES unit worsens AP by 1 vs the attacking unit until it finishes its attacks.",
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
+        "CRUEL BLADESMAN": "Fight phase: charged unit gains +1 AP on melee weapons (before it has fought).",
+        "INCESSANT VIOLENCE": "Fight phase: consolidate up to 6\" if the unit can end in Engagement Range.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:
@@ -3397,6 +3465,22 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
     spec = parse_defensive_reaction_stratagem(name, description or "")
     if spec:
         return ("Implemented", defensive_reaction_note(spec), name_u)
+    spec = parse_charge_melee_ap_stratagem(name, description or "")
+    if spec:
+        bonus = int(spec.get("ap_bonus", 1) or 1)
+        note = notes.get(name_u, f"Fight phase: charged unit gains +{bonus} AP on melee weapons.")
+        return ("Implemented", note, name_u)
+    spec = parse_consolidate_move_stratagem(name, description or "")
+    if spec:
+        max_dist = int(spec.get("max_distance", 0) or 0)
+        if spec.get("requires_engagement"):
+            note = notes.get(
+                name_u,
+                f"Fight phase: consolidate up to {max_dist}\" if the unit can end in Engagement Range.",
+            )
+        else:
+            note = notes.get(name_u, f"Fight phase: consolidate up to {max_dist}\".")
+        return ("Implemented", note, name_u)
     return ("Not implemented", "No effect logic currently wired.", name_u)
 
 
