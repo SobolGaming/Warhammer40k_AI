@@ -2610,7 +2610,7 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
     pattern = (
         r"once per turn when an enemy unit ends a normal advance or fall back move within (?P<range>\d+) of this "
         r"(?:model(?: s)? unit|unit|model)(?: if this unit is not within engagement range of "
-        r"(?:one or more|any) enemy units?)? (?:it )?can make a normal move of up to (?P<move>d6|\d+)"
+        r"(?:one or more|any) enemy units?)? (?:this unit |this model |it )?can make a normal move of up to (?P<move>d6|\d+)"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
