@@ -17234,6 +17234,15 @@ class Unit:
             else:
                 yield getattr(a, "name", "") or "", getattr(a, "description", "") or ""
 
+        # Enhancement rules (treated as unit-level ability text).
+        if model is None:
+            enh = getattr(self, "enhancement", None)
+            if enh is not None:
+                name = getattr(enh, "name", "") or ""
+                desc = getattr(enh, "description", "") or ""
+                if name or desc:
+                    yield name, desc
+
         # Model-level abilities (if provided)
         if model is not None:
             try:

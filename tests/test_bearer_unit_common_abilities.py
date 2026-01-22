@@ -390,6 +390,51 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertTrue(attack_instance.get("ignores_cover", False))
 
+    def test_enhancement_bearer_unit_ignores_cover_applies(self):
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        enhancement = Enhancement(
+            id="enh-neb",
+            name="Miniaturised Nebuloscope",
+            faction_id="NEC",
+            detachment="Starshatter Arsenal",
+            description="NECRONS model only. Ranged weapons equipped by models in the bearer's unit have the [IGNORES COVER] ability.",
+        )
+
+        leader = _make_unit("Leader")
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+        leader.enhancement = enhancement
+        enhancement.apply_to_unit(leader)
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
+            profile._hit_target_with_tracking(target, bodyguard.models[0], attack_instance)
+
+        self.assertTrue(attack_instance.get("ignores_cover", False))
+
     def test_bearer_unit_target_hit_penalty_applies(self):
         ability = {
             "name": "Deflective Field",

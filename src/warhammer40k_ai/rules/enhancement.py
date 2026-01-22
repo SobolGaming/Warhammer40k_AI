@@ -175,5 +175,12 @@ class Enhancement:
         if name == "rise to the challenge" or enh_id == "000010002005":
             unit.special_rules["enhancement_rise_to_challenge"] = True
 
+        invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
+        if callable(invalidate_fn):
+            invalidate_fn()
+        refresh_fn = getattr(unit, "_refresh_bearer_unit_common_modifiers", None)
+        if callable(refresh_fn):
+            refresh_fn()
+
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"
