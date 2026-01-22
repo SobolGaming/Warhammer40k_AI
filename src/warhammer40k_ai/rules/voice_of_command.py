@@ -238,8 +238,18 @@ class VoiceOfCommandManager:
 
     def orders_remaining(self, unit, battle_round: int) -> int:
         count, _, _ = self._parse_orders_profile(unit)
+        bonus = 0
+        army = self.army
+        if army is None and unit is not None:
+            get_parent_army = getattr(unit, "get_parent_army", None)
+            if callable(get_parent_army):
+                army = get_parent_army()
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "ruthless_discipline_orders_bonus", None) if mgr is not None else None
+        if callable(bonus_fn):
+            bonus = int(bonus_fn(unit) or 0)
         issued = self._order_issued_state(unit, battle_round)
-        return max(0, int(count) - int(issued))
+        return max(0, int(count) + int(bonus) - int(issued))
 
     def _unit_ready_for_end_phase(self, unit, phase_name: str, battle_round: Optional[int] = None) -> bool:
         if unit is None:

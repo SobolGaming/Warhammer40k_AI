@@ -1001,6 +1001,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
+        "Ruthless Discipline": (
+            "Supported",
+            "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1 and re-roll Wound rolls of 1 vs targets within objective range.",
+        ),
     }
     return {_norm(name): val for name, val in raw.items()}
 

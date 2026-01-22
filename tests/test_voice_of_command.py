@@ -18,9 +18,10 @@ class _PlayerStub:
 
 
 class _ArmyStub:
-    def __init__(self, units=None, *, faction_id="AM"):
+    def __init__(self, units=None, *, faction_id="AM", detachment_type=""):
         self.units = list(units or [])
         self.faction_id = faction_id
+        self.detachment_type = detachment_type
         self.player = _PlayerStub()
         self.player.game = None
 
@@ -43,6 +44,7 @@ class _UnitStub:
         self.round_state = SimpleNamespace(remained_stationary_this_round=False)
         self.toughness = 4
         self._army = army
+        self._force_target_within_objective = False
 
     def get_parent_army(self):
         return self._army
@@ -65,6 +67,25 @@ class _UnitStub:
 
     def get_attached_unit_root(self):
         return self
+
+    def get_leading_attack_roll_modifiers(self, attack_type: str, *, target=None) -> dict:
+        return {}
+
+    def _get_unit_attack_roll_rules(self):
+        return []
+
+    def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+        from warhammer40k_ai.units.unit import Unit
+
+        return Unit.get_unit_hit_reroll_modifiers(self, attack_type, target=target)
+
+    def get_unit_wound_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
+        from warhammer40k_ai.units.unit import Unit
+
+        return Unit.get_unit_wound_reroll_modifiers(self, attack_type, target=target)
+
+    def _target_within_objective_range(self, target_unit=None, game_map=None) -> bool:
+        return bool(getattr(self, "_force_target_within_objective", False))
 
     def add_characteristic_modifier(self, characteristic: str, modifier) -> None:
         key = str(characteristic or "").strip().lower()
@@ -433,6 +454,104 @@ class TestVoiceOfCommand(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(int(result.attacks_rolled), 3)
         self.assertTrue(any("First Rank, Fire! Second Rank, Fire! +1A" in s for s in result.attacks_special_modifiers))
+
+    def test_ruthless_discipline_adds_order_capacity(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Grizzled Company")
+        mgr = VoiceOfCommandManager(army)
+        army.voice_of_command = mgr
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        army.units = [officer]
+        officer.set_parent_army(army)
+
+        self.assertEqual(mgr.orders_remaining(officer, 1), 2)
+
+    def test_ruthless_discipline_reroll_hit_and_wound(self):
+        from warhammer40k_ai.rules.voice_of_command import VoiceOfCommandManager, ORDER_MOVE
+        from warhammer40k_ai.rules.astra_militarum_detachments import AstraMilitarumDetachmentManager
+        from warhammer40k_ai.units import wargear as wargear_module
+
+        orders_text = "This model can issue 1 order to REGIMENT units within 6\"."
+        army = _ArmyStub(detachment_type="Grizzled Company")
+        mgr = VoiceOfCommandManager(army)
+        mgr._army_has_voice = lambda: True
+        army.voice_of_command = mgr
+        army.astra_militarum_detachments = AstraMilitarumDetachmentManager(army)
+
+        officer = _UnitStub(
+            "Officer",
+            keywords=["OFFICER", "ASTRA MILITARUM"],
+            abilities=[_Ability("Voice of Command"), _Ability("Orders", orders_text)],
+            army=army,
+        )
+        shooter = _UnitStub(
+            "Infantry",
+            keywords=["REGIMENT", "ASTRA MILITARUM"],
+            abilities=[],
+            army=army,
+        )
+        target_army = _ArmyStub(faction_id="SM")
+        target = _UnitStub(
+            "Target",
+            keywords=["INFANTRY"],
+            abilities=[],
+            army=target_army,
+        )
+        target.models = [
+            SimpleNamespace(
+                name="Defender",
+                is_alive=True,
+                z=0.0,
+                save=4,
+                inv_save=(None, ""),
+                parent_unit=target,
+            )
+        ]
+        army.units = [officer, shooter]
+        officer.set_parent_army(army)
+        shooter.set_parent_army(army)
+
+        game = SimpleNamespace(
+            turn=1,
+            map=_MapStub([officer, shooter]),
+            event_system=SimpleNamespace(publish=lambda *_a, **_k: None),
+        )
+        army.player.game = game
+
+        self.assertTrue(mgr.issue_order(game, officer, shooter, ORDER_MOVE.key, phase_name="COMMAND_PHASE"))
+
+        shooter._force_target_within_objective = True
+        attacker = SimpleNamespace(name="Shooter", parent_unit=shooter)
+        ranged = self._make_profile(weapon_type="Ranged", skill="4+")
+
+        original_roll = wargear_module.get_roll
+        rolls = [1, 4]
+        wargear_module.get_roll = lambda _d, _vals=rolls: _vals.pop(0) if _vals else 4
+        try:
+            hit = ranged._hit_target_with_tracking(target, attacker, {})
+        finally:
+            wargear_module.get_roll = original_roll
+        self.assertEqual(hit.get("reroll_of_one"), 1)
+        self.assertEqual(hit.get("reroll"), 4)
+
+        rolls = [1, 4]
+        wargear_module.get_roll = lambda _d, _vals=rolls: _vals.pop(0) if _vals else 4
+        try:
+            wound = ranged._wound_target_with_tracking(target, attacker, {})
+        finally:
+            wargear_module.get_roll = original_roll
+        self.assertEqual(wound.get("reroll_of_one"), 1)
+        self.assertEqual(wound.get("reroll"), 4)
 
 
 if __name__ == "__main__":

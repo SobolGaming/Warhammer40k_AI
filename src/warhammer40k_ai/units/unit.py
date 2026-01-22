@@ -8002,6 +8002,16 @@ class Unit:
                     crit_hit_threshold = eff.critical_threshold if crit_hit_threshold is None else min(crit_hit_threshold, eff.critical_threshold)
                     crit_hit_reasons.append(f"{label}: critical hit on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
 
+        army = None
+        get_parent_army = getattr(root, "get_parent_army", None)
+        if callable(get_parent_army):
+            army = get_parent_army()
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "ruthless_discipline_reroll_hit_ones", None) if mgr is not None else None
+        if callable(bonus_fn) and bonus_fn(root):
+            reroll_hit_values.add(1)
+            reroll_hit_reasons.append("Ruthless Discipline: re-roll Hit rolls of 1 while ordered")
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -8104,6 +8114,20 @@ class Unit:
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
                     crit_wound_reasons.append(f"{label}: critical wound on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        game = None
+        army = None
+        get_parent_army = getattr(root, "get_parent_army", None)
+        if callable(get_parent_army):
+            army = get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        mgr = getattr(army, "astra_militarum_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "ruthless_discipline_reroll_wound_ones", None) if mgr is not None else None
+        if callable(bonus_fn) and bonus_fn(root, target, game=game):
+            reroll_wound_values.add(1)
+            reroll_wound_reasons.append(
+                "Ruthless Discipline: re-roll Wound rolls of 1 vs targets within objective range"
+            )
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
