@@ -515,6 +515,55 @@ class Game:
         if player._should_use_optional_ability("WAAAGH", ctx):
             mgr.call_waaagh(game=self, player=player)
 
+    def _maybe_prompt_combat_doctrines(self) -> None:
+        es = getattr(self, "event_system", None)
+        if es is None or not hasattr(es, "subscribers"):
+            raise RuntimeError("Event system missing for Combat Doctrines prompt.")
+        subs = getattr(es, "subscribers", {})
+        if not isinstance(subs, dict):
+            raise RuntimeError("Event system subscribers not configured.")
+
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Combat Doctrines prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Combat Doctrines prompt requires an army.")
+        mgr = getattr(army, "combat_doctrines", None)
+        if mgr is None:
+            return
+        if not getattr(mgr, "can_select_now", lambda **_k: False)(game=self):
+            return
+        is_human = bool(getattr(player, "has_control", lambda: False)())
+        if is_human and subs.get("combat_doctrines_prompt"):
+            es.publish("combat_doctrines_prompt", player=player, game=self)
+            return
+        options = list(getattr(mgr, "get_available_doctrines", lambda: [])() or [])
+        if not options:
+            return
+        ctx = {
+            "ability_name": "Combat Doctrines",
+            "phase": "Command phase",
+            "options": [o.name for o in options],
+        }
+        choice = None
+        try:
+            choice = player._choose_optional_value("COMBAT_DOCTRINE", [o.name for o in options], ctx)
+        except Exception:
+            choice = None
+        selected = None
+        if choice in options:
+            selected = choice
+        elif isinstance(choice, str):
+            choice_norm = choice.strip().lower()
+            for opt in options:
+                if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
+                    selected = opt
+                    break
+        if selected is None:
+            return
+        mgr.select_doctrine(selected, battle_round=getattr(self, "turn", 0))
+
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
         es = getattr(self, "event_system", None)
         if es is None or not hasattr(es, "subscribers"):
@@ -6043,6 +6092,11 @@ class Game:
         if mgr is not None:
             mgr.on_command_phase_start(game=self, player=current_player)
             self.event_system.publish("oath_of_moment_prompt", player=current_player, game=self)
+
+        # Space Marines: Combat Doctrines selection at the start of your Command phase.
+        mgr = getattr(army, "combat_doctrines", None)
+        if mgr is not None:
+            self._maybe_prompt_combat_doctrines()
 
         # Imperial Knights: Bondsman selection at the start of your Command phase.
         mgr = getattr(army, "bondsman", None)

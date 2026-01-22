@@ -163,6 +163,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return det in CODEX_SPACE_MARINES_DETACHMENTS
 
+    def is_gladius_task_force(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Gladius Task Force")
+
     def has_divergent_chapter_keywords(self) -> bool:
         army = self.army
         if army is None:

@@ -225,6 +225,7 @@ class GameView:
         self.shadow_form_dialog = None
         self.harbingers_of_dread_dialog = None
         self.doctrina_imperatives_dialog = None
+        self.combat_doctrines_dialog = None
         self.voice_of_command_dialog = None
         self.voice_of_command_officer_dialog = None
         self.voice_of_command_target_dialog = None
@@ -1927,6 +1928,8 @@ class GameView:
         self._pending_harbingers_queue = []
         # Adeptus Mechanicus: Doctrina Imperatives selection queue
         self._pending_doctrina_queue = []
+        # Space Marines: Combat Doctrines selection queue
+        self._pending_combat_doctrines_queue = []
         # Imperial Knights: Code Chivalric selection queue
         self._pending_code_chivalric_queue = []
         # Imperial Knights: Bondsman selection queue
@@ -2021,6 +2024,8 @@ class GameView:
                 self.game.event_system.subscribe("dark_pacts_prompt", self._on_dark_pacts_prompt)
                 # Astra Militarum: Voice of Command prompt at Command phase start/end
                 self.game.event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
+                # Space Marines: Combat Doctrines prompt
+                self.game.event_system.subscribe("combat_doctrines_prompt", self._on_combat_doctrines_prompt)
                 # Grey Knights: Gate of Infinity prompt at end of opponent's Fight phase
                 self.game.event_system.subscribe("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt)
                 # End of opponent's turn: Strategic Reserves prompt
@@ -9464,6 +9469,128 @@ class GameView:
         self.doctrina_imperatives_dialog.show(on_confirm=_on_confirm, decision_request=req)
         try:
             self.dialog_manager.open(self.doctrina_imperatives_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _on_combat_doctrines_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "combat_doctrines", None)
+        if mgr is None or not getattr(mgr, "can_select_now", lambda **_k: False)(game=game):
+            return
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        self._pending_combat_doctrines_queue = [(player, battle_round)]
+        self._open_next_combat_doctrines_prompt(battle_round)
+
+    def _open_next_combat_doctrines_prompt(self, battle_round: int) -> None:
+        if not self._pending_combat_doctrines_queue:
+            return
+        try:
+            player, br = self._pending_combat_doctrines_queue.pop(0)
+        except Exception:
+            return
+        army = player.get_army()
+        mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "can_select_now", lambda **_k: False)(game=self.game):
+            self._open_next_combat_doctrines_prompt(br)
+            return
+        try:
+            options = list(getattr(mgr, "get_available_doctrines", lambda: [])() or [])
+        except Exception:
+            options = []
+        if not options:
+            self._open_next_combat_doctrines_prompt(br)
+            return
+
+        if self.combat_doctrines_dialog is None:
+            try:
+                from .dialogs import CombatDoctrinesDialog
+                sw, sh = self.screen.get_size()
+                self.combat_doctrines_dialog = CombatDoctrinesDialog(sw, sh)
+            except Exception:
+                self.combat_doctrines_dialog = None
+        if self.combat_doctrines_dialog is None:
+            self._open_next_combat_doctrines_prompt(br)
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DOCTRINE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(army)
+        req_options = []
+        req_options.append(
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "summary": "Do not select a Combat Doctrine this Command phase.", "army_id": army_id},
+            )
+        )
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            self._open_next_combat_doctrines_prompt(br)
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_COMBAT_DOCTRINE,
+            "Select Combat Doctrine.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": br},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
+            try:
+                choice_label = ""
+                for opt in list(getattr(req, "options", []) or []):
+                    if opt.option_id == option_id:
+                        choice_label = str(getattr(opt, "label", "") or "")
+                        break
+            except Exception:
+                choice_label = ""
+            try:
+                from ..utility.event_bus import append_action
+                if choice_label:
+                    append_action(player, f"Combat Doctrines: {choice_label} (Battle Round {br})")
+            except Exception:
+                pass
+            self._open_next_combat_doctrines_prompt(br)
+
+        self.combat_doctrines_dialog.show(on_confirm=_on_confirm, decision_request=req)
+        try:
+            self.dialog_manager.open(self.combat_doctrines_dialog, modal=True)
         except Exception:
             pass
 

@@ -250,6 +250,7 @@ class Army:
         self.battle_focus = None
         self.templar_vows = None
         self.oath_of_moment = None
+        self.combat_doctrines = None
         self.nurgles_gift = None
         self.shadow_of_chaos = None
         self.shadow_form = None
@@ -300,8 +301,10 @@ class Army:
         if fid == "SM":
             from ..rules.templar_vows import TemplarVowsManager
             from ..rules.oath_of_moment import OathOfMomentManager
+            from ..rules.combat_doctrines import CombatDoctrinesManager
             self.templar_vows = TemplarVowsManager(self)
             self.oath_of_moment = OathOfMomentManager(self)
+            self.combat_doctrines = CombatDoctrinesManager(self)
 
         if fid == "DG":
             from ..rules.nurgles_gift import NurglesGiftManager

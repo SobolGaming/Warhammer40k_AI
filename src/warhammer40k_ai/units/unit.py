@@ -11031,6 +11031,15 @@ class Unit:
                         return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_shoot_after_advance", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_shoot_after_advance(self, profile, game=game):
+                    return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
@@ -11056,6 +11065,16 @@ class Unit:
         # Check for unit abilities that allow shooting after falling back
         if self.has_fell_back_and_shoot():
             return True
+
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_shoot_after_fall_back", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_shoot_after_fall_back(self, profile, game=game):
+                    return True
+        except Exception:
+            pass
             
         return False
 
@@ -11077,6 +11096,15 @@ class Unit:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_charge_after_advance"):
                 return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_charge_after_advance", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_charge_after_advance(self, game=game):
+                    return True
         except Exception:
             pass
         has_ability = self.has_advance_and_charge()
@@ -11119,6 +11147,15 @@ class Unit:
             mgr = getattr(army, "templar_vows", None) if army is not None else None
             if mgr is not None and mgr.can_charge_after_fall_back(self):
                 return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "combat_doctrines", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "can_charge_after_fall_back", None):
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr.can_charge_after_fall_back(self, game=game):
+                    return True
         except Exception:
             pass
         return self._has_simple_eligibility_rule([
