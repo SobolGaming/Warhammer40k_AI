@@ -19,6 +19,31 @@ class DetachmentManagerBase:
         except Exception:
             return ""
 
+    def _unit_has_keyword(self, unit, keyword: str) -> bool:
+        if unit is None:
+            return False
+        kw = (keyword or "").strip()
+        if not kw:
+            return False
+        has_any = getattr(unit, "has_any_keyword", None)
+        if callable(has_any):
+            return bool(has_any(kw))
+        raw = [str(k or "") for k in (getattr(unit, "keywords", []) or [])]
+        raw += [str(k or "") for k in (getattr(unit, "faction_keywords", []) or [])]
+        return kw.lower() in {k.lower() for k in raw if str(k).strip()}
+
+    def _unit_has_keyword_or_faction(self, unit, keyword: str, *, faction_id: str = "") -> bool:
+        if self._unit_has_keyword(unit, keyword):
+            return True
+        if unit is None:
+            return False
+        has_keywords = bool(getattr(unit, "keywords", None)) or bool(getattr(unit, "faction_keywords", None))
+        if has_keywords:
+            return False
+        if faction_id:
+            return self._army_faction_matches(faction_id)
+        return False
+
     def _army_faction_matches(self, faction_id: str) -> bool:
         fid = ""
         try:

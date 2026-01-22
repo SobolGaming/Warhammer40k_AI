@@ -16,28 +16,6 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Hallowed Conclave")
 
-    def _unit_has_keyword(self, unit, keyword: str) -> bool:
-        if unit is None:
-            return False
-        try:
-            return bool(unit.has_any_keyword(keyword))
-        except Exception:
-            pass
-        kw = (keyword or "").strip().lower()
-        if not kw:
-            return False
-        try:
-            if kw in [k.lower() for k in (getattr(unit, "keywords", []) or [])]:
-                return True
-        except Exception:
-            pass
-        try:
-            if kw in [k.lower() for k in (getattr(unit, "faction_keywords", []) or [])]:
-                return True
-        except Exception:
-            pass
-        return False
-
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
             return False

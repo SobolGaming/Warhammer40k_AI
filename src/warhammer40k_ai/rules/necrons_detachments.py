@@ -42,23 +42,6 @@ class NecronsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Starshatter Arsenal")
 
-    def _unit_has_keyword(self, unit, keyword: str) -> bool:
-        if unit is None:
-            return False
-        kw = (keyword or "").strip()
-        if not kw:
-            return False
-        try:
-            return bool(unit.has_any_keyword(kw))
-        except Exception:
-            pass
-        try:
-            raw = [str(k or "") for k in (getattr(unit, "keywords", []) or [])]
-            raw += [str(k or "") for k in (getattr(unit, "faction_keywords", []) or [])]
-            return kw.lower() in {k.lower() for k in raw if str(k).strip()}
-        except Exception:
-            return False
-
     def unit_is_necrons(self, unit) -> bool:
         if unit is None:
             return False

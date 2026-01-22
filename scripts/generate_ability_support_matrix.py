@@ -983,6 +983,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
+        "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Blood Tithe": (
             "Supported",
             "Khorne Daemonkin: gain BTP on 3+ for eligible kills; spend BTP to activate Enraged Abjuration, Daemonic Rage, Boon of Blood, or Might of Khorne (command phase limit + A Worthy Skull fight-phase activation). Restriction enforced during army validation.",

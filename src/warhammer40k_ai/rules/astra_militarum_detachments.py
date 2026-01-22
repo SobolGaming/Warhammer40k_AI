@@ -11,19 +11,6 @@ class AstraMilitarumDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Grizzled Company")
 
-    def _unit_has_keyword(self, unit, keyword: str) -> bool:
-        if unit is None:
-            return False
-        kw = (keyword or "").strip()
-        if not kw:
-            return False
-        has_any = getattr(unit, "has_any_keyword", None)
-        if callable(has_any):
-            return bool(has_any(kw))
-        raw = [str(k or "") for k in (getattr(unit, "keywords", []) or [])]
-        raw += [str(k or "") for k in (getattr(unit, "faction_keywords", []) or [])]
-        return kw.lower() in {k.lower() for k in raw if str(k).strip()}
-
     def unit_is_astra_militarum(self, unit) -> bool:
         if unit is None:
             return False

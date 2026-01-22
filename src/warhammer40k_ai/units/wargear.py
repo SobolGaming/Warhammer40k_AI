@@ -3489,6 +3489,19 @@ class WargearProfile:
             bearer_unit_sustained_value = 0
         bearer_unit_sustained = bool(bearer_unit_sustained_value)
 
+        war_horde_sustained_value = 0
+        if is_melee:
+            unit = getattr(attacker, "parent_unit", None)
+            army = None
+            get_parent_army = getattr(unit, "get_parent_army", None) if unit is not None else None
+            if callable(get_parent_army):
+                army = get_parent_army()
+            mgr = getattr(army, "orks_detachments", None) if army is not None else None
+            value_fn = getattr(mgr, "war_horde_sustained_hits_value", None) if mgr is not None else None
+            if callable(value_fn):
+                war_horde_sustained_value = int(value_fn(unit, attack_type="melee") or 0)
+        war_horde_sustained = bool(war_horde_sustained_value)
+
         sustained_base = (
             self.is_sustained_hits()
             or blessings_sustained
@@ -3501,6 +3514,7 @@ class WargearProfile:
             or empowered_sustained
             or pain_sustained
             or bearer_unit_sustained
+            or war_horde_sustained
         )
 
         blitzing_grants_sustained = False
@@ -3557,7 +3571,7 @@ class WargearProfile:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -3579,6 +3593,9 @@ class WargearProfile:
                     elif bearer_unit_sustained_value:
                         sustained_val = max(int(sustained_val), int(bearer_unit_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Bearer Unit]"
+                    elif war_horde_sustained_value:
+                        sustained_val = max(int(sustained_val), int(war_horde_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [War Horde]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
@@ -3625,7 +3642,7 @@ class WargearProfile:
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -3659,10 +3676,22 @@ class WargearProfile:
                                 label = f"Sustained Hits (+{bearer_unit_sustained_value}) [Bearer Unit]"
                             else:
                                 label += " [Bearer Unit]"
+                        elif war_horde_sustained:
+                            if war_horde_sustained_value > 1:
+                                label = f"Sustained Hits (+{war_horde_sustained_value}) [War Horde]"
+                            else:
+                                label += " [War Horde]"
                         elif blitzing_grants_sustained:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
-                        attack_instance['sustained_hit'] = max(bearer_unit_sustained_value, pain_sustained_value) if (bearer_unit_sustained or pain_sustained) else 1
+                        sustained_vals = [1]
+                        if bearer_unit_sustained:
+                            sustained_vals.append(int(bearer_unit_sustained_value or 0))
+                        if pain_sustained:
+                            sustained_vals.append(int(pain_sustained_value or 0))
+                        if war_horde_sustained:
+                            sustained_vals.append(int(war_horde_sustained_value or 0))
+                        attack_instance['sustained_hit'] = max(sustained_vals)
 
         # Ork charge-related keywords: track hits against MONSTER/VEHICLE units.
         if hit_result.get("hit"):
