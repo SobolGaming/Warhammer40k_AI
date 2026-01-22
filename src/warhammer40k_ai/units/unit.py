@@ -10858,6 +10858,12 @@ class Unit:
                         return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("command_phase_fell_back_and_shoot_active"):
+                return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']

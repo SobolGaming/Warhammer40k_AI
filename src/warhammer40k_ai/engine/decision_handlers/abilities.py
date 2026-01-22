@@ -508,7 +508,20 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         return None
     payload = _option_payload(request, result)
     unit_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
-    return resolve_unit(game, unit_val)
+    chosen = resolve_unit(game, unit_val)
+    ctx = dict(getattr(request, "context", {}) or {})
+    if ctx.get("necrons_command_phase_enhancement"):
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+        if mgr is not None and hasattr(mgr, "spec_from_context"):
+            spec = mgr.spec_from_context(ctx)
+            source_unit = resolve_unit(game, ctx.get("source_unit_id"))
+            if source_unit is not None and chosen is not None and spec is not None:
+                try:
+                    mgr.apply_command_phase_bearer_effect(source_unit, chosen, spec)
+                except Exception:
+                    pass
+    return chosen
 
 
 def _validate_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

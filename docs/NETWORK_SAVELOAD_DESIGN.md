@@ -206,7 +206,7 @@ Faction / Detachment / Ability choices:
 - miracle_dice_dialog: USE_MIRACLE_DIE {die_id, roll_context}
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id}
-- quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id}
+- quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id} (context may include `ability`, `effect_key`, `source_unit_id`)
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
 - templar_vows_dialog: CHOOSE_VOW {choice_id}

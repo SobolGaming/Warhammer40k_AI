@@ -36,6 +36,7 @@ class QuarrySelectionDialog(BaseDialog):
         self._on_cancel: Optional[Callable[[], None]] = None
         self.decision_request = None
         self._option_entries: List[dict] = []
+        self._show_cancel: bool = True
 
         self.add_button("confirm", 10, self.height - 50, 160, 35)
         self.add_button("cancel", self.width - 160, self.height - 50, 140, 35)
@@ -49,6 +50,7 @@ class QuarrySelectionDialog(BaseDialog):
         on_confirm: Callable[[str], None],
         on_cancel: Optional[Callable[[], None]] = None,
         decision_request=None,
+        show_cancel: bool = True,
     ):
         super().show()
         self.visible = True
@@ -56,6 +58,7 @@ class QuarrySelectionDialog(BaseDialog):
         self.header = header or ""
         self.subtitle = subtitle or ""
         self.decision_request = decision_request
+        self._show_cancel = bool(show_cancel)
         self._option_entries = []
         if self.decision_request is not None:
             from ..decision_ui_utils import option_entries
@@ -75,9 +78,12 @@ class QuarrySelectionDialog(BaseDialog):
         self._on_cancel = None
         self.decision_request = None
         self._option_entries = []
+        self._show_cancel = True
 
     def _handle_button_click(self, button_name: str) -> bool:
         if button_name == "cancel":
+            if not self._show_cancel:
+                return True
             if self._on_cancel is not None:
                 self._on_cancel()
             self.hide()
@@ -169,5 +175,6 @@ class QuarrySelectionDialog(BaseDialog):
             screen.blit(txt, (r.x + 10, r.y + (r.height - txt.get_height()) // 2))
 
         self.draw_button(screen, "confirm", "Confirm")
-        self.draw_button(screen, "cancel", "Cancel")
+        if self._show_cancel:
+            self.draw_button(screen, "cancel", "Cancel")
 

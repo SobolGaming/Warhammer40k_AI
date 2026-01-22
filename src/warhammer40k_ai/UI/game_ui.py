@@ -1739,6 +1739,7 @@ class GameView:
         self._oath_of_moment_flow_active = False
         self._code_chivalric_flow_active = False
         self._bondsman_flow_active = False
+        self._necrons_enhancement_flow_active = False
         self._summoned_by_slaughter_flow_active = False
         self._dark_pacts_flow_active = False
         self._martial_katah_flow_active = False
@@ -1781,6 +1782,8 @@ class GameView:
         self._pending_code_chivalric_queue = []
         # Imperial Knights: Bondsman selection queue
         self._pending_bondsman_queue = []
+        # Necrons enhancements: command phase target selection queue
+        self._pending_necrons_enhancement_queue = []
         # Chaos Space Marines: Dark Pacts selection queue
         self._pending_dark_pacts_queue = []
         # Astra Militarum: Voice of Command prompt queue
@@ -1854,6 +1857,11 @@ class GameView:
                 self.game.event_system.subscribe("daemonic_allegiance_prompt", self._on_daemonic_allegiance_prompt)
                 # Imperial Knights: Bondsman selection (Command phase)
                 self.game.event_system.subscribe("bondsman_prompt", self._on_bondsman_prompt)
+                # Necrons enhancements: command phase bearer target selection
+                self.game.event_system.subscribe(
+                    "necrons_command_phase_enhancement_prompt",
+                    self._on_necrons_command_phase_enhancement_prompt,
+                )
                 # Tyranids: Shadow in the Warp prompt (either Command phase)
                 self.game.event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
                 # Orks: Waaagh! prompt (start of Command phase)
@@ -6329,6 +6337,151 @@ class GameView:
             on_confirm=_done,
             on_cancel=_cancel,
             decision_request=req,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            _cancel()
+
+    def _on_necrons_command_phase_enhancement_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "necrons_detachments", None)
+        if mgr is None:
+            return
+        if bool(getattr(self, "_necrons_enhancement_flow_active", False)):
+            return
+        try:
+            sources = list(mgr.get_command_phase_bearer_sources() or [])
+        except Exception:
+            sources = []
+        if not sources:
+            return
+        self._pending_necrons_enhancement_queue = list(sources)
+        self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+
+    def _open_next_necrons_command_phase_enhancement_prompt(self, game, player):
+        if not self._pending_necrons_enhancement_queue:
+            self._necrons_enhancement_flow_active = False
+            return
+        self._necrons_enhancement_flow_active = True
+        entry = self._pending_necrons_enhancement_queue.pop(0)
+        source_unit = entry.get("source")
+        spec = entry.get("spec")
+        try:
+            mgr = getattr(player.get_army(), "necrons_detachments", None)
+        except Exception:
+            mgr = None
+        if mgr is None or source_unit is None or spec is None:
+            self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+            return
+        try:
+            targets = list(mgr.get_command_phase_bearer_targets(source_unit, spec) or [])
+        except Exception:
+            targets = []
+        if not targets:
+            self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+            return
+        try:
+            from .dialogs import QuarrySelectionDialog
+        except Exception:
+            mgr.apply_command_phase_bearer_effect(source_unit, targets[0], spec)
+            self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+            return
+
+        if not hasattr(self, "necrons_enhancement_dialog") or self.necrons_enhancement_dialog is None:
+            self.necrons_enhancement_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+        dlg = self.necrons_enhancement_dialog
+
+        effect_text = ""
+        if getattr(spec, "effect_key", "") == "fell_back_shoot":
+            effect_text = "Selected unit can shoot after Falling Back until your next Command phase."
+        elif getattr(spec, "effect_key", "") == "damage_reduction":
+            effect_text = f"Selected unit takes -{int(getattr(spec, 'effect_value', 1) or 1)} Damage until your next Command phase."
+
+        header = (
+            f"{getattr(spec, 'ability_name', 'Command Phase Ability')}: "
+            f"select a friendly {getattr(spec, 'target_label', 'unit')} within "
+            f"{int(getattr(spec, 'range_inches', 0) or 0)}\" of {getattr(source_unit, 'name', 'this model')}."
+        )
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        req = None
+        try:
+            queue = getattr(self.game, "decision_queue", None)
+            source_id = str(get_entity_id(source_unit) or "")
+            for pending in list(getattr(queue, "list", lambda: [])() or []):
+                if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(pending, "context", {}) or {})
+                if not ctx.get("necrons_command_phase_enhancement"):
+                    continue
+                if str(ctx.get("source_unit_id", "")) != source_id:
+                    continue
+                if str(ctx.get("effect_key", "")) != str(getattr(spec, "effect_key", "")):
+                    continue
+                if str(ctx.get("ability", "")) != str(getattr(spec, "ability_name", "")):
+                    continue
+                req = pending
+                break
+        except Exception:
+            req = None
+        if req is None:
+            try:
+                req = mgr.build_command_phase_bearer_request(game, player, source_unit, spec, targets)
+            except Exception:
+                req = None
+        if req is None:
+            mgr.apply_command_phase_bearer_effect(source_unit, targets[0], spec)
+            self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+            return
+
+        def _done(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is not None and getattr(apply_result, "ok", False) and value is not None:
+                try:
+                    from ..utility.event_bus import append_action
+                    append_action(
+                        player,
+                        f"{getattr(spec, 'ability_name', 'Command Phase Ability')}: "
+                        f"{getattr(source_unit, 'name', 'Source')} -> {getattr(value, 'name', '')}",
+                    )
+                except Exception:
+                    pass
+            self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+
+        def _cancel():
+            self._pending_necrons_enhancement_queue = [entry] + list(
+                getattr(self, "_pending_necrons_enhancement_queue", []) or []
+            )
+            self._open_next_necrons_command_phase_enhancement_prompt(game, player)
+
+        dlg.show(
+            title=f"{getattr(spec, 'ability_name', 'Command Phase Ability')}",
+            header=header,
+            subtitle=effect_text,
+            on_confirm=_done,
+            on_cancel=_cancel,
+            decision_request=req,
+            show_cancel=False,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
