@@ -1000,6 +1000,7 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Daemonic Incursion: Deep Strike min distance reduced to 6\" when wholly within Shadow of Chaos zones or within 6\" of a matching Greater Daemon/Dark Master aura; cannot bootstrap off the arriving unit.",
         ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
+        "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),
     }
     return {_norm(name): val for name, val in raw.items()}
 
@@ -3435,6 +3436,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010078003": "Blood-forged Armour: set bearer Save to 2+; gain 1 Blood Tithe point when bearer is destroyed.",
         "000010078004": "Disciple of Khorne: Lord on Juggernaut can attach to Bloodcrushers/Flesh Hounds; bearer gains Deep Strike and BLOOD LEGIONS (instead of WORLD EATERS) while leading; attached unit benefits from Blessings of Khorne (FAQ).",
         "000010078005": "Blade of Endless Bloodshed: +1 A/S/D for bearer melee weapons; melee kill auto-grants 1 Blood Tithe point.",
+        "000009749002": "Dread Majesty (Aura): NECRONS units within 6\" (excluding TITANIC) re-roll Hit and Wound rolls of 1.",
+        "000009749003": "Miniaturised Nebuloscope: bearer unit ranged weapons ignore cover.",
+        "000009749004": "Demanding Leader: Command phase select friendly NECRONS VEHICLE/MOUNTED (non-TITANIC) within 6\" to shoot after Falling Back until next Command phase.",
+        "000009749005": "Chrono-impedance Fields: Command phase select friendly NECRONS VEHICLE/MOUNTED (non-TITANIC) within 6\"; allocated damage -1 until next Command phase.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])
