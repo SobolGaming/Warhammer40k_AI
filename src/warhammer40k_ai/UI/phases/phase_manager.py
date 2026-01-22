@@ -2347,6 +2347,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         max_distance: float | None = None,
         target_unit=None,
         placement_validator=None,
+        decision_request=None,
     ) -> None:
         if movement_type in ("pile_in", "consolidate") and bool(getattr(unit, "is_aircraft", False)):
             print(f"{getattr(unit, 'name', 'Unit')} cannot {movement_type.replace('_', ' ')} (AIRCRAFT)")
@@ -2359,30 +2360,37 @@ class BattlePhaseHandler(BasePhaseHandler):
         from ...utility.entity_ids import get_entity_id
         from ..decision_ui_utils import option_id_for_action, first_option_id
 
-        unit_id = get_entity_id(unit)
-        options = [
-            DecisionOption.create(
-                "Confirm",
-                payload={"unit_id": unit_id, "movement_type": movement_type, "action": "confirm"},
-            ),
-            DecisionOption.create(
-                "Skip",
-                payload={"unit_id": unit_id, "movement_type": movement_type, "action": "skip"},
-            ),
-        ]
-        player_id = None
-        try:
-            player_id = unit.get_parent_army().player.id
-        except Exception:
+        req = decision_request
+        if req is None:
+            unit_id = get_entity_id(unit)
+            options = [
+                DecisionOption.create(
+                    "Confirm",
+                    payload={"unit_id": unit_id, "movement_type": movement_type, "action": "confirm"},
+                ),
+                DecisionOption.create(
+                    "Skip",
+                    payload={"unit_id": unit_id, "movement_type": movement_type, "action": "skip"},
+                ),
+            ]
             player_id = None
-        req = DecisionRequest.create(
-            DECISION_MOVE_UNIT,
-            f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
-            player_id=player_id,
-            options=options,
-            context={"unit_id": unit_id, "movement_type": movement_type},
-        )
-        self.game.request_decision(req)
+            try:
+                player_id = unit.get_parent_army().player.id
+            except Exception:
+                player_id = None
+            req = DecisionRequest.create(
+                DECISION_MOVE_UNIT,
+                f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
+                player_id=player_id,
+                options=options,
+                context={"unit_id": unit_id, "movement_type": movement_type},
+            )
+            self.game.request_decision(req)
+        elif max_distance is None:
+            try:
+                max_distance = float(getattr(req, "context", {}).get("max_distance", 0) or 0)
+            except Exception:
+                max_distance = None
         confirm_id = first_option_id(req)
         skip_id = option_id_for_action(req, "skip") or confirm_id
 

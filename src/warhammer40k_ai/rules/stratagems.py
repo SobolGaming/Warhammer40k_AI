@@ -3,7 +3,7 @@ import copy
 import html
 import re
 from typing import Callable, Optional, Dict, Any, List
-from ..utility.dice import get_roll
+from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
 
 
@@ -46,6 +46,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CUT DOWN THE WEAK",
     "UNBOUND ARROGANCE",
     "WEBWAY TUNNEL",
+    "UNYIELDING FORMS",
+    "MERCILESS RECLAMATION",
+    "DIMENSIONAL TUNNEL",
+    "CHRONOSHIFT",
+    "ENDLESS SERVITUDE",
+    "REACTIVE REPOSITION",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -79,6 +85,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
     "WEBWAY TUNNEL",
+    "UNYIELDING FORMS",
+    "ENDLESS SERVITUDE",
+    "REACTIVE REPOSITION",
 }
 
 
@@ -742,6 +751,8 @@ class StratagemManager:
         self._charge_melee_ap_cache: Dict[str, Optional[Dict[str, Any]]] = {}
         # Cache parsed consolidate move stratagem specs by stratagem id/name.
         self._consolidate_move_cache: Dict[str, Optional[Dict[str, Any]]] = {}
+        # Track recent shooting targets per attacker (for post-shooting reactions).
+        self._recent_shooting_targets: Dict[str, List[Any]] = {}
         self.refresh_available()
         # Per-turn usage limits (e.g., Overwatch once/turn)
         self._used_this_turn: Dict[str, bool] = {
@@ -850,6 +861,8 @@ class StratagemManager:
 
         if "FIRE AND FADE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
+        if "REACTIVE REPOSITION" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_reactive_reposition)
 
         has_consolidate_spec = False
         has_charge_melee_ap_spec = False
@@ -886,6 +899,7 @@ class StratagemManager:
             "THE FOE FORESEEN",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
+            "UNYIELDING FORMS",
         }
         fight_reaction_names = {
             "DEATH ECSTASY",
@@ -894,6 +908,7 @@ class StratagemManager:
             "THE FOE FORESEEN",
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
+            "UNYIELDING FORMS",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -934,6 +949,7 @@ class StratagemManager:
             "RAPID INGRESS",
             "SKYBORNE SANCTUARY",
             "WEBWAY TUNNEL",
+            "ENDLESS SERVITUDE",
         }
         phase_end_cleanup_names = {
             "GO TO GROUND",
@@ -943,6 +959,10 @@ class StratagemManager:
             "DAEMONIC FURY",
             "HACK AND SLASH",
             "FRENZIED RESILIENCE",
+            "UNYIELDING FORMS",
+            "MERCILESS RECLAMATION",
+            "DIMENSIONAL TUNNEL",
+            "CHRONOSHIFT",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -1626,6 +1646,21 @@ class StratagemManager:
                     result["available"] = True
                     result["reason"] = None
                     return result
+            if name_u == "MERCILESS RECLAMATION":
+                if self._starshatter_merciless_reclamation_candidates(phase_name):
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if name_u == "DIMENSIONAL TUNNEL":
+                if self._starshatter_dimensional_tunnel_candidates():
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
+            if name_u == "CHRONOSHIFT":
+                if self._starshatter_chronoshift_candidates():
+                    result["available"] = True
+                    result["reason"] = None
+                    return result
             if stratagem.can_use(self.player, self.game, **context):
                 result["available"] = True
                 result["reason"] = None
@@ -1659,6 +1694,22 @@ class StratagemManager:
             return False
         try:
             return bool(mgr.is_warhost_detachment())
+        except Exception:
+            raise
+
+    def _get_necrons_mgr(self):
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        return getattr(army, "necrons_detachments", None) if army is not None else None
+
+    def _is_starshatter_arsenal(self) -> bool:
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return False
+        try:
+            return bool(mgr.is_starshatter_arsenal())
         except Exception:
             raise
     def _blitzing_firepower_candidates(self) -> List[Any]:
@@ -1717,6 +1768,112 @@ class StratagemManager:
                 raise
             candidates.append(root)
         return candidates
+
+    def _starshatter_candidates(
+        self,
+        *,
+        require_vehicle_or_mounted: bool = False,
+        require_not_moved: bool = False,
+        require_not_shot: bool = False,
+        require_not_fought: bool = False,
+    ) -> List[Any]:
+        if not self._is_starshatter_arsenal():
+            return []
+        mgr = self._get_necrons_mgr()
+        if mgr is None:
+            return []
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        candidates: List[Any] = []
+        seen = set()
+        for unit in units:
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                continue
+            try:
+                uid = get_entity_id(root)
+            except Exception:
+                raise
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                raise
+            try:
+                if not mgr.unit_is_necrons(root):
+                    continue
+                if mgr.unit_is_titanic(root):
+                    continue
+            except Exception:
+                raise
+            if require_vehicle_or_mounted:
+                try:
+                    if not mgr.unit_is_vehicle_or_mounted(root):
+                        continue
+                except Exception:
+                    raise
+            if require_not_moved:
+                try:
+                    if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                        continue
+                except Exception:
+                    raise
+            if require_not_shot:
+                try:
+                    if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                        continue
+                except Exception:
+                    raise
+            if require_not_fought:
+                try:
+                    if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                        continue
+                except Exception:
+                    raise
+            candidates.append(root)
+        return candidates
+
+    def _starshatter_merciless_reclamation_candidates(self, phase_name: str | None = None) -> List[Any]:
+        phase_key = str(phase_name or "").strip().lower()
+        require_not_shot = "shooting" in phase_key
+        require_not_fought = "fight" in phase_key
+        return self._starshatter_candidates(
+            require_vehicle_or_mounted=False,
+            require_not_shot=require_not_shot,
+            require_not_fought=require_not_fought,
+        )
+
+    def _starshatter_dimensional_tunnel_candidates(self) -> List[Any]:
+        return self._starshatter_candidates(require_vehicle_or_mounted=True)
+
+    def _starshatter_chronoshift_candidates(self) -> List[Any]:
+        return self._starshatter_candidates(require_vehicle_or_mounted=True, require_not_moved=True)
 
     def _unit_wholly_within_battlefield_edge_distance(self, unit, distance: float) -> bool:
         if unit is None:
@@ -2067,6 +2224,11 @@ class StratagemManager:
             self._prune_reactions_for_phase()
         except Exception:
             raise
+        try:
+            if hasattr(self, "_recent_shooting_targets"):
+                self._recent_shooting_targets.clear()
+        except Exception:
+            raise
         # Reset once-per-turn limits on your turn start
         try:
             is_active_turn = player is self.player
@@ -2182,6 +2344,59 @@ class StratagemManager:
                         u.special_rules = sr
                     except Exception:
                         raise
+        except Exception:
+            raise
+        # Clear end-of-phase Necrons stratagem buffs (Movement/Shooting/Fight).
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name in ("MOVEMENT_PHASE", "SHOOTING_PHASE", "FIGHT_PHASE"):
+                units = list(getattr(self.player.get_army(), "units", []) or [])
+                seen = set()
+                for unit in units:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    try:
+                        sr = getattr(root, "special_rules", None)
+                    except Exception:
+                        sr = None
+                    if not isinstance(sr, dict):
+                        continue
+                    if phase_name == "MOVEMENT_PHASE":
+                        exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
+                        if sr.get("chronoshift_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            sr.pop("chronoshift_active", None)
+                            sr.pop("chronoshift_expires_phase", None)
+                        exp = str(sr.get("dimensional_tunnel_expires_phase", "") or "").strip().upper()
+                        if sr.get("dimensional_tunnel_active") and (not exp or exp == "MOVEMENT_PHASE"):
+                            added = set(sr.get("dimensional_tunnel_added_phase_move_types") or [])
+                            if added:
+                                current = list(sr.get("bearer_unit_phase_move_types") or [])
+                                kept = [t for t in current if t not in added]
+                                if kept:
+                                    sr["bearer_unit_phase_move_types"] = kept
+                                else:
+                                    sr.pop("bearer_unit_phase_move_types", None)
+                            sr.pop("dimensional_tunnel_added_phase_move_types", None)
+                            sr.pop("dimensional_tunnel_active", None)
+                            sr.pop("dimensional_tunnel_expires_phase", None)
+                    if phase_name in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+                        exp = str(sr.get("merciless_reclamation_expires_phase", "") or "").strip().upper()
+                        if sr.get("merciless_reclamation_active") and (not exp or exp == phase_name):
+                            sr.pop("merciless_reclamation_active", None)
+                            sr.pop("merciless_reclamation_expires_phase", None)
+                    root.special_rules = sr
         except Exception:
             raise
         # Clear generic defensive reaction effects at phase end.
@@ -2481,6 +2696,121 @@ class StratagemManager:
                             }, use_timer=False)
         except Exception:
             raise
+        # Necrons: ENDLESS SERVITUDE (end of your Fight phase)
+        try:
+            phase_name = getattr(phase, "name", None)
+            if player is self.player and phase_name == "FIGHT_PHASE":
+                s = self.get_by_name("ENDLESS SERVITUDE")
+                if not s:
+                    pass
+                elif not self._is_starshatter_arsenal():
+                    pass
+                elif self.player.command_points < s.cp_cost:
+                    pass
+                elif (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                elif not s.can_use(self.player, self.game, phase_name="Fight phase"):
+                    pass
+                else:
+                    try:
+                        army = self.player.get_army()
+                    except Exception:
+                        raise
+                    mgr = self._get_necrons_mgr()
+                    game_map = getattr(self.game, "map", None)
+                    if game_map is None:
+                        return
+                    candidates = []
+                    seen = set()
+                    for unit in list(getattr(army, "units", []) or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if not getattr(root, "deployed", False):
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if getattr(root, "is_in_reserves", lambda: False)():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if mgr is not None:
+                            try:
+                                if not mgr.unit_is_necrons(root):
+                                    continue
+                                if mgr.unit_is_titanic(root):
+                                    continue
+                            except Exception:
+                                raise
+                        try:
+                            has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
+                            if callable(has_rp) and not has_rp():
+                                continue
+                        except Exception:
+                            raise
+                        in_controlled = False
+                        for obj in list(getattr(game_map, "objectives", []) or []):
+                            loc = getattr(obj, "location", None)
+                            if loc is None or getattr(loc, "removed", False):
+                                continue
+                            try:
+                                if hasattr(loc, "update_control"):
+                                    loc.update_control(self.game)
+                            except Exception:
+                                pass
+                            if getattr(loc, "controlling_player", None) is not self.player:
+                                continue
+                            try:
+                                if root.is_within_objective_range(loc):
+                                    in_controlled = True
+                                    break
+                            except Exception:
+                                continue
+                        if not in_controlled:
+                            continue
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == "Fight phase":
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            self._queue_reaction({
+                                "event": "phase_end",
+                                "phase": "Fight phase",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "candidates": candidates,
+                            }, use_timer=False)
+        except Exception:
+            raise
         # Queue MURDER-CALL at end of opponent's Fight phase
         try:
             is_opponents_turn = player is not self.player
@@ -2735,6 +3065,104 @@ class StratagemManager:
             })
         except Exception:
             raise
+
+    def _on_unit_shooting_resolved_reactive_reposition(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        """
+        Reaction window for REACTIVE REPOSITION:
+        Opponent's Shooting phase, just after an enemy unit has shot and targeted a Necrons unit.
+        """
+        try:
+            if attacker_unit is None or self.game is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is self.player:
+                return
+            if not self._is_starshatter_arsenal():
+                return
+            s = self.get_by_name("REACTIVE REPOSITION")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            mgr = self._get_necrons_mgr()
+            targets = []
+            atk_key = self._attacker_unit_key(attacker_unit)
+            if atk_key:
+                targets = list(self._recent_shooting_targets.get(atk_key) or [])
+            if not targets and isinstance(hits_by_target, dict):
+                targets = list(hits_by_target.keys())
+            if atk_key:
+                self._recent_shooting_targets.pop(atk_key, None)
+            candidates = []
+            seen = set()
+            for t in list(targets or []):
+                try:
+                    root = t.get_attached_unit_root()
+                except Exception:
+                    raise
+                if root is None:
+                    continue
+                try:
+                    uid = get_entity_id(root)
+                except Exception:
+                    raise
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                try:
+                    if not root.is_alive():
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                except Exception:
+                    raise
+                if mgr is not None:
+                    try:
+                        if not mgr.unit_is_necrons(root):
+                            continue
+                        if mgr.unit_is_titanic(root):
+                            continue
+                    except Exception:
+                        raise
+                candidates.append(root)
+            if not candidates:
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "unit_shooting_resolved" and r.get("stratagem") == s.name and r.get("enemy_unit") is attacker_unit:
+                        return
+                except Exception:
+                    raise
+            payload = {
+                "event": "unit_shooting_resolved",
+                "phase_name": "Shooting phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "enemy_unit": attacker_unit,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
+        except Exception:
+            raise
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -2888,6 +3316,12 @@ class StratagemManager:
             owner_player = attacking_unit.get_parent_army().player
             if owner_player is self.player:
                 return  # only opponent can react
+        except Exception:
+            raise
+        try:
+            atk_key = self._attacker_unit_key(attacking_unit)
+            if atk_key:
+                self._recent_shooting_targets[atk_key] = list(target_units or [])
         except Exception:
             raise
         # GO TO GROUND
@@ -3100,6 +3534,81 @@ class StratagemManager:
                                 "cp_cost": s5.cp_cost,
                                 "attacking_unit": attacking_unit,
                                 "world_eaters_unit": we_unit,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
+        # Necrons: UNYIELDING FORMS (opponent Shooting phase, after targets selected).
+        try:
+            s6 = self.get_by_name("UNYIELDING FORMS")
+            if s6 and self._is_starshatter_arsenal():
+                if self.player.command_points < s6.cp_cost:
+                    pass
+                elif (s6.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                else:
+                    mgr = self._get_necrons_mgr()
+                    candidates = []
+                    seen = set()
+                    for u in list(target_units or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if mgr is not None:
+                            try:
+                                if not mgr.unit_is_necrons(root):
+                                    continue
+                                if mgr.unit_is_titanic(root):
+                                    continue
+                                if not mgr.unit_is_vehicle_or_mounted(root):
+                                    continue
+                            except Exception:
+                                raise
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "shooting_targets_selected" and r.get("stratagem") == s6.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "shooting_targets_selected",
+                                "phase_name": "Shooting phase",
+                                "stratagem": s6.name,
+                                "cp_cost": s6.cp_cost,
+                                "attacking_unit": attacking_unit,
                                 "candidates": candidates,
                             }
                             if len(candidates) == 1:
@@ -3465,6 +3974,81 @@ class StratagemManager:
                     "attacking_unit": attacking_unit,
                     "candidates": candidates,
                 })
+        except Exception:
+            raise
+        # Necrons: UNYIELDING FORMS (Fight phase, after targets selected).
+        try:
+            s6 = self.get_by_name("UNYIELDING FORMS")
+            if s6 and self._is_starshatter_arsenal():
+                if self.player.command_points < s6.cp_cost:
+                    pass
+                elif (s6.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                else:
+                    mgr = self._get_necrons_mgr()
+                    candidates = []
+                    seen = set()
+                    for u in list(target_units or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if mgr is not None:
+                            try:
+                                if not mgr.unit_is_necrons(root):
+                                    continue
+                                if mgr.unit_is_titanic(root):
+                                    continue
+                                if not mgr.unit_is_vehicle_or_mounted(root):
+                                    continue
+                            except Exception:
+                                raise
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s6.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s6.name,
+                                "cp_cost": s6.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
         except Exception:
             raise
         # Khorne Daemonkin: BLESSING OF BURNING BLOOD (opponent Fight phase, after targets selected).
@@ -5698,8 +6282,7 @@ class StratagemManager:
             if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Roll 6D6; each 4+ = 1 mortal wound
-            from ..utility.dice import get_roll
-            rolls = [get_roll("D6") for _ in range(6)]
+            rolls = [dice_module.get_roll("D6") for _ in range(6)]
             mw = sum(1 for r in rolls if int(r) >= 4)
             try:
                 print(f"INFO: GRENADE: rolls={rolls} -> {mw} mortal wounds to {enemy.name}")
@@ -5782,8 +6365,7 @@ class StratagemManager:
             if tval <= 0:
                 print("ERROR: TANK SHOCK: could not determine Toughness for VEHICLE model")
                 return False
-            from ..utility.dice import get_roll
-            rolls = [get_roll("D6") for _ in range(int(tval))]
+            rolls = [dice_module.get_roll("D6") for _ in range(int(tval))]
             mw = min(6, sum(1 for r in rolls if int(r) >= 5))
             try:
                 print(f"INFO: TANK SHOCK: rolls={rolls} (T{tval}) -> {mw} mortal wounds to {enemy.name}")
@@ -6150,8 +6732,7 @@ class StratagemManager:
             if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
-                from ..utility.dice import get_roll
-                roll = int(get_roll("D6") or 0)
+                roll = int(dice_module.get_roll("D6") or 0)
             except Exception:
                 raise
             move_max = int(roll) + 1
@@ -6166,13 +6747,27 @@ class StratagemManager:
                 root.special_rules = sr
             except Exception:
                 raise
+            req = None
             try:
-                if self.game is not None and hasattr(self.game, "event_system"):
+                if self.game is not None:
+                    req = self.game._queue_reactive_move_movement_decision(
+                        player=self.player,
+                        unit=root,
+                        max_distance=int(move_max),
+                        kind="fire_and_fade",
+                        movement_type="reactive",
+                        source=s.name,
+                    )
+            except Exception:
+                raise
+            try:
+                if req is not None and self.game is not None and hasattr(self.game, "event_system"):
                     self.game.event_system.publish(
                         "fire_and_fade_move",
                         player=self.player,
                         unit=root,
                         max_distance=int(move_max),
+                        decision_request=req,
                     )
             except Exception:
                 raise
@@ -6955,18 +7550,14 @@ class StratagemManager:
                 print("ERROR: Daemontide: units are not within 6\"")
                 return False
 
-            try:
-                from ..utility.dice import get_roll
-            except Exception:
-                raise
             amount = 0
             try:
                 if bl_root.has_keyword("MOUNTED"):
                     amount = 1
                 elif bl_root.has_keyword("BEAST"):
-                    amount = int(get_roll("D3") or 0)
+                    amount = int(dice_module.get_roll("D3") or 0)
                 elif bl_root.has_keyword("INFANTRY"):
-                    amount = int(get_roll("D6") or 0)
+                    amount = int(dice_module.get_roll("D6") or 0)
                 else:
                     print("ERROR: Daemontide: unsupported BLOOD LEGIONS unit type")
                     return False
@@ -7072,8 +7663,7 @@ class StratagemManager:
                 return False
 
             try:
-                from ..utility.dice import get_roll
-                roll = int(get_roll("D3") or 0)
+                roll = int(dice_module.get_roll("D3") or 0)
             except Exception:
                 raise
             if roll < 0:
@@ -7830,6 +8420,712 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: Summoned by Slaughter: {getattr(root, 'name', 'Unit')} set up from Reserves.")
+            return True
+
+        # Necrons: UNYIELDING FORMS (defensive -1 to wound if S > T).
+        if s.name.upper() == "UNYIELDING FORMS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or kwargs.get("target_units") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+                if unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "UNYIELDING FORMS":
+                            unit = r.get("unit") or r.get("target_unit")
+                            attacker_unit = attacker_unit or r.get("attacking_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            if unit is None and candidates and len(candidates) == 1:
+                                unit = candidates[0]
+                            break
+            if unit is None:
+                print("ERROR: UNYIELDING FORMS: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_starshatter_arsenal():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            pname = str(phase_name or "").strip().lower()
+            if pname not in ("shooting phase", "fight phase"):
+                print("ERROR: UNYIELDING FORMS: wrong phase")
+                return False
+            if pname == "shooting phase":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+                if active_player is self.player:
+                    print("ERROR: UNYIELDING FORMS: not opponent's Shooting phase")
+                    return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: UNYIELDING FORMS: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: UNYIELDING FORMS: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: UNYIELDING FORMS: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        print("ERROR: UNYIELDING FORMS: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_titanic(root):
+                        print("ERROR: UNYIELDING FORMS: target is TITANIC")
+                        return False
+                    if not mgr.unit_is_vehicle_or_mounted(root):
+                        print("ERROR: UNYIELDING FORMS: target is not VEHICLE or MOUNTED")
+                        return False
+                except Exception:
+                    raise
+            if attacker_unit is not None:
+                try:
+                    if attacker_unit.get_parent_army().player is self.player:
+                        print("ERROR: UNYIELDING FORMS: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                entry = {
+                    "value": 1,
+                    "attack_type": "any",
+                    "expires_phase": "SHOOTING_PHASE" if pname == "shooting phase" else "FIGHT_PHASE",
+                    "source": s.name,
+                    "requires_strength_gt_toughness": True,
+                }
+                self._append_defensive_effect(root, "defensive_wound_mods", entry)
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: UNYIELDING FORMS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
+            return True
+
+        # Necrons: MERCILESS RECLAMATION (+1 to wound vs targets near objectives).
+        if s.name.upper() == "MERCILESS RECLAMATION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+            if unit is None:
+                print("ERROR: MERCILESS RECLAMATION: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_starshatter_arsenal():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            pname = str(phase_name or "").strip().lower()
+            if pname not in ("shooting phase", "fight phase"):
+                print("ERROR: MERCILESS RECLAMATION: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: MERCILESS RECLAMATION: not your turn")
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: MERCILESS RECLAMATION: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: MERCILESS RECLAMATION: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        print("ERROR: MERCILESS RECLAMATION: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_titanic(root):
+                        print("ERROR: MERCILESS RECLAMATION: target is TITANIC")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if pname == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                    print("ERROR: MERCILESS RECLAMATION: target already shot")
+                    return False
+                if pname == "fight phase" and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                    print("ERROR: MERCILESS RECLAMATION: target already fought")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["merciless_reclamation_active"] = True
+                sr["merciless_reclamation_expires_phase"] = "SHOOTING_PHASE" if pname == "shooting phase" else "FIGHT_PHASE"
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: MERCILESS RECLAMATION: {getattr(root, 'name', 'Unit')} gains +1 to wound vs objectives this phase.")
+            return True
+
+        # Necrons: DIMENSIONAL TUNNEL (move through models/terrain this phase).
+        if s.name.upper() == "DIMENSIONAL TUNNEL":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+            if unit is None:
+                print("ERROR: DIMENSIONAL TUNNEL: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_starshatter_arsenal():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: DIMENSIONAL TUNNEL: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: DIMENSIONAL TUNNEL: not your turn")
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: DIMENSIONAL TUNNEL: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: DIMENSIONAL TUNNEL: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        print("ERROR: DIMENSIONAL TUNNEL: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_titanic(root):
+                        print("ERROR: DIMENSIONAL TUNNEL: target is TITANIC")
+                        return False
+                    if not mgr.unit_is_vehicle_or_mounted(root):
+                        print("ERROR: DIMENSIONAL TUNNEL: target is not VEHICLE or MOUNTED")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                move_types = {"move", "advance", "fall_back"}
+                current = set(sr.get("bearer_unit_phase_move_types") or [])
+                added = [t for t in move_types if t not in current]
+                if added:
+                    current.update(added)
+                    sr["bearer_unit_phase_move_types"] = sorted(current)
+                    sr["dimensional_tunnel_added_phase_move_types"] = added
+                sr["dimensional_tunnel_active"] = True
+                sr["dimensional_tunnel_expires_phase"] = "MOVEMENT_PHASE"
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DIMENSIONAL TUNNEL: {getattr(root, 'name', 'Unit')} can move through models/terrain this phase.")
+            return True
+
+        # Necrons: CHRONOSHIFT (Advance roll fixed at 6 for this phase).
+        if s.name.upper() == "CHRONOSHIFT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+            if unit is None:
+                print("ERROR: CHRONOSHIFT: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_starshatter_arsenal():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: CHRONOSHIFT: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: CHRONOSHIFT: not your turn")
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: CHRONOSHIFT: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: CHRONOSHIFT: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        print("ERROR: CHRONOSHIFT: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_titanic(root):
+                        print("ERROR: CHRONOSHIFT: target is TITANIC")
+                        return False
+                    if not mgr.unit_is_vehicle_or_mounted(root):
+                        print("ERROR: CHRONOSHIFT: target is not VEHICLE or MOUNTED")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                    print("ERROR: CHRONOSHIFT: target already moved this phase")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["chronoshift_active"] = True
+                sr["chronoshift_expires_phase"] = "MOVEMENT_PHASE"
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: CHRONOSHIFT: {getattr(root, 'name', 'Unit')} gains a fixed 6\" Advance this phase.")
+            return True
+
+        # Necrons: ENDLESS SERVITUDE (trigger Reanimation Protocols).
+        if s.name.upper() == "ENDLESS SERVITUDE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+                if unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "ENDLESS SERVITUDE":
+                            unit = r.get("unit") or r.get("target_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            if unit is None and candidates and len(candidates) == 1:
+                                unit = candidates[0]
+                            break
+            if unit is None:
+                print("ERROR: ENDLESS SERVITUDE: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_starshatter_arsenal():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: ENDLESS SERVITUDE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: ENDLESS SERVITUDE: not your turn")
+                return False
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: ENDLESS SERVITUDE: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: ENDLESS SERVITUDE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        print("ERROR: ENDLESS SERVITUDE: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_titanic(root):
+                        print("ERROR: ENDLESS SERVITUDE: target is TITANIC")
+                        return False
+                except Exception:
+                    raise
+            try:
+                has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
+                if callable(has_rp) and not has_rp():
+                    print("ERROR: ENDLESS SERVITUDE: unit lacks Reanimation Protocols")
+                    return False
+            except Exception:
+                raise
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                print("ERROR: ENDLESS SERVITUDE: no map context")
+                return False
+            in_controlled = False
+            for obj in list(getattr(game_map, "objectives", []) or []):
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                try:
+                    if hasattr(loc, "update_control"):
+                        loc.update_control(self.game)
+                except Exception:
+                    pass
+                if getattr(loc, "controlling_player", None) is not self.player:
+                    continue
+                try:
+                    if root.is_within_objective_range(loc):
+                        in_controlled = True
+                        break
+                except Exception:
+                    continue
+            if not in_controlled:
+                print("ERROR: ENDLESS SERVITUDE: unit is not within a controlled objective")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                roll = int(dice_module.get_roll("D3") or 0)
+            except Exception:
+                raise
+            if roll > 0:
+                try:
+                    provider = getattr(game_map, "reanimation_allocation_provider", None)
+                    is_human = bool(getattr(self.player, "has_control", lambda: False)())
+                    root.apply_reanimation_protocols(roll, game_map=game_map, is_human=is_human, provider=provider)
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: ENDLESS SERVITUDE: {getattr(root, 'name', 'Unit')} reanimates (rolled {int(roll or 0)}).")
+            return True
+
+        # Necrons: REACTIVE REPOSITION (reactive Normal move D6").
+        if s.name.upper() == "REACTIVE REPOSITION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+                if unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "REACTIVE REPOSITION":
+                            unit = r.get("unit") or r.get("target_unit")
+                            enemy_unit = enemy_unit or r.get("enemy_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            if unit is None and candidates and len(candidates) == 1:
+                                unit = candidates[0]
+                            break
+            if unit is None:
+                print("ERROR: REACTIVE REPOSITION: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_starshatter_arsenal():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: REACTIVE REPOSITION: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: REACTIVE REPOSITION: not opponent's Shooting phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: REACTIVE REPOSITION: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: REACTIVE REPOSITION: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: REACTIVE REPOSITION: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            mgr = self._get_necrons_mgr()
+            if mgr is not None:
+                try:
+                    if not mgr.unit_is_necrons(root):
+                        print("ERROR: REACTIVE REPOSITION: target is not NECRONS")
+                        return False
+                    if mgr.unit_is_titanic(root):
+                        print("ERROR: REACTIVE REPOSITION: target is TITANIC")
+                        return False
+                except Exception:
+                    raise
+            if enemy_unit is not None:
+                try:
+                    if enemy_unit.get_parent_army().player is self.player:
+                        print("ERROR: REACTIVE REPOSITION: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                print("ERROR: REACTIVE REPOSITION: no map context")
+                return False
+            try:
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    print("ERROR: REACTIVE REPOSITION: unit is in Engagement Range")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                roll = int(dice_module.get_roll("D6") or 0)
+            except Exception:
+                raise
+            move_max = max(0, int(roll or 0))
+            req = None
+            try:
+                if self.game is not None:
+                    req = self.game._queue_reactive_move_movement_decision(
+                        player=self.player,
+                        unit=root,
+                        max_distance=int(move_max),
+                        kind="reactive_reposition",
+                        movement_type="reactive",
+                        source=s.name,
+                        attacker_unit=enemy_unit,
+                    )
+            except Exception:
+                raise
+            try:
+                if req is not None and self.game is not None and hasattr(self.game, "event_system"):
+                    self.game.event_system.publish(
+                        "reactive_reposition_move",
+                        player=self.player,
+                        unit=root,
+                        max_distance=int(move_max),
+                        decision_request=req,
+                    )
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: REACTIVE REPOSITION: {getattr(root, 'name', 'Unit')} can move {int(move_max)}\".")
             return True
 
         # Generic defensive reaction stratagems (after targets selected).

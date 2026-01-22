@@ -3484,6 +3484,12 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "UNBOUND ARROGANCE": "Coterie of the Conceited pledge increases by 1 (once per battle round).",
         "CRUEL BLADESMAN": "Fight phase: charged unit gains +1 AP on melee weapons (before it has fought).",
         "INCESSANT VIOLENCE": "Fight phase: consolidate up to 6\" if the unit can end in Engagement Range.",
+        "UNYIELDING FORMS": "Shooting/Fight phase: NECRONS VEHICLE/MOUNTED (non-TITANIC) targeted unit gets -1 to wound if S>T until end of phase.",
+        "MERCILESS RECLAMATION": "Shooting/Fight phase: NECRONS (non-TITANIC) unit not yet acted gets +1 to wound vs targets within objective range.",
+        "DIMENSIONAL TUNNEL": "Movement phase: NECRONS VEHICLE/MOUNTED (non-TITANIC) can move through models/terrain this phase.",
+        "CHRONOSHIFT": "Movement phase: NECRONS VEHICLE/MOUNTED (non-TITANIC) not yet moved treats Advance roll as 6 this phase.",
+        "ENDLESS SERVITUDE": "End of Fight phase: NECRONS (non-TITANIC) within controlled objective triggers Reanimation Protocols (D3).",
+        "REACTIVE REPOSITION": "Opponent Shooting phase: NECRONS (non-TITANIC) targeted unit makes a Normal move (D6\").",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:

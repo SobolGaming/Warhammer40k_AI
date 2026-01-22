@@ -1312,6 +1312,155 @@ class GameView:
             )
         self._request_lightning_fast_reactions_unit = _request_lightning_fast_reactions_unit
 
+        def _request_unyielding_forms_unit(player, game, candidates, enemy_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit is not None else "enemy unit"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Unyielding Forms unit.",
+                title="Select Unyielding Forms Unit",
+                subtitle=f"Targeted by {enemy_name}",
+                enemy_unit=enemy_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_unyielding_forms_unit = _request_unyielding_forms_unit
+
+        def _request_merciless_reclamation_unit(player, game, candidates, on_chosen, phase_name=None):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_starshatter_merciless_reclamation_candidates"):
+                        cand = list(mgr._starshatter_merciless_reclamation_candidates(phase_name) or [])
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Merciless Reclamation unit.",
+                title="Select Merciless Reclamation Unit",
+                subtitle="NECRONS unit that has not acted",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_merciless_reclamation_unit = _request_merciless_reclamation_unit
+
+        def _request_dimensional_tunnel_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_starshatter_dimensional_tunnel_candidates"):
+                        cand = list(mgr._starshatter_dimensional_tunnel_candidates() or [])
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Dimensional Tunnel unit.",
+                title="Select Dimensional Tunnel Unit",
+                subtitle="NECRONS VEHICLE or MOUNTED (non-TITANIC)",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_dimensional_tunnel_unit = _request_dimensional_tunnel_unit
+
+        def _request_chronoshift_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_starshatter_chronoshift_candidates"):
+                        cand = list(mgr._starshatter_chronoshift_candidates() or [])
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Chronoshift unit.",
+                title="Select Chronoshift Unit",
+                subtitle="NECRONS VEHICLE or MOUNTED that has not moved",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_chronoshift_unit = _request_chronoshift_unit
+
+        def _request_endless_servitude_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Endless Servitude unit.",
+                title="Select Endless Servitude Unit",
+                subtitle="Within a controlled objective",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_endless_servitude_unit = _request_endless_servitude_unit
+
+        def _request_reactive_reposition_unit(player, game, candidates, enemy_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            enemy_name = getattr(enemy_unit, "name", "enemy unit") if enemy_unit is not None else "enemy unit"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Reactive Reposition unit.",
+                title="Select Reactive Reposition Unit",
+                subtitle=f"Targeted by {enemy_name}",
+                enemy_unit=enemy_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_reactive_reposition_unit = _request_reactive_reposition_unit
+
         def _request_webway_tunnel_unit(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
@@ -1928,6 +2077,8 @@ class GameView:
                 self.game.event_system.subscribe("cabal_temporal_surge_move", self._on_cabal_temporal_surge_move)
                 # Warhost: Fire and Fade reactive movement prompt
                 self.game.event_system.subscribe("fire_and_fade_move", self._on_fire_and_fade_move)
+                # Necrons: Reactive Reposition movement prompt
+                self.game.event_system.subscribe("reactive_reposition_move", self._on_reactive_reposition_move)
                 # Cabal of Sorcerers: Ritual resolution popup
                 self.game.event_system.subscribe("cabal_ritual_resolved", self._on_cabal_ritual_resolved)
                 # Leagues of Votann: Prioritised Efficiency updates (Yield Points / mode)
@@ -7845,7 +7996,7 @@ class GameView:
         except Exception:
             return
 
-    def _on_fire_and_fade_move(self, player=None, unit=None, max_distance=None, **_kwargs):
+    def _on_fire_and_fade_move(self, player=None, unit=None, max_distance=None, decision_request=None, **_kwargs):
         if player is None or unit is None or self.game is None:
             return
         try:
@@ -7864,6 +8015,8 @@ class GameView:
             max_dist = 0.0
         if max_dist <= 0:
             return
+        if decision_request is None:
+            return
 
         def _done(_completed: bool):
             pass
@@ -7874,6 +8027,43 @@ class GameView:
                 "reactive",
                 _done,
                 max_distance=max_dist,
+                decision_request=decision_request,
+            )
+        except Exception:
+            return
+
+    def _on_reactive_reposition_move(self, player=None, unit=None, max_distance=None, decision_request=None, **_kwargs):
+        if player is None or unit is None or self.game is None:
+            return
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return
+        except Exception:
+            return
+        try:
+            if unit.get_parent_army() != player.get_army():
+                return
+        except Exception:
+            return
+        try:
+            max_dist = float(max_distance or 0)
+        except Exception:
+            max_dist = 0.0
+        if max_dist <= 0:
+            return
+        if decision_request is None:
+            return
+
+        def _done(_completed: bool):
+            pass
+
+        try:
+            self.phase_manager._request_move_unit_decision(
+                unit,
+                "reactive",
+                _done,
+                max_distance=max_dist,
+                decision_request=decision_request,
             )
         except Exception:
             return
@@ -10357,6 +10547,78 @@ class GameView:
                     self.game,
                     candidates,
                     lambda unit: self._finalize_lightning_fast_reactions(player, name, context, unit),
+                )
+            return
+
+        if name_u == "UNYIELDING FORMS" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_unyielding_forms_unit", None)):
+                candidates = context.get("candidates") or []
+                enemy = context.get("attacking_unit") or context.get("enemy_unit")
+                self._request_unyielding_forms_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    enemy,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "MERCILESS RECLAMATION" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_merciless_reclamation_unit", None)):
+                candidates = context.get("candidates") or []
+                phase_name = context.get("phase_name")
+                self._request_merciless_reclamation_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    phase_name=phase_name,
+                )
+            return
+
+        if name_u == "DIMENSIONAL TUNNEL" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_dimensional_tunnel_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_dimensional_tunnel_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "CHRONOSHIFT" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_chronoshift_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_chronoshift_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "ENDLESS SERVITUDE" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_endless_servitude_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_endless_servitude_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "REACTIVE REPOSITION" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_reactive_reposition_unit", None)):
+                candidates = context.get("candidates") or []
+                enemy = context.get("enemy_unit") or context.get("attacking_unit")
+                self._request_reactive_reposition_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    enemy,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
                 )
             return
 

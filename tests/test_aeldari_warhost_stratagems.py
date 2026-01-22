@@ -196,6 +196,8 @@ class TestAeldariWarhostStratagems(unittest.TestCase):
         self.assertTrue(unit.can_charge_after_fall_back())
 
     def test_fire_and_fade_sets_restrictions(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT
+
         game, p1, _p2, army1, _army2 = _build_game()
         unit = _make_unit("Dire Avengers", keywords=["ASURYANI", "INFANTRY"])
         army1.add_unit(unit)
@@ -209,6 +211,13 @@ class TestAeldariWarhostStratagems(unittest.TestCase):
         sr = unit.special_rules
         self.assertEqual(sr.get("fire_and_fade_no_charge_turn_owner"), p1.id)
         self.assertEqual(sr.get("fire_and_fade_no_embark_turn_owner"), p1.id)
+        pending = [
+            req
+            for req in list(game.decision_queue.list() or [])
+            if getattr(req, "decision_type", None) == DECISION_MOVE_UNIT
+            and dict(getattr(req, "context", {}) or {}).get("reactive_move_kind") == "fire_and_fade"
+        ]
+        self.assertTrue(pending)
 
     def test_lightning_fast_reactions_sets_active(self):
         game, p1, p2, army1, _army2 = _build_game()

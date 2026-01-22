@@ -164,6 +164,8 @@ Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use
 Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
 Battle Focus reactive maneuvers first use `SELECT_OVERWATCH_SHOOTER` (context `ability="battle_focus"`),
 then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`.
+Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="reactive"` and
+`reactive_move_kind="fire_and_fade"` / `reactive_move_kind="reactive_reposition"`.
 Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `force_target_unit_id`.
 
 Shooting:

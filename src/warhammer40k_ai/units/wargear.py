@@ -4053,6 +4053,40 @@ class WargearProfile:
                         wound_result['modifiers'].append(reason)
         except Exception:
             pass
+        # Necrons: Merciless Reclamation (+1 to wound vs targets within objective range).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and sr.get("merciless_reclamation_active"):
+                apply_bonus = True
+                exp = str(sr.get("merciless_reclamation_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        army = root.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    game = None
+                    try:
+                        army = root.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None)
+                    except Exception:
+                        game = None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                    try:
+                        if callable(getattr(root, "_target_within_objective_range", None)):
+                            if root._target_within_objective_range(target, game_map):
+                                dice_modifier += 1
+                                wound_result['modifiers'].append("+1 to wound from Merciless Reclamation")
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
         # Friendly aura roll modifiers (e.g. "Beacons of Rage (Aura)")
         if getattr(aura_mods, "wound", 0):
@@ -4157,6 +4191,12 @@ class WargearProfile:
                 attack_type=attack_type,
                 phase_key=phase_key,
             ):
+                try:
+                    if entry.get("requires_strength_gt_toughness"):
+                        if not (isinstance(strength, int) and isinstance(target_toughness, int) and strength > target_toughness):
+                            continue
+                except Exception:
+                    pass
                 penalty = int(entry.get("value", 0) or 0)
                 if penalty:
                     dice_modifier -= penalty

@@ -9139,6 +9139,36 @@ class Unit:
             miracle_used = False
             try:
                 sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("chronoshift_active"):
+                    exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
+                    apply_bonus = True
+                    if exp:
+                        try:
+                            army = self.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus and (not exp or exp == "MOVEMENT_PHASE"):
+                        advance_roll = 6
+                        try:
+                            advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
+                        except Exception:
+                            pass
+                        self.round_state.advance_roll = advance_roll
+                        try:
+                            from ..utility.event_bus import append_dice
+                            pn = self.get_parent_army().player
+                            append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name} (Chronoshift)")
+                        except Exception:
+                            pass
+                        return int(advance_roll)
+            except Exception:
+                pass
+            try:
+                sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
                     fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
                     self.round_state.advance_roll = fixed
@@ -9662,6 +9692,25 @@ class Unit:
 
         # If advancing, use stored advance roll or roll new one
         if advance:
+            chronoshift_fixed = None
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("chronoshift_active"):
+                    exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
+                    apply_bonus = True
+                    if exp:
+                        try:
+                            army = self.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus and (not exp or exp == "MOVEMENT_PHASE"):
+                        chronoshift_fixed = 6
+            except Exception:
+                chronoshift_fixed = None
             pain_fixed = None
             try:
                 sr = getattr(self, "special_rules", None)
@@ -9671,7 +9720,20 @@ class Unit:
                 pain_fixed = None
 
             # Use stored advance roll if available, otherwise roll new one
-            if pain_fixed is not None:
+            if chronoshift_fixed is not None:
+                advance_roll = int(chronoshift_fixed)
+                try:
+                    advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
+                except Exception:
+                    pass
+                self.round_state.advance_roll = advance_roll
+                try:
+                    from ..utility.event_bus import append_dice
+                    pn = self.get_parent_army().player
+                    append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name} (Chronoshift)")
+                except Exception:
+                    pass
+            elif pain_fixed is not None:
                 advance_roll = pain_fixed
                 self.round_state.advance_roll = advance_roll
                 try:
