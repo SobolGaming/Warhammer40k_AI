@@ -30,8 +30,10 @@ from .decision_kinds import (
     DECISION_DECLARE_SHOTS,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_MOVE_UNIT,
+    DECISION_ALLOCATE_DAMAGE,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_SELECT_OVERWATCH_SHOOTER,
+    DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
 from .random_source import RandomSource
 from .ref_codec import encode_refs
@@ -2174,6 +2176,86 @@ class Game:
                 self.attempt_charge(unit, target_unit, out_of_turn=True, count_as_charged=False)
             return
 
+    def _maybe_queue_reverberating_summons_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if not bool(ctx.get("engine_flow", False)):
+            return
+        decision_type = str(getattr(request, "decision_type", "") or "")
+
+        def _get_payload():
+            for opt in list(getattr(request, "options", []) or []):
+                if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
+                    return dict(getattr(opt, "payload", {}) or {})
+            return {}
+
+        def _is_skip(payload: dict) -> bool:
+            if bool((getattr(result, "payload", {}) or {}).get("skipped", False)):
+                return True
+            if str((getattr(result, "payload", {}) or {}).get("action", "") or "") == "skip":
+                return True
+            return str(payload.get("action", "") or "") == "skip"
+
+        if decision_type == DECISION_SELECT_REVERBERATING_SUMMONS_UNIT:
+            payload = _get_payload()
+            if _is_skip(payload):
+                return
+            unit_id = str(payload.get("unit_id") or payload.get("unit") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            destroyed = list(getattr(unit, "models_lost", []) or [])
+            if not destroyed:
+                return
+            from .decisions import DecisionOption, DecisionRequest
+
+            options = [DecisionOption.create("None", payload={"model_id": None, "action": "skip"})]
+            for model in destroyed:
+                options.append(
+                    DecisionOption.create(
+                        getattr(model, "name", "Model"),
+                        payload={"model_id": get_entity_id(model)},
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_ALLOCATE_DAMAGE,
+                "Select destroyed Plaguebearer model to return.",
+                player_id=getattr(request, "player_id", None),
+                options=options,
+                context={
+                    "engine_flow": True,
+                    "selection_kind": "reverberating_summons_return",
+                    "unit_id": unit_id,
+                    "ability_name": ctx.get("ability_name", "") or "Reverberating Summons",
+                },
+            )
+            self.request_decision(req)
+            return
+
+        if decision_type == DECISION_ALLOCATE_DAMAGE:
+            if str(ctx.get("selection_kind", "") or "") != "reverberating_summons_return":
+                return
+            payload = _get_payload()
+            if _is_skip(payload):
+                return
+            unit_id = str(ctx.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            model_id = payload.get("model_id")
+            if model_id in (None, ""):
+                return
+            model = self.entity_registry.get(str(model_id), kind="model")
+            if model is None:
+                return
+            unit.return_destroyed_bodyguard_models(
+                1,
+                game_map=getattr(self, "map", None),
+                chosen_models=[model],
+            )
+            return
+
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -3724,67 +3806,125 @@ class Game:
 
         specs = attacker_unit.get_kill_reward_specs(model=attacker_model) or []
 
-        if not specs:
+        if specs:
+            target_keywords = {str(k).upper() for k in getattr(target_unit, "keywords", []) or []}
+
+            for spec in specs:
+                if spec.get("trigger") != "model_destroyed":
+                    continue
+
+                # Optional restriction: melee only (Feared Interrogator)
+                if spec.get("requires_melee", False):
+                    wp = _kwargs.get("weapon_profile", None)
+                    pw = getattr(wp, "parent_wargear", None)
+                    if wp is None or pw is None or not pw.is_melee():
+                        continue
+
+                # Keyword matching
+                required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
+                mode = (spec.get("target_keyword_mode", "all") or "all").lower()
+                if required:
+                    if mode == "any":
+                        if required.isdisjoint(target_keywords):
+                            continue
+                    else:
+                        if not required.issubset(target_keywords):
+                            continue
+
+                if spec.get("type") == "gain_cp_on_destroy":
+                    cp = int(spec.get("cp", 1) or 1)
+                    player = attacker_unit.get_parent_army().player
+                    if player is None:
+                        continue
+                    gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+                    self.event_system.publish(
+                        "command_points_gained",
+                        player=player,
+                        amount=gained,
+                        reason=spec.get("source_ability", ""),
+                        attacker_unit=attacker_unit,
+                        target_unit=target_unit,
+                        attacker_model=attacker_model,
+                        target_model=target_model,
+                    )
+
+                if spec.get("type") == "heal_on_destroy":
+                    # Heal the destroying model (if present)
+                    if attacker_model is None:
+                        continue
+                    heal_expr = spec.get("heal_expr")
+                    if not heal_expr:
+                        continue
+                    from warhammer40k_ai.utility.dice import get_roll
+                    amount = get_roll(heal_expr)
+                    attacker_model.heal(amount)
+                    self.event_system.publish(
+                        "model_healed",
+                        model=attacker_model,
+                        unit=attacker_unit,
+                        amount=amount,
+                        reason=spec.get("source_ability", ""),
+                    )
+
+        from ..rules.reverberating_summons import (
+            ABILITY_NAME,
+            get_reverberating_summons_candidates,
+            weapon_profile_has_reverberating_summons,
+        )
+
+        wp = _kwargs.get("weapon_profile", None)
+        if not weapon_profile_has_reverberating_summons(wp):
+            return
+        if attacker_model is None:
+            return
+        player = attacker_unit.get_parent_army().player
+        if player is None:
+            return
+        candidates = get_reverberating_summons_candidates(
+            attacker_model,
+            game_map=getattr(self, "map", None),
+        )
+        if not candidates:
             return
 
-        target_keywords = {str(k).upper() for k in getattr(target_unit, "keywords", []) or []}
-
-        for spec in specs:
-            if spec.get("trigger") != "model_destroyed":
-                continue
-
-            # Optional restriction: melee only (Feared Interrogator)
-            if spec.get("requires_melee", False):
-                wp = _kwargs.get("weapon_profile", None)
-                pw = getattr(wp, "parent_wargear", None)
-                if wp is None or pw is None or not pw.is_melee():
-                    continue
-
-            # Keyword matching
-            required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
-            mode = (spec.get("target_keyword_mode", "all") or "all").lower()
-            if required:
-                if mode == "any":
-                    if required.isdisjoint(target_keywords):
-                        continue
-                else:
-                    if not required.issubset(target_keywords):
-                        continue
-
-            if spec.get("type") == "gain_cp_on_destroy":
-                cp = int(spec.get("cp", 1) or 1)
-                player = attacker_unit.get_parent_army().player
-                if player is None:
-                    continue
-                gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
-                self.event_system.publish(
-                    "command_points_gained",
+        if bool(getattr(player, "has_control", lambda: False)()):
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            if es is not None and isinstance(subs, dict) and subs.get("reverberating_summons_prompt"):
+                es.publish(
+                    "reverberating_summons_prompt",
                     player=player,
-                    amount=gained,
-                    reason=spec.get("source_ability", ""),
-                    attacker_unit=attacker_unit,
-                    target_unit=target_unit,
                     attacker_model=attacker_model,
-                    target_model=target_model,
+                    candidates=list(candidates),
+                    ability_name=ABILITY_NAME,
+                    game=self,
                 )
+            return
 
-            if spec.get("type") == "heal_on_destroy":
-                # Heal the destroying model (if present)
-                if attacker_model is None:
-                    continue
-                heal_expr = spec.get("heal_expr")
-                if not heal_expr:
-                    continue
-                from warhammer40k_ai.utility.dice import get_roll
-                amount = get_roll(heal_expr)
-                attacker_model.heal(amount)
-                self.event_system.publish(
-                    "model_healed",
-                    model=attacker_model,
-                    unit=attacker_unit,
-                    amount=amount,
-                    reason=spec.get("source_ability", ""),
+        from .decisions import DecisionOption, DecisionRequest
+
+        options = []
+        for unit in candidates:
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    payload={"unit_id": get_entity_id(unit)},
                 )
+            )
+        options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        req = DecisionRequest.create(
+            DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
+            "Select Plaguebearers unit for Reverberating Summons.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "engine_flow": True,
+                "ability_name": ABILITY_NAME,
+                "bearer_model_id": get_entity_id(attacker_model),
+            },
+        )
+        self.request_decision(req)
+        return
 
     def _on_unit_destroyed_phase_kill_tracking(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         """Track units that destroyed enemy units during Shooting/Fight phases."""
@@ -4983,6 +5123,7 @@ class Game:
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
             self._maybe_queue_reactive_move_followup(request, result)
             self._maybe_queue_setup_reactive_followup(request, result)
+            self._maybe_queue_reverberating_summons_followup(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:

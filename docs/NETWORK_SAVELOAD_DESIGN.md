@@ -215,6 +215,8 @@ Faction / Detachment / Ability choices:
 - yes_no_dialog: CONFIRM_YES_NO {choice}
 - aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}
 - example_dialog: CONFIRM_EXAMPLE {choice_id}
+- reverberating_summons_unit_dialog: SELECT_REVERBERATING_SUMMONS_UNIT {unit_id | skip}
+- reverberating_summons_return_model_dialog: ALLOCATE_DAMAGE {unit_id, model_id | skip} (context `selection_kind="reverberating_summons_return"`)
 
 Note: All decision types must be validated in the engine and return errors if
 the selected option is not currently legal.

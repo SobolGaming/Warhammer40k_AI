@@ -1811,6 +1811,9 @@ class GameView:
         # World Eaters: Blood Surge prompt queue
         self._pending_blood_surge_queue = []
         self._blood_surge_flow_active = False
+        # Reverberating Summons prompt queue
+        self._pending_reverberating_summons_queue = []
+        self._reverberating_summons_flow_active = False
         # Reactive enemy-move prompt queue (e.g. Loping Speed)
         self._pending_loping_speed_queue = []
         self._loping_speed_flow_active = False
@@ -1882,6 +1885,7 @@ class GameView:
                 self.game.event_system.subscribe("blood_tithe_updated", self._on_blood_tithe_updated)
                 # World Eaters: Blood Surge prompt on opponent shooting casualties
                 self.game.event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
+                self.game.event_system.subscribe("reverberating_summons_prompt", self._on_reverberating_summons_prompt)
                 # Reactive normal move prompt (enemy unit ends move within range)
                 self.game.event_system.subscribe("loping_speed_prompt", self._on_loping_speed_prompt)
                 # Setup reactive shoot/charge prompt (enemy unit set up within range)
@@ -2336,6 +2340,32 @@ class GameView:
         except Exception:
             _done(False)
 
+    def _format_model_wargear_summary(self, model) -> str:
+        try:
+            wargear = list(getattr(model, "wargear", []) or [])
+        except Exception:
+            wargear = []
+        if not wargear:
+            return ""
+        counts = {}
+        for wg in wargear:
+            try:
+                name = str(getattr(wg, "name", "") or "").strip()
+            except Exception:
+                name = ""
+            if not name:
+                continue
+            counts[name] = counts.get(name, 0) + 1
+        parts = []
+        for name, count in counts.items():
+            if count > 1:
+                parts.append(f"{name} x{count}")
+            else:
+                parts.append(name)
+        if not parts:
+            return ""
+        return "Wargear: " + ", ".join(parts)
+
     def _process_next_bodyguard_return_prompt(self, player):
         q = list(getattr(self, "_pending_bodyguard_return_prompt_queue", []) or [])
         if not q:
@@ -2391,32 +2421,6 @@ class GameView:
 
         state = {"returned_any": returned_any}
 
-        def _wargear_summary(model):
-            try:
-                wargear = list(getattr(model, "wargear", []) or [])
-            except Exception:
-                wargear = []
-            if not wargear:
-                return ""
-            counts = {}
-            for wg in wargear:
-                try:
-                    name = str(getattr(wg, "name", "") or "").strip()
-                except Exception:
-                    name = ""
-                if not name:
-                    continue
-                counts[name] = counts.get(name, 0) + 1
-            parts = []
-            for name, count in counts.items():
-                if count > 1:
-                    parts.append(f"{name} x{count}")
-                else:
-                    parts.append(name)
-            if not parts:
-                return ""
-            return "Wargear: " + ", ".join(parts)
-
         def _done(chosen):
             if chosen is None:
                 try:
@@ -2444,7 +2448,7 @@ class GameView:
                 try:
                     from ..utility.event_bus import append_action
                     if player is not None:
-                        summary = _wargear_summary(chosen)
+                        summary = self._format_model_wargear_summary(chosen)
                         if summary:
                             append_action(player, f"{ability_name}: returned {getattr(chosen, 'name', 'Model')} ({summary}) to {subtitle}.")
                         else:
@@ -4268,6 +4272,178 @@ class GameView:
             self._request_yes_no(title, msg, "Surge", "Skip", _done, player=player)
         except Exception:
             _finish_and_next()
+
+    # ---------------- Reverberating Summons prompt ----------------
+
+    def _on_reverberating_summons_prompt(
+        self,
+        player=None,
+        attacker_model=None,
+        candidates=None,
+        ability_name=None,
+        game=None,
+        **_kwargs,
+    ):
+        if player is None or attacker_model is None:
+            return
+        has_control = getattr(player, "has_control", None)
+        if not callable(has_control) or not has_control():
+            return
+
+        if self._reverberating_summons_flow_active:
+            self._pending_reverberating_summons_queue.append(
+                (player, attacker_model, candidates, ability_name, game)
+            )
+            return
+        self._pending_reverberating_summons_queue.append(
+            (player, attacker_model, candidates, ability_name, game)
+        )
+        self._open_next_reverberating_summons_prompt(game or self.game)
+
+    def _open_next_reverberating_summons_prompt(self, game):
+        q = list(getattr(self, "_pending_reverberating_summons_queue", []) or [])
+        if not q:
+            self._pending_reverberating_summons_queue = []
+            self._reverberating_summons_flow_active = False
+            return
+        player, attacker_model, candidates, ability_name, game_ctx = q.pop(0)
+        self._pending_reverberating_summons_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or attacker_model is None or game_ctx is None:
+            self._open_next_reverberating_summons_prompt(game_ctx)
+            return
+
+        from ..rules.reverberating_summons import ABILITY_NAME, get_reverberating_summons_candidates
+
+        ability_label = ability_name or ABILITY_NAME
+        eligible = get_reverberating_summons_candidates(
+            attacker_model,
+            game_map=getattr(game_ctx, "map", None),
+            units=candidates,
+        )
+        if not eligible:
+            self._open_next_reverberating_summons_prompt(game_ctx)
+            return
+
+        def _finish_and_next():
+            self._reverberating_summons_flow_active = False
+            self._open_next_reverberating_summons_prompt(game_ctx)
+
+        def _select_model_for_unit(unit):
+            if unit is None:
+                _finish_and_next()
+                return
+            self._open_reverberating_summons_model_prompt(
+                player=player,
+                unit=unit,
+                ability_name=ability_label,
+                game_ctx=game_ctx,
+                on_done=_finish_and_next,
+            )
+
+        title = ability_label or "Reverberating Summons"
+        prompt = "Select a friendly Plaguebearers unit within 12\", or choose None."
+        subtitle = f"Bearer: {getattr(attacker_model, 'name', 'Model')}"
+
+        self._reverberating_summons_flow_active = True
+        from ..engine.decision_kinds import DECISION_SELECT_REVERBERATING_SUMMONS_UNIT
+
+        self._resolve_unit_selection_dialog(
+            player=player,
+            candidates=eligible,
+            on_chosen=_select_model_for_unit,
+            decision_type=DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
+            prompt=prompt,
+            title=title,
+            subtitle=subtitle,
+            enemy_unit=None,
+            dialog=self.overwatch_shooter_dialog,
+            allow_skip=True,
+        )
+
+    def _open_reverberating_summons_model_prompt(self, *, player, unit, ability_name, game_ctx, on_done):
+        if player is None or unit is None:
+            on_done()
+            return
+        destroyed = list(getattr(unit, "models_lost", []) or [])
+        if not destroyed:
+            on_done()
+            return
+
+        from .dialogs import DamageAllocationDialog
+        if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+            self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+
+        from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        options = [DecisionOption.create("None", payload={"model_id": None, "action": "skip"})]
+        for model in destroyed:
+            options.append(
+                DecisionOption.create(
+                    getattr(model, "name", "Model"),
+                    payload={"model_id": get_entity_id(model)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            "Select destroyed Plaguebearer model to return.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"unit_id": get_entity_id(unit), "selection_kind": "reverberating_summons_return"},
+        )
+        if game_ctx is not None:
+            game_ctx.request_decision(req)
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(game_ctx, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                on_done()
+                return
+            if value is None:
+                from ..utility.event_bus import append_action
+
+                append_action(player, f"{ability_name}: no model returned to {getattr(unit, 'name', 'Unit')}.")
+                on_done()
+                return
+            returned = unit.return_destroyed_bodyguard_models(
+                1,
+                game_map=getattr(game_ctx, "map", None),
+                chosen_models=[value],
+            )
+            if returned > 0:
+                from ..utility.event_bus import append_action
+
+                summary = self._format_model_wargear_summary(value)
+                if summary:
+                    append_action(
+                        player,
+                        f"{ability_name}: returned {getattr(value, 'name', 'Model')} ({summary}) to {getattr(unit, 'name', 'Unit')}.",
+                    )
+                else:
+                    append_action(
+                        player,
+                        f"{ability_name}: returned {getattr(value, 'name', 'Model')} to {getattr(unit, 'name', 'Unit')}.",
+                    )
+            on_done()
+
+        dlg = self.damage_allocation_dialog
+        dlg.show(
+            unit,
+            destroyed,
+            title=ability_name or "Reverberating Summons",
+            subtitle=getattr(unit, "name", "Unit"),
+            instruction="Select a destroyed Plaguebearer model to return, or choose None.",
+            on_choice=_on_choice,
+            include_none=True,
+            none_label="None",
+            show_wargear=True,
+            decision_request=req,
+        )
+        self.dialog_manager.open(dlg, modal=True)
 
     # ---------------- Reactive enemy-move prompts (Loping Speed) ----------------
 

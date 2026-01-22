@@ -78,6 +78,10 @@ def rebuild_registry_from_game(registry: EntityRegistry, game: object) -> None:
             registry.register_many(models, kind="model")
             for model in models:
                 registry.register_many(getattr(model, "wargear", []) or [], kind="wargear")
+            lost_models = list(getattr(unit, "models_lost", []) or [])
+            registry.register_many(lost_models, kind="model")
+            for model in lost_models:
+                registry.register_many(getattr(model, "wargear", []) or [], kind="wargear")
             registry.register_many(getattr(unit, "status_effects", []) or [], kind="effect")
 
         cult_ambush = getattr(army, "cult_ambush", None)

@@ -220,11 +220,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Adds attacks at half range (supports dice values like D3/D6+X).</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>reverberating summons</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">2</td>
-<td bgcolor="#f8d7da">Reverberating summons</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+	<td bgcolor="#d4edda"><code>reverberating summons</code></td>
+	<td bgcolor="#d4edda"><b>dYYc Supported</b></td>
+	<td bgcolor="#d4edda">2</td>
+	<td bgcolor="#d4edda">Reverberating Summons</td>
+	<td bgcolor="#d4edda">Each time a model is destroyed by this weapon, you can return 1 destroyed Plaguebearer model to a friendly Plaguebearers unit within 12&quot; of the bearer.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>snagged</code></td>
