@@ -1781,6 +1781,13 @@ class WargearProfile:
                     hit_result['special_effects'].append("Fix Bayonets!: +1 WS")
         except Exception:
             pass
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is not None:
+            from ..rules.psychic_guidance import psychic_guidance_skill_bonus
+            bonus = psychic_guidance_skill_bonus(attacker)
+            if bonus and isinstance(base_skill, int) and int(base_skill) > 0:
+                base_skill = max(2, int(base_skill) - int(bonus))
+                hit_result['special_effects'].append("Psychic Guidance: +1 BS/WS")
         hit_result['base_skill'] = base_skill
 
         # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
@@ -2211,6 +2218,11 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), f"+{bonus} to hit vs FLY from {reason}")
         except Exception:
             pass
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is not None:
+            from ..rules.psychic_guidance import psychic_guidance_hit_bonus_applies
+            if psychic_guidance_hit_bonus_applies(attacker_unit):
+                _add_hit_mod(1, "+1 to hit from Psychic Guidance")
 
         # Driven by Ultimate Rage (Aura): ignore negative Hit roll modifiers for melee attacks.
         try:

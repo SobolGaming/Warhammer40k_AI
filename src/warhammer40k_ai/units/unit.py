@@ -445,6 +445,10 @@ class Unit:
                         mods.append(Modifier(ModifierOp.ADD, 1, source="harbingers_of_dread:despair"))
                 except Exception:
                     pass
+            from ..rules.psychic_guidance import psychic_guidance_leadership_value
+            pg_value = psychic_guidance_leadership_value(model)
+            if pg_value is not None:
+                mods.append(Modifier(ModifierOp.SET, int(pg_value), source="ability:psychic_guidance"))
 
         # Emperor's Children: Internal Rivalries (Slaanesh's Chosen) - ignore negative Move modifiers.
         try:

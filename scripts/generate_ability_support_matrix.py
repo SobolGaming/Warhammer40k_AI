@@ -1079,6 +1079,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression.",
         ),
+        ("AE", "Psychic Guidance"): (
+            "Supported",
+            "Within 12\" of friendly AELDARI PSYKER: Leadership set to 6+; Wraithlord improves BS/WS by 1; Wraithguard/Wraithblades add +1 to hit.",
+        ),
         ("AE", "Way of the Blade"): ("Partial", "Fights First applied without leader restriction."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
