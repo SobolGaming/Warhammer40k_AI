@@ -88,6 +88,15 @@ def _iter_possible_abilities(unit) -> Iterable[object]:
             except Exception:
                 continue
         yield ab
+    enh = getattr(unit, "enhancement", None)
+    if enh is not None:
+        if callable(is_active):
+            try:
+                if not is_active(enh):
+                    return
+            except Exception:
+                pass
+        yield enh
 
 
 def _is_aura_ability(ability) -> bool:
@@ -170,6 +179,51 @@ def _excluded_by_target_keywords(target_unit, excluded_keywords: Iterable[str]) 
     return False
 
 
+def _excluded_by_unit_keywords(unit, excluded_keywords: Iterable[str]) -> bool:
+    if unit is None:
+        return False
+    for kw in excluded_keywords:
+        k = str(kw or "").strip()
+        if not k:
+            continue
+        try:
+            if unit.has_keyword(k):
+                return True
+        except Exception:
+            try:
+                if unit.has_any_keyword(k):
+                    return True
+            except Exception:
+                continue
+    return False
+
+
+def _parse_excluded_keywords(desc: str) -> tuple[str, ...]:
+    if not desc:
+        return ()
+    ex = re.search(r"\(excluding (?P<ex>[^)]+)\)", desc, flags=re.IGNORECASE)
+    if not ex:
+        return ()
+    raw = str(ex.group("ex") or "")
+    raw = raw.replace(" and ", ",")
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    excluded: list[str] = []
+    for p in parts:
+        p = re.sub(r"\bunits?\b", "", p, flags=re.IGNORECASE).strip()
+        if not p:
+            continue
+        up = p.upper()
+        if up == "MONSTERS":
+            excluded.append("Monster")
+        elif up == "VEHICLES":
+            excluded.append("Vehicle")
+        elif up == "TITANIC":
+            excluded.append("Titanic")
+        else:
+            excluded.append(p)
+    return tuple(excluded)
+
+
 def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
     """
     Parse a strict subset of Wahapedia aura text into a structured spec.
@@ -200,21 +254,7 @@ def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
     rng = float(m.group("rng"))
     atype = str(m.group("atype") or "").strip().lower()
 
-    excluded = []
-    ex = re.search(r"\(excluding (?P<ex>[^)]+)\)", desc, flags=re.IGNORECASE)
-    if ex:
-        raw = str(ex.group("ex") or "")
-        raw = raw.replace(" and ", ",")
-        parts = [p.strip() for p in raw.split(",") if p.strip()]
-        # Normalize common plurals from Wahapedia ("MONSTERS" -> "Monster")
-        for p in parts:
-            up = p.upper()
-            if up == "MONSTERS":
-                excluded.append("Monster")
-            elif up == "VEHICLES":
-                excluded.append("Vehicle")
-            else:
-                excluded.append(p.title())
+    excluded = list(_parse_excluded_keywords(desc))
 
     below_half_wound = bool(
         re.search(r"Below Half-strength.*add 1 to the Wound roll as well", desc, flags=re.IGNORECASE)
@@ -240,18 +280,33 @@ def _parse_reroll_ones_aura(ability) -> Optional[dict]:
     desc = str(getattr(ability, "description", "") or "").strip()
     if not desc:
         return None
-
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of this unit, you can re-roll (?P<rtype>Hit|Wound) rolls of 1',
+        r'While a friendly (?P<faction_kw>.+?) unit(?: \((?P<exclude>[^)]+)\))? is within (?P<rng>\d+)" '
+        r"of (?:this unit|this model|the bearer)",
         desc,
         flags=re.IGNORECASE,
     )
     if not m:
         return None
+
+    attack_type = "any"
+    if re.search(r"makes a melee attack", desc, flags=re.IGNORECASE):
+        attack_type = "melee"
+    elif re.search(r"makes a ranged attack", desc, flags=re.IGNORECASE):
+        attack_type = "ranged"
+
+    hit = bool(re.search(r"re-?roll (?:a |any )?hit roll(?:s)? of 1", desc, flags=re.IGNORECASE))
+    wound = bool(re.search(r"re-?roll (?:a |any )?wound roll(?:s)? of 1", desc, flags=re.IGNORECASE))
+    if not hit and not wound:
+        return None
+
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
         "range": float(m.group("rng")),
-        "reroll_type": str(m.group("rtype") or "").strip().lower(),  # "hit" | "wound"
+        "reroll_hit": bool(hit),
+        "reroll_wound": bool(wound),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+        "attack_type": attack_type,
     }
 
 
@@ -456,16 +511,22 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
             if rr:
                 if rr["faction_keyword"] and not attacker_unit.has_any_keyword(rr["faction_keyword"]):
                     continue
+                if rr.get("attack_type") == "melee" and not _weapon_is_melee(weapon_profile):
+                    continue
+                if rr.get("attack_type") == "ranged" and _weapon_is_melee(weapon_profile):
+                    continue
+                if rr.get("excluded_keywords") and _excluded_by_unit_keywords(attacker_unit, rr.get("excluded_keywords", ())):
+                    continue
                 if not unit_within_range_of_unit(source, attacker_unit, float(rr["range"]), use_attached_aggregate=True):
                     continue
-                if rr["reroll_type"] == "hit":
+                if rr.get("reroll_hit"):
                     out = out.merge(
                         AuraAttackModifiers(
                             reroll_hit_ones=True,
                             reroll_hit_reasons=("Aura: re-roll Hit rolls of 1",),
                         )
                     )
-                elif rr["reroll_type"] == "wound":
+                if rr.get("reroll_wound"):
                     out = out.merge(
                         AuraAttackModifiers(
                             reroll_wound_ones=True,

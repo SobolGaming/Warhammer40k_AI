@@ -79,6 +79,85 @@ class TestAuraExtendedShapes(unittest.TestCase):
         self.assertEqual(res["roll"], 4)
         self.assertIn("Aura: re-roll Hit rolls of 1", res["special_effects"])
 
+    def test_enhancement_aura_reroll_hit_and_wound_ones_excludes_titanic(self):
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        profile = self._make_profile(melee=True)
+
+        enhancement = Enhancement(
+            id="dread",
+            name="Dread Majesty (Aura)",
+            faction_id="NEC",
+            detachment="Starshatter Arsenal",
+            description=(
+                "Overlord or Catacomb Command Barge model only. While a friendly NECRONS unit "
+                "(excluding Titanic units) is within 6\" of the bearer, each time a model in that unit "
+                "makes an attack, re-roll a Hit roll of 1 and re-roll a Wound roll of 1."
+            ),
+        )
+
+        class _Unit:
+            def __init__(self, *, keywords=None, enhancement=None):
+                self.possible_abilities = []
+                self.enhancement = enhancement
+                self.round_state = SimpleNamespace(remained_stationary_this_round=False, charged_this_round=False)
+                self._army = None
+                self._keywords = [str(k or "") for k in (keywords or [])]
+
+            def get_parent_army(self):
+                return self._army
+
+            def has_any_keyword(self, kw: str) -> bool:
+                key = str(kw or "").strip().lower()
+                return key in [k.lower() for k in self._keywords]
+
+            def has_keyword(self, kw: str) -> bool:
+                return self.has_any_keyword(kw)
+
+        class _Map:
+            def __init__(self, units):
+                self.units = list(units)
+
+            def get_friendly_units(self, unit):
+                return list(self.units)
+
+        attacker_unit = _Unit(keywords=["NECRONS"])
+        aura_source = _Unit(keywords=["NECRONS"], enhancement=enhancement)
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+            has_stealth=lambda: False,
+        )
+
+        game_map = _Map([attacker_unit, aura_source])
+        game = SimpleNamespace(map=game_map, event_system=SimpleNamespace(publish=lambda *_a, **_k: None), turn=1)
+        player = SimpleNamespace(game=game, name="P1", id="P1")
+        army = SimpleNamespace(player=player)
+        attacker_unit._army = army
+        aura_source._army = army
+
+        attacker_model = SimpleNamespace(name="Attacker", parent_unit=attacker_unit)
+
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
+                hit_res = profile._hit_target_with_tracking(target, attacker_model, {})
+        self.assertTrue(hit_res["hit"])
+        self.assertIn("Aura: re-roll Hit rolls of 1", hit_res["special_effects"])
+
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1, 4]):
+                wound_res = profile._wound_target_with_tracking(target, attacker_model, {})
+        self.assertTrue(any("Aura: re-roll Wound rolls of 1" in s for s in wound_res.get("special_effects", [])))
+
+        titanic_attacker = _Unit(keywords=["NECRONS", "TITANIC"])
+        titanic_attacker._army = army
+        titanic_model = SimpleNamespace(name="Titanic", parent_unit=titanic_attacker)
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[1]):
+                miss_res = profile._hit_target_with_tracking(target, titanic_model, {})
+        self.assertNotIn("Aura: re-roll Hit rolls of 1", miss_res.get("special_effects", []))
+
     def test_objective_control_aura_bonus(self):
         from warhammer40k_ai.units.unit import Unit
         from warhammer40k_ai.units.ability import Ability
