@@ -1333,6 +1333,7 @@ def _classify_ability(
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     return_on_death_support = _return_on_death_support(description)
+    melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
     charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
@@ -1453,6 +1454,8 @@ def _classify_ability(
         return fight_phase_engagement_battleshock_support
     if fight_phase_end_mortal_support:
         return fight_phase_end_mortal_support
+    if melee_fight_on_death_support:
+        return melee_fight_on_death_support
     if return_on_death_support:
         return return_on_death_support
     if charge_target_strength_bonus_support:
@@ -2937,6 +2940,25 @@ def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:
     return (
         "Supported",
         f"First time destroyed: roll D6 at end of phase; on {roll}+ return with {wounds_desc} (not within Engagement Range).",
+    )
+
+
+def _melee_fight_on_death_after_attacks_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a model in this unit is destroyed by a melee attack if that model has not fought this phase "
+        r"roll one d6 on a 3 do not remove it from play that destroyed model can fight after the attacking unit "
+        r"has finished making its attacks and is then removed from play"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Melee fight-on-death: roll D6 on destruction; on 3+ fight after the attacker finishes its attacks.",
     )
 
 

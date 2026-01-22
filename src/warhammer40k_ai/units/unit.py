@@ -4479,6 +4479,47 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # MELEE fight-on-death after attacker finishes attacks (e.g., Malevolent Souls).
+        rule = None
+        try:
+            rule = self.get_melee_fight_on_death_after_attacks_rule(model=model)
+        except Exception:
+            rule = None
+        if rule is not None:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            has_fought = False
+            try:
+                has_fought = bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False))
+            except Exception:
+                pass
+            if not has_fought and root is not None:
+                wp = getattr(self, "_last_destroyed_by_weapon_profile", None)
+                is_melee = False
+                try:
+                    parent = getattr(wp, "parent_wargear", None)
+                    is_melee = bool(parent is not None and parent.is_melee())
+                except Exception:
+                    is_melee = False
+                if is_melee:
+                    roll = int(get_roll("D6"))
+                    try:
+                        from ..utility.event_bus import append_dice
+                        pn = self.get_parent_army().player
+                        append_dice(pn, f"{rule.get('source', 'Fight on death')} roll: {roll} for {self.name}")
+                    except Exception:
+                        pass
+                    if roll >= int(rule.get("threshold", 0) or 0):
+                        pending = getattr(root, "_melee_fight_on_death_pending_models", None)
+                        if not isinstance(pending, list):
+                            pending = []
+                        if model not in pending:
+                            pending.append(model)
+                        root._melee_fight_on_death_pending_models = pending
+                        return
+
         # Temporarily treat the model as "alive" so existing targeting/engagement checks work.
         original_wounds = getattr(model, "_wounds", None)
         try:
@@ -14238,16 +14279,19 @@ class Unit:
                 root._resolve_death_ecstasy_queue(game_map=game_map)
             except Exception:
                 pass
+            try:
+                root._resolve_melee_fight_on_death_queue(game_map=game_map)
+            except Exception:
+                pass
 
-    def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
-        """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
-        pending = getattr(self, "_death_ecstasy_pending_models", None)
+    def _resolve_deferred_fight_on_death_queue(self, attr_name: str, game_map: Optional['Map'] = None) -> None:
+        pending = getattr(self, attr_name, None)
         if not pending:
             return
         if not isinstance(pending, list):
-            self._death_ecstasy_pending_models = []
+            setattr(self, attr_name, [])
             return
-        self._death_ecstasy_pending_models = []
+        setattr(self, attr_name, [])
         for model in list(pending):
             if model is None:
                 continue
@@ -14259,6 +14303,14 @@ class Unit:
             finally:
                 if original_wounds is not None:
                     model._wounds = original_wounds
+
+    def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_death_ecstasy_pending_models", game_map=game_map)
+
+    def _resolve_melee_fight_on_death_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred melee fight-on-death fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_melee_fight_on_death_pending_models", game_map=game_map)
 
     def attached_unit_has_blessings_of_khorne(self) -> bool:
         """Attached unit eligibility: true if any attached member (bodyguard or leader) has Blessings of Khorne ability."""
@@ -16380,6 +16432,54 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache['fight_on_death'] = found
         return found
+
+    def get_melee_fight_on_death_after_attacks_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time a model in this unit is destroyed by a melee attack, if that model has not fought this phase,
+        roll one D6. On a 3+, do not remove it from play; that destroyed model can fight after the attacking unit
+        has finished making its attacks, and is then removed from play."
+        """
+        cache_key = f"melee_fight_on_death_after_attacks:{get_entity_id(model) if model is not None else 'unit'}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if "destroyed by a melee attack" not in low:
+                    continue
+                if "has not fought this phase" not in low:
+                    continue
+                if "roll one d6" not in low:
+                    continue
+                if "do not remove" not in low:
+                    continue
+                if (
+                    "can fight after the attacking unit has finished making its attacks" not in low
+                    and "can fight after the attacking model's unit has finished making its attacks" not in low
+                ):
+                    continue
+                m = re.search(r"on a (\d+)\+", low)
+                if not m:
+                    continue
+                threshold = int(m.group(1))
+                if threshold != 3:
+                    continue
+                source = str(name or "Fight on death").strip() or "Fight on death"
+                rule = {"threshold": threshold, "source": source}
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
 
     def has_shoot_on_death(self) -> bool:
         """Check if the unit has a Shoot on Death style ability.

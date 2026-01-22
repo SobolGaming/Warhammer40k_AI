@@ -61,6 +61,7 @@ _UNIT_STATE_EXCLUDE = {
     "_ability_cache",
     "enhancement",
     "_death_ecstasy_pending_models",
+    "_melee_fight_on_death_pending_models",
 }
 
 _MODEL_STATE_EXCLUDE = {
