@@ -173,13 +173,18 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
     if re.fullmatch(r"that enemy unit is battle-?shocked", t):
         return AttackRollCondition(target_battleshocked=True)
 
-    if re.fullmatch(r"that unit is below (?:its )?starting strength", t):
+    if re.fullmatch(r"(?:this model|this unit|it) is (?:also )?below (?:its )?starting strength", t):
         return AttackRollCondition(attacker_below_starting_strength=True)
-    if re.fullmatch(r"that unit is below half[- ]strength", t):
+    if re.fullmatch(r"(?:this model|this unit|it) is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(attacker_below_half_strength=True)
-    if re.fullmatch(r"that enemy unit is below (?:its )?starting strength", t):
+
+    if re.fullmatch(r"that unit is (?:also )?below (?:its )?starting strength", t):
+        return AttackRollCondition(attacker_below_starting_strength=True)
+    if re.fullmatch(r"that unit is (?:also )?below half[- ]strength", t):
+        return AttackRollCondition(attacker_below_half_strength=True)
+    if re.fullmatch(r"that enemy unit is (?:also )?below (?:its )?starting strength", t):
         return AttackRollCondition(target_below_starting_strength=True)
-    if re.fullmatch(r"that enemy unit is below half[- ]strength", t):
+    if re.fullmatch(r"that enemy unit is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(target_below_half_strength=True)
 
     if re.fullmatch(

@@ -2,7 +2,7 @@ import unittest
 
 
 class _MockDatasheet:
-    def __init__(self, name, *, abilities=None, model_count=1):
+    def __init__(self, name, *, abilities=None, model_count=1, wounds=2):
         self.name = name
         self.faction_data = {"name": "Test Faction"}
         self.keywords = []
@@ -15,7 +15,7 @@ class _MockDatasheet:
                 "M": "6",
                 "T": "4",
                 "Sv": "3",
-                "W": "2",
+                "W": str(wounds),
                 "Ld": "7",
                 "OC": "1",
                 "base_size": "32mm",
@@ -30,10 +30,10 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name, *, abilities=None, model_count=1):
+def _make_unit(name, *, abilities=None, model_count=1, wounds=2):
     from warhammer40k_ai.units.unit import Unit
 
-    datasheet = _MockDatasheet(name, abilities=abilities, model_count=model_count)
+    datasheet = _MockDatasheet(name, abilities=abilities, model_count=model_count, wounds=wounds)
     return Unit(datasheet)
 
 
@@ -130,6 +130,33 @@ class TestLeadingAttackRollBonuses(unittest.TestCase):
         while len(bodyguard.models) > 1:
             bodyguard.remove_model(bodyguard.models[0])
         mods = bodyguard.get_leading_attack_roll_modifiers("melee")
+        self.assertEqual(int(mods.get("hit", 0)), 1)
+        self.assertEqual(int(mods.get("wound", 0)), 1)
+
+    def test_model_self_strength_bonus(self):
+        ability = {
+            "name": "Glutton for Punishment",
+            "description": (
+                "Each time this model makes an attack, if it is below its Starting Strength, add 1 to the Hit roll. "
+                "If this model is also Below Half-strength, add 1 to the Wound roll as well."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Glutton", abilities=[ability], model_count=1, wounds=5)
+        model = unit.models[0]
+
+        mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="melee", target=None)
+        self.assertEqual(int(mods.get("hit", 0)), 0)
+        self.assertEqual(int(mods.get("wound", 0)), 0)
+
+        model.wounds = 4
+        mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="melee", target=None)
+        self.assertEqual(int(mods.get("hit", 0)), 1)
+        self.assertEqual(int(mods.get("wound", 0)), 0)
+
+        model.wounds = 2
+        mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="melee", target=None)
         self.assertEqual(int(mods.get("hit", 0)), 1)
         self.assertEqual(int(mods.get("wound", 0)), 1)
 

@@ -1354,6 +1354,7 @@ def _classify_ability(
     attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
+    model_self_strength_support = _model_self_strength_hit_wound_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
@@ -1489,6 +1490,8 @@ def _classify_ability(
         return model_hit_vs_fly_support
     if model_target_strength_support:
         return model_target_strength_support
+    if model_self_strength_support:
+        return model_self_strength_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     if charge_end_mortal_support:
@@ -2074,6 +2077,42 @@ def _model_target_strength_hit_wound_support(description: str) -> Optional[Tuple
         "Supported",
         "Model melee attacks vs weakened targets: +hit below Starting Strength, +wound below Half-strength.",
     )
+
+
+def _model_self_strength_hit_wound_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    rule = parse_attack_roll_text(description)
+    if rule is None:
+        return None
+    if rule.subject != "this_model":
+        return None
+    if rule.attack_type not in ("melee", "ranged", "any"):
+        return None
+    if rule.scope not in ("unit", "leading"):
+        return None
+    hit_ok = False
+    wound_ok = False
+    for eff in rule.effects:
+        if eff.roll not in ("hit", "wound"):
+            continue
+        if eff.kind != "add":
+            continue
+        cond = eff.condition
+        if not cond:
+            continue
+        if eff.roll == "hit" and cond.attacker_below_starting_strength:
+            hit_ok = True
+        if eff.roll == "wound" and cond.attacker_below_half_strength:
+            wound_ok = True
+    if not (hit_ok or wound_ok):
+        return None
+    notes = []
+    if hit_ok:
+        notes.append("Model attacks while below Starting Strength: hit bonus supported.")
+    if wound_ok:
+        notes.append("Model attacks while below Half-strength: wound bonus supported.")
+    return ("Supported", " ".join(notes))
 
 
 def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:

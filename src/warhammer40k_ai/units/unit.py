@@ -17602,7 +17602,7 @@ class Unit:
         target: Optional['Unit'] = None,
     ) -> dict:
         """
-        Model-specific rule: add to Hit/Wound rolls vs targets below Starting Strength/Half-strength.
+        Model-specific rule: add to Hit/Wound rolls vs weakened targets or while the model is damaged.
         """
         mods = {
             "hit": 0,
@@ -17671,7 +17671,12 @@ class Unit:
                 if eff.kind not in ("add", "sub"):
                     continue
                 cond = eff.condition
-                if not cond or not (cond.target_below_starting_strength or cond.target_below_half_strength):
+                if not cond or not (
+                    cond.target_below_starting_strength
+                    or cond.target_below_half_strength
+                    or cond.attacker_below_starting_strength
+                    or cond.attacker_below_half_strength
+                ):
                     continue
                 if not self._attack_condition_met(cond, target=target, source_unit=root):
                     continue

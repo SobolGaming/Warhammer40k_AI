@@ -2199,7 +2199,7 @@ class WargearProfile:
         except Exception:
             unit_hit_mods = None
 
-        # Model-specific: bonuses vs weakened targets (below Starting Strength / Half-strength).
+        # Model-specific: bonuses vs weakened targets or damaged attacker (below Starting Strength / Half-strength).
         try:
             unit = attacker.parent_unit
             model_strength_mods = attack_instance.get("_model_strength_attack_mods")
@@ -4144,7 +4144,7 @@ class WargearProfile:
             lead_mods = None
             unit_wound_mods = None
 
-        # Model-specific: bonuses vs weakened targets (below Starting Strength / Half-strength).
+        # Model-specific: bonuses vs weakened targets or damaged attacker (below Starting Strength / Half-strength).
         try:
             model_strength_mods = attack_instance.get("_model_strength_attack_mods")
             if model_strength_mods is None:
