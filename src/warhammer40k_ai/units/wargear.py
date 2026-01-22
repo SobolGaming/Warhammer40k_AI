@@ -1,4 +1,4 @@
-﻿from typing import Union, Dict, List, Optional, Tuple
+from typing import Union, Dict, List, Optional, Tuple
 from enum import Enum, auto
 from collections import namedtuple
 import copy
@@ -2064,6 +2064,23 @@ class WargearProfile:
             mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
             if mgr is not None:
                 bonus, reason = mgr.hit_roll_bonus(unit, target, game=game)
+                if bonus:
+                    _add_hit_mod(int(bonus), reason)
+        except Exception:
+            pass
+        # Necrons: Relentless Onslaught (+1 to hit vs targets within objective range).
+        try:
+            unit = attacker.parent_unit
+            army = None
+            game = None
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            if mgr is not None:
+                bonus, reason = mgr.relentless_onslaught_hit_bonus(unit, target, game=game)
                 if bonus:
                     _add_hit_mod(int(bonus), reason)
         except Exception:

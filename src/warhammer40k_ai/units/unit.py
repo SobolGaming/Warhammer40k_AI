@@ -10930,6 +10930,15 @@ class Unit:
                     return True
         except Exception:
             pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "necrons_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "relentless_onslaught_assault_applies", None):
+                if mgr.relentless_onslaught_assault_applies(self):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
+        except Exception:
+            pass
         # Check for Assault weapons
         if profile.is_assault():
             return True
