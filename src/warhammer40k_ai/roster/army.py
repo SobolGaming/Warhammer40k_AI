@@ -901,8 +901,16 @@ class Army:
                     f"Enhancement '{enhancement.name}' is for detachment '{enhancement.detachment}', "
                     f"but army detachment is '{self.detachment_type}'."
                 )
-        # We intentionally do NOT strictly enforce model eligibility text from Wahapedia, because it is
-        # unstructured and would cause false rejections without a robust parser.
+        eligibility_fn = getattr(enhancement, "is_unit_eligible", None)
+        if callable(eligibility_fn) and not eligibility_fn(character_unit):
+            clause = str(getattr(enhancement, "eligibility_clause", "") or "").strip()
+            if clause:
+                raise ArmyValidationError(
+                    f"Enhancement '{enhancement.name}' can only be taken by {clause} model(s) only."
+                )
+            raise ArmyValidationError(
+                f"Enhancement '{enhancement.name}' has model-only eligibility requirements that '{character_unit.name}' does not meet."
+            )
         character_unit.enhancement = enhancement
         apply_fn = getattr(enhancement, "apply_to_unit", None)
         if callable(apply_fn):
@@ -1013,6 +1021,16 @@ class Army:
                     raise ArmyValidationError(f"Epic Hero '{unit.name}' cannot have Enhancements assigned.")
                 if self._unit_cannot_receive_enhancements(unit):
                     raise ArmyValidationError(f"Unit '{unit.name}' cannot be given Enhancements.")
+                eligibility_fn = getattr(unit.enhancement, "is_unit_eligible", None)
+                if callable(eligibility_fn) and not eligibility_fn(unit):
+                    clause = str(getattr(unit.enhancement, "eligibility_clause", "") or "").strip()
+                    if clause:
+                        raise ArmyValidationError(
+                            f"Enhancement '{unit.enhancement.name}' can only be taken by {clause} model(s) only."
+                        )
+                    raise ArmyValidationError(
+                        f"Enhancement '{unit.enhancement.name}' has model-only eligibility requirements that '{unit.name}' does not meet."
+                    )
 
     def validate_warlord(self):
         # Ensure exactly one Warlord is selected

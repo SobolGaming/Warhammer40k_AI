@@ -1,9 +1,17 @@
 from __future__ import annotations
 
+import json
+import os
 import re
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
+
+
+def _strip_html(text: str) -> str:
+    if not text:
+        return ""
+    return re.sub(r"<[^>]+>", " ", str(text))
 
 
 def _normalize(text: str) -> str:
@@ -12,13 +20,17 @@ def _normalize(text: str) -> str:
     return t
 
 
+def normalize_enhancement_token(text: str) -> str:
+    return _normalize(_strip_html(text)).lower()
+
+
 def _strip_eligibility_prefix(text: str) -> str:
     """
     Wahapedia enhancement descriptions often start with an eligibility clause:
       "<KEYWORDS> model only. <rules text...>"
     We keep the rules text portion for parsing.
     """
-    t = _normalize(text)
+    t = _normalize(_strip_html(text))
     lower = t.lower()
     # Split on first "... model only." / "... models only."
     for marker in (" model only.", " models only."):
@@ -40,6 +52,108 @@ class EnhancementEffectSpec:
     value: int
     notes: str
     supported: bool = True
+
+
+@dataclass(frozen=True)
+class EnhancementEligibilitySpec:
+    clause: str
+    keyword_groups: Tuple[frozenset[str], ...] = ()
+    name_options: Tuple[str, ...] = ()
+
+    def is_empty(self) -> bool:
+        return not self.keyword_groups and not self.name_options
+
+
+_KEYWORD_POOL: Optional[Set[str]] = None
+
+
+def _repo_root() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+
+def _load_keyword_pool() -> Set[str]:
+    global _KEYWORD_POOL
+    if _KEYWORD_POOL is not None:
+        return _KEYWORD_POOL
+    path = os.path.join(_repo_root(), "wahapedia_data", "Datasheets_keywords.json")
+    keywords: Set[str] = set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        for row in data:
+            kw = normalize_enhancement_token(row.get("keyword", ""))
+            if kw:
+                keywords.add(kw)
+    except Exception:
+        keywords = set()
+    _KEYWORD_POOL = keywords
+    return _KEYWORD_POOL
+
+
+def _contains_phrase(haystack: str, needle: str) -> bool:
+    return f" {haystack} ".find(f" {needle} ") != -1
+
+
+def _parse_eligibility_option(option: str, keyword_pool: Set[str]) -> Tuple[Set[str], str]:
+    opt_norm = normalize_enhancement_token(option)
+    if not opt_norm:
+        return set(), ""
+    candidates = [kw for kw in keyword_pool if _contains_phrase(opt_norm, kw)]
+    if not candidates:
+        return set(), opt_norm
+    remaining = f" {opt_norm} "
+    selected: Set[str] = set()
+    for kw in sorted(candidates, key=len, reverse=True):
+        phrase = f" {kw} "
+        if phrase in remaining:
+            selected.add(kw)
+            remaining = remaining.replace(phrase, " ")
+    remaining = re.sub(r"\s+", " ", remaining).strip()
+    if remaining:
+        remaining = re.sub(r"\band\b", " ", remaining).strip()
+        remaining = re.sub(r"\s+", " ", remaining).strip()
+    return selected, remaining
+
+
+def parse_enhancement_eligibility(description: str) -> Optional[EnhancementEligibilitySpec]:
+    """
+    Parse simple eligibility clauses of the form:
+      "<KEYWORDS/UNITS> model only."
+    Returns None if no eligibility clause is detected.
+    """
+    text = _normalize(_strip_html(description))
+    if not text:
+        return None
+    m = re.match(r"^(.+?)\s+models?\s+only\.", text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    clause = m.group(1).strip()
+    if not clause:
+        return None
+    clause_norm = _normalize(clause)
+    clause_norm = clause_norm.replace(",", " or ")
+    options = [o.strip() for o in re.split(r"\s+or\s+", clause_norm, flags=re.IGNORECASE) if o.strip()]
+    if not options:
+        return None
+    keyword_pool = _load_keyword_pool()
+    keyword_groups: List[frozenset[str]] = []
+    name_options: List[str] = []
+    for opt in options:
+        selected, remaining = _parse_eligibility_option(opt, keyword_pool)
+        if selected and not remaining:
+            keyword_groups.append(frozenset(selected))
+            continue
+        name_opt = normalize_enhancement_token(opt)
+        if name_opt:
+            name_options.append(name_opt)
+    spec = EnhancementEligibilitySpec(
+        clause=clause.strip(),
+        keyword_groups=tuple(keyword_groups),
+        name_options=tuple(name_options),
+    )
+    if spec.is_empty():
+        return None
+    return spec
 
 
 def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:

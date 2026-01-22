@@ -65,7 +65,8 @@ Full unit selection, wargear, enhancements, and roster validation are not implem
 ### Current limitations
 
 - Unit selection and validation are not implemented for in-engine mustering.
-- Wargear, enhancements, and warlord selection are not applied.
+- Wargear, enhancements, and warlord selection are not applied for in-engine mustering
+  (army list parsing applies them and validates enhancement eligibility).
 - Detachment rules and mustering restrictions are not enforced by the scaffolding.
 - `Army.configure_rule_managers()` errors are suppressed in the mustering path.
 - Mustering choices are not yet represented as decision requests in the engine

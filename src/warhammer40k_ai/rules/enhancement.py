@@ -6,6 +6,8 @@ from typing import Set, Tuple
 from .enhancement_effects import (
     EnhancementEffectSpec,
     apply_enhancement_effects,
+    normalize_enhancement_token,
+    parse_enhancement_eligibility,
     parse_enhancement_effects,
 )
 
@@ -32,12 +34,16 @@ class Enhancement:
     legend: str = ""
     description: str = ""
     eligible_keywords: Set[str] = field(default_factory=set)
+    eligibility_clause: str = ""
+    eligibility_keyword_groups: Tuple[frozenset[str], ...] = field(default_factory=tuple)
+    eligibility_name_options: Tuple[str, ...] = field(default_factory=tuple)
     _effects: Tuple[EnhancementEffectSpec, ...] = field(default_factory=tuple, repr=False)
 
     @classmethod
     def from_waha_dict(cls, data: dict) -> "Enhancement":
         # Wahapedia enhancements do not provide a structured eligibility keyword list.
-        # We keep `eligible_keywords` empty to avoid enforcing incorrect restrictions.
+        # We parse simple "model only" clauses into eligibility groups when possible.
+        eligibility = parse_enhancement_eligibility(str(data.get("description", "") or ""))
         return cls(
             id=str(data.get("id", "") or ""),
             name=str(data.get("name", "") or ""),
@@ -48,6 +54,9 @@ class Enhancement:
             legend=str(data.get("legend", "") or ""),
             description=str(data.get("description", "") or ""),
             eligible_keywords=set(),
+            eligibility_clause=str(getattr(eligibility, "clause", "") or ""),
+            eligibility_keyword_groups=tuple(getattr(eligibility, "keyword_groups", ()) or ()),
+            eligibility_name_options=tuple(getattr(eligibility, "name_options", ()) or ()),
             _effects=tuple(parse_enhancement_effects(str(data.get("description", "") or ""))),
         )
 
@@ -181,6 +190,36 @@ class Enhancement:
         refresh_fn = getattr(unit, "_refresh_bearer_unit_common_modifiers", None)
         if callable(refresh_fn):
             refresh_fn()
+
+    def is_unit_eligible(self, unit) -> bool:
+        if not self.eligibility_keyword_groups and not self.eligibility_name_options:
+            return True
+        try:
+            unit_name = normalize_enhancement_token(getattr(unit, "name", "") or "")
+        except Exception:
+            unit_name = ""
+        if unit_name and unit_name in set(self.eligibility_name_options or ()):
+            return True
+
+        keywords = []
+        get_effective = getattr(unit, "get_effective_keywords", None)
+        if callable(get_effective):
+            keywords.extend(list(get_effective() or []))
+        else:
+            keywords.extend(list(getattr(unit, "keywords", []) or []))
+        get_effective_faction = getattr(unit, "get_effective_faction_keywords", None)
+        if callable(get_effective_faction):
+            keywords.extend(list(get_effective_faction() or []))
+        else:
+            keywords.extend(list(getattr(unit, "faction_keywords", []) or []))
+
+        norm_keywords = {normalize_enhancement_token(k) for k in keywords if str(k or "").strip()}
+        for group in self.eligibility_keyword_groups or ():
+            if not group:
+                continue
+            if set(group).issubset(norm_keywords):
+                return True
+        return False
 
     def __str__(self) -> str:
         return f"{self.name} ({self.points}pts) [{self.faction_id} / {self.detachment}]\n{self.description}"
