@@ -24,6 +24,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Lobby state + transitions live in `src/warhammer40k_ai/network/lobby.py`.
 - Control envelope helpers live in `src/warhammer40k_ai/network/control.py`.
 - Server/client orchestration lives in `src/warhammer40k_ai/network/server.py` and `src/warhammer40k_ai/network/client.py`.
+- Pygame network client lives in `src/warhammer40k_ai/network/pygame_client.py` (CLI: `client-ui`).
 - Deterministic event log and snapshot behavior defined in `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - Army list parsing and mustering behavior defined in `docs/ARMY_MUSTERING_SCAFFOLDING.md`.
 
@@ -31,7 +32,8 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 
 - Single authoritative server hosts one or more game sessions.
 - Clients connect over TLS-secured WebSockets and exchange JSON messages.
-- Game state updates flow as: Client Command -> Server validation -> Event broadcast.
+- Game state updates flow as: Client Command -> Server validation -> Command broadcast + Event broadcast.
+- Clients keep a local game state by replaying accepted commands from the server.
 - Spectators receive snapshots/events only; commands from spectators are rejected.
 
 ## Transport and Security
@@ -39,7 +41,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Use asyncio WebSockets with an SSLContext for TLS.
 - Server CLI inputs: `--host`, `--port`, `--cert`, `--key`.
 - Client inputs: `--server`, `--ca-cert`, `--insecure` (dev only, explicit opt-in).
-- CLI entrypoint: `python -m warhammer40k_ai.network.cli server|client`.
+- CLI entrypoint: `python -m warhammer40k_ai.network.cli server|client|client-ui`.
 - Self-signed test certs live in `tests/fixtures/tls/` for integration tests.
 - Each connection receives a session-scoped token for reconnects and role locking.
 - Optional join code or password for private sessions.
@@ -48,6 +50,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 
 Reuse existing game message envelopes for live gameplay:
 - `snapshot`, `command`, `event`, `error`, `resync` (see `network/messages.py`).
+Note: server broadcasts accepted `command` messages so clients can apply them locally.
 
 Add a control channel for lobby/session management:
 - `hello`: protocol version + client metadata.

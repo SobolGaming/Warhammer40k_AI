@@ -78,6 +78,12 @@ def dispatch_decision(game: object, request: DecisionRequest, result: DecisionRe
     )
 
 
+def has_decision_handler(decision_type: str) -> bool:
+    if not decision_type:
+        return False
+    return str(decision_type) in _HANDLERS
+
+
 def _validate_choice_from_options(request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     options = list(getattr(request, "options", []) or [])
     if not options:

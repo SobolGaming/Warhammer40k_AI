@@ -268,6 +268,10 @@ class NetworkServer:
             await self._send_error(connection_id, "Command player_id mismatch.")
             return
         results = handle_command_message(self._game, command_msg, require_client_sync=True)
+        had_resync = any(isinstance(result, ResyncMessage) for result in results)
+        had_error = any(isinstance(result, ErrorMessage) for result in results)
+        if not had_resync and not had_error:
+            await self._broadcast_game_message(CommandMessage(command=command_msg.command))
         for result in results:
             if isinstance(result, EventMessage):
                 await self._broadcast_game_message(result)

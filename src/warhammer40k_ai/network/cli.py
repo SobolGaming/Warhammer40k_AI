@@ -32,6 +32,17 @@ def _build_parser() -> argparse.ArgumentParser:
     client.add_argument("--army-file", help="Army list file to submit")
     client.add_argument("--ready", action="store_true", help="Mark ready after submit")
 
+    ui_client = subparsers.add_parser("client-ui", help="Run the network client with pygame UI")
+    ui_client.add_argument("--server", required=True, help="Server URI (wss://host:port)")
+    ui_client.add_argument("--ca-cert", help="CA certificate path")
+    ui_client.add_argument("--insecure", action="store_true", help="Disable TLS verification (dev only)")
+    ui_client.add_argument("--display-name", default="Client")
+    ui_client.add_argument("--join-code", help="Join code")
+    ui_client.add_argument("--reconnect-token", help="Reconnect token")
+    ui_client.add_argument("--role", choices=["player1", "player2", "spectator"], help="Role selection")
+    ui_client.add_argument("--army-file", help="Army list file to submit")
+    ui_client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+
     return parser
 
 
@@ -108,6 +119,23 @@ def main() -> None:
         return
     if args.mode == "client":
         asyncio.run(_run_client(args))
+        return
+    if args.mode == "client-ui":
+        from .pygame_client import run_pygame_network_client
+
+        asyncio.run(
+            run_pygame_network_client(
+                uri=args.server,
+                ca_cert=args.ca_cert,
+                insecure=args.insecure,
+                display_name=args.display_name,
+                join_code=args.join_code,
+                reconnect_token=args.reconnect_token,
+                role=args.role,
+                army_file=args.army_file,
+                ready=args.ready,
+            )
+        )
         return
     raise ValueError(f"Unknown mode: {args.mode}")
 

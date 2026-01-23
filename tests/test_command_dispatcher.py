@@ -2,6 +2,7 @@ from warhammer40k_ai.engine.command_kinds import (
     CMD_ADVANCE_SETUP_PHASE,
     CMD_EXECUTE_SETUP_PHASE,
     CMD_NEXT_PHASE,
+    CMD_REQUEST_DECISION,
     CMD_RESOLVE_DECISION,
     CMD_SELECT_MISSION,
     CMD_SET_DEPLOYMENT_WAITING,
@@ -156,3 +157,44 @@ def test_resolve_decision_rejects_wrong_player():
     result = game.apply_command(cmd)
     assert result.ok is False
     assert game.decision_queue.peek() is request
+
+
+def test_request_decision_adds_request():
+    game = _make_game()
+    player_id = game.get_current_player().id
+    option = DecisionOption.create("Yes", payload={"value": True})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use ability?",
+        player_id=player_id,
+        options=[option],
+    )
+    cmd = GameCommand.create(
+        CMD_REQUEST_DECISION,
+        player_id=player_id,
+        payload={"decision": request.to_dict()},
+    )
+    result = game.apply_command(cmd)
+    assert result.ok is True
+    queued = game.decision_queue.get(request.decision_id)
+    assert queued is not None
+    assert queued.decision_type == DECISION_CONFIRM_YES_NO
+
+
+def test_request_decision_rejects_wrong_player():
+    game = _make_game()
+    option = DecisionOption.create("Yes", payload={"value": True})
+    request = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Use ability?",
+        player_id=game.get_current_player().id,
+        options=[option],
+    )
+    cmd = GameCommand.create(
+        CMD_REQUEST_DECISION,
+        player_id="other-player",
+        payload={"decision": request.to_dict()},
+    )
+    result = game.apply_command(cmd)
+    assert result.ok is False
+    assert game.decision_queue.get(request.decision_id) is None

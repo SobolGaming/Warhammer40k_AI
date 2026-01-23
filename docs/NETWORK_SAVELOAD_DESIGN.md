@@ -107,6 +107,9 @@ Validation:
 DecisionResult command:
 - `RESOLVE_DECISION` payload: `decision_id`, `option_id`, `result_payload` (optional dict)
 
+DecisionRequest command:
+- `REQUEST_DECISION` payload: `decision` (DecisionRequest dict with decision_id, decision_type, options, context)
+
 Command execution:
 - `Game.apply_command(...)` validates and dispatches commands through the engine dispatcher.
 - `Game.process_command_queue(...)` drains queued commands in order for deterministic replay.

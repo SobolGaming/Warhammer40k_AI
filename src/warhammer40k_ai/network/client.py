@@ -76,7 +76,7 @@ class NetworkClient:
     async def send_army_submit(self, list_text: str, *, list_name: str = "army_list") -> None:
         await self.send_control("army_submit", {"list_name": list_name, "list_text": list_text})
 
-    async def send_command(self, command: GameCommand) -> None:
+    async def send_command(self, command: GameCommand, *, omit_event_id: bool = False) -> None:
         if self.role == "spectator":
             raise RuntimeError("Spectators cannot send commands.")
         if command.player_id is None and self.player_id is not None:
@@ -88,7 +88,8 @@ class NetworkClient:
                 metadata=command.metadata,
                 created_at=command.created_at,
             )
-        message = CommandMessage(command=command, client_last_event_id=self.event_cursor.last_event_id)
+        client_last_event_id = None if omit_event_id else self.event_cursor.last_event_id
+        message = CommandMessage(command=command, client_last_event_id=client_last_event_id)
         await self.transport.send(message)
 
     async def next_message(self, *, timeout: Optional[float] = None):

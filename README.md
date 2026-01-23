@@ -44,8 +44,8 @@ python3 -m warhammer40k_ai.network.cli server \
   --cert tests/fixtures/tls/server.crt \
   --key tests/fixtures/tls/server.key
 
-# Client 1 (Player 1)
-python3 -m warhammer40k_ai.network.cli client \
+# Client 1 (Player 1, pygame UI)
+python3 -m warhammer40k_ai.network.cli client-ui \
   --server wss://localhost:8765 \
   --ca-cert tests/fixtures/tls/server.crt \
   --display-name "Player One" \
@@ -53,7 +53,7 @@ python3 -m warhammer40k_ai.network.cli client \
   --army-file army_lists/chaos_test.txt \
   --ready
 
-# Client 2 (Player 2)
+# Client 2 (Player 2, headless)
 python3 -m warhammer40k_ai.network.cli client \
   --server wss://localhost:8765 \
   --ca-cert tests/fixtures/tls/server.crt \
@@ -67,6 +67,7 @@ Notes:
 - The server requires TLS. For local/dev testing, self-signed certs are provided in `tests/fixtures/tls/`.
 - For custom certs, generate your own and pass `--cert`/`--key`.
 - Clients can pass `--insecure` for dev-only TLS bypass (not recommended).
+- Use `client-ui` for human players (pygame UI); use `client` for headless AI/spectator tooling.
 
 #### Data Exploration
 ```bash

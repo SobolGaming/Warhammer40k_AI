@@ -7,13 +7,14 @@ from .command_kinds import (
     CMD_ADVANCE_SETUP_PHASE,
     CMD_EXECUTE_SETUP_PHASE,
     CMD_NEXT_PHASE,
+    CMD_REQUEST_DECISION,
     CMD_RESOLVE_DECISION,
     CMD_SELECT_MISSION,
     CMD_SET_DEPLOYMENT_WAITING,
 )
 from .commands import GameCommand
-from .decisions import DecisionResult
-from .decision_dispatcher import validate_decision
+from .decisions import DecisionRequest, DecisionResult
+from .decision_dispatcher import has_decision_handler, validate_decision
 
 CommandValidator = Callable[[object, GameCommand], Sequence[str]]
 CommandApplier = Callable[[object, GameCommand], Any]
@@ -159,6 +160,52 @@ def _apply_set_deployment_waiting(game: object, command: GameCommand) -> None:
     return None
 
 
+def _validate_request_decision(game: object, command: GameCommand) -> Sequence[str]:
+    payload = command.payload or {}
+    decision_payload = payload.get("decision")
+    if not isinstance(decision_payload, dict):
+        return ("Decision request requires decision dict.",)
+    try:
+        request = DecisionRequest.from_dict(decision_payload)
+    except (TypeError, ValueError) as exc:
+        return (f"Decision request invalid: {exc}",)
+    if not request.decision_id:
+        return ("Decision request missing decision_id.",)
+    if not request.decision_type:
+        return ("Decision request missing decision_type.",)
+    if not has_decision_handler(request.decision_type):
+        return (f"Unknown decision type: {request.decision_type}",)
+    queue = getattr(game, "decision_queue", None)
+    if queue is None or not hasattr(queue, "get"):
+        return ("Game missing decision_queue.",)
+    if queue.get(request.decision_id) is not None:
+        return (f"Decision already queued: {request.decision_id}",)
+    if request.player_id is not None:
+        if command.player_id is None:
+            return ("Decision request requires player_id.",)
+        if str(command.player_id) != str(request.player_id):
+            return ("Decision request belongs to another player.",)
+    return ()
+
+
+def _apply_request_decision(game: object, command: GameCommand) -> DecisionRequest | None:
+    payload = command.payload or {}
+    decision_payload = payload.get("decision")
+    if not isinstance(decision_payload, dict):
+        raise RuntimeError("Decision request payload missing decision dict.")
+    request = DecisionRequest.from_dict(decision_payload)
+    queue = getattr(game, "decision_queue", None)
+    if queue is None or not hasattr(queue, "get"):
+        raise RuntimeError("Game missing decision_queue.")
+    if queue.get(request.decision_id) is not None:
+        return None
+    req_fn = getattr(game, "request_decision", None)
+    if not callable(req_fn):
+        raise RuntimeError("Game missing request_decision.")
+    req_fn(request)
+    return request
+
+
 def _validate_resolve_decision(game: object, command: GameCommand) -> Sequence[str]:
     payload = command.payload or {}
     decision_id = payload.get("decision_id")
@@ -213,4 +260,5 @@ register_command_handler(CMD_EXECUTE_SETUP_PHASE, validate=_validate_execute_set
 register_command_handler(CMD_ADVANCE_SETUP_PHASE, validate=_validate_advance_setup_phase, apply=_apply_advance_setup_phase)
 register_command_handler(CMD_SELECT_MISSION, validate=_validate_select_mission, apply=_apply_select_mission)
 register_command_handler(CMD_SET_DEPLOYMENT_WAITING, validate=_validate_set_deployment_waiting, apply=_apply_set_deployment_waiting)
+register_command_handler(CMD_REQUEST_DECISION, validate=_validate_request_decision, apply=_apply_request_decision)
 register_command_handler(CMD_RESOLVE_DECISION, validate=_validate_resolve_decision, apply=_apply_resolve_decision)
