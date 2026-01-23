@@ -1,8 +1,12 @@
 ﻿from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.engine.deployment import DeploymentManager
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+from warhammer40k_ai.utility.entity_ids import get_entity_id
 
 
 def _hover_ability_entry():
@@ -92,6 +96,47 @@ def test_hover_declaration_applied_in_battle_formations():
     assert hover_unit.hover_declared is True
     assert other_unit.hover_mode is False
     assert other_unit.hover_declared is True
+
+
+def test_hover_confirm_decision_applies_hover_mode():
+    bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+    game = Game(bf)
+
+    p1 = Player("P1", PlayerControl.LOCAL, None)
+    p2 = Player("P2", PlayerControl.REMOTE, None)
+    game.add_player(p1)
+    game.add_player(p2)
+
+    a1 = Army("Army1", "Det1")
+    a2 = Army("Army2", "Det2")
+    p1.set_army(a1)
+    p2.set_army(a2)
+
+    hover_unit = Unit(MockDatasheet(
+        "Hover Unit",
+        keywords=["Aircraft"],
+        abilities=[_hover_ability_entry()],
+    ))
+    a1.add_unit(hover_unit)
+
+    unit_id = get_entity_id(hover_unit)
+    options = [
+        DecisionOption.create("Hover", payload={"choice": True, "unit_id": unit_id}),
+        DecisionOption.create("Aircraft", payload={"choice": False, "unit_id": unit_id}),
+    ]
+    req = DecisionRequest.create(
+        DECISION_CONFIRM_YES_NO,
+        "Hover Mode",
+        player_id=p1.id,
+        options=options,
+        context={"ability": "hover_mode", "unit_id": unit_id},
+    )
+    game.request_decision(req)
+
+    resolve_decision_command(game, req, options[0].option_id)
+
+    assert hover_unit.hover_mode is True
+    assert hover_unit.hover_declared is True
 
 
 def test_aircraft_forced_into_reserves_when_not_hover():

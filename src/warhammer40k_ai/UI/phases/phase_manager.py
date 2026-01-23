@@ -997,12 +997,18 @@ class SetupPhaseHandler(BasePhaseHandler):
             DECISION_ASSIGN_TRANSPORT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
+            DECISION_CONFIRM_YES_NO,
         )
         types = {DECISION_ATTACH_LEADER, DECISION_ASSIGN_TRANSPORT, DECISION_DECLARE_RESERVES, DECISION_CHOOSE_PLAGUE}
         pid = getattr(player, "id", None)
         for req in list(queue.list() or []):
-            if getattr(req, "decision_type", None) not in types:
-                continue
+            decision_type = getattr(req, "decision_type", None)
+            if decision_type not in types:
+                if decision_type != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "hover_mode":
+                    continue
             req_pid = getattr(req, "player_id", None)
             if pid is None or req_pid is None or str(req_pid) == str(pid):
                 return True
@@ -1069,6 +1075,7 @@ class SetupPhaseHandler(BasePhaseHandler):
             DECISION_ASSIGN_TRANSPORT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
+            DECISION_CONFIRM_YES_NO,
         )
         from ...engine.decision_requests import (
             build_leader_attachment_requests,
@@ -1083,6 +1090,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ..decision_ui_utils import first_option_id
 
         queue = getattr(self.game, "decision_queue", None)
+        unit_by_id = {get_entity_id(u): u for u in units if u is not None}
 
         def _pending_requests(decision_type: str, *, context_key: str, valid_ids: set[str]):
             pending = {}
@@ -1107,6 +1115,21 @@ class SetupPhaseHandler(BasePhaseHandler):
                 if str(getattr(req, "player_id", "")) == str(getattr(player, "id", "")):
                     return req
             return None
+
+        def _pending_hover_requests():
+            pending = []
+            if queue is None or not hasattr(queue, "list"):
+                return pending
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                    continue
+                if str(getattr(req, "player_id", "")) != str(getattr(player, "id", "")):
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "hover_mode":
+                    continue
+                pending.append(req)
+            return pending
 
         def _show_reserves():
             req = _pending_single(DECISION_DECLARE_RESERVES)
@@ -1290,7 +1313,38 @@ class SetupPhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
 
-        _show_plague()
+        def _show_hover():
+            pending = _pending_hover_requests()
+            if not pending:
+                _show_plague()
+                return
+            req = pending[0]
+            ctx = dict(getattr(req, "context", {}) or {})
+            unit_id = str(ctx.get("unit_id", "") or "")
+            unit = unit_by_id.get(unit_id)
+            msg = str(ctx.get("message", "") or "")
+            if not msg:
+                unit_name = getattr(unit, "name", "Unit") if unit is not None else "Unit"
+                msg = (
+                    f"Enable Hover mode for {unit_name} ({player.name})?\n\n"
+                    "Hover removes the AIRCRAFT keyword and sets Move to 20\"."
+                )
+            title = str(getattr(req, "prompt", "") or "Hover Mode")
+            dlg = getattr(self.game_view, "yes_no_dialog", None)
+            if dlg is None:
+                return
+
+            def _done(option_id: str):
+                resolve_decision_command(self.game, req, option_id)
+                _show_hover()
+
+            dlg.show(title, msg, _done, decision_request=req)
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                return
+
+        _show_hover()
 
     def get_allowed_actions(self) -> List[str]:
         return ["advance_setup_phase", "view_unit_details"]

@@ -21,12 +21,14 @@ from ..engine.command_dispatcher import CommandResult
 from ..engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_CHOOSE_PLAGUE,
 )
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
     build_leader_attachment_requests,
+    build_hover_mode_requests,
     build_transport_assignment_requests,
     build_reserves_allocation_request,
 )
@@ -373,7 +375,7 @@ class NetworkServer:
         request = queue.get(str(decision_id))
         if request is None:
             return False
-        return getattr(request, "decision_type", None) in self._formation_decision_types
+        return self._is_formation_decision(request)
 
     def _pending_formation_decisions(self) -> list[DecisionRequest]:
         if self._game is None:
@@ -381,11 +383,7 @@ class NetworkServer:
         queue = getattr(self._game, "decision_queue", None)
         if queue is None or not hasattr(queue, "list"):
             return []
-        return [
-            req
-            for req in list(queue.list() or [])
-            if getattr(req, "decision_type", None) in self._formation_decision_types
-        ]
+        return [req for req in list(queue.list() or []) if self._is_formation_decision(req)]
 
     async def _queue_formation_decisions(self) -> list[DecisionRequest]:
         if self._game is None:
@@ -399,6 +397,7 @@ class NetworkServer:
         pending_transport = self._pending_by_context(DECISION_ASSIGN_TRANSPORT, "unit_id")
         pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
         pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
+        pending_hover = self._pending_hover_by_unit()
 
         created: list[DecisionRequest] = []
 
@@ -409,6 +408,14 @@ class NetworkServer:
             if army is None:
                 continue
             units = list(getattr(army, "units", []) or [])
+
+            hover_requests = build_hover_mode_requests(game, units, queue_requests=False)
+            for req in hover_requests:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_hover:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
 
             leader_requests = build_leader_attachment_requests(game, units, queue_requests=False)
             for req in leader_requests:
@@ -456,6 +463,36 @@ class NetworkServer:
             if ctx_val:
                 pending[ctx_val] = req
         return pending
+
+    def _pending_hover_by_unit(self) -> dict[str, DecisionRequest]:
+        pending: dict[str, DecisionRequest] = {}
+        if self._game is None:
+            return pending
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return pending
+        for req in list(queue.list() or []):
+            if not self._is_hover_mode_request(req):
+                continue
+            unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+            if unit_id:
+                pending[unit_id] = req
+        return pending
+
+    def _is_hover_mode_request(self, request: DecisionRequest | None) -> bool:
+        if request is None:
+            return False
+        if getattr(request, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+            return False
+        ctx = getattr(request, "context", {}) or {}
+        return str(ctx.get("ability", "") or "") == "hover_mode"
+
+    def _is_formation_decision(self, request: DecisionRequest | None) -> bool:
+        if request is None:
+            return False
+        if getattr(request, "decision_type", None) in self._formation_decision_types:
+            return True
+        return self._is_hover_mode_request(request)
 
     def _build_plague_request(
         self,

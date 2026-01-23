@@ -66,6 +66,7 @@ This is the first **simultaneous** decision stage. Each player can resolve their
 own formation choices independently while the server waits for both to finish.
 
 1. Server builds formation decisions per player:
+   - `CONFIRM_YES_NO` (Hover mode for eligible AIRCRAFT)
    - `ATTACH_LEADER`
    - `ASSIGN_TRANSPORT`
    - `DECLARE_RESERVES`

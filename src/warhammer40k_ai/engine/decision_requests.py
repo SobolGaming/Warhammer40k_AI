@@ -6,6 +6,7 @@ from .decisions import DecisionOption, DecisionRequest
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_SCOUT_MOVE,
 )
@@ -28,6 +29,16 @@ def _player_id_for_unit(unit: object) -> Optional[str]:
     except Exception:
         player = None
     return getattr(player, "id", None) if player is not None else None
+
+
+def _player_for_unit(unit: object):
+    try:
+        army = unit.get_parent_army()
+    except Exception:
+        army = getattr(unit, "parent_army", None)
+    if army is None:
+        return None
+    return getattr(army, "player", None)
 
 
 def _leader_attachment_options(leader, bodyguards: List[object]) -> List[DecisionOption]:
@@ -159,6 +170,49 @@ def build_reserves_allocation_request(
     if queue_requests and hasattr(game, "request_decision"):
         game.request_decision(request)
     return request
+
+
+def build_hover_mode_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    for unit in all_units:
+        if bool(getattr(unit, "hover_declared", False)):
+            continue
+        has_hover = getattr(unit, "has_hover", None)
+        if not callable(has_hover) or not has_hover():
+            continue
+        has_keyword = getattr(unit, "has_keyword", None)
+        if not callable(has_keyword) or not has_keyword("Aircraft"):
+            continue
+        unit_id = get_entity_id(unit)
+        player = _player_for_unit(unit)
+        player_id = _player_id_for_unit(unit)
+        player_name = str(getattr(player, "name", "Player") or "Player")
+        unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+        message = (
+            f"Enable Hover mode for {unit_name} ({player_name})?\n\n"
+            "Hover removes the AIRCRAFT keyword and sets Move to 20\"."
+        )
+        options = [
+            DecisionOption.create("Hover", payload={"choice": True, "unit_id": unit_id}),
+            DecisionOption.create("Aircraft", payload={"choice": False, "unit_id": unit_id}),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            "Hover Mode",
+            player_id=player_id,
+            options=options,
+            context={"ability": "hover_mode", "unit_id": unit_id, "message": message},
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+    return requests
 
 
 def build_scout_move_request(game: object, unit: object) -> Optional[DecisionRequest]:
