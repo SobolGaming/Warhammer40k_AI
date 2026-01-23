@@ -36,6 +36,38 @@ python3 scripts/main.py --player1-army army_lists/chaos_test.txt --player2-army 
 python3 scripts/main.py --manual-phases
 ```
 
+#### Network Play (Server/Client)
+```bash
+# Server (TLS required)
+python3 -m warhammer40k_ai.network.cli server \
+  --host 0.0.0.0 --port 8765 \
+  --cert tests/fixtures/tls/server.crt \
+  --key tests/fixtures/tls/server.key
+
+# Client 1 (Player 1)
+python3 -m warhammer40k_ai.network.cli client \
+  --server wss://localhost:8765 \
+  --ca-cert tests/fixtures/tls/server.crt \
+  --display-name "Player One" \
+  --role player1 \
+  --army-file army_lists/chaos_test.txt \
+  --ready
+
+# Client 2 (Player 2)
+python3 -m warhammer40k_ai.network.cli client \
+  --server wss://localhost:8765 \
+  --ca-cert tests/fixtures/tls/server.crt \
+  --display-name "Player Two" \
+  --role player2 \
+  --army-file army_lists/aeldari_test.txt \
+  --ready
+```
+
+Notes:
+- The server requires TLS. For local/dev testing, self-signed certs are provided in `tests/fixtures/tls/`.
+- For custom certs, generate your own and pass `--cert`/`--key`.
+- Clients can pass `--insecure` for dev-only TLS bypass (not recommended).
+
 #### Data Exploration
 ```bash
 # Browse Wahapedia data
@@ -154,6 +186,13 @@ Warhammer40k_AI/
 |   |   |-- wargear.py
 |   |   |-- ability.py
 |   |   |-- status_effects.py
+|   |-- network/
+|   |   |-- transport.py
+|   |   |-- lobby.py
+|   |   |-- control.py
+|   |   |-- server.py
+|   |   |-- client.py
+|   |   |-- cli.py
 |   |-- UI/
 |   |   |-- game_ui.py
 |   |   |-- panels/
@@ -172,6 +211,8 @@ Warhammer40k_AI/
 |-- army_lists/
 |-- docs/
 |-- tests/
+|   |-- fixtures/
+|   |   |-- tls/
 |-- wahapedia_data/
 |-- RuleSets/
 ```
@@ -186,12 +227,14 @@ Warhammer40k_AI/
 - `src/warhammer40k_ai/roster/`: Army composition, mustering, and player ownership.
 - `src/warhammer40k_ai/rules/`: Rule managers, detachments, enhancements, stratagems, and faction logic.
 - `src/warhammer40k_ai/units/`: Unit/model/wargear primitives plus status effects.
+- `src/warhammer40k_ai/network/`: WebSocket transport, lobby state, control protocol, server/client orchestration.
 - `src/warhammer40k_ai/UI/`: Rendering and interactive UI; no core rules live here.
 - `src/warhammer40k_ai/utility/`: Shared helpers (geometry, dice, modifiers, event bus).
 - `src/warhammer40k_ai/waha_helper/`: Wahapedia data ingestion and lookup helpers.
 - `army_lists/`: Example army lists for quick runs.
 - `docs/`: Design and support documentation.
 - `tests/`: Automated tests.
+- `tests/fixtures/tls/`: Self-signed TLS certs used by network integration tests.
 - `wahapedia_data/`: Extracted data assets (not committed).
 - `RuleSets/`: Static ruleset sources and references.
 
