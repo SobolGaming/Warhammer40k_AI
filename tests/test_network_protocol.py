@@ -34,8 +34,12 @@ def test_event_stream_cursor_validation():
         ]
     )
     assert cursor.last_event_id == 2
+    # Forward jumps are tolerated (resync will correct state).
+    cursor.validate_and_advance([{"event_id": 4, "type": "roll_made", "payload": {}}])
+    assert cursor.last_event_id == 4
+    # Backward or duplicate events are still rejected.
     with pytest.raises(ValueError):
-        cursor.validate_and_advance([{"event_id": 4, "type": "roll_made", "payload": {}}])
+        cursor.validate_and_advance([{"event_id": 3, "type": "roll_made", "payload": {}}])
 
 
 def test_handle_command_message_success():

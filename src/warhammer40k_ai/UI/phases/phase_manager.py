@@ -445,6 +445,11 @@ class SetupPhaseHandler(BasePhaseHandler):
             f"Enable Hover mode for {uname} ({pname})?\n\n"
             "Hover removes the AIRCRAFT keyword and sets Move to 20\"."
         )
+        try:
+            from ...utility.entity_ids import get_entity_id
+            unit_id = get_entity_id(unit)
+        except Exception:
+            unit_id = ""
 
         def _done(chosen: bool):
             try:
@@ -458,7 +463,8 @@ class SetupPhaseHandler(BasePhaseHandler):
             self._open_next_hover_mode_prompt()
 
         if callable(getattr(self, "_request_yes_no", None)):
-            self._request_yes_no(title, msg, "Hover", "Aircraft", _done)
+            ctx = {"ability": "hover_mode", "unit_id": unit_id}
+            self._request_yes_no(title, msg, "Hover", "Aircraft", _done, player=player, context=ctx)
         else:
             try:
                 self.yes_no_dialog.show(title, msg, _done, yes_label="Hover", no_label="Aircraft")

@@ -145,6 +145,8 @@ Deployment / Pre-battle:
 - leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
 - transport_assignment_dialog: ASSIGN_TRANSPORT {unit_id, transport_id}
+- hover_mode_prompt (yes_no_dialog): CONFIRM_YES_NO {unit_id, choice} (context `ability="hover_mode"`)
+- nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id} (context `army_id`) (Declare Battle Formations)
 - scout_choice_dialog: SCOUT_MOVE {unit_id, destination}
 - floor_selection_dialog: SELECT_FLOOR {unit_id, floor_id}
 
