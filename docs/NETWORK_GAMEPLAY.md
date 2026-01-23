@@ -1,6 +1,6 @@
 # Network Gameplay Plan (Asyncio WebSockets)
 
-Status: Draft
+Status: Implemented (transport, lobby, army submission, start flow, spectator gating, reconnect/resync)
 
 ## Goals
 
@@ -20,6 +20,10 @@ Status: Draft
 
 - Network protocol messages exist in `src/warhammer40k_ai/network/messages.py`.
 - Command processing + resync helpers exist in `src/warhammer40k_ai/network/protocol.py`.
+- WebSocket transport lives in `src/warhammer40k_ai/network/transport.py` and requires `websockets`.
+- Lobby state + transitions live in `src/warhammer40k_ai/network/lobby.py`.
+- Control envelope helpers live in `src/warhammer40k_ai/network/control.py`.
+- Server/client orchestration lives in `src/warhammer40k_ai/network/server.py` and `src/warhammer40k_ai/network/client.py`.
 - Deterministic event log and snapshot behavior defined in `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - Army list parsing and mustering behavior defined in `docs/ARMY_MUSTERING_SCAFFOLDING.md`.
 
@@ -35,6 +39,8 @@ Status: Draft
 - Use asyncio WebSockets with an SSLContext for TLS.
 - Server CLI inputs: `--host`, `--port`, `--cert`, `--key`.
 - Client inputs: `--server`, `--ca-cert`, `--insecure` (dev only, explicit opt-in).
+- CLI entrypoint: `python -m warhammer40k_ai.network.cli server|client`.
+- Self-signed test certs live in `tests/fixtures/tls/` for integration tests.
 - Each connection receives a session-scoped token for reconnects and role locking.
 - Optional join code or password for private sessions.
 
@@ -54,6 +60,7 @@ Add a control channel for lobby/session management:
 - `disconnect`: cleanup or role relinquish.
 
 Control messages should be distinct from game envelopes to keep event logs clean.
+Control responses include `ok` and (on failure) `errors` in payload.
 
 ## Lobby and Role Model
 

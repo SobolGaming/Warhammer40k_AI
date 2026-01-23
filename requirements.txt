@@ -11,3 +11,4 @@ pytest
 pygame
 shapely
 matplotlib
+websockets==11.0.3

@@ -1,0 +1,116 @@
+from __future__ import annotations
+
+import argparse
+import asyncio
+from pathlib import Path
+
+from .client import NetworkClient
+from .server import NetworkServer
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Warhammer40k AI network server/client")
+    subparsers = parser.add_subparsers(dest="mode", required=True)
+
+    server = subparsers.add_parser("server", help="Run the network server")
+    server.add_argument("--host", default="0.0.0.0")
+    server.add_argument("--port", type=int, default=8765)
+    server.add_argument("--cert", required=True, help="TLS certificate path")
+    server.add_argument("--key", required=True, help="TLS private key path")
+    server.add_argument("--join-code", help="Optional join code")
+    server.add_argument("--ping-interval", type=float, default=20.0)
+    server.add_argument("--ping-timeout", type=float, default=20.0)
+
+    client = subparsers.add_parser("client", help="Run the network client")
+    client.add_argument("--server", required=True, help="Server URI (wss://host:port)")
+    client.add_argument("--ca-cert", help="CA certificate path")
+    client.add_argument("--insecure", action="store_true", help="Disable TLS verification (dev only)")
+    client.add_argument("--display-name", default="Client")
+    client.add_argument("--join-code", help="Join code")
+    client.add_argument("--reconnect-token", help="Reconnect token")
+    client.add_argument("--role", choices=["player1", "player2", "spectator"], help="Role selection")
+    client.add_argument("--army-file", help="Army list file to submit")
+    client.add_argument("--ready", action="store_true", help="Mark ready after submit")
+
+    return parser
+
+
+async def _run_server(args: argparse.Namespace) -> None:
+    server = NetworkServer(
+        host=args.host,
+        port=args.port,
+        cert_path=args.cert,
+        key_path=args.key,
+        join_code=args.join_code,
+        ping_interval=args.ping_interval,
+        ping_timeout=args.ping_timeout,
+    )
+    await server.start()
+    print(f"Network server listening on {server.transport.host}:{server.transport.port}")
+    try:
+        await server.run()
+    finally:
+        await server.stop()
+
+
+async def _wait_for_control(client: NetworkClient, expected_type: str):
+    while True:
+        event = await client.next_message()
+        client.handle_message(event)
+        msg = event.message
+        if event.category == "control" and msg.get("type") == expected_type:
+            return msg
+
+
+async def _run_client(args: argparse.Namespace) -> None:
+    client = NetworkClient(
+        uri=args.server,
+        ca_cert=args.ca_cert,
+        insecure=args.insecure,
+    )
+    await client.connect()
+    await client.send_hello(args.display_name)
+    await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
+    auth_msg = await _wait_for_control(client, "auth")
+    payload = auth_msg.get("payload", {})
+    if not payload.get("ok"):
+        print(f"Auth failed: {payload.get('errors', [])}")
+        await client.close()
+        return
+    if args.role:
+        await client.send_role_select(args.role)
+        await _wait_for_control(client, "role_select")
+    if args.army_file:
+        text = Path(args.army_file).read_text(encoding="utf-8")
+        await client.send_army_submit(text, list_name=Path(args.army_file).name)
+        await _wait_for_control(client, "army_submit")
+    if args.ready:
+        await client.send_ready(True)
+        await _wait_for_control(client, "ready")
+
+    print("Connected. Listening for updates...")
+    try:
+        while True:
+            event = await client.next_message()
+            client.handle_message(event)
+            print(f"[{event.category}] {event.message_type}")
+    except asyncio.CancelledError:
+        raise
+    finally:
+        await client.close()
+
+
+def main() -> None:
+    parser = _build_parser()
+    args = parser.parse_args()
+    if args.mode == "server":
+        asyncio.run(_run_server(args))
+        return
+    if args.mode == "client":
+        asyncio.run(_run_client(args))
+        return
+    raise ValueError(f"Unknown mode: {args.mode}")
+
+
+if __name__ == "__main__":
+    main()

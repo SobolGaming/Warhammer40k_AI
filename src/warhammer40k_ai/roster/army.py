@@ -2149,6 +2149,30 @@ def parse_army_list(file_path: str, waha_helper: WahaHelper) -> Army:
     print(f"Finished parsing. Total units: {len(army.units)}")
     return army
 
+
+def parse_army_list_text(list_text: str, waha_helper: WahaHelper, *, list_name: str = "army_list") -> Army:
+    if list_text is None:
+        raise ValueError("Army list text is required.")
+    import tempfile
+    import os
+    safe_name = "".join(ch for ch in (list_name or "army_list") if ch.isalnum() or ch in ("_", "-"))
+    if not safe_name:
+        safe_name = "army_list"
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=f"_{safe_name}.txt",
+            delete=False,
+        ) as handle:
+            temp_path = handle.name
+            handle.write(list_text)
+        return parse_army_list(temp_path, waha_helper)
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+
 def add_unit_to_army(army: Army, unit: Unit, model_count: int, wargear_dict: Dict[str, Set[Tuple[str, int]]], enhancement: Enhancement, waha_helper: WahaHelper, is_warlord: bool):
     def _normalize_gear_name(text: str) -> str:
         return (
