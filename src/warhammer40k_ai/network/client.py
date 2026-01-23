@@ -137,11 +137,17 @@ class NetworkClient:
                 self.player_id = players[0].get("id", self.player_id)
             if self.role == "player2" and len(players) > 1:
                 self.player_id = players[1].get("id", self.player_id)
-            since_event_id = payload.get("since_event_id")
-            self.event_cursor.last_event_id = int(since_event_id or 0)
             events = list(payload.get("events", []) or [])
+            since_event_id = payload.get("since_event_id")
             if events:
+                first_event_id = events[0].get("event_id")
+                if first_event_id is not None:
+                    self.event_cursor.last_event_id = int(first_event_id) - 1
+                else:
+                    self.event_cursor.last_event_id = int(since_event_id or 0)
                 self.event_cursor.validate_and_advance(events)
+            else:
+                self.event_cursor.last_event_id = int(since_event_id or 0)
             return
         if msg_type == "event":
             events = list(msg.get("payload", {}).get("events", []) or [])

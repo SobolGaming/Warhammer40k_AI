@@ -61,7 +61,12 @@ def _leader_attachment_options(leader, bodyguards: List[object]) -> List[Decisio
     return options
 
 
-def build_leader_attachment_requests(game: object, units: Iterable[object]) -> List[DecisionRequest]:
+def build_leader_attachment_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
     all_units = _iter_units(units)
     leaders = [u for u in all_units if bool(getattr(u, "is_leader", False))]
     bodyguards = [u for u in all_units if not bool(getattr(u, "is_leader", False))]
@@ -77,12 +82,17 @@ def build_leader_attachment_requests(game: object, units: Iterable[object]) -> L
             context={"leader_id": get_entity_id(leader)},
         )
         requests.append(request)
-        if hasattr(game, "request_decision"):
+        if queue_requests and hasattr(game, "request_decision"):
             game.request_decision(request)
     return requests
 
 
-def build_transport_assignment_requests(game: object, units: Iterable[object]) -> List[DecisionRequest]:
+def build_transport_assignment_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
     all_units = _iter_units(units)
     transports = [u for u in all_units if bool(getattr(u, "is_transport", False))]
     requests: List[DecisionRequest] = []
@@ -123,12 +133,17 @@ def build_transport_assignment_requests(game: object, units: Iterable[object]) -
             context={"unit_id": get_entity_id(unit)},
         )
         requests.append(request)
-        if hasattr(game, "request_decision"):
+        if queue_requests and hasattr(game, "request_decision"):
             game.request_decision(request)
     return requests
 
 
-def build_reserves_allocation_request(game: object, army: object) -> Optional[DecisionRequest]:
+def build_reserves_allocation_request(
+    game: object,
+    army: object,
+    *,
+    queue_requests: bool = True,
+) -> Optional[DecisionRequest]:
     if army is None:
         return None
     player = getattr(army, "player", None)
@@ -141,7 +156,7 @@ def build_reserves_allocation_request(game: object, army: object) -> Optional[De
         options=[option],
         context={"army_id": get_entity_id(army)},
     )
-    if hasattr(game, "request_decision"):
+    if queue_requests and hasattr(game, "request_decision"):
         game.request_decision(request)
     return request
 

@@ -1,16 +1,41 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import ssl
 from typing import Any, Dict, Optional
 
 from ..engine.game import Battlefield, BattlefieldSize, Game
 from ..battlefield.map import Map
 from ..engine.event_log import DeterministicEventLog
+from ..engine.phase import SetupPhase
+from ..engine.command_kinds import (
+    CMD_ADVANCE_SETUP_PHASE,
+    CMD_EXECUTE_SETUP_PHASE,
+    CMD_REQUEST_DECISION,
+    CMD_RESOLVE_DECISION,
+    CMD_SELECT_MISSION,
+)
 from ..engine.commands import GameCommand
 from ..engine.command_dispatcher import CommandResult
+from ..engine.decision_kinds import (
+    DECISION_ATTACH_LEADER,
+    DECISION_ASSIGN_TRANSPORT,
+    DECISION_DECLARE_RESERVES,
+    DECISION_CHOOSE_PLAGUE,
+)
+from ..engine.decisions import DecisionOption, DecisionRequest
+from ..engine.decision_requests import (
+    build_leader_attachment_requests,
+    build_transport_assignment_requests,
+    build_reserves_allocation_request,
+)
+from ..engine.mission_selection import iter_mission_combinations
 from ..roster.player import Player, PlayerControl
 from ..roster.army import ArmyValidationError, parse_army_list_text
+from ..utility.dice import get_dice_roll
+from ..utility.entity_ids import get_entity_id
+from ..utility.game_context import game_context, roll_context
 from ..waha_helper import WahaHelper
 from .control import build_control_message, parse_control_message
 from .lobby import (
@@ -66,6 +91,15 @@ class NetworkServer:
         self._game: Optional[Game] = None
         self._player_ids: Dict[str, str] = {}
         self._waha_helper = WahaHelper()
+        self._setup_task: Optional[asyncio.Task] = None
+        self._setup_lock = asyncio.Lock()
+        self._formation_buffering = False
+        self._formation_decision_types = {
+            DECISION_ATTACH_LEADER,
+            DECISION_ASSIGN_TRANSPORT,
+            DECISION_DECLARE_RESERVES,
+            DECISION_CHOOSE_PLAGUE,
+        }
 
     @property
     def lobby_state(self) -> LobbyState:
@@ -81,6 +115,10 @@ class NetworkServer:
 
     async def stop(self) -> None:
         self._running = False
+        if self._setup_task is not None and not self._setup_task.done():
+            self._setup_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._setup_task
         await self.transport.stop()
 
     async def run(self) -> None:
@@ -227,6 +265,255 @@ class NetworkServer:
         await self._broadcast_lobby_state()
         await self._send_control("all", "start_game", {"ok": True, "session_id": self._state.session_id})
         await self._broadcast_snapshot()
+        await self._start_setup_driver()
+
+    async def _start_setup_driver(self) -> None:
+        if self._setup_task is not None and not self._setup_task.done():
+            return
+        self._setup_task = asyncio.create_task(self._run_setup_sequence())
+
+    async def _run_setup_sequence(self) -> None:
+        async with self._setup_lock:
+            game = self._game
+            if game is None:
+                return
+            if bool(getattr(game, "setup_complete", False)):
+                return
+
+            if game.get_current_setup_phase() == SetupPhase.MUSTER_ARMIES:
+                await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
+
+            while self._running and self._game is game and game.is_in_setup_phase():
+                phase = game.get_current_setup_phase()
+                if phase == SetupPhase.SELECT_MISSION_OBJECTIVES:
+                    combo, layout = self._choose_random_mission(game)
+                    await self._apply_server_command(
+                        GameCommand.create(
+                            CMD_SELECT_MISSION,
+                            payload={"combination": dict(combo or {}), "layout": layout},
+                        )
+                    )
+                    await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                    await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
+                    continue
+                if phase == SetupPhase.CREATE_BATTLEFIELD:
+                    await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                    await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
+                    continue
+                if phase == SetupPhase.DETERMINE_ATTACKER_AND_DEFENDER:
+                    await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                    await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
+                    continue
+                if phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
+                    await self._queue_formation_decisions()
+                    pending = self._pending_formation_decisions()
+                    if pending:
+                        self._formation_buffering = True
+                        await self._wait_for_formation_decisions()
+                        if not self._running or self._game is None:
+                            self._formation_buffering = False
+                            return
+                        await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE), broadcast=False)
+                        await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE), broadcast=False)
+                        self._formation_buffering = False
+                        await self._broadcast_resync_all(reason="formation_reveal")
+                    else:
+                        await self._apply_server_command(GameCommand.create(CMD_EXECUTE_SETUP_PHASE))
+                        await self._apply_server_command(GameCommand.create(CMD_ADVANCE_SETUP_PHASE))
+                    break
+                break
+
+    def _choose_random_mission(self, game: Game) -> tuple[dict, int]:
+        combos = iter_mission_combinations()
+        if not combos:
+            raise RuntimeError("No mission combinations available for random selection.")
+        with game_context(game), roll_context("mission_selection"):
+            combo_index = max(1, int(get_dice_roll(len(combos)))) - 1
+            combo_index = min(combo_index, len(combos) - 1)
+            combo = combos[combo_index]
+            layouts = list(combo.get("layouts", []) or [])
+            if not layouts:
+                raise RuntimeError("Selected mission combination has no layouts.")
+            layout_index = max(1, int(get_dice_roll(len(layouts)))) - 1
+            layout_index = min(layout_index, len(layouts) - 1)
+            layout = layouts[layout_index]
+        return combo, int(layout)
+
+    async def _apply_server_command(self, command: GameCommand, *, broadcast: bool = True):
+        if self._game is None:
+            return []
+        message = CommandMessage(command=command, client_last_event_id=None)
+        results = handle_command_message(self._game, message, require_client_sync=False)
+        had_resync = any(isinstance(result, ResyncMessage) for result in results)
+        had_error = any(isinstance(result, ErrorMessage) for result in results)
+        if broadcast and not had_resync and not had_error:
+            await self._broadcast_game_message(CommandMessage(command=command))
+        for result in results:
+            if isinstance(result, EventMessage):
+                if broadcast:
+                    await self._broadcast_game_message(result)
+            elif isinstance(result, ResyncMessage):
+                await self._broadcast_game_message(result)
+            elif isinstance(result, ErrorMessage):
+                await self._broadcast_game_message(result)
+        return results
+
+    def _should_buffer_command(self, command: GameCommand) -> bool:
+        if not self._formation_buffering:
+            return False
+        if command is None or getattr(command, "kind", None) != CMD_RESOLVE_DECISION:
+            return False
+        payload = getattr(command, "payload", {}) or {}
+        decision_id = payload.get("decision_id")
+        if not decision_id or self._game is None:
+            return False
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "get"):
+            return False
+        request = queue.get(str(decision_id))
+        if request is None:
+            return False
+        return getattr(request, "decision_type", None) in self._formation_decision_types
+
+    def _pending_formation_decisions(self) -> list[DecisionRequest]:
+        if self._game is None:
+            return []
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return []
+        return [
+            req
+            for req in list(queue.list() or [])
+            if getattr(req, "decision_type", None) in self._formation_decision_types
+        ]
+
+    async def _queue_formation_decisions(self) -> list[DecisionRequest]:
+        if self._game is None:
+            return []
+        game = self._game
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return []
+
+        pending_attach = self._pending_by_context(DECISION_ATTACH_LEADER, "leader_id")
+        pending_transport = self._pending_by_context(DECISION_ASSIGN_TRANSPORT, "unit_id")
+        pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
+        pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
+
+        created: list[DecisionRequest] = []
+
+        for player in list(getattr(game, "players", []) or []):
+            if player is None:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            units = list(getattr(army, "units", []) or [])
+
+            leader_requests = build_leader_attachment_requests(game, units, queue_requests=False)
+            for req in leader_requests:
+                leader_id = str(getattr(req, "context", {}).get("leader_id", "") or "")
+                if leader_id and leader_id in pending_attach:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+
+            transport_requests = build_transport_assignment_requests(game, units, queue_requests=False)
+            for req in transport_requests:
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_transport:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+
+            army_id = get_entity_id(army)
+            reserves_request = build_reserves_allocation_request(game, army, queue_requests=False)
+            if reserves_request is not None:
+                if army_id and army_id in pending_reserves:
+                    pass
+                else:
+                    await self._send_decision_request(reserves_request)
+                    created.append(reserves_request)
+
+            plague_request = self._build_plague_request(player, army, pending_plague)
+            if plague_request is not None:
+                await self._send_decision_request(plague_request)
+                created.append(plague_request)
+
+        return created
+
+    def _pending_by_context(self, decision_type: str, context_key: str) -> dict[str, DecisionRequest]:
+        pending: dict[str, DecisionRequest] = {}
+        if self._game is None:
+            return pending
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return pending
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != decision_type:
+                continue
+            ctx_val = str(getattr(req, "context", {}).get(context_key, "") or "")
+            if ctx_val:
+                pending[ctx_val] = req
+        return pending
+
+    def _build_plague_request(
+        self,
+        player: Player,
+        army: object,
+        pending_plague: dict[str, DecisionRequest],
+    ) -> Optional[DecisionRequest]:
+        army_id = get_entity_id(army)
+        if army_id and army_id in pending_plague:
+            return None
+        mgr = getattr(army, "nurgles_gift", None)
+        if mgr is None or not getattr(mgr, "_army_has_gift", lambda: False)():
+            return None
+        if getattr(mgr, "active_plague_key", None):
+            return None
+        try:
+            from ..rules.nurgles_gift import DEFAULT_PLAGUES
+        except Exception:
+            return None
+        options: list[DecisionOption] = []
+        for plague in list(DEFAULT_PLAGUES):
+            key = getattr(plague, "key", None)
+            if not key:
+                continue
+            name = getattr(plague, "name", None) or str(plague)
+            summary = getattr(plague, "summary", "") or getattr(plague, "effect", "")
+            options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not options:
+            return None
+        return DecisionRequest.create(
+            DECISION_CHOOSE_PLAGUE,
+            "Select Nurgle's Gift plague.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"army_id": army_id},
+        )
+
+    async def _send_decision_request(self, request: DecisionRequest) -> None:
+        payload = {"decision": request.to_dict()}
+        cmd = GameCommand.create(CMD_REQUEST_DECISION, player_id=request.player_id, payload=payload)
+        await self._apply_server_command(cmd)
+
+    async def _wait_for_formation_decisions(self, poll_interval: float = 0.25) -> None:
+        while self._running and self._game is not None:
+            if not self._pending_formation_decisions():
+                return
+            await asyncio.sleep(poll_interval)
+
+    async def _broadcast_resync_all(self, *, reason: str | None = None) -> None:
+        if self._game is None:
+            return
+        msg = build_resync_message(self._game, since_event_id=0, reason=reason)
+        await self._broadcast_game_message(msg)
 
     def _build_game(self, army1, army2) -> Game:
         player1 = Player("Player 1", control=PlayerControl.REMOTE, army=army1)
@@ -267,14 +554,16 @@ class NetworkServer:
         if command_msg.command.player_id != expected_player_id:
             await self._send_error(connection_id, "Command player_id mismatch.")
             return
+        buffer_command = self._should_buffer_command(command_msg.command)
         results = handle_command_message(self._game, command_msg, require_client_sync=True)
         had_resync = any(isinstance(result, ResyncMessage) for result in results)
         had_error = any(isinstance(result, ErrorMessage) for result in results)
-        if not had_resync and not had_error:
+        if not buffer_command and not had_resync and not had_error:
             await self._broadcast_game_message(CommandMessage(command=command_msg.command))
         for result in results:
             if isinstance(result, EventMessage):
-                await self._broadcast_game_message(result)
+                if not buffer_command:
+                    await self._broadcast_game_message(result)
             elif isinstance(result, ResyncMessage):
                 await self._send_game_message(connection_id, result)
             elif isinstance(result, ErrorMessage):

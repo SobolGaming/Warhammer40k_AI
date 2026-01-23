@@ -12347,6 +12347,11 @@ class GameView:
 
     def draw(self):
         self.screen.fill(DARK_GREY)
+        try:
+            if hasattr(self, "phase_manager") and self.phase_manager:
+                self.phase_manager.update()
+        except Exception:
+            pass
 
         # Draw stratagem panes
         draw_stratagem_panes(self)

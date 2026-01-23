@@ -35,6 +35,10 @@ class EventStreamCursor:
                 raise ValueError("Event missing event_id.")
             expected = self.last_event_id + 1
             if int(event_id) != expected:
+                if int(event_id) > expected:
+                    # Allow forward jumps if earlier events were missed; resync will correct state.
+                    self.last_event_id = int(event_id)
+                    continue
                 raise ValueError(f"Expected event_id {expected}, got {event_id}.")
             self.last_event_id = expected
 
@@ -53,8 +57,19 @@ def build_resync_message(
     snapshot = snapshot_game(game)
     snapshot["events"] = []
     event_log = getattr(game, "event_log", None)
-    events = event_log.serialize_events(since_event_id=since_event_id) if event_log is not None else []
-    return ResyncMessage(snapshot=snapshot, events=list(events or []), reason=reason, since_event_id=since_event_id)
+    if event_log is None:
+        return ResyncMessage(snapshot=snapshot, events=[], reason=reason, since_event_id=since_event_id)
+    min_id = _min_event_id(event_log)
+    adjusted_since = since_event_id
+    if adjusted_since is None or int(adjusted_since) < int(min_id):
+        adjusted_since = max(0, int(min_id) - 1)
+    events = event_log.serialize_events(since_event_id=adjusted_since)
+    return ResyncMessage(
+        snapshot=snapshot,
+        events=list(events or []),
+        reason=reason,
+        since_event_id=adjusted_since,
+    )
 
 
 def _result_error_message(command_message: CommandMessage, result: CommandResult) -> ErrorMessage:

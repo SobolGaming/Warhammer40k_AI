@@ -98,11 +98,26 @@ Future approach (UI mustering):
 3. Server creates `Game`, loads armies, and emits a `snapshot`.
 4. Server broadcasts initial events (if any) and enters normal command/event loop.
 
+## Setup Phase Automation (Network)
+
+- Server skips `MUSTER_ARMIES` (armies are already validated/loaded from lobby submission).
+- Server auto-runs setup phases up to `DECLARE_BATTLE_FORMATIONS`:
+  - Randomly selects a Chapter Approved mission combination + layout (deterministic dice).
+  - Executes `SELECT_MISSION_OBJECTIVES`, `CREATE_BATTLEFIELD`, and `DETERMINE_ATTACKER_AND_DEFENDER`.
+- During `DECLARE_BATTLE_FORMATIONS`, the server queues formation decisions:
+  - Attach Leaders, Assign Transports, Allocate Reserves.
+  - Nurgle’s Gift plague selection (when applicable).
+- Formation decisions are buffered server-side; the server waits for **both** players to resolve them.
+  - Once all formation decisions are submitted, the server resyncs all clients to reveal formations simultaneously
+    and advances to `DEPLOY_ARMIES`.
+- Clients in remote games auto-open formation dialogs; manual SPACE-based setup advancement is ignored.
+
 ## In-Game Permissions
 
 - Players can send `command` messages that map to decisions/actions.
 - Spectators are read-only: server replies to any `command` with `error`.
 - UI for spectators disables all decision prompts but still shows state updates.
+- Manual phase-advance shortcuts (e.g., SPACE key) are ignored unless the current player has local control.
 
 ## Resync and Reconnect
 

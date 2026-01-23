@@ -43,12 +43,31 @@ class BasePhaseHandler(ABC):
         """Check if an action is valid for this phase"""
         return action in self.get_allowed_actions()
 
+    def _current_player_has_control(self) -> bool:
+        try:
+            current_player = self.game.get_current_player()
+        except Exception:
+            return False
+        if current_player is None:
+            return False
+        has_control = getattr(current_player, "has_control", None)
+        if callable(has_control):
+            return bool(has_control())
+        return False
+
 class SetupPhaseHandler(BasePhaseHandler):
     """Handles events during setup phases"""
-    
+    def __init__(self, game_view: 'GameView'):
+        super().__init__(game_view)
+        self._auto_declare_flow_started = False
+
     def handle_event(self, event: pygame.event.Event) -> bool:
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
+                if self._is_remote_game():
+                    return True
+                if not self._current_player_has_control():
+                    return True
                 # Handle setup phase advancement
                 current_phase = self.game.get_current_setup_phase()
                 
@@ -453,6 +472,9 @@ class SetupPhaseHandler(BasePhaseHandler):
         - Leaders (P1 + P2 at once) -> Transports (P1 + P2 at once) -> Reserves (P1 + P2 at once)
         Only after BOTH players click Done do we proceed to the next step.
         """
+        if self._is_remote_game():
+            self._start_remote_declare_battle_formations_flow()
+            return
         players = list(getattr(self.game, "players", []) or [])
         if not players:
             # Fallback: execute and advance (no UI)
@@ -938,6 +960,332 @@ class SetupPhaseHandler(BasePhaseHandler):
 
         self._start_hover_mode_selection_flow(players, _after_hover)
         return
+
+    def _is_remote_game(self) -> bool:
+        players = list(getattr(self.game, "players", []) or [])
+        if not players:
+            return False
+        for player in players:
+            try:
+                if not bool(getattr(player, "has_control", lambda: False)()):
+                    return True
+            except Exception:
+                return True
+        return False
+
+    def _get_local_player(self):
+        for player in list(getattr(self.game, "players", []) or []):
+            try:
+                if bool(getattr(player, "has_control", lambda: False)()):
+                    return player
+            except Exception:
+                continue
+        return None
+
+    def _has_pending_formation_decisions(self, player) -> bool:
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ...engine.decision_kinds import (
+            DECISION_ATTACH_LEADER,
+            DECISION_ASSIGN_TRANSPORT,
+            DECISION_DECLARE_RESERVES,
+            DECISION_CHOOSE_PLAGUE,
+        )
+        types = {DECISION_ATTACH_LEADER, DECISION_ASSIGN_TRANSPORT, DECISION_DECLARE_RESERVES, DECISION_CHOOSE_PLAGUE}
+        pid = getattr(player, "id", None)
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) not in types:
+                continue
+            req_pid = getattr(req, "player_id", None)
+            if pid is None or req_pid is None or str(req_pid) == str(pid):
+                return True
+        return False
+
+    def _formation_dialog_active(self) -> bool:
+        for attr in (
+            "leader_attachment_dialog",
+            "transport_assignment_dialog",
+            "reserves_allocation_dialog",
+        ):
+            dlg = getattr(self.game_view, attr, None)
+            try:
+                if dlg is not None and bool(getattr(dlg, "visible", False)):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def maybe_auto_start_setup_flow(self) -> None:
+        if not self._is_remote_game():
+            self._auto_declare_flow_started = False
+            return
+        if not bool(getattr(self.game, "is_in_setup_phase", lambda: False)()):
+            self._auto_declare_flow_started = False
+            return
+        phase = self.game.get_current_setup_phase()
+        if phase is None or phase.name != "DECLARE_BATTLE_FORMATIONS":
+            self._auto_declare_flow_started = False
+            return
+
+        local_player = self._get_local_player()
+        if local_player is None:
+            return
+
+        if self._auto_declare_flow_started:
+            if (not self._formation_dialog_active()) and self._has_pending_formation_decisions(local_player):
+                self._auto_declare_flow_started = False
+            else:
+                return
+
+        if not self._has_pending_formation_decisions(local_player):
+            return
+
+        self._auto_declare_flow_started = True
+        self._start_remote_declare_battle_formations_flow()
+
+    def _start_remote_declare_battle_formations_flow(self) -> None:
+        player = self._get_local_player()
+        if player is None:
+            return
+        army = None
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        units = list(getattr(army, "units", []) or [])
+
+        from ..dialogs import LeaderAttachmentDialog, TransportAssignmentDialog, ReservesAllocationDialog, NurglesGiftPlagueDialog
+        from ...engine.decision_kinds import (
+            DECISION_ATTACH_LEADER,
+            DECISION_ASSIGN_TRANSPORT,
+            DECISION_DECLARE_RESERVES,
+            DECISION_CHOOSE_PLAGUE,
+        )
+        from ...engine.decision_requests import (
+            build_leader_attachment_requests,
+            build_transport_assignment_requests,
+            build_reserves_allocation_request,
+        )
+        from ...engine.command_kinds import CMD_RESOLVE_DECISION
+        from ...engine.commands import GameCommand
+        from ...engine.decisions import DecisionOption, DecisionRequest
+        from ...utility.decision_utils import resolve_decision_command, resolve_decision_value
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_ui_utils import first_option_id
+
+        queue = getattr(self.game, "decision_queue", None)
+
+        def _pending_requests(decision_type: str, *, context_key: str, valid_ids: set[str]):
+            pending = {}
+            if queue is None or not hasattr(queue, "list"):
+                return pending
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != decision_type:
+                    continue
+                if str(getattr(req, "player_id", "")) != str(getattr(player, "id", "")):
+                    continue
+                ctx_id = str(getattr(req, "context", {}).get(context_key, "") or "")
+                if ctx_id and ctx_id in valid_ids:
+                    pending[ctx_id] = req
+            return pending
+
+        def _pending_single(decision_type: str):
+            if queue is None or not hasattr(queue, "list"):
+                return None
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != decision_type:
+                    continue
+                if str(getattr(req, "player_id", "")) == str(getattr(player, "id", "")):
+                    return req
+            return None
+
+        def _show_reserves():
+            req = _pending_single(DECISION_DECLARE_RESERVES)
+            if req is None:
+                req = build_reserves_allocation_request(self.game, army)
+            if req is None:
+                return
+            dlg = ReservesAllocationDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            self.game_view.reserves_allocation_dialog = dlg
+
+            def _on_done(option_id, buckets):
+                resolve_decision_command(
+                    self.game,
+                    req,
+                    option_id,
+                    result_payload={"unit_ids_by_bucket": buckets},
+                )
+                try:
+                    self.game_view.refresh_roster_panes()
+                except Exception:
+                    pass
+
+            dlg.show(army, on_confirm=_on_done, on_cancel=lambda: None, decision_request=req)
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        def _show_transports():
+            unit_ids = {get_entity_id(u) for u in units}
+            pending = _pending_requests(DECISION_ASSIGN_TRANSPORT, context_key="unit_id", valid_ids=unit_ids)
+            if not pending:
+                requests = build_transport_assignment_requests(self.game, units)
+                pending = {str(getattr(req, "context", {}).get("unit_id", "")): req for req in requests}
+                pending = {uid: req for uid, req in pending.items() if uid in unit_ids}
+            if not pending:
+                _show_reserves()
+                return
+            dlg = TransportAssignmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            self.game_view.transport_assignment_dialog = dlg
+
+            def _apply(selected_option_ids):
+                for unit_id, option_id in (selected_option_ids or {}).items():
+                    req = pending.get(unit_id)
+                    if req is None:
+                        continue
+                    payload = {
+                        "decision_id": req.decision_id,
+                        "option_id": option_id,
+                        "result_payload": {},
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                    self.game.apply_command(cmd)
+                _show_reserves()
+
+            def _skip():
+                for unit_id, req in (pending or {}).items():
+                    default_id = ""
+                    for opt in list(getattr(req, "options", []) or []):
+                        payload = dict(getattr(opt, "payload", {}) or {})
+                        if payload.get("transport_id") is None:
+                            default_id = opt.option_id
+                            break
+                    if not default_id:
+                        continue
+                    payload = {
+                        "decision_id": req.decision_id,
+                        "option_id": default_id,
+                        "result_payload": {},
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                    self.game.apply_command(cmd)
+                _show_reserves()
+
+            dlg.show(units, unit_requests=pending, on_confirm=_apply, on_cancel=_skip)
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        def _show_leaders():
+            leader_ids = {get_entity_id(u) for u in units if bool(getattr(u, "is_leader", False))}
+            pending = _pending_requests(DECISION_ATTACH_LEADER, context_key="leader_id", valid_ids=leader_ids)
+            if not pending:
+                requests = build_leader_attachment_requests(self.game, units)
+                pending = {str(getattr(req, "context", {}).get("leader_id", "")): req for req in requests}
+                pending = {lid: req for lid, req in pending.items() if lid in leader_ids}
+            if not pending:
+                _show_transports()
+                return
+            dlg = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            self.game_view.leader_attachment_dialog = dlg
+
+            def _on_done(selected_option_ids):
+                for leader_id, option_id in (selected_option_ids or {}).items():
+                    req = pending.get(leader_id)
+                    if req is None:
+                        continue
+                    payload = {
+                        "decision_id": req.decision_id,
+                        "option_id": option_id,
+                        "result_payload": {},
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                    self.game.apply_command(cmd)
+                try:
+                    army.validate_leaders()
+                except Exception as e:
+                    print(f"  {player.name} leader attachment validation failed: {e}")
+                    return
+                try:
+                    self.game_view.refresh_roster_panes()
+                except Exception:
+                    pass
+                _show_transports()
+
+            dlg.show(units, leader_requests=pending, on_confirm=_on_done, on_cancel=lambda: None)
+            dlg.visible = True
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        def _show_plague():
+            req = _pending_single(DECISION_CHOOSE_PLAGUE)
+            if req is None:
+                mgr = getattr(army, "nurgles_gift", None)
+                if mgr is None or not getattr(mgr, "_army_has_gift", lambda: False)():
+                    _show_leaders()
+                    return
+                if getattr(mgr, "active_plague_key", None):
+                    _show_leaders()
+                    return
+                try:
+                    from ...rules.nurgles_gift import DEFAULT_PLAGUES
+                except Exception:
+                    _show_leaders()
+                    return
+                army_id = get_entity_id(army)
+                options = []
+                for plague in list(DEFAULT_PLAGUES):
+                    key = getattr(plague, "key", None)
+                    if not key:
+                        continue
+                    name = getattr(plague, "name", None) or str(plague)
+                    summary = getattr(plague, "summary", "") or getattr(plague, "effect", "")
+                    options.append(
+                        DecisionOption.create(
+                            name,
+                            payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                        )
+                    )
+                if not options:
+                    _show_leaders()
+                    return
+                req = DecisionRequest.create(
+                    DECISION_CHOOSE_PLAGUE,
+                    "Select Nurgle's Gift plague.",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={"army_id": army_id},
+                )
+                self.game.request_decision(req)
+
+            dlg = NurglesGiftPlagueDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            dlg.title = f"Nurgle's Gift - {player.name}"
+
+            def _done(option_id: str):
+                resolve_decision_value(self.game, req, option_id)
+                _show_leaders()
+
+            def _cancel():
+                default_id = first_option_id(req)
+                if default_id:
+                    resolve_decision_value(self.game, req, default_id)
+                _show_leaders()
+
+            dlg.show(on_confirm=_done, on_cancel=_cancel, decision_request=req)
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        _show_plague()
+
     def get_allowed_actions(self) -> List[str]:
         return ["advance_setup_phase", "view_unit_details"]
 
@@ -1238,6 +1586,8 @@ class BattlePhaseHandler(BasePhaseHandler):
 
     def _handle_space_key(self) -> bool:
         """Handle SPACE key for manual phase advancement"""
+        if not self._current_player_has_control():
+            return True
         current_phase = self.game.phase
 
         # Fight phase - check if we can skip/complete it
@@ -3943,6 +4293,14 @@ class PhaseManager:
         #     print(f"DEBUG: PhaseManager - {handler_name} returned {result}")
 
         return result
+
+    def update(self) -> None:
+        """Per-frame hooks for auto-starting setup flows in remote games."""
+        try:
+            if self.game.is_in_setup_phase():
+                self.setup_handler.maybe_auto_start_setup_flow()
+        except Exception:
+            pass
     
     def get_current_allowed_actions(self) -> List[str]:
         """Get allowed actions for current phase"""
@@ -4293,6 +4651,8 @@ class PreBattlePhaseHandler(BasePhaseHandler):
         
         # Allow SPACE to skip to next phase if all done
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
+            if not self._current_player_has_control():
+                return True
             if not self.scout_units_queue and not self.awaiting_battlefield_click:
                 print("Proceeding to next phase...")
                 return False  # Let the main loop advance the phase
