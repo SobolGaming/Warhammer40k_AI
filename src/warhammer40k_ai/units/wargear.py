@@ -1847,6 +1847,59 @@ class WargearProfile:
             except Exception:
                 pass
         
+        bonus_lethal = False
+        bonus_sustained_value = 0
+        bonus_devastating = False
+        bonus_twin_linked = False
+        bonus_heavy = False
+        bonus_lance = False
+        bonus_anti_specs = ()
+        try:
+            attack_is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+        except Exception:
+            attack_is_melee = False
+        try:
+            attack_is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            attack_is_ranged = False
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attack_keyword_bonuses"):
+                attack_type = "melee" if attack_is_melee else "ranged" if attack_is_ranged else "any"
+                bonus = unit.get_attack_keyword_bonuses(
+                    target=target,
+                    attack_type=attack_type,
+                    model=attacker,
+                )
+            else:
+                bonus = None
+            if isinstance(bonus, dict):
+                bonus_lethal = bool(bonus.get("lethal_hits"))
+                bonus_sustained_value = int(bonus.get("sustained_hits_value", 0) or 0)
+                bonus_devastating = bool(bonus.get("devastating_wounds"))
+                bonus_twin_linked = bool(bonus.get("twin_linked"))
+                bonus_heavy = bool(bonus.get("heavy"))
+                bonus_lance = bool(bonus.get("lance"))
+                bonus_anti_specs = tuple(bonus.get("anti_specs") or ())
+                if bool(bonus.get("ignores_cover")) and attack_is_ranged:
+                    attack_instance["ignores_cover"] = True
+                if bonus_devastating:
+                    attack_instance["bonus_devastating_wounds"] = True
+                if bonus_twin_linked:
+                    attack_instance["bonus_twin_linked"] = True
+                if bonus_lance:
+                    attack_instance["bonus_lance"] = True
+                if bonus_anti_specs:
+                    attack_instance["bonus_anti_specs"] = bonus_anti_specs
+        except Exception:
+            bonus_lethal = False
+            bonus_sustained_value = 0
+            bonus_devastating = False
+            bonus_twin_linked = False
+            bonus_heavy = False
+            bonus_lance = False
+            bonus_anti_specs = ()
+
         # Torrent auto-hits (in case of Overwatch it ignores 6+ restrictions)
         if self.is_torrent():
             hit_result['hit'] = True
@@ -1941,8 +1994,10 @@ class WargearProfile:
                         heavy_from_doctrina = True
         except Exception:
             heavy_from_doctrina = False
-        if (self.is_heavy() or heavy_from_doctrina) and attacker.parent_unit.round_state.remained_stationary_this_round:
-            if heavy_from_doctrina and not self.is_heavy():
+        if (self.is_heavy() or heavy_from_doctrina or bonus_heavy) and attacker.parent_unit.round_state.remained_stationary_this_round:
+            if bonus_heavy and not self.is_heavy():
+                _add_hit_mod(1, "+1 from Heavy [Objective Target]")
+            elif heavy_from_doctrina and not self.is_heavy():
                 _add_hit_mod(1, "+1 from Protector Imperative (counts as Heavy)")
             else:
                 _add_hit_mod(1, "+1 from Heavy (stationary)")
@@ -3533,6 +3588,7 @@ class WargearProfile:
             if callable(value_fn):
                 war_horde_sustained_value = int(value_fn(unit, attack_type="melee") or 0)
         war_horde_sustained = bool(war_horde_sustained_value)
+        bonus_sustained = bool(bonus_sustained_value)
 
         sustained_base = (
             self.is_sustained_hits()
@@ -3547,6 +3603,7 @@ class WargearProfile:
             or pain_sustained
             or bearer_unit_sustained
             or war_horde_sustained
+            or bonus_sustained
         )
 
         blitzing_grants_sustained = False
@@ -3599,11 +3656,11 @@ class WargearProfile:
                 hit_result['special_effects'].extend(crit_hit_reasons)
             attack_instance['crit_hit'] = True
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or bonus_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -3628,6 +3685,9 @@ class WargearProfile:
                     elif war_horde_sustained_value:
                         sustained_val = max(int(sustained_val), int(war_horde_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [War Horde]"
+                    elif bonus_sustained_value:
+                        sustained_val = max(int(sustained_val), int(bonus_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Objective Target]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
@@ -3669,12 +3729,12 @@ class WargearProfile:
                 # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
 
                 # Apply Lethal Hits from all sources (same as baseline critical)
-                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal:
+                if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal:
                     hit_result['special_effects'].append("Lethal Hits")
                     attack_instance['lethal_hit'] = True
 
                 # Apply Sustained Hits from all sources (same as baseline critical)
-                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or blitzing_grants_sustained:
+                if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or bonus_sustained or blitzing_grants_sustained:
                     # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                     if self.is_sustained_hits():
                         try:
@@ -3713,6 +3773,11 @@ class WargearProfile:
                                 label = f"Sustained Hits (+{war_horde_sustained_value}) [War Horde]"
                             else:
                                 label += " [War Horde]"
+                        elif bonus_sustained:
+                            if bonus_sustained_value > 1:
+                                label = f"Sustained Hits (+{bonus_sustained_value}) [Objective Target]"
+                            else:
+                                label += " [Objective Target]"
                         elif blitzing_grants_sustained:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
@@ -3723,6 +3788,8 @@ class WargearProfile:
                             sustained_vals.append(int(pain_sustained_value or 0))
                         if war_horde_sustained:
                             sustained_vals.append(int(war_horde_sustained_value or 0))
+                        if bonus_sustained:
+                            sustained_vals.append(int(bonus_sustained_value or 0))
                         attack_instance['sustained_hit'] = max(sustained_vals)
 
         # Ork charge-related keywords: track hits against MONSTER/VEHICLE units.
@@ -4036,11 +4103,14 @@ class WargearProfile:
                                 goretrack_lance = False
             except Exception:
                 goretrack_lance = False
-            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance or goretrack_lance):
+            bonus_lance = bool(attack_instance.get("bonus_lance"))
+            if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance or goretrack_lance or bonus_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
-                    if bondsman_lance and not self.is_lance():
+                    if bonus_lance and not self.is_lance():
+                        wound_result['modifiers'].append("+1 to wound from Lance (objective target)")
+                    elif bondsman_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
                     elif blood_tithe_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Blood Tithe)")
@@ -5325,7 +5395,7 @@ class WargearProfile:
                         has_temp_dev = bool(is_melee)
                 except Exception:
                     has_temp_dev = False
-                if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
+                if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev or attack_instance.get("bonus_devastating_wounds"):
                     wound_result['special_effects'].append("Devastating Wounds")
                     attack_instance['mortal_wound'] = True
                 return True
@@ -5335,9 +5405,23 @@ class WargearProfile:
             # one that applies to this target (lowest required value).
             try:
                 best = None
-                for kw, val in self.get_anti_specs():
+                anti_specs = list(self.get_anti_specs() or [])
+                bonus_specs = list(attack_instance.get("bonus_anti_specs") or [])
+                if bonus_specs:
+                    anti_specs.extend(bonus_specs)
+                for kw, val in anti_specs:
                     try:
-                        if kw and target.has_keyword(kw):
+                        if not kw:
+                            continue
+                        applies = False
+                        try:
+                            applies = bool(target.has_keyword(kw))
+                        except Exception:
+                            try:
+                                applies = bool(target.has_any_keyword(kw))
+                            except Exception:
+                                applies = False
+                        if applies:
                             if best is None or int(val) < int(best[1]):
                                 best = (kw, int(val))
                     except Exception:
@@ -5355,7 +5439,7 @@ class WargearProfile:
                                 has_temp_dev = bool(is_melee)
                         except Exception:
                             has_temp_dev = False
-                        if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
+                        if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev or attack_instance.get("bonus_devastating_wounds"):
                             wound_result['special_effects'].append("Devastating Wounds")
                             attack_instance['mortal_wound'] = True
                         return True
@@ -5408,7 +5492,7 @@ class WargearProfile:
                             has_temp_dev = bool(is_melee)
                     except Exception:
                         has_temp_dev = False
-                    if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev:
+                    if self.is_devastating_wounds() or _devastating_from_blessings() or _devastating_from_pain() or has_temp_dev or attack_instance.get("bonus_devastating_wounds"):
                         wound_result['special_effects'].append("Devastating Wounds")
                         attack_instance['mortal_wound'] = True
                     return True
@@ -5438,10 +5522,13 @@ class WargearProfile:
                                 daemonic_fury_twin_linked = False
             except Exception:
                 daemonic_fury_twin_linked = False
-            if (not wound_result['wound']) and (self.is_twin_linked() or daemonic_fury_twin_linked):
+            bonus_twin = bool(attack_instance.get("bonus_twin_linked"))
+            if (not wound_result['wound']) and (self.is_twin_linked() or daemonic_fury_twin_linked or bonus_twin):
                 reroll = _reroll_wound()
                 if daemonic_fury_twin_linked and not self.is_twin_linked():
                     wound_result['special_effects'].append("Twin-linked (Daemonic Fury)")
+                elif bonus_twin and not self.is_twin_linked():
+                    wound_result['special_effects'].append("Twin-linked (objective target)")
                 else:
                     wound_result['special_effects'].append("Twin-linked (re-roll failed wound)")
                 wound_result['reroll'] = reroll

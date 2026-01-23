@@ -939,6 +939,12 @@ class Unit:
         r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?targets?\s+of\s+that\s+charge.*?within\s+range\s+of\s+an?\s+objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
         re.IGNORECASE,
     )
+    _ATTACK_TARGET_OBJECTIVE_KEYWORD_RE = re.compile(
+        r"each\s+time\s+this\s+(?:model|unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
+        r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+that\s+is\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+"
+        r"objective\s+marker(?:s)?(?:,|\s+).*?that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
+        re.IGNORECASE,
+    )
     _CHARGE_ROLL_TARGET_STRENGTH_BONUS_RE = re.compile(
         r"each\s+time\s+this\s+(?:model|unit)\s+declares\s+a\s+charge\s+that\s+targets?\s+one\s+or\s+more\s+units?\s+(?:that\s+are\s+)?"
         r"below\s+starting\s+strength\s+add\s+(?P<base>\d+)\s+to\s+the\s+charge\s+roll\s+if\s+one\s+or\s+more\s+of\s+"
@@ -14977,6 +14983,157 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = flags
         return _resolve(flags, attack_type)
+
+    def _get_attack_keyword_bonus_rules(self, model: Optional['Model'] = None) -> list[dict]:
+        """Collect objective-target keyword bonuses from ability text."""
+        cache_key = f"attack_keyword_bonus_rules:{get_entity_id(model) if model is not None else 'unit'}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        entries: list[tuple[str, str]] = []
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            entries.append((name, desc))
+
+        if model is not None:
+            model_unit = getattr(model, "parent_unit", None) or self
+            try:
+                for ab in getattr(model, "abilities", {}).values():
+                    try:
+                        if not model_unit._ability_is_active(ab):
+                            continue
+                    except Exception:
+                        pass
+                    if isinstance(ab, str):
+                        entries.append((ab, ab))
+                    else:
+                        entries.append((getattr(ab, "name", "") or "", getattr(ab, "description", "") or ""))
+            except Exception:
+                pass
+
+        rules: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for name, desc in entries:
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            text = Unit._strip_eligibility_prefix(text)
+            for match in self._ATTACK_TARGET_OBJECTIVE_KEYWORD_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                key = (atype, keyword.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"attack_type": atype, "keyword": keyword, "source": str(name or "Ability")})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rules
+        return rules
+
+    def get_attack_keyword_bonuses(
+        self,
+        *,
+        target=None,
+        attack_type: Optional[str] = None,
+        model: Optional['Model'] = None,
+        game_map=None,
+    ) -> dict:
+        """
+        Return objective-target keyword bonuses for this model/unit.
+
+        Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
+        """
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+
+        rules = self._get_attack_keyword_bonus_rules(model=model)
+        if not rules:
+            return {}
+        if target is None:
+            return {}
+        try:
+            if not self._target_within_objective_range(target, game_map):
+                return {}
+        except Exception:
+            return {}
+
+        bonuses = {
+            "ignores_cover": False,
+            "lethal_hits": False,
+            "sustained_hits_value": 0,
+            "devastating_wounds": False,
+            "twin_linked": False,
+            "heavy": False,
+            "lance": False,
+            "anti_specs": [],
+        }
+        sources: list[str] = []
+
+        for rule in rules:
+            rtype = str(rule.get("attack_type", "any") or "any").strip().lower()
+            if rtype not in ("any", "melee", "ranged"):
+                rtype = "any"
+            if rtype != "any" and atype != "any" and rtype != atype:
+                continue
+            raw_kw = str(rule.get("keyword", "") or "").strip()
+            if not raw_kw:
+                continue
+            kw = re.sub(r"\s+", " ", raw_kw).strip().upper()
+            source = str(rule.get("source", "") or "Ability")
+
+            if kw == "IGNORES COVER":
+                bonuses["ignores_cover"] = True
+                sources.append(f"Ignores Cover ({source})")
+            elif kw == "LETHAL HITS":
+                bonuses["lethal_hits"] = True
+                sources.append(f"Lethal Hits ({source})")
+            elif kw.startswith("SUSTAINED HITS"):
+                m = re.search(r"SUSTAINED HITS\s+(\d+)", kw)
+                if m:
+                    val = int(m.group(1))
+                    bonuses["sustained_hits_value"] = max(int(bonuses["sustained_hits_value"] or 0), val)
+                    sources.append(f"Sustained Hits {val} ({source})")
+            elif kw == "DEVASTATING WOUNDS":
+                bonuses["devastating_wounds"] = True
+                sources.append(f"Devastating Wounds ({source})")
+            elif kw in ("TWIN-LINKED", "TWIN LINKED"):
+                bonuses["twin_linked"] = True
+                sources.append(f"Twin-linked ({source})")
+            elif kw == "HEAVY":
+                bonuses["heavy"] = True
+                sources.append(f"Heavy ({source})")
+            elif kw == "LANCE":
+                bonuses["lance"] = True
+                sources.append(f"Lance ({source})")
+            elif kw.startswith("ANTI-"):
+                m = re.search(r"ANTI-([A-Z0-9 \-]+)\s+(\d)\+", kw)
+                if m:
+                    anti_kw = m.group(1).strip().replace("-", " ")
+                    anti_val = int(m.group(2))
+                    bonuses.setdefault("anti_specs", []).append((anti_kw, anti_val))
+                    sources.append(f"Anti-{anti_kw} {anti_val}+ ({source})")
+
+        if sources:
+            bonuses["sources"] = sources
+        if (
+            bonuses["ignores_cover"]
+            or bonuses["lethal_hits"]
+            or bonuses["devastating_wounds"]
+            or bonuses["twin_linked"]
+            or bonuses["heavy"]
+            or bonuses["lance"]
+            or int(bonuses["sustained_hits_value"] or 0) > 0
+            or bool(bonuses.get("anti_specs"))
+        ):
+            return bonuses
+        return {}
 
     def set_martial_katah_choice(self, choice: str) -> None:
         root = self.get_attached_unit_root()

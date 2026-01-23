@@ -1352,6 +1352,7 @@ def _classify_ability(
     cp_on_destroy_support = _gain_cp_on_destroy_support(description)
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
+    objective_attack_keyword_support = _objective_attack_keyword_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -1481,6 +1482,8 @@ def _classify_ability(
         return cp_on_destroy_support
     if attack_roll_rule_support:
         return attack_roll_rule_support
+    if objective_attack_keyword_support:
+        return objective_attack_keyword_support
     if closest_enemy_hit_charge_support:
         return closest_enemy_hit_charge_support
     if orders_support:
@@ -2000,6 +2003,55 @@ def _attack_roll_rule_support(description: str) -> Optional[Tuple[str, str]]:
         note = "Unit attack roll modifiers supported."
     else:
         note = "Attack roll modifiers supported."
+    return ("Supported", note)
+
+
+def _objective_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this (?:model|unit) makes a (?:(melee|ranged) )?attack that targets (?:an? )?(?:enemy )?unit "
+        r"that is within range of (?:an|one or more) objective marker(?:s)? that attack has the ([a-z0-9 ]+) ability"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    scope = (m.group(1) or "").strip().lower()
+    raw_kw = re.sub(r"\s+", " ", (m.group(2) or "").strip())
+    kw = raw_kw.lower()
+    label = None
+    if kw == "ignores cover":
+        label = "Ignores Cover"
+    elif kw == "lethal hits":
+        label = "Lethal Hits"
+    elif kw.startswith("sustained hits"):
+        m_val = re.search(r"sustained hits (\d+)", kw)
+        if m_val:
+            label = f"Sustained Hits {m_val.group(1)}"
+    elif kw == "devastating wounds":
+        label = "Devastating Wounds"
+    elif kw == "twin linked":
+        label = "Twin-linked"
+    elif kw == "heavy":
+        label = "Heavy"
+    elif kw == "lance":
+        label = "Lance"
+    elif kw.startswith("anti "):
+        m_val = re.search(r"anti ([a-z0-9 ]+) (\\d)", kw)
+        if m_val:
+            anti_kw = m_val.group(1).strip().upper().replace(" ", "-")
+            label = f"Anti-{anti_kw} {m_val.group(2)}+"
+    if not label:
+        return None
+    scope_text = "Attacks"
+    if scope == "melee":
+        scope_text = "Melee attacks"
+    elif scope == "ranged":
+        scope_text = "Ranged attacks"
+    note = f"{scope_text} vs targets within objective range gain {label}."
     return ("Supported", note)
 
 
