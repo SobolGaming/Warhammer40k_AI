@@ -427,6 +427,22 @@ class Unit:
                 mods.append(Modifier(ModifierOp.ADD, -1, source="nurgles_gift:scabrous_soulrot"))
                 scabrous_oc_floor = True
 
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            if mgr is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                keys = mgr.get_active_combat_drug_keys_for_model(model, game=game)
+                if keys:
+                    if ckey == "movement" and "HYPEX" in keys:
+                        mods.append(Modifier(ModifierOp.ADD, 2, source="combat_drugs:hypex_move"))
+                    if ckey == "toughness" and "PAINBRINGER" in keys:
+                        mods.append(Modifier(ModifierOp.ADD, 1, source="combat_drugs:painbringer_toughness"))
+                    if ckey == "leadership" and "SPLINTERMIND" in keys:
+                        mods.append(Modifier(ModifierOp.ADD, -1, source="combat_drugs:splintermind_leadership"))
+        except Exception:
+            pass
+
         if ckey == "leadership":
             if game_map is None:
                 try:

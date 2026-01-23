@@ -564,6 +564,62 @@ class Game:
             return
         mgr.select_doctrine(selected, battle_round=getattr(self, "turn", 0))
 
+    def _maybe_prompt_combat_drugs(self) -> None:
+        es = getattr(self, "event_system", None)
+        if es is None or not hasattr(es, "subscribers"):
+            raise RuntimeError("Event system missing for Combat Drugs prompt.")
+        subs = getattr(es, "subscribers", {})
+        if not isinstance(subs, dict):
+            raise RuntimeError("Event system subscribers not configured.")
+
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Combat Drugs prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Combat Drugs prompt requires an army.")
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not getattr(mgr, "can_select_combat_drugs", lambda **_k: False)(game=self):
+            return
+        is_human = bool(getattr(player, "has_control", lambda: False)())
+        if is_human and subs.get("combat_drugs_prompt"):
+            es.publish("combat_drugs_prompt", player=player, game=self)
+            return
+
+        options = []
+        try:
+            options = list(getattr(mgr, "get_available_combat_drugs", lambda: [])() or [])
+        except Exception:
+            options = []
+        labels = ["Roll 2D6 (randomly select two)"] + [o.name for o in options]
+        ctx = {
+            "ability_name": "Combat Drugs",
+            "phase": "Command phase",
+            "options": list(labels),
+        }
+        choice = None
+        try:
+            choice = player._choose_optional_value("COMBAT_DRUGS", labels, ctx)
+        except Exception:
+            choice = None
+
+        selected = None
+        if choice in options:
+            selected = choice
+        elif isinstance(choice, str):
+            choice_norm = choice.strip().lower()
+            if choice_norm.startswith("roll"):
+                mgr.roll_combat_drugs(battle_round=getattr(self, "turn", 0))
+                return
+            for opt in options:
+                if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
+                    selected = opt
+                    break
+
+        if selected is None:
+            return
+        mgr.select_combat_drug(selected, battle_round=getattr(self, "turn", 0))
+
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
         es = getattr(self, "event_system", None)
         if es is None or not hasattr(es, "subscribers"):
@@ -6097,6 +6153,11 @@ class Game:
         mgr = getattr(army, "combat_doctrines", None)
         if mgr is not None:
             self._maybe_prompt_combat_doctrines()
+
+        # Drukhari: Combat Drugs selection at the start of your Command phase.
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is not None:
+            self._maybe_prompt_combat_drugs()
 
         # Imperial Knights: Bondsman selection at the start of your Command phase.
         mgr = getattr(army, "bondsman", None)

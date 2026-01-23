@@ -226,6 +226,7 @@ class GameView:
         self.harbingers_of_dread_dialog = None
         self.doctrina_imperatives_dialog = None
         self.combat_doctrines_dialog = None
+        self.combat_drugs_dialog = None
         self.voice_of_command_dialog = None
         self.voice_of_command_officer_dialog = None
         self.voice_of_command_target_dialog = None
@@ -1930,6 +1931,8 @@ class GameView:
         self._pending_doctrina_queue = []
         # Space Marines: Combat Doctrines selection queue
         self._pending_combat_doctrines_queue = []
+        # Drukhari: Combat Drugs selection queue
+        self._pending_combat_drugs_queue = []
         # Imperial Knights: Code Chivalric selection queue
         self._pending_code_chivalric_queue = []
         # Imperial Knights: Bondsman selection queue
@@ -2026,6 +2029,8 @@ class GameView:
                 self.game.event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
                 # Space Marines: Combat Doctrines prompt
                 self.game.event_system.subscribe("combat_doctrines_prompt", self._on_combat_doctrines_prompt)
+                # Drukhari: Combat Drugs prompt
+                self.game.event_system.subscribe("combat_drugs_prompt", self._on_combat_drugs_prompt)
                 # Grey Knights: Gate of Infinity prompt at end of opponent's Fight phase
                 self.game.event_system.subscribe("gate_of_infinity_prompt", self._on_gate_of_infinity_prompt)
                 # End of opponent's turn: Strategic Reserves prompt
@@ -9591,6 +9596,142 @@ class GameView:
         self.combat_doctrines_dialog.show(on_confirm=_on_confirm, decision_request=req)
         try:
             self.dialog_manager.open(self.combat_doctrines_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _on_combat_drugs_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "drukhari_detachments", None)
+        if mgr is None or not getattr(mgr, "can_select_combat_drugs", lambda **_k: False)(game=game):
+            return
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        self._pending_combat_drugs_queue = [(player, battle_round)]
+        self._open_next_combat_drugs_prompt(battle_round)
+
+    def _open_next_combat_drugs_prompt(self, battle_round: int) -> None:
+        if not self._pending_combat_drugs_queue:
+            return
+        try:
+            player, br = self._pending_combat_drugs_queue.pop(0)
+        except Exception:
+            return
+        army = player.get_army()
+        mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "can_select_combat_drugs", lambda **_k: False)(game=self.game):
+            self._open_next_combat_drugs_prompt(br)
+            return
+        try:
+            options = list(getattr(mgr, "get_available_combat_drugs", lambda: [])() or [])
+        except Exception:
+            options = []
+
+        if self.combat_drugs_dialog is None:
+            try:
+                from .dialogs import CombatDrugsDialog
+                sw, sh = self.screen.get_size()
+                self.combat_drugs_dialog = CombatDrugsDialog(sw, sh)
+            except Exception:
+                self.combat_drugs_dialog = None
+        if self.combat_drugs_dialog is None:
+            self._open_next_combat_drugs_prompt(br)
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DRUGS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload, first_option_id
+
+        army_id = get_entity_id(army)
+        req_options = [
+            DecisionOption.create(
+                "Roll 2D6 (randomly select two)",
+                payload={
+                    "choice_key": "ROLL",
+                    "random": True,
+                    "summary": "Apply both results; duplicates have no additional effect.",
+                    "army_id": army_id,
+                },
+            )
+        ]
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            self._open_next_combat_drugs_prompt(br)
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_COMBAT_DRUGS,
+            "Select Combat Drugs.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": br},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
+            try:
+                choice_label = ""
+                for opt in list(getattr(req, "options", []) or []):
+                    if opt.option_id == option_id:
+                        choice_label = str(getattr(opt, "label", "") or "")
+                        break
+            except Exception:
+                choice_label = ""
+            try:
+                from ..utility.event_bus import append_action
+                if choice_label:
+                    append_action(player, f"Combat Drugs: {choice_label} (Battle Round {br})")
+            except Exception:
+                pass
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
+            self._open_next_combat_drugs_prompt(br)
+
+        def _on_cancel():
+            default_id = option_id_for_payload(req, "choice_key", "ROLL") or first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
+            self._open_next_combat_drugs_prompt(br)
+
+        self.combat_drugs_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=req)
+        try:
+            self.dialog_manager.open(self.combat_drugs_dialog, modal=True)
         except Exception:
             pass
 

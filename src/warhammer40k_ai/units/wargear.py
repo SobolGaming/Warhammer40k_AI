@@ -774,6 +774,20 @@ class WargearProfile:
             pass
 
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+                if mgr is not None:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    keys = mgr.get_active_combat_drug_keys_for_model(attacker, game=game)
+                    if "ADRENALIGHT" in keys:
+                        atk_mods.append(Modifier(ModifierOp.ADD, 1, source="combat_drugs:adrenalight_attacks"))
+                        attack_result.attacks_special_modifiers.append("Combat Drugs: Adrenalight +1A (melee)")
+        except Exception:
+            pass
+
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
                 set_val = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_set_non_character", 0) or 0)
                 if set_val:
@@ -1788,6 +1802,24 @@ class WargearProfile:
             if bonus and isinstance(base_skill, int) and int(base_skill) > 0:
                 base_skill = max(2, int(base_skill) - int(bonus))
                 hit_result['special_effects'].append("Psychic Guidance: +1 BS/WS")
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+            if mgr is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                keys = mgr.get_active_combat_drug_keys_for_model(attacker, game=game)
+                if keys:
+                    is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+                    is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                    if is_melee and "SERPENTIN" in keys:
+                        base_skill = max(2, int(base_skill) - 1)
+                        hit_result['special_effects'].append("Combat Drugs: Serpentin +1 WS")
+                    if is_ranged and "SPLINTERMIND" in keys:
+                        base_skill = max(2, int(base_skill) - 1)
+                        hit_result['special_effects'].append("Combat Drugs: Splintermind +1 BS")
+        except Exception:
+            pass
         hit_result['base_skill'] = base_skill
 
         # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
@@ -3840,6 +3872,20 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Power from Pain (melee)")
+        except Exception:
+            pass
+        # Drukhari: Combat Drugs (Grave Lotus).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "drukhari_detachments", None) if army is not None else None
+                if mgr is not None:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    keys = mgr.get_active_combat_drug_keys_for_model(attacker, game=game)
+                    if "GRAVE_LOTUS" in keys and isinstance(strength, int):
+                        strength = strength + 1
+                        wound_result.setdefault("modifiers", []).append("Combat Drugs: Grave Lotus +1S (melee)")
         except Exception:
             pass
         # Emperor's Children: Sensational Performance (+1 Strength to melee weapons this phase).
