@@ -13,6 +13,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_DOCTRINA,
     DECISION_CHOOSE_COMBAT_DOCTRINE,
     DECISION_CHOOSE_COMBAT_DRUGS,
+    DECISION_CHOOSE_HYPER_ADAPTATION,
     DECISION_CHOOSE_FRENZY_TARGET,
     DECISION_CHOOSE_HARBINGER,
     DECISION_CHOOSE_MARTIAL_KATAH,
@@ -407,6 +408,37 @@ def _apply_choose_combat_drugs(game: object, request: DecisionRequest, result: D
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
         return mgr.roll_combat_drugs(battle_round=battle_round)
     return bool(mgr.select_combat_drug(choice, battle_round=battle_round))
+
+
+def _validate_choose_hyper_adaptation(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    choice = payload.get("choice_key") or payload.get("key")
+    if choice is None:
+        return ("Hyper-adaptations selection requires choice_key.",)
+    army = _resolve_army(game, request, payload)
+    if army is None or getattr(army, "tyranids_detachments", None) is None:
+        return ("Hyper-adaptations manager not found.",)
+    return ()
+
+
+def _apply_choose_hyper_adaptation(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Hyper-adaptations army not found.")
+    mgr = getattr(army, "tyranids_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Hyper-adaptations manager not found.")
+    choice = payload.get("choice_key") or payload.get("key")
+    battle_round = request.context.get("battle_round")
+    return bool(mgr.select_hyper_adaptation(choice, battle_round=battle_round))
 
 
 def _validate_choose_frenzy(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -873,6 +905,11 @@ register_decision_handler(
     DECISION_CHOOSE_COMBAT_DRUGS,
     validate=_validate_choose_combat_drugs,
     apply=_apply_choose_combat_drugs,
+)
+register_decision_handler(
+    DECISION_CHOOSE_HYPER_ADAPTATION,
+    validate=_validate_choose_hyper_adaptation,
+    apply=_apply_choose_hyper_adaptation,
 )
 register_decision_handler(DECISION_CHOOSE_FRENZY_TARGET, validate=_validate_choose_frenzy, apply=_apply_choose_frenzy)
 register_decision_handler(DECISION_CHOOSE_HARBINGER, validate=_validate_choose_harbinger, apply=_apply_choose_harbinger)

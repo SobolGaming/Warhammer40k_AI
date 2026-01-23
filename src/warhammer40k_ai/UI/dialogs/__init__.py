@@ -42,6 +42,7 @@ from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
 from .doctrina_imperatives_dialog import DoctrinaImperativesDialog
 from .combat_doctrines_dialog import CombatDoctrinesDialog
 from .combat_drugs_dialog import CombatDrugsDialog
+from .hyper_adaptations_dialog import HyperAdaptationsDialog
 from .code_chivalric_dialog import CodeChivalricDialog
 from .voice_of_command_dialog import VoiceOfCommandDialog
 from .dark_pacts_dialog import DarkPactsDialog
@@ -95,6 +96,7 @@ __all__ = [
     'DoctrinaImperativesDialog',
     'CombatDoctrinesDialog',
     'CombatDrugsDialog',
+    'HyperAdaptationsDialog',
     'CodeChivalricDialog',
     'VoiceOfCommandDialog',
     'DarkPactsDialog',

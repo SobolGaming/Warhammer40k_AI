@@ -1891,6 +1891,9 @@ class Army:
         mgr = getattr(self, "harbingers_of_dread", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "tyranids_detachments", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "cult_ambush", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)

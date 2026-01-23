@@ -1012,6 +1012,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1 and re-roll Wound rolls of 1 vs targets within objective range.",
         ),
+        "Hyper-adaptations": (
+            "Supported",
+            "Invasion Fleet: select one Hyper-adaptation at battle round 1; applies Sustained Hits 1 vs INFANTRY/SWARM, Lethal Hits vs MONSTER/VEHICLE, or Precision on crits vs CHARACTER.",
+        ),
     }
     return {_norm(name): val for name, val in raw.items()}
 

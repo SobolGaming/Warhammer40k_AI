@@ -204,6 +204,7 @@ Faction / Detachment / Ability choices:
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip}
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_id}
+- hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}
 - frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
 - harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
 - martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}

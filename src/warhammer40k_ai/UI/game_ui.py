@@ -227,6 +227,7 @@ class GameView:
         self.doctrina_imperatives_dialog = None
         self.combat_doctrines_dialog = None
         self.combat_drugs_dialog = None
+        self.hyper_adaptations_dialog = None
         self.voice_of_command_dialog = None
         self.voice_of_command_officer_dialog = None
         self.voice_of_command_target_dialog = None
@@ -1919,6 +1920,8 @@ class GameView:
         self._pending_blessings_queue = []
         # Templar Vows start-of-battle-round hook
         self._pending_templar_vows_queue = []
+        # Tyranids: Hyper-adaptations selection queue
+        self._pending_hyper_adaptations_queue = []
         # Belakor Shadow Form selection queue
         self._pending_shadow_form_queue = []
         # Angron Wrathful Presence selection queue
@@ -2157,6 +2160,25 @@ class GameView:
             if queue:
                 self._pending_templar_vows_queue = list(queue)
                 self._open_next_templar_vows_prompt()
+
+            # TYRANIDS: Hyper-adaptations selection at the start of battle round 1.
+            queue = []
+            for p in order:
+                try:
+                    if p is None or not p.has_control():
+                        continue
+                    army = p.get_army()
+                    mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+                    if mgr is None:
+                        continue
+                    if not getattr(mgr, "can_select_hyper_adaptation", lambda **_k: False)(game=game, battle_round=br):
+                        continue
+                    queue.append(p)
+                except Exception:
+                    continue
+            if queue:
+                self._pending_hyper_adaptations_queue = list(queue)
+                self._open_next_hyper_adaptations_prompt(br)
 
         # CHAOS KNIGHTS: Harbingers of Dread selection at the start of battle rounds 1, 3, and 5.
         if br in (1, 3, 5):
@@ -9270,6 +9292,102 @@ class GameView:
         self.templar_vows_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=req)
         try:
             self.dialog_manager.open(self.templar_vows_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _open_next_hyper_adaptations_prompt(self, battle_round: int) -> None:
+        if not self._pending_hyper_adaptations_queue:
+            return
+        player = self._pending_hyper_adaptations_queue.pop(0)
+        army = player.get_army()
+        mgr = getattr(army, "tyranids_detachments", None)
+        if mgr is None or not getattr(mgr, "can_select_hyper_adaptation", lambda **_k: False)(game=self.game, battle_round=battle_round):
+            self._open_next_hyper_adaptations_prompt(battle_round)
+            return
+        try:
+            options = list(getattr(mgr, "get_available_hyper_adaptations", lambda: [])() or [])
+        except Exception:
+            options = []
+        if not options:
+            self._open_next_hyper_adaptations_prompt(battle_round)
+            return
+
+        if self.hyper_adaptations_dialog is None:
+            try:
+                from .dialogs import HyperAdaptationsDialog
+                sw, sh = self.screen.get_size()
+                self.hyper_adaptations_dialog = HyperAdaptationsDialog(sw, sh)
+            except Exception:
+                self.hyper_adaptations_dialog = None
+        if self.hyper_adaptations_dialog is None:
+            self._open_next_hyper_adaptations_prompt(battle_round)
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_HYPER_ADAPTATION
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import option_id_for_payload, first_option_id
+
+        army_id = get_entity_id(army)
+        req = None
+        try:
+            queue = getattr(self.game, "decision_queue", None)
+            if queue is not None:
+                for pending in list(queue.list() or []):
+                    if getattr(pending, "decision_type", None) != DECISION_CHOOSE_HYPER_ADAPTATION:
+                        continue
+                    ctx = getattr(pending, "context", {}) or {}
+                    if str(ctx.get("army_id", "")) == str(army_id):
+                        req = pending
+                        break
+        except Exception:
+            req = None
+
+        if req is None:
+            req_options = []
+            for opt in options:
+                key = getattr(opt, "key", None)
+                if not key:
+                    continue
+                name = getattr(opt, "name", None) or str(opt)
+                summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_HYPER_ADAPTATION,
+                "Select Hyper-adaptation.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"army_id": army_id, "battle_round": battle_round},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
+            try:
+                if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
+                    if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
+                        self._toggle_rule_panel(player, "army", force_refresh=True)
+            except Exception:
+                pass
+            self._open_next_hyper_adaptations_prompt(battle_round)
+
+        def _on_cancel():
+            default_key = getattr(options[0], "key", None) if options else None
+            default_id = option_id_for_payload(req, "choice_key", default_key) or first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
+            self._open_next_hyper_adaptations_prompt(battle_round)
+
+        self.hyper_adaptations_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=req)
+        try:
+            self.dialog_manager.open(self.hyper_adaptations_dialog, modal=True)
         except Exception:
             pass
 

@@ -1308,7 +1308,8 @@ class WargearProfile:
             except Exception:
                 precision_from_assassins = False
 
-            if (self.is_precision() or precision_from_epic_challenge or precision_from_templar_vows or precision_from_assassins) and game_map is not None:
+            bonus_precision = bool(wound_instance.get("bonus_precision"))
+            if (self.is_precision() or precision_from_epic_challenge or precision_from_templar_vows or precision_from_assassins or bonus_precision) and game_map is not None:
                 try:
                     root = target.get_attached_unit_root()
                 except Exception:
@@ -1849,11 +1850,30 @@ class WargearProfile:
         
         bonus_lethal = False
         bonus_sustained_value = 0
+        bonus_sustained_label = ""
         bonus_devastating = False
         bonus_twin_linked = False
         bonus_heavy = False
         bonus_lance = False
         bonus_anti_specs = ()
+        bonus_precision_on_crit = False
+        def _set_bonus_sustained(value: int, label: str) -> None:
+            nonlocal bonus_sustained_value, bonus_sustained_label
+            try:
+                val = int(value or 0)
+            except Exception:
+                val = 0
+            if val <= 0:
+                return
+            if val > bonus_sustained_value:
+                bonus_sustained_value = val
+                bonus_sustained_label = str(label or "")
+            elif val == bonus_sustained_value and label:
+                if bonus_sustained_label:
+                    if str(label) not in bonus_sustained_label:
+                        bonus_sustained_label = f"{bonus_sustained_label} + {label}"
+                else:
+                    bonus_sustained_label = str(label)
         try:
             attack_is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
         except Exception:
@@ -1875,7 +1895,9 @@ class WargearProfile:
                 bonus = None
             if isinstance(bonus, dict):
                 bonus_lethal = bool(bonus.get("lethal_hits"))
-                bonus_sustained_value = int(bonus.get("sustained_hits_value", 0) or 0)
+                bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
+                if bonus_sustained_val:
+                    _set_bonus_sustained(bonus_sustained_val, "Objective Target")
                 bonus_devastating = bool(bonus.get("devastating_wounds"))
                 bonus_twin_linked = bool(bonus.get("twin_linked"))
                 bonus_heavy = bool(bonus.get("heavy"))
@@ -1894,11 +1916,64 @@ class WargearProfile:
         except Exception:
             bonus_lethal = False
             bonus_sustained_value = 0
+            bonus_sustained_label = ""
             bonus_devastating = False
             bonus_twin_linked = False
             bonus_heavy = False
             bonus_lance = False
             bonus_anti_specs = ()
+            bonus_precision_on_crit = False
+
+        # Tyranids: Hyper-adaptations (Invasion Fleet).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "tyranids_detachments", None) if army is not None else None
+            if mgr is not None:
+                game = getattr(getattr(army, "player", None), "game", None)
+                adaptation = getattr(mgr, "get_active_hyper_adaptation_for_unit", lambda *_a, **_k: None)(
+                    unit,
+                    game=game,
+                )
+            else:
+                adaptation = None
+            if adaptation is not None:
+                try:
+                    target_keywords = tuple(getattr(adaptation, "target_keywords", ()) or ())
+                except Exception:
+                    target_keywords = ()
+
+                def _target_has_any(keywords: tuple[str, ...]) -> bool:
+                    if not keywords:
+                        return False
+                    for kw in keywords:
+                        if not kw:
+                            continue
+                        try:
+                            if hasattr(target, "has_any_keyword") and target.has_any_keyword(kw):
+                                return True
+                        except Exception:
+                            pass
+                        try:
+                            attr_flag = f"is_{str(kw).strip().lower()}"
+                            if bool(getattr(target, attr_flag, False)):
+                                return True
+                        except Exception:
+                            pass
+                    return False
+
+                if _target_has_any(target_keywords):
+                    if int(getattr(adaptation, "sustained_hits_value", 0) or 0) > 0:
+                        _set_bonus_sustained(
+                            int(getattr(adaptation, "sustained_hits_value", 0) or 0),
+                            f"Hyper-adaptations: {getattr(adaptation, 'name', '')}",
+                        )
+                    if bool(getattr(adaptation, "lethal_hits", False)):
+                        bonus_lethal = True
+                    if bool(getattr(adaptation, "precision_on_crit", False)):
+                        bonus_precision_on_crit = True
+        except Exception:
+            pass
 
         # Torrent auto-hits (in case of Overwatch it ignores 6+ restrictions)
         if self.is_torrent():
@@ -3655,6 +3730,9 @@ class WargearProfile:
             if crit_hit_reasons:
                 hit_result['special_effects'].extend(crit_hit_reasons)
             attack_instance['crit_hit'] = True
+            if bonus_precision_on_crit:
+                attack_instance["bonus_precision"] = True
+                hit_result['special_effects'].append("Precision")
 
             if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
@@ -3687,7 +3765,10 @@ class WargearProfile:
                         label = f"Sustained Hits (+{sustained_val}) [War Horde]"
                     elif bonus_sustained_value:
                         sustained_val = max(int(sustained_val), int(bonus_sustained_value))
-                        label = f"Sustained Hits (+{sustained_val}) [Objective Target]"
+                        if bonus_sustained_label:
+                            label = f"Sustained Hits (+{sustained_val}) [{bonus_sustained_label}]"
+                        else:
+                            label = f"Sustained Hits (+{sustained_val})"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:
@@ -3724,6 +3805,9 @@ class WargearProfile:
                 hit_result['special_effects'].append(
                     f"Conversion: Critical Hit (unmodified {unmod}+ successful hit)"
                 )
+                if bonus_precision_on_crit:
+                    attack_instance["bonus_precision"] = True
+                    hit_result['special_effects'].append("Precision")
 
                 # Apply ALL critical hit effects (same logic as baseline critical section)
                 # This includes weapon-native AND unit/ability-based Lethal/Sustained hits
@@ -3775,9 +3859,15 @@ class WargearProfile:
                                 label += " [War Horde]"
                         elif bonus_sustained:
                             if bonus_sustained_value > 1:
-                                label = f"Sustained Hits (+{bonus_sustained_value}) [Objective Target]"
+                                if bonus_sustained_label:
+                                    label = f"Sustained Hits (+{bonus_sustained_value}) [{bonus_sustained_label}]"
+                                else:
+                                    label = f"Sustained Hits (+{bonus_sustained_value})"
                             else:
-                                label += " [Objective Target]"
+                                if bonus_sustained_label:
+                                    label += f" [{bonus_sustained_label}]"
+                                else:
+                                    label += ""
                         elif blitzing_grants_sustained:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
