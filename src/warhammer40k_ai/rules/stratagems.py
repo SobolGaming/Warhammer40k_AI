@@ -1690,7 +1690,26 @@ class StratagemManager:
                 return f"Target model: {getattr(reaction['target_model'], 'name', 'Model')}"
         except Exception:
             raise
+        try:
+            hint = self._stratagem_target_hint(reaction.get("stratagem", ""))
+        except Exception:
+            raise
+        if hint:
+            return hint
         return ""
+
+    @staticmethod
+    def _stratagem_target_hint(name: str) -> str:
+        name_u = (name or "").strip().upper()
+        hints = {
+            "A GRIM WARNING": "Objective: destroyed BLOOD ANGELS unit on your objective",
+            "ARMOUR OF CONTEMPT": "Target: ADEPTUS ASTARTES unit",
+            "DEATHLESS DUTY": "Target: DEATH COMPANY unit",
+            "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
+            "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
+            "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
+        }
+        return hints.get(name_u, "")
 
     def _is_warhost_detachment(self) -> bool:
         try:
@@ -9901,6 +9920,7 @@ class StratagemManager:
                     availability["reason"] = "No trigger"
                 elif availability["reason"] in (None, "", "Requires valid trigger or target"):
                     availability["reason"] = "No trigger"
+            target_hint = self._stratagem_target_hint(s.name)
             items.append({
                 "name": s.name,
                 "cp_cost": availability["cp_cost"],
@@ -9909,7 +9929,7 @@ class StratagemManager:
                 "turn_category": self._turn_category(s),
                 "is_reaction": False,
                 "context": ctx,
-                "target_label": "",
+                "target_label": target_hint,
                 "trigger_label": "",
                 "time_left": None,
             })
