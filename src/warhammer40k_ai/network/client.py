@@ -4,6 +4,7 @@ import asyncio
 from typing import Any, Optional
 
 from ..engine.commands import GameCommand
+from ..version import get_app_version
 from .control import build_control_message
 from .messages import CommandMessage, parse_message
 from .protocol import EventStreamCursor
@@ -38,6 +39,10 @@ class NetworkClient:
         self.event_cursor = EventStreamCursor()
         self.player_id: Optional[str] = None
         self._pending_messages: list[Any] = []
+        self.client_version = get_app_version()
+        self.server_version: Optional[str] = None
+        self.version_ok: Optional[bool] = None
+        self.version_error: Optional[str] = None
 
     async def connect(self) -> None:
         await self.transport.connect()
@@ -48,8 +53,12 @@ class NetworkClient:
     async def send_control(self, message_type: str, payload: dict) -> None:
         await self.transport.send(build_control_message(message_type, payload))
 
-    async def send_hello(self, display_name: str) -> None:
-        await self.send_control("hello", {"display_name": display_name})
+    async def send_hello(self, display_name: str, *, app_version: Optional[str] = None) -> None:
+        payload = {
+            "display_name": display_name,
+            "app_version": str(app_version or self.client_version),
+        }
+        await self.send_control("hello", payload)
 
     async def send_auth(
         self,
@@ -102,6 +111,22 @@ class NetworkClient:
         if event.category == "control":
             msg_type = msg.get("type")
             payload = msg.get("payload", {})
+            if msg_type == "hello":
+                self.server_version = payload.get("server_version") or self.server_version
+                ok = payload.get("ok")
+                if ok is False:
+                    errors = payload.get("errors", [])
+                    self.version_error = "; ".join(str(e) for e in errors if e) or "Version mismatch."
+                    self.version_ok = False
+                else:
+                    if self.server_version and self.server_version != self.client_version:
+                        self.version_error = (
+                            f"Version mismatch (client {self.client_version}, server {self.server_version})."
+                        )
+                        self.version_ok = False
+                    else:
+                        self.version_ok = True
+                return
             if msg_type == "auth" and payload.get("ok"):
                 self.session_token = payload.get("token") or self.session_token
                 self.session_id = payload.get("session_id") or self.session_id

@@ -39,6 +39,7 @@ from ..utility.dice import get_dice_roll
 from ..utility.entity_ids import get_entity_id
 from ..utility.game_context import game_context, roll_context
 from ..waha_helper import WahaHelper
+from ..version import get_app_version
 from .control import build_control_message, parse_control_message
 from .lobby import (
     ArmyState,
@@ -165,8 +166,31 @@ class NetworkServer:
         msg_type, payload = parse_control_message(message)
         if msg_type == "hello":
             display_name = payload.get("display_name", "")
-            self._state = apply_hello(self._state, connection_id, display_name)
-            await self._send_control(connection_id, "hello", {"ok": True, "server": "warhammer40k_ai"})
+            client_version = str(payload.get("app_version") or "").strip()
+            server_version = get_app_version()
+            version_ok = bool(client_version) and client_version == server_version
+            self._state = apply_hello(
+                self._state,
+                connection_id,
+                display_name,
+                client_version=client_version or None,
+                version_ok=version_ok,
+            )
+            response: dict[str, Any] = {
+                "ok": bool(version_ok),
+                "server": "warhammer40k_ai",
+                "server_version": server_version,
+                "client_version": client_version or None,
+            }
+            if not client_version:
+                response["errors"] = ["app_version is required for handshake."]
+                response["ok"] = False
+            elif not version_ok:
+                response["errors"] = [
+                    f"Version mismatch. Server={server_version} Client={client_version}."
+                ]
+                response["ok"] = False
+            await self._send_control(connection_id, "hello", response)
             await self._broadcast_lobby_state()
             return
         if msg_type == "auth":

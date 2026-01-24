@@ -11,12 +11,19 @@ from warhammer40k_ai.network.lobby import (
     new_lobby_state,
     register_connection,
 )
+from warhammer40k_ai.version import APP_VERSION
 
 
 def test_lobby_assign_ready_flow():
     state = new_lobby_state()
     state = register_connection(state, "conn-1")
-    state = apply_hello(state, "conn-1", "Alice")
+    state = apply_hello(
+        state,
+        "conn-1",
+        "Alice",
+        client_version=APP_VERSION,
+        version_ok=True,
+    )
 
     result = apply_auth(state, "conn-1")
     assert result.ok
@@ -38,12 +45,14 @@ def test_lobby_assign_ready_flow():
 def test_lobby_reconnect_token_reclaims_slot():
     state = new_lobby_state()
     state = register_connection(state, "conn-1")
+    state = apply_hello(state, "conn-1", "Alice", client_version=APP_VERSION, version_ok=True)
     result = apply_auth(state, "conn-1")
     token = result.response.get("token")
     result = apply_role_select(result.state, "conn-1", "player1")
     state = disconnect_connection(result.state, "conn-1")
 
     state = register_connection(state, "conn-2")
+    state = apply_hello(state, "conn-2", "Bob", client_version=APP_VERSION, version_ok=True)
     result = apply_auth(state, "conn-2", reconnect_token=token)
     assert result.ok
     state = result.state
@@ -55,6 +64,8 @@ def test_lobby_rejects_taken_slot():
     state = new_lobby_state()
     state = register_connection(state, "conn-1")
     state = register_connection(state, "conn-2")
+    state = apply_hello(state, "conn-1", "Alice", client_version=APP_VERSION, version_ok=True)
+    state = apply_hello(state, "conn-2", "Bob", client_version=APP_VERSION, version_ok=True)
 
     result = apply_auth(state, "conn-1")
     state = result.state
@@ -72,6 +83,8 @@ def test_lobby_ready_to_start_requires_armies():
     state = new_lobby_state()
     state = register_connection(state, "conn-1")
     state = register_connection(state, "conn-2")
+    state = apply_hello(state, "conn-1", "Alice", client_version=APP_VERSION, version_ok=True)
+    state = apply_hello(state, "conn-2", "Bob", client_version=APP_VERSION, version_ok=True)
 
     result = apply_auth(state, "conn-1")
     state = result.state
@@ -96,6 +109,7 @@ def test_lobby_ready_to_start_requires_armies():
 def test_spectator_role_select():
     state = new_lobby_state()
     state = register_connection(state, "conn-1")
+    state = apply_hello(state, "conn-1", "Spectator", client_version=APP_VERSION, version_ok=True)
     result = apply_auth(state, "conn-1")
     state = result.state
     result = apply_role_select(state, "conn-1", ROLE_SPECTATOR)

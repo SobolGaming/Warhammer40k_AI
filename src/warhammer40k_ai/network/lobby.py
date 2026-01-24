@@ -64,6 +64,9 @@ class ConnectionState:
     token: Optional[str] = None
     role: Optional[str] = None
     authorized: bool = False
+    hello_received: bool = False
+    client_version: Optional[str] = None
+    version_ok: bool = False
 
 
 @dataclass(frozen=True)
@@ -142,12 +145,27 @@ def disconnect_connection(state: LobbyState, connection_id: str) -> LobbyState:
     return _remove_connection(next_state, connection_id)
 
 
-def apply_hello(state: LobbyState, connection_id: str, display_name: str) -> LobbyState:
+def apply_hello(
+    state: LobbyState,
+    connection_id: str,
+    display_name: str,
+    *,
+    client_version: Optional[str] = None,
+    version_ok: Optional[bool] = None,
+) -> LobbyState:
     connection = state.connections.get(connection_id)
     if connection is None:
         return state
     display_name = str(display_name or "").strip() or connection.display_name
-    next_state = _update_connection(state, replace(connection, display_name=display_name))
+    update_fields: dict[str, Any] = {
+        "display_name": display_name,
+        "hello_received": True,
+    }
+    if client_version is not None:
+        update_fields["client_version"] = str(client_version)
+    if version_ok is not None:
+        update_fields["version_ok"] = bool(version_ok)
+    next_state = _update_connection(state, replace(connection, **update_fields))
     players = dict(next_state.players)
     for slot, slot_state in players.items():
         if slot_state.connection_id == connection_id:
@@ -183,6 +201,10 @@ def apply_auth(
     connection = state.connections.get(connection_id)
     if connection is None:
         return LobbyActionResult(state=state, errors=["Unknown connection."])
+    if not connection.hello_received:
+        return LobbyActionResult(state=state, errors=["Hello handshake required."])
+    if not connection.version_ok:
+        return LobbyActionResult(state=state, errors=["Client/server version mismatch."])
     if state.join_code and join_code != state.join_code:
         return LobbyActionResult(state=state, errors=["Invalid join code."])
 

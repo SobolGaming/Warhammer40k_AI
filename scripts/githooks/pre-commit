@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+
+SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/check_version_bump.py"
+
+PY=""
+if command -v py >/dev/null 2>&1; then
+  PY="py -3"
+elif command -v python3 >/dev/null 2>&1; then
+  PY="python3"
+elif command -v python >/dev/null 2>&1; then
+  PY="python"
+fi
+
+if [ -z "$PY" ]; then
+  echo "ERROR: Python not found. Install Python 3 or ensure 'py'/'python' is on PATH." 1>&2
+  exit 1
+fi
+
+$PY "$SCRIPT" --staged

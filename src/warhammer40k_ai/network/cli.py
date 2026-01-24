@@ -81,6 +81,12 @@ async def _run_client(args: argparse.Namespace) -> None:
     )
     await client.connect()
     await client.send_hello(args.display_name)
+    hello_msg = await _wait_for_control(client, "hello")
+    hello_payload = hello_msg.get("payload", {})
+    if not hello_payload.get("ok"):
+        print(f"Version mismatch: {hello_payload.get('errors', [])}")
+        await client.close()
+        return
     await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
     auth_msg = await _wait_for_control(client, "auth")
     payload = auth_msg.get("payload", {})

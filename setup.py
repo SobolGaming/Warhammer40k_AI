@@ -1,11 +1,23 @@
 from setuptools import setup, find_packages
 
+from pathlib import Path
+import re
+
+
+def _read_version() -> str:
+    version_path = Path(__file__).parent / "src" / "warhammer40k_ai" / "version.py"
+    content = version_path.read_text(encoding="utf-8")
+    match = re.search(r'^APP_VERSION\\s*=\\s*["\\\']([^"\\\']+)["\\\']', content, re.M)
+    if not match:
+        raise RuntimeError("APP_VERSION not found in version.py")
+    return match.group(1)
+
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
     name="warhammer40k_ai",
-    version="0.1.0",
+    version=_read_version(),
     author="Andrzej Gorski",
     author_email="nostrademous@hotmail.com",
     description="Warhammer 40,000 rules engine and interactive UI",

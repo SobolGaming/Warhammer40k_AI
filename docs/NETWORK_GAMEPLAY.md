@@ -53,7 +53,7 @@ Reuse existing game message envelopes for live gameplay:
 Note: server broadcasts accepted `command` messages so clients can apply them locally.
 
 Add a control channel for lobby/session management:
-- `hello`: protocol version + client metadata.
+- `hello`: protocol version + app_version + client metadata (server replies with server_version + ok).
 - `auth`: join code/password + reconnect token (if any).
 - `lobby_state`: current players, spectators, readiness, selected armies.
 - `role_select`: request Player 1, Player 2, or Spectator.
@@ -64,6 +64,7 @@ Add a control channel for lobby/session management:
 
 Control messages should be distinct from game envelopes to keep event logs clean.
 Control responses include `ok` and (on failure) `errors` in payload.
+Server rejects `auth` until a `hello` handshake succeeds with a matching `app_version`.
 
 ## Lobby and Role Model
 
@@ -129,7 +130,7 @@ Future approach (UI mustering):
 ## UI Staging Area (Lobby)
 
 Screen layout:
-- Connection panel: server address, status, protocol version.
+- Connection panel: server address, status, protocol version, app version.
 - Role selector: Player 1, Player 2, Spectator (single-choice).
 - Army list panel: select file or paste text (players only).
 - Readiness toggle + validation status.

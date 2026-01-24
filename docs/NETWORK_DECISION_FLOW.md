@@ -25,7 +25,7 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 ## 0) Connect + Lobby (Sequential by message)
 
 1. Client connects (TLS WebSocket).
-2. `hello` → `auth` → `role_select`.
+2. `hello` (includes `app_version`, server validates match) → `auth` → `role_select`.
 3. Players send `army_submit`.
 4. Players send `ready`.
 5. Server validates both rosters and starts the game.

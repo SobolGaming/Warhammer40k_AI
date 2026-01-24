@@ -7,6 +7,7 @@ from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.network.client import NetworkClient
 from warhammer40k_ai.network.messages import CommandMessage
 from warhammer40k_ai.network.server import NetworkServer
+from warhammer40k_ai.version import APP_VERSION
 
 CERT_PATH = Path("tests/fixtures/tls/server.crt")
 KEY_PATH = Path("tests/fixtures/tls/server.key")
@@ -39,6 +40,10 @@ def test_network_server_client_flow_tls():
 
         await client1.send_hello("Alice")
         await client2.send_hello("Bob")
+        hello1 = await _wait_for(client1, "control", "hello")
+        hello2 = await _wait_for(client2, "control", "hello")
+        assert hello1.message.get("payload", {}).get("ok") is True
+        assert hello2.message.get("payload", {}).get("ok") is True
         await client1.send_auth()
         await client2.send_auth()
         await _wait_for(client1, "control", "auth")
@@ -72,6 +77,7 @@ def test_network_server_client_flow_tls():
         spectator = NetworkClient(uri=uri, ca_cert=str(CERT_PATH))
         await spectator.connect()
         await spectator.send_hello("Spec")
+        await _wait_for(spectator, "control", "hello")
         await spectator.send_auth()
         await _wait_for(spectator, "control", "auth")
         await spectator.send_role_select("spectator")
@@ -89,6 +95,40 @@ def test_network_server_client_flow_tls():
         await spectator.close()
         await client1.close()
         await client2.close()
+        server_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await server_task
+        await server.stop()
+
+    asyncio.run(run_flow())
+
+
+def test_network_version_mismatch_rejects_auth_tls():
+    async def run_flow():
+        server = NetworkServer(
+            host="127.0.0.1",
+            port=0,
+            cert_path=str(CERT_PATH),
+            key_path=str(KEY_PATH),
+        )
+        await server.start()
+        server_task = asyncio.create_task(server.run())
+
+        uri = f"wss://localhost:{server.transport.port}"
+        client = NetworkClient(uri=uri, ca_cert=str(CERT_PATH))
+        await client.connect()
+
+        bad_version = "0.0.0"
+        assert bad_version != APP_VERSION
+        await client.send_hello("Mismatch", app_version=bad_version)
+        hello_event = await _wait_for(client, "control", "hello")
+        assert hello_event.message.get("payload", {}).get("ok") is False
+
+        await client.send_auth()
+        auth_event = await _wait_for(client, "control", "auth")
+        assert auth_event.message.get("payload", {}).get("ok") is False
+
+        await client.close()
         server_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await server_task

@@ -11,13 +11,14 @@ from warhammer40k_ai.network.transport import (
     encode_message,
     validate_message,
 )
+from warhammer40k_ai.version import APP_VERSION
 
 
 def test_transport_encode_decode_roundtrip():
     message = {
         "type": "hello",
         "protocol_version": PROTOCOL_VERSION,
-        "payload": {"display_name": "Test"},
+        "payload": {"display_name": "Test", "app_version": APP_VERSION},
     }
     assert "hello" in CONTROL_MESSAGE_TYPES
     encoded = encode_message(message)
@@ -48,7 +49,7 @@ def test_transport_server_client_roundtrip():
             {
                 "type": "hello",
                 "protocol_version": PROTOCOL_VERSION,
-                "payload": {"display_name": "Client"},
+                "payload": {"display_name": "Client", "app_version": APP_VERSION},
             }
         )
 

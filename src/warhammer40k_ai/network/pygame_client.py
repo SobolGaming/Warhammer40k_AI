@@ -52,20 +52,23 @@ async def run_pygame_network_client(
     client = NetworkClient(uri=uri, ca_cert=ca_cert, insecure=insecure)
     await client.connect()
     await client.send_hello(display_name)
-    await client.send_auth(join_code=join_code, reconnect_token=reconnect_token)
-
     screen = create_pygame_screen()
+    session = NetworkGameSession(client, allow_commands=(role != "spectator"))
 
     async def _wait_control(expected_type: str) -> None:
         while True:
             event = await client.next_message()
             await session.handle_message(event)
             if event.category == "control" and event.message_type == expected_type:
-                return
-
-    session = NetworkGameSession(client, allow_commands=(role != "spectator"))
+                return event.message
 
     try:
+        hello_msg = await _wait_control("hello")
+        hello_payload = hello_msg.get("payload", {}) if isinstance(hello_msg, dict) else {}
+        if not hello_payload.get("ok"):
+            print(f"Version mismatch: {hello_payload.get('errors', [])}")
+            return
+        await client.send_auth(join_code=join_code, reconnect_token=reconnect_token)
         await _wait_control("auth")
         session.allow_commands = client.role != "spectator"
         if role:
