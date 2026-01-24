@@ -1,7 +1,10 @@
 #!/bin/sh
 set -e
 
-SCRIPT="$(cd "$(dirname "$0")/.." && pwd)/check_version_bump.py"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT="$ROOT/check_version_bump.py"
+BUMP_SCRIPT="$ROOT/bump_version.py"
+VERSION_PATH="src/warhammer40k_ai/version.py"
 
 PY=""
 if command -v py >/dev/null 2>&1; then
@@ -15,6 +18,21 @@ fi
 if [ -z "$PY" ]; then
   echo "ERROR: Python not found. Install Python 3 or ensure 'py'/'python' is on PATH." 1>&2
   exit 1
+fi
+
+# Auto-bump APP_VERSION when committing non-version files.
+STAGED="$(
+  git diff --cached --name-only
+)"
+if [ -n "$STAGED" ]; then
+  if ! echo "$STAGED" | grep -qx "$VERSION_PATH"; then
+    if git diff --name-only -- "$VERSION_PATH" | grep -q .; then
+      git add "$VERSION_PATH"
+    else
+      $PY "$BUMP_SCRIPT" --patch
+      git add "$VERSION_PATH"
+    fi
+  fi
 fi
 
 $PY "$SCRIPT" --staged

@@ -162,7 +162,14 @@ class Enhancement:
             return
 
         try:
-            name = str(getattr(self, "name", "") or "").replace("\u0192?T", "'").strip().lower()
+            name = (
+                str(getattr(self, "name", "") or "")
+                .replace("\u2019", "'")
+                .replace("\u2018", "'")
+                .replace("\u0192?T", "'")
+                .strip()
+                .lower()
+            )
         except Exception:
             name = ""
         try:
@@ -246,6 +253,16 @@ class Enhancement:
             if not is_khorne_daemonkin:
                 return
             unit.special_rules["enhancement_disciple_of_khorne"] = True
+
+        if name == "carmine reliquary" or enh_id == "000010645002":
+            unit.special_rules["enhancement_carmine_reliquary"] = True
+            unit.special_rules["enhancement_scout_distance"] = max(
+                int(unit.special_rules.get("enhancement_scout_distance", 0) or 0),
+                6,
+            )
+
+        if name == "angel's fang" or enh_id == "000010645005":
+            unit.special_rules["enhancement_angels_fang"] = True
 
         if name == "timeless strategist" or enh_id == "000009899003":
             if not is_warhost:

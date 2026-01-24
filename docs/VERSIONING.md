@@ -37,3 +37,7 @@ python scripts/install_git_hooks.py
 
 Hooks enforce that `src/warhammer40k_ai/version.py` is updated whenever you
 commit other files, and that every commit pushed includes a version bump.
+
+The pre-commit hook will also auto-bump the version (patch) and stage
+`version.py` when you commit other files and have not already staged a version
+change. If you want a minor/major bump, run the bump script manually first.

@@ -12872,10 +12872,17 @@ class Unit:
                 icon_of_war_reroll_available = bool(self._icon_of_war_battle_shock_reroll_available())
             except Exception:
                 icon_of_war_reroll_available = False
+        carmine_reroll_available = False
+        if not auto_passed:
+            try:
+                if self.has_any_keyword("ADEPTUS ASTARTES") and self._unit_within_carmine_reliquary_range():
+                    carmine_reroll_available = True
+            except Exception:
+                carmine_reroll_available = False
 
         if not auto_passed:
             total_mod = int(shadow_mod) + int(extra_mod)
-            manual_roll = bool(synapse_3d6 or total_mod != 0 or icon_of_war_reroll_available)
+            manual_roll = bool(synapse_3d6 or total_mod != 0 or icon_of_war_reroll_available or carmine_reroll_available)
             if not manual_roll:
                 try:
                     passed = bool(self.pass_leadership_check())
@@ -12925,7 +12932,12 @@ class Unit:
                         f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
                     )
 
+                reroll_sources = []
                 if icon_of_war_reroll_available:
+                    reroll_sources.append("Icon of War")
+                if carmine_reroll_available:
+                    reroll_sources.append("Carmine Reliquary")
+                if reroll_sources:
                     try:
                         provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
                         is_human = self._player_has_local_control(player)
@@ -12951,6 +12963,7 @@ class Unit:
                         except Exception:
                             append_action = None
                             pn = None
+                        source_label = " / ".join(reroll_sources)
                         if want_reroll:
                             original_roll = roll_result
                             new_roll = get_roll(dice_expr)
@@ -12963,7 +12976,7 @@ class Unit:
                             if append_action and pn:
                                 append_action(
                                     pn,
-                                    f"Icon of War: {self.name} re-rolls Battle-shock test ({original_roll} -> {new_roll}).",
+                                    f"{source_label}: {self.name} re-rolls Battle-shock test ({original_roll} -> {new_roll}).",
                                 )
                             if total_mod:
                                 print(
@@ -12979,7 +12992,7 @@ class Unit:
                             if append_action and pn:
                                 append_action(
                                     pn,
-                                    f"Icon of War: {self.name} keeps Battle-shock roll ({roll_result}).",
+                                    f"{source_label}: {self.name} keeps Battle-shock roll ({roll_result}).",
                                 )
 
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
@@ -14722,6 +14735,36 @@ class Unit:
                 return True
         return False
 
+    def _unit_within_carmine_reliquary_range(self, *, radius: float = 6.0) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if not self._unit_on_battlefield_for_icon_of_war(root):
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        try:
+            units = list(getattr(army, "units", []) or [])
+        except Exception:
+            units = []
+        for source in units:
+            try:
+                sr = getattr(source, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_carmine_reliquary")):
+                    continue
+            except Exception:
+                continue
+            if not self._unit_on_battlefield_for_icon_of_war(source):
+                continue
+            if self._models_within_icon_of_war_range(source, root, radius=radius):
+                return True
+        return False
+
     def _icon_of_war_battle_shock_reroll_available(self) -> bool:
         try:
             root = self.get_attached_unit_root()
@@ -16321,7 +16364,34 @@ class Unit:
         self._ability_cache['stealth'] = found
         
         return found
-    
+
+    def _get_attached_unit_scout_bonus_distance(self) -> float:
+        """
+        Return the maximum scout distance granted via special rules across attached unit members.
+
+        Used for enhancement/formation bonuses that grant Scouts to the bearer's unit.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        max_dist = 0.0
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            try:
+                val = float(sr.get("enhancement_scout_distance", 0) or 0)
+            except Exception:
+                val = 0.0
+            if val > max_dist:
+                max_dist = val
+        return float(max_dist)
+
     def has_scout(self) -> Tuple[bool, float]:
         """Check if the unit has Scout ability and return the scout distance.
         
@@ -16350,7 +16420,15 @@ class Unit:
                         break
             except Exception:
                 found, distance_str = False, None
-        result = (True, float(distance_str)) if found else (False, 0.0)
+        dist = float(distance_str) if found else 0.0
+        try:
+            bonus_dist = float(self._get_attached_unit_scout_bonus_distance() or 0.0)
+        except Exception:
+            bonus_dist = 0.0
+        if bonus_dist > 0:
+            found = True
+            dist = max(float(dist or 0.0), float(bonus_dist))
+        result = (True, float(dist)) if found else (False, 0.0)
 
         # Attached units can only Scout if every model has Scouts (use smallest distance if mixed).
         try:

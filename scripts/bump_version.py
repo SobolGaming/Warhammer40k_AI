@@ -41,7 +41,7 @@ def _bump(version: str, part: str) -> str:
 def _write_version(new_version: str, content: str) -> None:
     new_content, count = re.subn(
         r'^(APP_VERSION\s*=\s*["\'])([^"\']+)(["\'])',
-        rf"\1{new_version}\3",
+        rf"\g<1>{new_version}\g<3>",
         content,
         flags=re.M,
     )

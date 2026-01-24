@@ -1933,6 +1933,35 @@ class WargearProfile:
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
 
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_angels_fang"):
+                if attack_is_melee:
+                    target_is_character = bool(getattr(target, "is_character", False))
+                    target_is_monster = bool(getattr(target, "is_monster", False))
+                    target_is_vehicle = bool(getattr(target, "is_vehicle", False))
+                    try:
+                        if hasattr(target, "has_keyword"):
+                            if target.has_keyword("Character"):
+                                target_is_character = True
+                            if target.has_keyword("Monster"):
+                                target_is_monster = True
+                            if target.has_keyword("Vehicle"):
+                                target_is_vehicle = True
+                        elif hasattr(target, "has_any_keyword"):
+                            if target.has_any_keyword("Character"):
+                                target_is_character = True
+                            if target.has_any_keyword("Monster"):
+                                target_is_monster = True
+                            if target.has_any_keyword("Vehicle"):
+                                target_is_vehicle = True
+                    except Exception:
+                        pass
+                    if target_is_character or target_is_monster or target_is_vehicle:
+                        _set_bonus_sustained(2, "Angel's Fang")
+        except Exception:
+            pass
+
         # Tyranids: Hyper-adaptations (Invasion Fleet).
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -3996,6 +4025,15 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Enhancement (melee)")
+        except Exception:
+            pass
+        # Aura: add Strength to weapons for nearby friendly units.
+        try:
+            from ..utility.aura_effects import get_aura_strength_bonus
+            aura_s, aura_reasons = get_aura_strength_bonus(attacker.parent_unit, self)
+            if aura_s and isinstance(strength, int):
+                strength = strength + int(aura_s)
+                wound_result.setdefault("modifiers", []).extend(list(aura_reasons or ()))
         except Exception:
             pass
         # Detachment ability: Relentless Rage (World Eaters - Berzerker Warband)
