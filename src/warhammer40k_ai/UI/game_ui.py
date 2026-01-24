@@ -216,6 +216,7 @@ class GameView:
         self.cabal_ritual_dialog = None
         self.cabal_caster_dialog = None
         self.cabal_target_dialog = None
+        self.stratagem_choice_dialog = None
         # Stratagem interaction helpers
         def _resolve_unit_selection_dialog(
             *,
@@ -312,6 +313,96 @@ class GameView:
                 pass
 
         self._resolve_unit_selection_dialog = _resolve_unit_selection_dialog
+
+        def _resolve_option_selection_dialog(
+            *,
+            player,
+            options,
+            on_chosen,
+            decision_type: str,
+            prompt: str,
+            title: str,
+            header: str = "",
+            subtitle: str = "",
+            context: Optional[dict] = None,
+            allow_skip: bool = True,
+            dialog=None,
+        ):
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from .decision_ui_utils import option_id_for_action, first_option_id
+
+            opt_list = list(options or [])
+            if allow_skip:
+                opt_list.append(DecisionOption.create("Do not use", payload={"action": "skip"}))
+            if not opt_list:
+                on_chosen(None)
+                return
+
+            req = DecisionRequest.create(
+                decision_type,
+                prompt,
+                player_id=getattr(player, "id", None),
+                options=opt_list,
+                context=dict(context or {}),
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            dlg = dialog
+            if dlg is None:
+                if self.stratagem_choice_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        sw, sh = self.screen.get_size()
+                        self.stratagem_choice_dialog = QuarrySelectionDialog(sw, sh)
+                    except Exception:
+                        self.stratagem_choice_dialog = None
+                dlg = self.stratagem_choice_dialog
+            if dlg is None:
+                default_id = first_option_id(req)
+                if default_id:
+                    resolve_decision_value(self.game, req, default_id)
+                on_chosen(None)
+                return
+
+            def _on_confirm(option_id: str):
+                value, apply_result = resolve_decision_value(self.game, req, option_id)
+                if apply_result is None or not getattr(apply_result, "ok", False):
+                    on_chosen(None)
+                else:
+                    on_chosen(value)
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if allow_skip:
+                    skip_id = option_id_for_action(req, "skip") or first_option_id(req)
+                    if skip_id:
+                        resolve_decision_value(self.game, req, skip_id, result_payload={"skipped": True})
+                on_chosen(None)
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title=title,
+                header=header,
+                subtitle=subtitle,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=req,
+                show_cancel=allow_skip,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        self._resolve_option_selection_dialog = _resolve_option_selection_dialog
 
         def _request_secondary_discard(player, game, on_chosen):
             from ..engine.decision_kinds import DECISION_DISCARD_SECONDARY
@@ -545,6 +636,179 @@ class GameView:
                 allow_skip=True,
             )
         self._request_hack_and_slash_unit = _request_hack_and_slash_unit
+
+        def _request_limb_from_limb_unit(player, game, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = []
+            try:
+                from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
+            except Exception:
+                _unit_cannot_be_target_of_stratagem = None
+            try:
+                army = player.get_army()
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                    on_chosen(None)
+                    return
+            except Exception:
+                on_chosen(None)
+                return
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                try:
+                    uid = get_entity_id(root)
+                except Exception:
+                    uid = None
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    pass
+                if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                    continue
+                try:
+                    if not root.has_any_keyword("BLOOD ANGELS"):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
+                except Exception:
+                    charged = False
+                if not charged:
+                    continue
+                cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Limb From Limb unit.",
+                title="Select Limb From Limb Unit",
+                subtitle="Charged this turn",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+
+        self._request_limb_from_limb_unit = _request_limb_from_limb_unit
+
+        def _request_limb_from_limb_choice(player, game, unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_CHOOSE_LIMB_FROM_LIMB
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            if unit is None:
+                on_chosen(None)
+                return
+            unit_id = get_entity_id(unit)
+            options = [
+                DecisionOption.create("Strength (+1S)", payload={"choice": "strength", "unit_id": unit_id}),
+                DecisionOption.create("Armour Penetration (+1 AP)", payload={"choice": "ap", "unit_id": unit_id}),
+                DecisionOption.create(
+                    "Red Thirst (+1S and +1 AP, Battle-shocked)",
+                    payload={"choice": "red_thirst", "unit_id": unit_id},
+                ),
+            ]
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_CHOOSE_LIMB_FROM_LIMB,
+                prompt="Select Limb From Limb bonus.",
+                title="Limb From Limb",
+                header=f"{getattr(unit, 'name', 'Unit')} gains a melee bonus.",
+                subtitle="Choose Strength, Armour Penetration, or Red Thirst.",
+                context={"unit_id": unit_id},
+                allow_skip=True,
+            )
+
+        self._request_limb_from_limb_choice = _request_limb_from_limb_choice
+
+        def _request_red_wrath_choice(player, game, unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_CHOOSE_RED_WRATH
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            if unit is None:
+                on_chosen(None)
+                return
+            unit_id = get_entity_id(unit)
+            options = [
+                DecisionOption.create("Shoot after advancing", payload={"mode": "shoot", "unit_id": unit_id}),
+                DecisionOption.create("Charge after advancing", payload={"mode": "charge", "unit_id": unit_id}),
+                DecisionOption.create(
+                    "Red Thirst (shoot and charge, Battle-shocked)",
+                    payload={"mode": "red_thirst", "unit_id": unit_id},
+                ),
+            ]
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_CHOOSE_RED_WRATH,
+                prompt="Select Red Wrath mode.",
+                title="Red Wrath",
+                header=f"{getattr(unit, 'name', 'Unit')} advanced.",
+                subtitle="Choose Shoot, Charge, or Red Thirst.",
+                context={"unit_id": unit_id},
+                allow_skip=True,
+            )
+
+        self._request_red_wrath_choice = _request_red_wrath_choice
+
+        def _request_a_grim_warning_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker.",
+                title="A Grim Warning",
+                header="Select one objective marker to hold.",
+                subtitle="Objective remains under your control until broken.",
+                context={"ability": "a_grim_warning"},
+                allow_skip=True,
+            )
+
+        self._request_a_grim_warning_objective = _request_a_grim_warning_objective
 
         def _request_frenzied_resilience_unit(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -10872,6 +11136,17 @@ class GameView:
                 self._request_overwatch_shooter(player, self.game, enemy, lambda shooter: self._finalize_overwatch(player, name, context, shooter))
             return
 
+        if name_u == "A GRIM WARNING" and "objective" not in context and "objective_marker" not in context:
+            if callable(getattr(self, "_request_a_grim_warning_objective", None)):
+                candidates = context.get("objective_candidates") or []
+                self._request_a_grim_warning_objective(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda obj: self._finalize_a_grim_warning(player, name, context, obj),
+                )
+            return
+
         if name_u == "HEROIC INTERVENTION" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_request_heroic_intervention_unit", None)):
                 enemy = context.get("enemy_unit")
@@ -10891,6 +11166,17 @@ class GameView:
                 self._request_rapid_ingress_unit(player, self.game, candidates, lambda unit: self._finalize_rapid_ingress(player, name, context, unit))
             return
 
+        if name_u == "RED WRATH" and "mode" not in context and "red_wrath_mode" not in context and "choice" not in context:
+            if callable(getattr(self, "_request_red_wrath_choice", None)):
+                unit = context.get("target_unit") or context.get("unit")
+                self._request_red_wrath_choice(
+                    player,
+                    self.game,
+                    unit,
+                    lambda choice: self._finalize_red_wrath(player, name, context, unit, choice),
+                )
+            return
+
         if name_u == "COUNTER-OFFENSIVE" and "target_unit" not in context and "unit" not in context:
             if callable(getattr(self, "_request_counter_offensive_unit", None)):
                 candidates = context.get("candidates") or []
@@ -10903,6 +11189,36 @@ class GameView:
                     player,
                     self.game,
                     lambda unit: self._finalize_hack_and_slash(player, name, context, unit),
+                )
+            return
+
+        if name_u == "LIMB FROM LIMB" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_limb_from_limb_unit", None)):
+                def _after_unit(chosen):
+                    if chosen is None:
+                        print("Limb From Limb: no unit selected")
+                        return
+                    if callable(getattr(self, "_request_limb_from_limb_choice", None)):
+                        self._request_limb_from_limb_choice(
+                            player,
+                            self.game,
+                            chosen,
+                            lambda choice: self._finalize_limb_from_limb(player, name, context, chosen, choice),
+                        )
+                self._request_limb_from_limb_unit(player, self.game, _after_unit)
+            return
+
+        if name_u == "LIMB FROM LIMB" and "choice" not in context and "limb_from_limb_choice" not in context:
+            if callable(getattr(self, "_request_limb_from_limb_choice", None)):
+                unit = context.get("target_unit") or context.get("unit")
+                if unit is None:
+                    print("Limb From Limb: no unit selected")
+                    return
+                self._request_limb_from_limb_choice(
+                    player,
+                    self.game,
+                    unit,
+                    lambda choice: self._finalize_limb_from_limb(player, name, context, unit, choice),
                 )
             return
 
@@ -11250,6 +11566,61 @@ class GameView:
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_a_grim_warning(self, player, name: str, context: Dict[str, Any], objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if objective is None:
+            print("A Grim Warning: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_limb_from_limb(self, player, name: str, context: Dict[str, Any], unit, choice) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Limb From Limb: no unit selected")
+            return
+        if not choice:
+            print("Limb From Limb: no choice selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["choice"] = choice
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_red_wrath(self, player, name: str, context: Dict[str, Any], unit, choice) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Red Wrath: no unit selected")
+            return
+        if not choice:
+            print("Red Wrath: no choice selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["mode"] = choice
         ok = manager.use(name, **ctx)
         if ok:
             print(f"Used stratagem: {name}")

@@ -4501,6 +4501,36 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # Rage-cursed Onslaught: Deathless Duty (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("deathless_duty_active"):
+                        exp = str(sr.get("deathless_duty_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    pending = getattr(root, "_deathless_duty_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._deathless_duty_pending_models = pending
+                                    return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # MELEE fight-on-death after attacker finishes attacks (e.g., Malevolent Souls).
         rule = None
         try:
@@ -11028,6 +11058,14 @@ class Unit:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                mode = str(sr.get("red_wrath_mode", "") or "").strip().lower()
+                if mode in ("shoot", "both"):
+                    return True
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
             if mgr is not None:
@@ -11108,6 +11146,14 @@ class Unit:
         Returns:
             bool: True if the unit can charge after advancing
         """
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                mode = str(sr.get("red_wrath_mode", "") or "").strip().lower()
+                if mode in ("charge", "both"):
+                    return True
+        except Exception:
+            pass
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bondsman_charge_after_advance"):
@@ -14453,6 +14499,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                root._resolve_deathless_duty_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_melee_fight_on_death_queue(game_map=game_map)
             except Exception:
                 pass
@@ -14480,6 +14530,10 @@ class Unit:
     def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_death_ecstasy_pending_models", game_map=game_map)
+
+    def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_deathless_duty_pending_models", game_map=game_map)
 
     def _resolve_melee_fight_on_death_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred melee fight-on-death fights after an attacker finishes its attacks."""

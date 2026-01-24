@@ -6905,6 +6905,11 @@ class Game:
                 if sr.pop("apoplectic_frenzy_active", None) is not None:
                     sr.pop("apoplectic_frenzy_turn", None)
                     unit.special_rules = sr
+                if sr.pop("red_wrath_mode", None) is not None:
+                    sr.pop("red_wrath_turn_owner", None)
+                    sr.pop("red_wrath_turn", None)
+                    sr.pop("red_wrath_source", None)
+                    unit.special_rules = sr
 
         # Imperial Knights: Code Chivalric deed completion at end of turn.
         for p in list(getattr(self, "players", []) or []):

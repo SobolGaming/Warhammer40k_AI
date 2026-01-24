@@ -17,6 +17,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_FRENZY_TARGET,
     DECISION_CHOOSE_HARBINGER,
     DECISION_CHOOSE_MARTIAL_KATAH,
+    DECISION_CHOOSE_LIMB_FROM_LIMB,
+    DECISION_CHOOSE_RED_WRATH,
     DECISION_USE_MIRACLE_DIE,
     DECISION_CHOOSE_PLAGUE,
     DECISION_CHOOSE_PLEDGE,
@@ -576,6 +578,32 @@ def _apply_choose_frenzy(game: object, request: DecisionRequest, result: Decisio
     return dict(payload or {})
 
 
+def _validate_choose_limb_from_limb(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    if is_skip_choice(request, result):
+        return ()
+    return validate_option_choice(request, result)
+
+
+def _apply_choose_limb_from_limb(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    return dict(payload or {})
+
+
+def _validate_choose_red_wrath(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    if is_skip_choice(request, result):
+        return ()
+    return validate_option_choice(request, result)
+
+
+def _apply_choose_red_wrath(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    return dict(payload or {})
+
+
 def _validate_choose_harbinger(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -1121,6 +1149,8 @@ register_decision_handler(
 register_decision_handler(DECISION_CHOOSE_FRENZY_TARGET, validate=_validate_choose_frenzy, apply=_apply_choose_frenzy)
 register_decision_handler(DECISION_CHOOSE_HARBINGER, validate=_validate_choose_harbinger, apply=_apply_choose_harbinger)
 register_decision_handler(DECISION_CHOOSE_MARTIAL_KATAH, validate=_validate_choose_martial_katah, apply=_apply_choose_martial_katah)
+register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_choose_limb_from_limb, apply=_apply_choose_limb_from_limb)
+register_decision_handler(DECISION_CHOOSE_RED_WRATH, validate=_validate_choose_red_wrath, apply=_apply_choose_red_wrath)
 register_decision_handler(DECISION_USE_MIRACLE_DIE, validate=_validate_use_miracle_die, apply=_apply_use_miracle_die)
 register_decision_handler(DECISION_CHOOSE_PLAGUE, validate=_validate_choose_plague, apply=_apply_choose_plague)
 register_decision_handler(DECISION_CHOOSE_PLEDGE, validate=_validate_choose_pledge, apply=_apply_choose_pledge)

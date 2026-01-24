@@ -217,6 +217,9 @@ Faction / Detachment / Ability choices:
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id}
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id} (context may include `ability`, `effect_key`, `source_unit_id`)
+- quarry_selection_dialog: CHOOSE_LIMB_FROM_LIMB {choice} (context `unit_id`)
+- quarry_selection_dialog: CHOOSE_RED_WRATH {mode} (context `unit_id`)
+- quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"`)
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
 - templar_vows_dialog: CHOOSE_VOW {choice_id}

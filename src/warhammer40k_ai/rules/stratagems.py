@@ -8,6 +8,7 @@ from ..utility.entity_ids import get_entity_id
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
+    "A GRIM WARNING",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
@@ -18,12 +19,14 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLOOD OFFERING",
     "DAEMONIC FURY",
     "DAEMONTIDE",
+    "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
     "FEIGNED RETREAT",
     "FIRE AND FADE",
     "HACK AND SLASH",
     "LIGHTNING-FAST REACTIONS",
+    "LIMB FROM LIMB",
     "MURDER-CALL",
     "COMMAND RE-ROLL",
     "COUNTER-OFFENSIVE",
@@ -52,9 +55,11 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CHRONOSHIFT",
     "ENDLESS SERVITUDE",
     "REACTIVE REPOSITION",
+    "RED WRATH",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
+    "A GRIM WARNING",
     "ARMOUR OF CONTEMPT",
     "A WORTHY SKULL",
     "APOPLECTIC FRENZY",
@@ -63,6 +68,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
     "CUT DOWN THE WEAK",
+    "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
     "FEIGNED RETREAT",
@@ -88,6 +94,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "UNYIELDING FORMS",
     "ENDLESS SERVITUDE",
     "REACTIVE REPOSITION",
+    "RED WRATH",
 }
 
 
@@ -850,7 +857,7 @@ class StratagemManager:
         if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "CUT DOWN THE WEAK"}:
             add("unit_move_ended", self._on_unit_move_ended)
 
-        if names & {"BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
+        if names & {"A GRIM WARNING", "BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
         if "SKULLS FOR THE SKULL THRONE!" in names:
@@ -902,6 +909,7 @@ class StratagemManager:
             "UNYIELDING FORMS",
         }
         fight_reaction_names = {
+            "DEATHLESS DUTY",
             "DEATH ECSTASY",
             "FRENZIED RESILIENCE",
             "ARMOUR OF CONTEMPT",
@@ -1628,7 +1636,7 @@ class StratagemManager:
 
         # Targeting restrictions for provided context
         target = _extract_friendly_target_unit_from_kwargs(context)
-        if target is not None and name_u != "BLOOD OFFERING":
+        if target is not None and name_u not in ("BLOOD OFFERING", "A GRIM WARNING"):
             if _unit_cannot_be_target_of_stratagem(target):
                 if name_u != "INSANE BRAVERY":
                     result["reason"] = "Target cannot be selected"
@@ -1636,7 +1644,7 @@ class StratagemManager:
 
         # Last pass: delegate to stratagem conditions
         try:
-            if name_u == "BLOOD OFFERING":
+            if name_u in ("BLOOD OFFERING", "A GRIM WARNING"):
                 if context.get("objective_candidates"):
                     result["available"] = True
                     result["reason"] = None
@@ -2341,6 +2349,10 @@ class StratagemManager:
                             sr.pop("death_ecstasy_active", None)
                             sr.pop("death_ecstasy_expires_phase", None)
                             sr.pop("death_ecstasy_source", None)
+                        if isinstance(sr, dict) and sr.get("deathless_duty_active") is True:
+                            sr.pop("deathless_duty_active", None)
+                            sr.pop("deathless_duty_expires_phase", None)
+                            sr.pop("deathless_duty_source", None)
                         u.special_rules = sr
                     except Exception:
                         raise
@@ -2432,6 +2444,11 @@ class StratagemManager:
                             sr.pop("charge_melee_ap_bonus", None)
                             sr.pop("charge_melee_ap_bonus_expires_phase", None)
                             sr.pop("charge_melee_ap_bonus_source", None)
+                        if sr.get("limb_from_limb_melee_strength_bonus", 0) or sr.get("limb_from_limb_melee_ap_bonus", 0):
+                            sr.pop("limb_from_limb_melee_strength_bonus", None)
+                            sr.pop("limb_from_limb_melee_ap_bonus", None)
+                            sr.pop("limb_from_limb_expires_phase", None)
+                            sr.pop("limb_from_limb_source", None)
                         if (
                             "stratagem_consolidate_distance_override" in sr
                             or sr.get("stratagem_consolidate_requires_engagement")
@@ -2996,6 +3013,7 @@ class StratagemManager:
         self._maybe_queue_tank_shock(unit, action)
         self._maybe_queue_heroic_intervention(unit, action)
         self._maybe_queue_feigned_retreat(unit, action)
+        self._maybe_queue_red_wrath(unit, action)
         self._maybe_queue_cut_down_the_weak(unit, action)
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
@@ -3882,6 +3900,54 @@ class StratagemManager:
                             self._queue_reaction(payload)
         except Exception:
             raise
+        # Rage-cursed Onslaught: DEATHLESS DUTY
+        try:
+            s = self.get_by_name("DEATHLESS DUTY")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                try:
+                    army = self.player.get_army()
+                except Exception:
+                    raise
+                sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                if sm_mgr is not None and getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                    candidates = []
+                    for unit in list(target_units or []):
+                        try:
+                            if unit is None or not unit.is_alive():
+                                continue
+                            if unit.get_parent_army().player is not self.player:
+                                continue
+                            if _unit_cannot_be_target_of_stratagem(unit):
+                                continue
+                            if not unit.has_any_keyword("DEATH COMPANY"):
+                                continue
+                            candidates.append(unit)
+                        except Exception:
+                            raise
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
         # EMPEROR'S CHILDREN: DEATH ECSTASY
         try:
             s = self.get_by_name("DEATH ECSTASY")
@@ -4592,6 +4658,57 @@ class StratagemManager:
             "action": "advance",
         })
 
+    def _maybe_queue_red_wrath(self, unit, action: str) -> None:
+        try:
+            if str(action or "").strip().lower() != "advance":
+                return
+            if unit is None or not getattr(unit, "is_alive", lambda: True)():
+                return
+            owner = unit.get_parent_army().player
+            if owner is not self.player:
+                return
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                raise
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                return
+            # Timing: your Movement phase
+            if (self._current_phase_name or "").strip().lower() != "movement phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is not self.player:
+                return
+            s = self.get_by_name("RED WRATH")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            try:
+                if not unit.has_any_keyword("BLOOD ANGELS"):
+                    return
+            except Exception:
+                raise
+        except Exception:
+            raise
+        for r in self._pending_reactions:
+            if r.get("event") == "unit_advanced" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                return
+        self._queue_reaction({
+            "event": "unit_advanced",
+            "phase_name": "Movement phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": unit,
+            "target_unit": unit,
+            "action": "advance",
+        })
+
     def _maybe_queue_feigned_retreat(self, unit, action: str) -> None:
         try:
             if str(action or "").strip().lower() != "fall_back":
@@ -5066,6 +5183,97 @@ class StratagemManager:
                             raise
         except Exception:
             raise
+        # Rage-cursed Onslaught: A GRIM WARNING
+        try:
+            s = self.get_by_name("A GRIM WARNING")
+        except Exception:
+            raise
+        if s:
+            if unit is None or self.game is None:
+                return
+            try:
+                if unit.get_parent_army().player is not self.player:
+                    return
+            except Exception:
+                raise
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                raise
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                return
+            try:
+                if not unit.has_any_keyword("BLOOD ANGELS"):
+                    return
+            except Exception:
+                raise
+            # Must have objective control snapshot from end of previous phase.
+            snapshot = getattr(self.game, "_objective_control_snapshot", None)
+            if not isinstance(snapshot, dict) or not snapshot:
+                return
+            # Determine unit position from last model (unit may already be empty).
+            pos = None
+            if last_model is not None:
+                try:
+                    pos = last_model.get_location()
+                except Exception:
+                    raise
+            if pos is None:
+                try:
+                    pos = getattr(unit, "position", None)
+                except Exception:
+                    pos = None
+            if pos is None:
+                return
+            try:
+                ux, uy = float(pos[0]), float(pos[1])
+            except Exception:
+                raise
+            candidates = []
+            for obj in list(getattr(self.game.map, "objectives", []) or []):
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is None or getattr(loc, "removed", False):
+                        continue
+                    if snapshot.get(loc) is not self.player:
+                        continue
+                    radius = float(getattr(loc, "control_radius", 0.0) or 0.0)
+                    base_radius = 0.0
+                    try:
+                        base = getattr(last_model, "model_base", None)
+                        if base is not None:
+                            base_radius = float(getattr(base, "base_size", 0.0) or 0.0)
+                    except Exception:
+                        raise
+                    dx = ux - float(getattr(loc, "x", 0.0))
+                    dy = uy - float(getattr(loc, "y", 0.0))
+                    if (dx * dx + dy * dy) ** 0.5 <= (radius + base_radius):
+                        candidates.append(obj)
+                except Exception:
+                    raise
+            if not candidates:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            try:
+                if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    return
+            except Exception:
+                raise
+            # Deduplicate per unit destruction
+            for r in self._pending_reactions:
+                if r.get("event") == "unit_destroyed" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                    return
+            self._queue_reaction({
+                "event": "unit_destroyed",
+                "phase_name": self._current_phase_name,
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "objective_candidates": candidates,
+            })
+
         # WORLD EATERS: BLOOD OFFERING
         try:
             s = self.get_by_name("BLOOD OFFERING")
@@ -5256,7 +5464,7 @@ class StratagemManager:
         try:
             tgt = _extract_friendly_target_unit_from_kwargs(kwargs)
             name_u = (s.name or "").strip().upper()
-            if name_u != "BLOOD OFFERING" and _unit_cannot_be_target_of_stratagem(tgt):
+            if name_u not in ("BLOOD OFFERING", "A GRIM WARNING") and _unit_cannot_be_target_of_stratagem(tgt):
                 if name_u == "INSANE BRAVERY":
                     # Only bypass battle-shock restriction, not embarked restriction.
                     try:
@@ -5779,6 +5987,90 @@ class StratagemManager:
                     print(f"INFO: UNBOUND ARROGANCE: pledge increased to {new_val}")
                 except Exception:
                     raise
+            return True
+
+        # EMPEROR'S CHILDREN: DEATH ECSTASY
+        if s.name.upper() == "DEATHLESS DUTY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DEATHLESS DUTY":
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        if not candidates:
+                            candidates = list(r.get("candidates") or r.get("target_units") or [])
+                        break
+            if unit is None:
+                print("ERROR: DEATHLESS DUTY: missing target unit context")
+                return False
+            try:
+                army = self.player.get_army()
+            except Exception:
+                raise
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                return False
+            try:
+                if not unit.has_any_keyword("DEATH COMPANY"):
+                    return False
+            except Exception:
+                raise
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: DEATHLESS DUTY: wrong phase")
+                return False
+            if candidates:
+                try:
+                    if unit not in list(candidates or []):
+                        print("ERROR: DEATHLESS DUTY: target was not selected by attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    print("ERROR: DEATHLESS DUTY: attacker is not enemy")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("ERROR: DEATHLESS DUTY: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["deathless_duty_active"] = True
+                sr["deathless_duty_expires_phase"] = "FIGHT_PHASE"
+                sr["deathless_duty_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DEATHLESS DUTY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
 
         # EMPEROR'S CHILDREN: DEATH ECSTASY
@@ -6515,6 +6807,117 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
+            return True
+
+        # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)
+        if s.name.upper() == "RED WRATH":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "RED WRATH":
+                        unit = r.get("unit") or r.get("target_unit")
+                        if unit is not None:
+                            kwargs.setdefault("action", r.get("action"))
+                        break
+            if unit is None:
+                print("ERROR: RED WRATH: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                raise
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: RED WRATH: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: RED WRATH: not your turn")
+                return False
+            if str(kwargs.get("action", "") or "").strip().lower() not in ("", "advance"):
+                print("ERROR: RED WRATH: invalid trigger")
+                return False
+            try:
+                if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
+                    print("ERROR: RED WRATH: unit did not Advance")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: RED WRATH: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_any_keyword("BLOOD ANGELS"):
+                    print("ERROR: RED WRATH: target is not BLOOD ANGELS")
+                    return False
+            except Exception:
+                raise
+            mode = kwargs.get("mode") or kwargs.get("red_wrath_mode") or kwargs.get("choice")
+            if isinstance(mode, dict):
+                mode = mode.get("mode") or mode.get("choice")
+            mode = str(mode or "").strip().lower()
+            if mode in ("shoot", "shoot_only"):
+                choice = "shoot"
+                red_thirst = False
+            elif mode in ("charge", "charge_only"):
+                choice = "charge"
+                red_thirst = False
+            elif mode in ("both", "shoot_and_charge", "shoot+charge", "red_thirst", "red thirst"):
+                choice = "both"
+                red_thirst = True
+            else:
+                print("ERROR: RED WRATH: missing or invalid choice")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["red_wrath_mode"] = choice
+                sr["red_wrath_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["red_wrath_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                sr["red_wrath_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if red_thirst:
+                try:
+                    from ..units.status_effects import BattleShockEffect
+                    if hasattr(root, "is_battle_shocked") and callable(root.is_battle_shocked):
+                        if not bool(root.is_battle_shocked()):
+                            current_turn = int(getattr(self.game, "turn", 1) or 1) if self.game is not None else 1
+                            root.apply_status_effect(BattleShockEffect(current_turn))
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            if choice == "both":
+                print(f"INFO: RED WRATH: {getattr(root, 'name', 'Unit')} can shoot and charge after advancing this turn.")
+            else:
+                print(f"INFO: RED WRATH: {getattr(root, 'name', 'Unit')} can {choice} after advancing this turn.")
             return True
 
         # Warhost: BLITZING FIREPOWER
@@ -7778,6 +8181,108 @@ class StratagemManager:
             print(f"INFO: HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
             return True
 
+        # Rage-cursed Onslaught: LIMB FROM LIMB (+1 S or +1 AP, or Red Thirst for both + Battle-shock)
+        if s.name.upper() == "LIMB FROM LIMB":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: LIMB FROM LIMB: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                raise
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: LIMB FROM LIMB: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: LIMB FROM LIMB: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_any_keyword("BLOOD ANGELS"):
+                    print("ERROR: LIMB FROM LIMB: target is not BLOOD ANGELS")
+                    return False
+            except Exception:
+                raise
+            try:
+                charged = bool(getattr(getattr(root, "round_state", None), "charged_this_round", False))
+            except Exception:
+                raise
+            if not charged:
+                print("ERROR: LIMB FROM LIMB: target did not charge this turn")
+                return False
+            choice = kwargs.get("choice") or kwargs.get("limb_from_limb_choice")
+            if isinstance(choice, dict):
+                choice = choice.get("choice") or choice.get("mode")
+            choice = str(choice or "").strip().lower()
+            s_bonus = 0
+            ap_bonus = 0
+            red_thirst = False
+            if choice in ("strength", "str", "s"):
+                s_bonus = 1
+            elif choice in ("ap", "armour_penetration", "armor_penetration"):
+                ap_bonus = 1
+            elif choice in ("red_thirst", "red thirst", "both", "strength_and_ap"):
+                s_bonus = 1
+                ap_bonus = 1
+                red_thirst = True
+            else:
+                print("ERROR: LIMB FROM LIMB: missing or invalid choice")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["limb_from_limb_melee_strength_bonus"] = int(s_bonus)
+                sr["limb_from_limb_melee_ap_bonus"] = int(ap_bonus)
+                sr["limb_from_limb_expires_phase"] = "FIGHT_PHASE"
+                sr["limb_from_limb_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if red_thirst:
+                try:
+                    from ..units.status_effects import BattleShockEffect
+                    if hasattr(root, "is_battle_shocked") and callable(root.is_battle_shocked):
+                        if not bool(root.is_battle_shocked()):
+                            current_turn = int(getattr(self.game, "turn", 1) or 1) if self.game is not None else 1
+                            root.apply_status_effect(BattleShockEffect(current_turn))
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            if red_thirst:
+                print(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1S and +1 AP (Red Thirst) this phase.")
+            elif s_bonus:
+                print(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 Strength this phase.")
+            else:
+                print(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 AP this phase.")
+            return True
+
         # Generic: +AP on melee weapons for a unit that charged and has not fought yet (e.g., CRUEL BLADESMAN).
         spec = self._get_charge_melee_ap_spec(s)
         if spec:
@@ -8127,6 +8632,72 @@ class StratagemManager:
                 print(f"INFO: SKULLS FOR THE SKULL THRONE!: {getattr(unit, 'name', 'Unit')} gains {', '.join(chosen_names)} until end of battle round.")
             except Exception:
                 raise
+            return True
+
+        # Rage-cursed Onslaught: A GRIM WARNING (sticky objective on unit destruction)
+        if s.name.upper() == "A GRIM WARNING":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            objective = kwargs.get("objective") or kwargs.get("objective_marker")
+            candidates = kwargs.get("objective_candidates") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "A GRIM WARNING":
+                        unit = r.get("unit") or r.get("target_unit")
+                        candidates = candidates or (r.get("objective_candidates") or [])
+                        break
+            if unit is None:
+                print("ERROR: A Grim Warning: no target unit provided")
+                return False
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                raise
+            sm_mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+            if sm_mgr is None or not getattr(sm_mgr, "is_rage_cursed_onslaught", lambda: False)():
+                return False
+            try:
+                if not unit.has_any_keyword("BLOOD ANGELS"):
+                    return False
+            except Exception:
+                raise
+            # Choose objective marker
+            if objective is None:
+                objective = candidates[0] if candidates else None
+            if objective is None:
+                print("ERROR: A Grim Warning: no objective marker available")
+                return False
+            if candidates:
+                try:
+                    if objective not in list(candidates or []):
+                        print("ERROR: A Grim Warning: objective not in candidates")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                loc = getattr(objective, "location", None)
+                if loc is not None and hasattr(loc, "set_sticky_control"):
+                    loc.set_sticky_control(self.player, source="a_grim_warning")
+                elif loc is not None:
+                    loc.sticky_controller = self.player
+                    loc.sticky_source = "a_grim_warning"
+                    loc.controlling_player = self.player
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print("INFO: A GRIM WARNING: objective remains under your control until broken.")
             return True
 
         # Berzerker Warband: BLOOD OFFERING (sticky objective on unit destruction)

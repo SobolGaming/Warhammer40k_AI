@@ -515,6 +515,26 @@ class WargearProfile:
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
+                bonus = int(sr.get("limb_from_limb_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if bonus:
+                    apply_bonus = True
+                    exp = str(sr.get("limb_from_limb_expires_phase", "") or "").strip().upper() if isinstance(sr, dict) else ""
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        ap_val -= bonus
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
                 bonus = int(sr.get("charge_melee_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
                 if bonus:
                     apply_bonus = True
@@ -4043,6 +4063,28 @@ class WargearProfile:
                 if s_bonus and isinstance(strength, int):
                     strength = strength + s_bonus
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Relentless Rage (melee)")
+        except Exception:
+            pass
+        # Rage-cursed Onslaught: Limb from Limb (+1 Strength to melee weapons this phase).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                s_bonus = int(sr.get("limb_from_limb_melee_strength_bonus", 0) or 0) if isinstance(sr, dict) else 0
+                if s_bonus and isinstance(strength, int):
+                    apply_bonus = True
+                    exp = str(sr.get("limb_from_limb_expires_phase", "") or "").strip().upper() if isinstance(sr, dict) else ""
+                    if exp:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        strength = strength + s_bonus
+                        wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Limb from Limb")
         except Exception:
             pass
         # Tyranids: Synapse (+1 Strength in melee while within Synapse Range).
