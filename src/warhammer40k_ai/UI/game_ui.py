@@ -1804,29 +1804,6 @@ class GameView:
                     payload = dict(payload or {})
                     payload["result"] = value
                 try:
-                    from ..utility.event_bus import append_action
-                    sel_keys = list(payload.get("selected_blessings") or payload.get("result", {}).get("activated") or [])
-                    use_reborn = bool(payload.get("use_reborn") or payload.get("result", {}).get("reborn_used"))
-                    names = []
-                    if sel_keys:
-                        for k in sel_keys:
-                            try:
-                                d = mgr.definitions.get(str(k).strip().upper())
-                            except Exception:
-                                d = None
-                            names.append(getattr(d, "name", None) or str(k))
-                    if use_reborn:
-                        names.append("Reborn in Blood")
-                    if not names:
-                        names_text = "no blessings activated"
-                    else:
-                        names_text = ", ".join(names)
-                    dice = list(getattr(payload.get("ctx", None), "dice", []) or [])
-                    dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
-                    append_action(player, f"Blessings of Khorne (Skulls for the Skull Throne!): {names_text} (dice: {dice_text})")
-                except Exception:
-                    pass
-                try:
                     if isinstance(payload, dict):
                         payload["unit"] = unit
                 except Exception:
@@ -9287,29 +9264,6 @@ class GameView:
                 payload = dict(payload or {})
                 payload["result"] = value
             try:
-                from ..utility.event_bus import append_action
-                sel_keys = list(payload.get("selected_blessings") or payload.get("result", {}).get("activated") or [])
-                use_reborn = bool(payload.get("use_reborn") or payload.get("result", {}).get("reborn_used"))
-                names = []
-                if sel_keys:
-                    for k in sel_keys:
-                        try:
-                            d = mgr.definitions.get(str(k).strip().upper())
-                        except Exception:
-                            d = None
-                        names.append(getattr(d, "name", None) or str(k))
-                if use_reborn:
-                    names.append("Reborn in Blood")
-                if not names:
-                    names_text = "no blessings activated"
-                else:
-                    names_text = ", ".join(names)
-                dice = list(getattr(payload.get("ctx", None), "dice", []) or [])
-                dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
-                append_action(player, f"Blessings of Khorne: {names_text} (dice: {dice_text})")
-            except Exception:
-                pass
-            try:
                 res = payload.get("result") or {}
                 if res.get("reborn_used", False):
                     army.schedule_reborn_in_blood(game=self.game)
@@ -9742,20 +9696,6 @@ class GameView:
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
             try:
-                choice_label = ""
-                for opt in list(getattr(req, "options", []) or []):
-                    if opt.option_id == option_id:
-                        choice_label = str(getattr(opt, "label", "") or "")
-                        break
-            except Exception:
-                choice_label = ""
-            try:
-                from ..utility.event_bus import append_action
-                if choice_label:
-                    append_action(player, f"Doctrina Imperatives: {choice_label} (Battle Round {battle_round})")
-            except Exception:
-                pass
-            try:
                 if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
                     if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
                         self._toggle_rule_panel(player, "army", force_refresh=True)
@@ -9869,20 +9809,6 @@ class GameView:
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
-            try:
-                choice_label = ""
-                for opt in list(getattr(req, "options", []) or []):
-                    if opt.option_id == option_id:
-                        choice_label = str(getattr(opt, "label", "") or "")
-                        break
-            except Exception:
-                choice_label = ""
-            try:
-                from ..utility.event_bus import append_action
-                if choice_label:
-                    append_action(player, f"Combat Doctrines: {choice_label} (Battle Round {br})")
-            except Exception:
-                pass
             self._open_next_combat_doctrines_prompt(br)
 
         self.combat_doctrines_dialog.show(on_confirm=_on_confirm, decision_request=req)
@@ -9993,20 +9919,6 @@ class GameView:
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
-            try:
-                choice_label = ""
-                for opt in list(getattr(req, "options", []) or []):
-                    if opt.option_id == option_id:
-                        choice_label = str(getattr(opt, "label", "") or "")
-                        break
-            except Exception:
-                choice_label = ""
-            try:
-                from ..utility.event_bus import append_action
-                if choice_label:
-                    append_action(player, f"Combat Drugs: {choice_label} (Battle Round {br})")
-            except Exception:
-                pass
             try:
                 if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
                     if self._rule_panel_state.get("player") is player and self._rule_panel_state.get("rule_type") == "army":
@@ -10227,20 +10139,6 @@ class GameView:
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
-            try:
-                choice_label = ""
-                for opt in list(getattr(req, "options", []) or []):
-                    if opt.option_id == option_id:
-                        choice_label = str(getattr(opt, "label", "") or "")
-                        break
-            except Exception:
-                choice_label = ""
-            try:
-                from ..utility.event_bus import append_action
-                if choice_label:
-                    append_action(player, f"Wrathful Presence: {choice_label} (Battle Round {br})")
-            except Exception:
-                pass
             self._open_next_wrathful_presence_prompt()
 
         def _on_cancel():

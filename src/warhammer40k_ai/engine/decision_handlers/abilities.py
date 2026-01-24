@@ -49,6 +49,36 @@ def _option_payload(request: DecisionRequest, result: DecisionResult) -> dict:
     return dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
 
 
+def _option_label(request: DecisionRequest, result: DecisionResult) -> str:
+    opt = find_option(request, result.option_id)
+    if opt is None:
+        return ""
+    return str(getattr(opt, "label", "") or "")
+
+
+def _log_action_for_players(game: object, player: object, text: str) -> None:
+    if not text:
+        return
+    try:
+        from ...utility.event_bus import append_action
+    except Exception:
+        return
+    try:
+        if player is not None:
+            append_action(player, text)
+    except Exception:
+        pass
+    if game is None:
+        return
+    try:
+        for opp in list(getattr(game, "players", []) or []):
+            if opp is None or opp is player:
+                continue
+            append_action(opp, text)
+    except Exception:
+        pass
+
+
 def _resolve_player(game: object, request: DecisionRequest, payload: dict):
     player_val = payload.get("player_id", None)
     if player_val is None:
@@ -147,7 +177,39 @@ def _apply_choose_blessings(game: object, request: DecisionRequest, result: Deci
         )
     selected = result.payload.get("selected_blessings") or result.payload.get("choices") or []
     use_reborn = bool(result.payload.get("use_reborn", False))
-    return mgr.apply_choice(ctx, selected_blessing_keys=list(selected), use_reborn_in_blood=use_reborn)
+    applied = mgr.apply_choice(ctx, selected_blessing_keys=list(selected), use_reborn_in_blood=use_reborn)
+    try:
+        names = []
+        for k in list(selected or []):
+            d = None
+            try:
+                d = mgr.definitions.get(str(k).strip().upper())
+            except Exception:
+                d = None
+            if d is None:
+                for dk, dv in getattr(mgr, "definitions", {}).items():
+                    if str(getattr(dv, "name", "") or "").strip().lower() == str(k).strip().lower():
+                        d = dv
+                        break
+            names.append(getattr(d, "name", None) or str(k))
+        if use_reborn:
+            names.append("Reborn in Blood")
+        if not names:
+            names_text = "no blessings activated"
+        else:
+            names_text = ", ".join(names)
+        dice = list(getattr(ctx, "dice", []) or [])
+        dice_text = ", ".join(str(int(d)) for d in dice) if dice else "?"
+        timing_label = getattr(getattr(ctx, "timing", None), "name", None) or str(getattr(ctx, "timing", "") or "").strip()
+        if timing_label and timing_label != BlessingsTiming.START_OF_BATTLE_ROUND.name:
+            prefix = f"Blessings of Khorne ({timing_label}): "
+        else:
+            prefix = "Blessings of Khorne: "
+        player = getattr(army, "player", None)
+        _log_action_for_players(game, player, f"{prefix}{names_text} (dice: {dice_text})")
+    except Exception:
+        pass
+    return applied
 
 
 def _validate_choose_blood_tithe(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -358,7 +420,15 @@ def _apply_choose_doctrina(game: object, request: DecisionRequest, result: Decis
         raise RuntimeError("Doctrina manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
-    return bool(mgr.select_imperative(choice, battle_round=battle_round))
+    applied = bool(mgr.select_imperative(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            _log_action_for_players(game, player, f"Doctrina Imperatives: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
 
 
 def _validate_choose_combat_doctrine(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -389,7 +459,15 @@ def _apply_choose_combat_doctrine(game: object, request: DecisionRequest, result
         raise RuntimeError("Combat Doctrines manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
-    return bool(mgr.select_doctrine(choice, battle_round=battle_round))
+    applied = bool(mgr.select_doctrine(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            _log_action_for_players(game, player, f"Combat Doctrines: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
 
 
 def _validate_choose_combat_drugs(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -420,9 +498,30 @@ def _apply_choose_combat_drugs(game: object, request: DecisionRequest, result: D
         raise RuntimeError("Combat Drugs manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
+    applied = None
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
-        return mgr.roll_combat_drugs(battle_round=battle_round)
-    return bool(mgr.select_combat_drug(choice, battle_round=battle_round))
+        applied = mgr.roll_combat_drugs(battle_round=battle_round)
+    else:
+        applied = bool(mgr.select_combat_drug(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        if isinstance(applied, dict):
+            selected = [getattr(d, "name", None) or getattr(d, "key", None) for d in list(applied.get("selected", []) or [])]
+            selected = [str(s) for s in selected if s]
+            rolls = list(applied.get("rolls", []) or [])
+            if selected:
+                label = ", ".join(selected)
+            else:
+                label = _option_label(request, result) or "Roll"
+            roll_text = ", ".join(str(int(r)) for r in rolls) if rolls else "?"
+            _log_action_for_players(game, player, f"Combat Drugs: {label} (dice: {roll_text})")
+        else:
+            label = _option_label(request, result) or str(choice)
+            if label:
+                _log_action_for_players(game, player, f"Combat Drugs: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
 
 
 def _validate_choose_hyper_adaptation(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -453,7 +552,15 @@ def _apply_choose_hyper_adaptation(game: object, request: DecisionRequest, resul
         raise RuntimeError("Hyper-adaptations manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
-    return bool(mgr.select_hyper_adaptation(choice, battle_round=battle_round))
+    applied = bool(mgr.select_hyper_adaptation(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            _log_action_for_players(game, player, f"Hyper-adaptations: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
 
 
 def _validate_choose_frenzy(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -494,13 +601,35 @@ def _apply_choose_harbinger(game: object, request: DecisionRequest, result: Deci
         raise RuntimeError("Harbingers manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
+    applied = None
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
         rolls = payload.get("rolls")
         selected_keys = payload.get("selected_keys")
         if rolls or selected_keys:
-            return mgr.apply_roll_results(rolls=rolls, selected_keys=selected_keys, battle_round=battle_round)
-        return mgr.roll_dread_abilities(battle_round=battle_round)
-    return bool(mgr.select_dread_ability(choice, battle_round=battle_round))
+            applied = mgr.apply_roll_results(rolls=rolls, selected_keys=selected_keys, battle_round=battle_round)
+        else:
+            applied = mgr.roll_dread_abilities(battle_round=battle_round)
+    else:
+        applied = bool(mgr.select_dread_ability(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        if isinstance(applied, dict):
+            selected = [getattr(d, "name", None) or getattr(d, "key", None) for d in list(applied.get("selected", []) or [])]
+            selected = [str(s) for s in selected if s]
+            rolls_list = list(applied.get("rolls", []) or [])
+            if selected:
+                label = ", ".join(selected)
+            else:
+                label = _option_label(request, result) or "Roll"
+            roll_text = ", ".join(str(int(r)) for r in rolls_list) if rolls_list else "?"
+            _log_action_for_players(game, player, f"Harbingers of Dread: {label} (dice: {roll_text})")
+        else:
+            label = _option_label(request, result) or str(choice)
+            if label:
+                _log_action_for_players(game, player, f"Harbingers of Dread: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
 
 
 def _validate_choose_martial_katah(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -647,6 +776,16 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 setattr(source_unit, "_monarch_of_the_hunt_quarry_name", str(getattr(chosen, "name", "")))
             except Exception:
                 pass
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"Monarch of the Hunt: {sname} selected {tname} as quarry.")
+            except Exception:
+                pass
     if ctx.get("necrons_command_phase_enhancement"):
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "necrons_detachments", None) if army is not None else None
@@ -713,6 +852,17 @@ def _apply_choose_shadow_form(game: object, request: DecisionRequest, result: De
     if battle_round is None and game is not None:
         battle_round = getattr(game, "turn", 0)
     set_active_shadow_form(unit, str(choice), battle_round=int(battle_round or 0))
+    try:
+        player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+    except Exception:
+        player = None
+    try:
+        label = _option_label(request, result) or str(choice)
+        uname = str(getattr(unit, "name", "Unit") or "Unit")
+        if label:
+            _log_action_for_players(game, player, f"Shadow Form: {uname} selected {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
     return str(choice)
 
 
@@ -744,6 +894,13 @@ def _apply_choose_vow(game: object, request: DecisionRequest, result: DecisionRe
         raise RuntimeError("Templar Vows manager not found.")
     choice = payload.get("choice_key") or payload.get("key")
     mgr.active_vow_key = str(choice).strip().upper()
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            _log_action_for_players(game, player, f"Templar Vows: {label}")
+    except Exception:
+        pass
     return mgr.active_vow_key
 
 
@@ -814,6 +971,17 @@ def _apply_choose_wrathful(game: object, request: DecisionRequest, result: Decis
     if battle_round is None and game is not None:
         battle_round = getattr(game, "turn", 0)
     set_active_wrathful_presence(unit, str(choice), battle_round=int(battle_round or 0))
+    try:
+        player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+    except Exception:
+        player = None
+    try:
+        label = _option_label(request, result) or str(choice)
+        uname = str(getattr(unit, "name", "Unit") or "Unit")
+        if label:
+            _log_action_for_players(game, player, f"Wrathful Presence: {uname} selected {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
     return str(choice)
 
 

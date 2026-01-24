@@ -409,14 +409,13 @@ class BlessingsOfKhorneManager:
           - error: str
           - spent_indices: list[int]
         """
+        # Snapshot state
+        snap_active = set(self.active_blessing_keys)
+        snap_round = self._active_battle_round
+        snap_used = int(self._baseline_activations_used)
+        snap_bloodshed = int(self.bloodshed_points)
+        snap_pending = list(self._pending_total_carnage)
         try:
-            # Snapshot state
-            snap_active = set(self.active_blessing_keys)
-            snap_round = self._active_battle_round
-            snap_used = int(self._baseline_activations_used)
-            snap_bloodshed = int(self.bloodshed_points)
-            snap_pending = list(self._pending_total_carnage)
-
             res = self.apply_choice(
                 ctx,
                 selected_blessing_keys=list(selected_blessing_keys),
@@ -438,6 +437,12 @@ class BlessingsOfKhorneManager:
             }
         except Exception as e:
             return {"ok": False, "error": str(e), "spent_indices": [], "allocation": {}}
+        finally:
+            self.active_blessing_keys = snap_active
+            self._active_battle_round = snap_round
+            self._baseline_activations_used = snap_used
+            self.bloodshed_points = snap_bloodshed
+            self._pending_total_carnage = snap_pending
 
     # ---------------- Network decision helpers ----------------
     def _army_has_blessings(self, army) -> bool:
@@ -575,13 +580,6 @@ class BlessingsOfKhorneManager:
             context={"army_id": army_id, "ctx": self.serialize_ctx_payload(ctx)},
         )
         return req
-        finally:
-            # Restore snapshot
-            self.active_blessing_keys = snap_active
-            self._active_battle_round = snap_round
-            self._baseline_activations_used = snap_used
-            self.bloodshed_points = snap_bloodshed
-            self._pending_total_carnage = snap_pending
 
     # ---------------- Total Carnage deferred resolution ----------------
     def queue_total_carnage_model(self, model_obj: object) -> None:
