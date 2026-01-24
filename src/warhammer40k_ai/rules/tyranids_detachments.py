@@ -222,6 +222,9 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
                 self.select_hyper_adaptation(selected, battle_round=br)
             return
 
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+
         from ..utility.entity_ids import get_entity_id
 
         army_id = get_entity_id(self.army) if self.army is not None else None

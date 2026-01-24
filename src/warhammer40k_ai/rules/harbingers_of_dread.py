@@ -196,6 +196,43 @@ class HarbingersOfDreadManager:
 
         return {"rolls": rolls, "selected": selected}
 
+    def apply_roll_results(
+        self,
+        *,
+        rolls: Optional[Iterable[int]] = None,
+        selected_keys: Optional[Iterable[str]] = None,
+        battle_round: Optional[int] = None,
+    ) -> dict:
+        if not self._army_has_harbingers():
+            return {"rolls": [], "selected": []}
+        roll_list = [int(r) for r in list(rolls or []) if r is not None]
+        selected = []
+        if selected_keys:
+            for key in list(selected_keys or []):
+                k = str(key or "").strip().upper()
+                if not k or k in self.active_dread_keys:
+                    continue
+                dread = DREAD_DEFINITIONS.get(k)
+                if dread is None:
+                    continue
+                self.active_dread_keys.add(dread.key)
+                selected.append(dread)
+        if roll_list:
+            for roll in roll_list:
+                dread = DREAD_BY_ROLL.get(int(roll))
+                if dread is None:
+                    continue
+                if dread.key in self.active_dread_keys:
+                    continue
+                self.active_dread_keys.add(dread.key)
+                selected.append(dread)
+        if battle_round is not None:
+            try:
+                self.last_selection_round = int(battle_round)
+            except Exception:
+                pass
+        return {"rolls": roll_list, "selected": selected}
+
     def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
         if not self._army_has_harbingers():
             return
@@ -216,6 +253,71 @@ class HarbingersOfDreadManager:
             player = getattr(self.army, "player", None)
         except Exception:
             player = None
+
+        if game is not None:
+            if not bool(getattr(game, "is_authoritative", True)):
+                return
+            try:
+                from ..engine.decision_kinds import DECISION_CHOOSE_HARBINGER
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.entity_ids import get_entity_id
+            except Exception:
+                return
+            army_id = get_entity_id(self.army) if self.army is not None else None
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_HARBINGER:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", br) or br) == br:
+                        return
+            available = list(self.get_available_dread_abilities())
+            if not available:
+                return
+            req_options = []
+            try:
+                from ..utility.dice import get_roll
+                rolls = [int(get_roll("D6")), int(get_roll("D6"))]
+            except Exception:
+                rolls = []
+            selected_keys = []
+            if rolls:
+                for roll in rolls:
+                    dread = DREAD_BY_ROLL.get(int(roll))
+                    if dread is None or dread.key in self.active_dread_keys:
+                        continue
+                    if dread.key not in selected_keys:
+                        selected_keys.append(dread.key)
+            req_options.append(
+                DecisionOption.create(
+                    "Roll 2D6 (randomly select two)",
+                    payload={
+                        "choice_key": "ROLL",
+                        "random": True,
+                        "rolls": rolls,
+                        "selected_keys": list(selected_keys),
+                        "army_id": army_id,
+                    },
+                )
+            )
+            for dread in available:
+                req_options.append(
+                    DecisionOption.create(
+                        dread.name,
+                        payload={"choice_key": dread.key, "summary": dread.summary, "army_id": army_id},
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_HARBINGER,
+                "Select Harbingers of Dread.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"army_id": army_id, "battle_round": br},
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(req)
+            return
 
         available = list(self.get_available_dread_abilities())
         options = ["Roll 2D6 (randomly select two)"] + [d.name for d in available]

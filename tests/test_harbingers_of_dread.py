@@ -76,6 +76,24 @@ class TestHarbingersOfDread(unittest.TestCase):
         self.assertIn(DELIRIUM.key, mgr.active_dread_keys)
         self.assertEqual(mgr.last_selection_round, 3)
 
+    def test_apply_roll_results_uses_rolls(self):
+        from warhammer40k_ai.rules.harbingers_of_dread import HarbingersOfDreadManager, DOOM, DELIRIUM
+
+        army = SimpleNamespace(
+            faction_id="QT",
+            units=[],
+            player=SimpleNamespace(name="P1", id="P1", control=SimpleNamespace(name="REMOTE"), has_control=lambda: False),
+        )
+        mgr = HarbingersOfDreadManager(army)
+        army.harbingers_of_dread = mgr
+
+        res = mgr.apply_roll_results(rolls=[2, 5], battle_round=3)
+
+        self.assertEqual(res["rolls"], [2, 5])
+        self.assertIn(DOOM.key, mgr.active_dread_keys)
+        self.assertIn(DELIRIUM.key, mgr.active_dread_keys)
+        self.assertEqual(mgr.last_selection_round, 3)
+
     def test_doom_wound_bonus(self):
         from warhammer40k_ai.engine.event.system import EventSystem
         from warhammer40k_ai.units.wargear import Wargear

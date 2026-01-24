@@ -438,6 +438,143 @@ class BlessingsOfKhorneManager:
             }
         except Exception as e:
             return {"ok": False, "error": str(e), "spent_indices": [], "allocation": {}}
+
+    # ---------------- Network decision helpers ----------------
+    def _army_has_blessings(self, army) -> bool:
+        if army is None:
+            return False
+        try:
+            from ..utility.ability_support import ABILITY_BLESSINGS_OF_KHORNE, army_has_ability_id
+        except Exception:
+            return False
+        if not army_has_ability_id(army, ABILITY_BLESSINGS_OF_KHORNE):
+            return False
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                if unit.attached_unit_has_blessings_of_khorne():
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def serialize_ctx_payload(self, ctx: BlessingsRollContext) -> dict:
+        if ctx is None:
+            return {}
+        timing = getattr(ctx, "timing", None)
+        if hasattr(timing, "name"):
+            timing_val = timing.name
+        else:
+            timing_val = str(timing or "")
+        return {
+            "timing": timing_val,
+            "battle_round": int(getattr(ctx, "battle_round", 0) or 0),
+            "dice": list(getattr(ctx, "dice", []) or []),
+            "rerolls_allowed": int(getattr(ctx, "rerolls_allowed", 0) or 0),
+            "rerolled_indices": list(getattr(ctx, "rerolled_indices", []) or []),
+            "max_activations": int(getattr(ctx, "max_activations", 0) or 0),
+            "counts_toward_baseline_limit": bool(getattr(ctx, "counts_toward_baseline_limit", False)),
+            "already_active_keys": list(getattr(ctx, "already_active_keys", set()) or []),
+            "reborn_in_blood_available": bool(getattr(ctx, "reborn_in_blood_available", False)),
+        }
+
+    def deserialize_ctx_payload(self, ctx_data: dict) -> BlessingsRollContext:
+        timing_val = ctx_data.get("timing")
+        if isinstance(timing_val, BlessingsTiming):
+            timing = timing_val
+        else:
+            timing_name = str(timing_val or "").strip()
+            try:
+                timing = BlessingsTiming[timing_name]
+            except Exception:
+                try:
+                    timing = BlessingsTiming(timing_name)
+                except Exception as exc:
+                    raise RuntimeError("Blessings timing invalid.") from exc
+        return BlessingsRollContext(
+            timing=timing,
+            battle_round=int(ctx_data.get("battle_round", 0) or 0),
+            dice=list(ctx_data.get("dice", []) or []),
+            rerolls_allowed=int(ctx_data.get("rerolls_allowed", 0) or 0),
+            rerolled_indices=list(ctx_data.get("rerolled_indices", []) or []),
+            max_activations=int(ctx_data.get("max_activations", 0) or 0),
+            counts_toward_baseline_limit=bool(ctx_data.get("counts_toward_baseline_limit", False)),
+            already_active_keys=set(ctx_data.get("already_active_keys", []) or []),
+            reborn_in_blood_available=bool(ctx_data.get("reborn_in_blood_available", False)),
+        )
+
+    def build_start_of_round_request(self, army, *, battle_round: int, game=None):
+        if army is None:
+            return None
+        if not self._army_has_blessings(army):
+            return None
+        player = getattr(army, "player", None)
+        if player is None:
+            return None
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+            from .blessings_of_khorne import BlessingsTiming
+        except Exception:
+            return None
+
+        rerolls_allowed = 0
+        try:
+            rerolls_allowed = int(self.favoured_of_khorne_rerolls_for_army(army) or 0)
+        except Exception:
+            rerolls_allowed = 0
+
+        idol_bonus = 0
+        try:
+            for u in list(getattr(army, "units", []) or []):
+                if not (getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed"):
+                    continue
+                found, _ = u._find_ability_with_patterns(["idol of blessed blood", "idol of the blessed blood"])
+                if found:
+                    idol_bonus += 1
+        except Exception:
+            idol_bonus = 0
+
+        reborn_available = False
+        try:
+            for u in list(getattr(army, "units", []) or []):
+                found, _ = u._find_ability_with_patterns(["reborn in blood"])
+                if found and (not u.is_alive()):
+                    reborn_available = True
+                    break
+        except Exception:
+            reborn_available = False
+
+        roll_fn = None
+        if game is not None:
+            try:
+                rng = getattr(game, "random_source", None)
+                if rng is not None and hasattr(rng, "randint"):
+                    roll_fn = lambda: int(rng.randint(1, 6))
+            except Exception:
+                roll_fn = None
+
+        ctx = self.create_roll_context(
+            battle_round=int(battle_round),
+            timing=BlessingsTiming.START_OF_BATTLE_ROUND,
+            extra_dice_from_idols=idol_bonus,
+            rerolls_allowed=rerolls_allowed,
+            max_activations=2,
+            counts_toward_baseline_limit=True,
+            already_active_keys=set(),
+            reborn_in_blood_available=reborn_available,
+            roll_d6=roll_fn,
+        )
+
+        army_id = get_entity_id(army)
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_BLESSINGS,
+            "Select Blessings of Khorne.",
+            player_id=getattr(player, "id", None),
+            options=[DecisionOption.create("Confirm", payload={"army_id": army_id})],
+            context={"army_id": army_id, "ctx": self.serialize_ctx_payload(ctx)},
+        )
+        return req
         finally:
             # Restore snapshot
             self.active_blessing_keys = snap_active

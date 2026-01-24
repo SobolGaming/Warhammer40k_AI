@@ -302,6 +302,45 @@ class TemplarVowsManager:
             player = getattr(self.army, "player", None)
         except Exception:
             player = None
+        if game is not None:
+            if not bool(getattr(game, "is_authoritative", True)):
+                return
+            try:
+                from ..engine.decision_kinds import DECISION_CHOOSE_VOW
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.entity_ids import get_entity_id
+            except Exception:
+                return
+            army_id = get_entity_id(self.army) if self.army is not None else None
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_VOW:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("army_id", "")) == str(army_id):
+                        return
+            options = [VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD]
+            req_options = []
+            for vow in options:
+                req_options.append(
+                    DecisionOption.create(
+                        vow.name,
+                        payload={"choice_key": vow.key, "summary": vow.summary, "army_id": army_id},
+                    )
+                )
+            if not req_options:
+                return
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_VOW,
+                "Select a Templar Vow.",
+                player_id=getattr(player, "id", None) if player is not None else None,
+                options=req_options,
+                context={"army_id": army_id, "battle_round": int(battle_round)},
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(req)
+            return
         options = [VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD]
         ctx = {"ability": "Templar Vows", "options": [v.name for v in options]}
         choice = None

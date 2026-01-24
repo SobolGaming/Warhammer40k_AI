@@ -293,6 +293,45 @@ class WrathfulPresenceManager:
 
         for unit in units:
             clear_active_wrathful_presence(unit)
+            if game is not None:
+                if not bool(getattr(game, "is_authoritative", True)):
+                    continue
+                try:
+                    from ..engine.decision_kinds import DECISION_CHOOSE_WRATHFUL_PRESENCE
+                    from ..engine.decisions import DecisionOption, DecisionRequest
+                    from ..utility.entity_ids import get_entity_id
+                except Exception:
+                    continue
+                unit_id = get_entity_id(unit)
+                queue = getattr(game, "decision_queue", None)
+                if queue is not None and hasattr(queue, "list"):
+                    for req in list(queue.list() or []):
+                        if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_WRATHFUL_PRESENCE:
+                            continue
+                        ctx = getattr(req, "context", {}) or {}
+                        if str(ctx.get("unit_id", "")) == str(unit_id):
+                            break
+                    else:
+                        req_options = [
+                            DecisionOption.create(
+                                opt.name,
+                                payload={"choice_key": opt.key, "summary": opt.summary, "unit_id": unit_id},
+                            )
+                            for opt in WRATHFUL_PRESENCE_OPTIONS
+                        ]
+                        if not req_options:
+                            continue
+                        req = DecisionRequest.create(
+                            DECISION_CHOOSE_WRATHFUL_PRESENCE,
+                            "Select Wrathful Presence.",
+                            player_id=getattr(player, "id", None),
+                            options=req_options,
+                            context={"unit_id": unit_id, "battle_round": int(battle_round or 0)},
+                        )
+                        if hasattr(game, "request_decision"):
+                            game.request_decision(req)
+                continue
+
             choice = None
             try:
                 if player is not None:

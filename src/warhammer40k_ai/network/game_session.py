@@ -175,6 +175,10 @@ class NetworkGameSession:
                 existing_log.detach()
             game.event_log = DeterministicEventLog.from_payload(list(events_tail or []))
             game.event_log.attach(game)
+        try:
+            game.is_authoritative = False
+        except Exception:
+            pass
         self._apply_local_control(game)
         return game
 

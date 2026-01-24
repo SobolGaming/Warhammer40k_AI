@@ -96,6 +96,7 @@ class NetworkServer:
         self._setup_task: Optional[asyncio.Task] = None
         self._setup_lock = asyncio.Lock()
         self._formation_buffering = False
+        self._suppress_decision_broadcast: set[str] = set()
         self._formation_decision_types = {
             DECISION_ATTACH_LEADER,
             DECISION_ASSIGN_TRANSPORT,
@@ -341,6 +342,36 @@ class NetworkServer:
             layout = layouts[layout_index]
         return combo, int(layout)
 
+    def _attach_game_event_handlers(self, game: Game) -> None:
+        event_system = getattr(game, "event_system", None)
+        if event_system is None:
+            return
+        try:
+            event_system.subscribe("decision_requested", self._on_decision_requested)
+        except Exception:
+            pass
+
+    def _on_decision_requested(self, request=None, **_kwargs) -> None:
+        if request is None:
+            return
+        decision_id = getattr(request, "decision_id", None)
+        if decision_id and decision_id in self._suppress_decision_broadcast:
+            self._suppress_decision_broadcast.discard(decision_id)
+            return
+        if not self._running:
+            return
+        try:
+            asyncio.create_task(self._broadcast_decision_request(request))
+        except Exception:
+            pass
+
+    async def _broadcast_decision_request(self, request: DecisionRequest) -> None:
+        if request is None or self._game is None:
+            return
+        payload = {"decision": request.to_dict()}
+        cmd = GameCommand.create(CMD_REQUEST_DECISION, player_id=request.player_id, payload=payload)
+        await self._broadcast_game_message(CommandMessage(command=cmd))
+
     async def _apply_server_command(self, command: GameCommand, *, broadcast: bool = True):
         if self._game is None:
             return []
@@ -536,6 +567,9 @@ class NetworkServer:
         )
 
     async def _send_decision_request(self, request: DecisionRequest) -> None:
+        decision_id = getattr(request, "decision_id", None)
+        if decision_id:
+            self._suppress_decision_broadcast.add(str(decision_id))
         payload = {"decision": request.to_dict()}
         cmd = GameCommand.create(CMD_REQUEST_DECISION, player_id=request.player_id, payload=payload)
         await self._apply_server_command(cmd)
@@ -557,6 +591,10 @@ class NetworkServer:
         player2 = Player("Player 2", control=PlayerControl.REMOTE, army=army2)
         battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield, [player1, player2])
+        try:
+            game.is_authoritative = True
+        except Exception:
+            pass
         game.map = Map(*game.get_battlefield_size())
         self._player_ids = {
             "player1": player1.id,
@@ -567,6 +605,7 @@ class NetworkServer:
         if event_log is None:
             game.event_log = DeterministicEventLog()
             game.event_log.attach(game)
+        self._attach_game_event_handlers(game)
         return game
 
     async def _handle_game_event(self, connection_id: str, message: dict) -> None:

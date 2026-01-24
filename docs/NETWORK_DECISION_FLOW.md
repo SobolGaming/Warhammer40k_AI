@@ -123,6 +123,23 @@ driven by client decisions and explicit setup commands.
 Once setup completes, the game enters battle rounds. These are **sequential**
 by phase and by the active player, with occasional opponent interrupts.
 
+### 5.0) Battle Round Start Decisions (Server-queued)
+
+At the start of a battle round, the server queues any required **detachment/unit**
+decisions and broadcasts `CMD_REQUEST_DECISION` to the owning player’s client.
+Clients resolve via `CMD_RESOLVE_DECISION`; the server validates and broadcasts the
+resulting command/event stream so **both players** see the final outcome.
+
+Currently queued at battle round start (when applicable):
+- Blessings of Khorne (World Eaters)
+- Templar Vows (Black Templars, BR1)
+- Hyper-adaptations (Tyranids Invasion Fleet, BR1)
+- Harbingers of Dread (Chaos Knights, BR1/3/5)
+- Doctrina Imperatives (Adeptus Mechanicus)
+- Shadow Form (Be’lakor)
+- Wrathful Presence (Angron)
+- Monarch of the Hunt quarry selection (Shalaxi, BR1 and re-pick on quarry destroyed)
+
 1. COMMAND_PHASE
    - Active player resolves start-of-turn decisions (if any).
 2. MOVEMENT_PHASE

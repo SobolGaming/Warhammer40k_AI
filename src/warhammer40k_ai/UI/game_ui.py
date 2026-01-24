@@ -2013,6 +2013,7 @@ class GameView:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 event_system = self.game.event_system
                 event_system.subscribe("battle_round_started", self._on_battle_round_started)
+                event_system.subscribe("decision_requested", self._on_decision_requested)
                 # Optional ability prompts (phase-start timing windows)
                 event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
                 # Oath of Moment target selection (start of Command phase)
@@ -2111,6 +2112,165 @@ class GameView:
         except Exception:
             pass
 
+    def _resolve_player_by_id(self, player_id: str | None):
+        if not player_id:
+            return None
+        game = self.game
+        if game is None:
+            return None
+        try:
+            if hasattr(game, "_resolve_player_by_id"):
+                player = game._resolve_player_by_id(player_id)
+                if player is not None:
+                    return player
+        except Exception:
+            pass
+        for p in list(getattr(game, "players", []) or []):
+            try:
+                pid = getattr(p, "id", None)
+            except Exception:
+                pid = None
+            if pid is not None and str(pid) == str(player_id):
+                return p
+        return None
+
+    def _resolve_unit_by_id(self, unit_id: str | None):
+        if not unit_id:
+            return None
+        game = self.game
+        if game is None:
+            return None
+        registry = getattr(game, "entity_registry", None)
+        if registry is not None:
+            try:
+                unit = registry.get(str(unit_id), kind="unit")
+            except Exception:
+                unit = None
+            if unit is not None:
+                return unit
+        for p in list(getattr(game, "players", []) or []):
+            try:
+                army = p.get_army()
+            except Exception:
+                army = getattr(p, "army", None)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    if str(get_entity_id(unit)) == str(unit_id):
+                        return unit
+                except Exception:
+                    continue
+        return None
+
+    def _battle_round_from_request(self, request, *, fallback: int = 0) -> int:
+        ctx = dict(getattr(request, "context", {}) or {})
+        br = ctx.get("battle_round")
+        if br is None and isinstance(ctx.get("ctx"), dict):
+            br = ctx.get("ctx", {}).get("battle_round")
+        if br is None and self.game is not None:
+            br = getattr(self.game, "turn", fallback)
+        try:
+            return int(br or 0)
+        except Exception:
+            return int(fallback or 0)
+
+    def _on_decision_requested(self, request=None, game=None, **_kwargs):
+        game = game or self.game
+        if request is None or game is None:
+            return
+        if bool(getattr(game, "is_authoritative", True)):
+            return
+
+        player = self._resolve_player_by_id(getattr(request, "player_id", None))
+        if player is None:
+            return
+        try:
+            if not player.has_control():
+                return
+        except Exception:
+            return
+
+        try:
+            decision_type = str(getattr(request, "decision_type", "") or "")
+        except Exception:
+            decision_type = ""
+        if not decision_type:
+            return
+
+        try:
+            from ..engine.decision_kinds import (
+                DECISION_CHOOSE_BLESSINGS,
+                DECISION_CHOOSE_DOCTRINA,
+                DECISION_CHOOSE_HARBINGER,
+                DECISION_CHOOSE_HYPER_ADAPTATION,
+                DECISION_CHOOSE_QUARRY,
+                DECISION_CHOOSE_SHADOW_FORM,
+                DECISION_CHOOSE_VOW,
+                DECISION_CHOOSE_WRATHFUL_PRESENCE,
+            )
+        except Exception:
+            return
+
+        if decision_type == DECISION_CHOOSE_BLESSINGS:
+            br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
+            self._pending_blessings_queue.append(player)
+            self._open_next_blessings_prompt(br)
+            return
+
+        if decision_type == DECISION_CHOOSE_VOW:
+            self._pending_templar_vows_queue.append(player)
+            self._open_next_templar_vows_prompt()
+            return
+
+        if decision_type == DECISION_CHOOSE_HYPER_ADAPTATION:
+            br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
+            self._pending_hyper_adaptations_queue.append(player)
+            self._open_next_hyper_adaptations_prompt(br)
+            return
+
+        if decision_type == DECISION_CHOOSE_HARBINGER:
+            br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
+            self._pending_harbingers_queue.append(player)
+            self._open_next_harbingers_prompt(br)
+            return
+
+        if decision_type == DECISION_CHOOSE_DOCTRINA:
+            br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
+            self._pending_doctrina_queue.append(player)
+            self._open_next_doctrina_prompt(br)
+            return
+
+        if decision_type == DECISION_CHOOSE_SHADOW_FORM:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+            if unit is None:
+                return
+            br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
+            self._pending_shadow_form_queue.append((player, unit, br))
+            self._open_next_shadow_form_prompt()
+            return
+
+        if decision_type == DECISION_CHOOSE_WRATHFUL_PRESENCE:
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+            if unit is None:
+                return
+            br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
+            self._pending_wrathful_presence_queue.append((player, unit, br))
+            self._open_next_wrathful_presence_prompt()
+            return
+
+        if decision_type == DECISION_CHOOSE_QUARRY:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("ability", "")) != "monarch_of_the_hunt":
+                return
+            unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
+            if unit is None:
+                return
+            self._pending_quarry_queue.append((player, unit))
+            self._open_next_quarry_prompt()
+
     def set_game(self, game, game_map, player1, player2) -> None:
         """Swap the underlying game state (used by network resync)."""
         self.game = game
@@ -2138,6 +2298,10 @@ class GameView:
             game = game or self.game
             br = int(battle_round or getattr(game, "turn", 0) or 0)
         except Exception:
+            return
+        if game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
             return
         if br <= 0:
             return
@@ -8867,6 +9031,28 @@ class GameView:
         """
         At BR1 start: prompt each human player who has a unit with 'Monarch of the Hunt' to pick a quarry.
         """
+        if game is None:
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        except Exception:
+            return
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return
+
+        pending_reqs = []
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = getattr(req, "context", {}) or {}
+            if str(ctx.get("ability", "")) != "monarch_of_the_hunt":
+                continue
+            pending_reqs.append((req, ctx))
+
+        if not pending_reqs:
+            return
+
         try:
             current = game.get_current_player()
             others = [p for p in list(getattr(game, "players", []) or []) if p is not current]
@@ -8874,111 +9060,75 @@ class GameView:
         except Exception:
             order = list(getattr(game, "players", []) or [])
 
-        queue = []
-        for p in order:
+        pending_unit_ids = set()
+        for existing in list(getattr(self, "_pending_quarry_queue", []) or []):
             try:
-                if p is None:
-                    continue
-                army = p.get_army()
-                if army is None:
-                    continue
-                for u in list(getattr(army, "units", []) or []):
-                    try:
-                        if not u.is_alive():
-                            continue
-                    except Exception:
-                        continue
-                    # Find Monarch of the Hunt ability by name
-                    try:
-                        found, _ = u._find_ability_with_patterns(["monarch of the hunt"])
-                    except Exception:
-                        found = False
-                    if not found:
-                        continue
-                    # Only prompt if not already set
-                    if getattr(u, "_monarch_of_the_hunt_quarry_ids", None):
-                        continue
-                    queue.append((p, u))
+                pending_unit_ids.add(str(get_entity_id(existing[1])))
             except Exception:
                 continue
 
-        if not queue:
-            return
-        self._pending_quarry_queue.extend(queue)
-        # If nothing is currently visible, open immediately.
-        self._open_next_quarry_prompt()
+        for req, ctx in pending_reqs:
+            player = self._resolve_player_by_id(getattr(req, "player_id", None))
+            if player is None:
+                continue
+            try:
+                if not player.has_control():
+                    continue
+            except Exception:
+                continue
+            unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
+            if unit is None:
+                continue
+            try:
+                uid = str(get_entity_id(unit))
+            except Exception:
+                uid = None
+            if uid and uid in pending_unit_ids:
+                continue
+            self._pending_quarry_queue.append((player, unit))
+            if uid:
+                pending_unit_ids.add(uid)
+
+        if self._pending_quarry_queue:
+            self._open_next_quarry_prompt()
 
     def _open_next_quarry_prompt(self):
         if not self._pending_quarry_queue:
             return
         p, shalaxi_unit = self._pending_quarry_queue.pop(0)
+        if p is None or shalaxi_unit is None:
+            self._open_next_quarry_prompt()
+            return
 
-        # Determine enemy army (2-player game assumed)
-        enemy_player = None
         try:
-            for op in list(getattr(self.game, "players", []) or []):
-                if op is not p:
-                    enemy_player = op
-                    break
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
+            from .decision_ui_utils import first_option_id
         except Exception:
-            enemy_player = None
-        if enemy_player is None:
             self._open_next_quarry_prompt()
             return
 
-        enemy_army = getattr(enemy_player, "army", None)
-        if enemy_army is None:
+        unit_id = get_entity_id(shalaxi_unit)
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("ability", "")) == "monarch_of_the_hunt" and str(ctx.get("source_unit_id", "")) == str(unit_id):
+                    req = pending
+                    break
+        if req is None:
+            self._open_next_quarry_prompt()
+            return
+        if not list(getattr(req, "options", []) or []):
             self._open_next_quarry_prompt()
             return
 
-        # Build eligible enemy units:
-        # - include reserves
-        # - exclude embarked units
-        # - attached leaders collapsed into bodyguard root
-        eligible = []
-        seen = set()
-        for u in list(getattr(enemy_army, "units", []) or []):
-            try:
-                # Hide attached leaders as separate entries
-                if bool(getattr(u, "is_attached_leader", False)):
-                    continue
-            except Exception:
-                pass
-            try:
-                root = u.get_attached_unit_root()
-            except Exception:
-                root = u
-            try:
-                rid = getattr(root, "_id", None)
-                if not rid or rid in seen:
-                    continue
-                seen.add(rid)
-            except Exception:
-                continue
-            try:
-                if not root.is_alive():
-                    continue
-            except Exception:
-                continue
-            # Cannot select embarked units as quarry (rules commentary)
-            try:
-                if bool(getattr(root, "is_embarked", False)):
-                    continue
-                if getattr(root, "embarked_in", None) is not None:
-                    continue
-            except Exception:
-                pass
-            eligible.append(root)
-
-        eligible.sort(key=lambda x: str(getattr(x, "name", "")))
-        if not eligible:
-            self._open_next_quarry_prompt()
-            return
-
-        # Remote players must select quarry via an external controller.
         try:
             if not getattr(p, "has_control", lambda: False)():
-                print(f"INFO: Waiting for remote quarry selection: {p.name}")
                 self._pending_quarry_queue.insert(0, (p, shalaxi_unit))
                 return
         except Exception:
@@ -8994,22 +9144,26 @@ class GameView:
 
         dlg = self.quarry_selection_dialog
 
-        def _on_confirm(chosen_unit):
-            self._set_monarch_quarry(shalaxi_unit, chosen_unit)
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
             self._open_next_quarry_prompt()
 
         def _on_cancel():
-            # Monarch of the Hunt is mandatory; if cancelled, default to first eligible.
-            self._set_monarch_quarry(shalaxi_unit, eligible[0])
+            default_id = first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
             self._open_next_quarry_prompt()
 
         subtitle = "Embarked units cannot be selected. Units in Reserves may be selected."
+        header = f"{getattr(shalaxi_unit, 'name', 'Model')} selects a quarry."
         dlg.show(
             title="Monarch of the Hunt",
+            header=header,
             subtitle=subtitle,
-            choices=eligible,
             on_confirm=_on_confirm,
             on_cancel=_on_cancel,
+            decision_request=req,
+            show_cancel=True,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)
@@ -9046,63 +9200,12 @@ class GameView:
         """
         if unit is None:
             return
-
-        try:
-            destroyed_owner = unit.get_parent_army().player
-        except Exception:
-            destroyed_owner = None
-
-        # For each potential Shalaxi unit in the *opponent* armies, prune and repick if needed.
-        for p in list(getattr(self.game, "players", []) or []):
-            try:
-                army = p.get_army()
-            except Exception:
-                army = None
-            if army is None:
-                continue
-            for shalaxi_unit in list(getattr(army, "units", []) or []):
-                quarry_ids = getattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", None)
-                if not quarry_ids:
-                    continue
-                # Only if this destroyed unit is part of the quarry group
-                try:
-                    if getattr(unit, "_id", None) not in quarry_ids:
-                        continue
-                except Exception:
-                    continue
-
-                # Quarry must be an enemy unit, not friendly
-                try:
-                    if destroyed_owner is not None and destroyed_owner is shalaxi_unit.get_parent_army().player:
-                        continue
-                except Exception:
-                    pass
-
-                # Prune quarry ids to the alive subset (supports attached-unit split persistence)
-                alive_ids = set()
-                enemy_army = None
-                try:
-                    enemy_army = destroyed_owner.get_army() if destroyed_owner is not None else None
-                except Exception:
-                    enemy_army = None
-                if enemy_army is not None:
-                    by_id = {getattr(u2, "_id", None): u2 for u2 in list(getattr(enemy_army, "units", []) or [])}
-                    for qid in list(quarry_ids):
-                        u2 = by_id.get(qid)
-                        if u2 is None:
-                            continue
-                        try:
-                            if u2.is_alive():
-                                alive_ids.add(qid)
-                        except Exception:
-                            continue
-                setattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", alive_ids)
-
-                # If none alive, repick
-                if not alive_ids:
-                    # Queue prompt for this Shalaxi
-                    self._pending_quarry_queue.append((shalaxi_unit.get_parent_army().player, shalaxi_unit))
-                    self._open_next_quarry_prompt()
+        game = getattr(self, "game", None)
+        if game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        self._queue_monarch_of_the_hunt_prompts(game)
 
     def _open_next_blessings_prompt(self, battle_round: int) -> None:
         if not self._pending_blessings_queue:
@@ -9124,64 +9227,56 @@ class GameView:
             self._open_next_blessings_prompt(battle_round)
             return
 
-        # Favoured of Khorne rerolls (unique enhancement; bearer must be on battlefield)
-        rerolls_allowed = 0
-        try:
-            if hasattr(mgr, "favoured_of_khorne_rerolls_for_army"):
-                rerolls_allowed = int(mgr.favoured_of_khorne_rerolls_for_army(army) or 0)
-        except Exception:
-            rerolls_allowed = 0
-
-        # Idol of Blessed Blood (+1D6 per such model on battlefield) - start-of-battle-round only.
-        idol_bonus = 0
-        try:
-            for u in list(getattr(army, "units", []) or []):
-                if not (getattr(u, "deployed", False) and u.is_alive() and getattr(u, "reserve_status", "deployed") == "deployed"):
-                    continue
-                found, _ = u._find_ability_with_patterns(["idol of blessed blood", "idol of the blessed blood"])
-                if found:
-                    idol_bonus += 1
-        except Exception:
-            idol_bonus = 0
-
-        # Reborn in Blood availability (Angron destroyed at start of battle round)
-        reborn_available = False
-        try:
-            for u in list(getattr(army, "units", []) or []):
-                found, _ = u._find_ability_with_patterns(["reborn in blood"])
-                if found and (not u.is_alive()):
-                    reborn_available = True
-                    break
-        except Exception:
-            reborn_available = False
-
-        from ..rules.blessings_of_khorne import BlessingsTiming
-        ctx = mgr.create_roll_context(
-            battle_round=int(battle_round),
-            timing=BlessingsTiming.START_OF_BATTLE_ROUND,
-            extra_dice_from_idols=idol_bonus,
-            rerolls_allowed=rerolls_allowed,
-            max_activations=2,
-            counts_toward_baseline_limit=True,
-            already_active_keys=set(),
-            reborn_in_blood_available=reborn_available,
-        )
-
         from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
-        from ..engine.decisions import DecisionOption, DecisionRequest
         from ..utility.decision_utils import resolve_decision_value
         from ..utility.entity_ids import get_entity_id
 
         army_id = get_entity_id(army)
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_BLESSINGS,
-            "Select Blessings of Khorne.",
-            player_id=getattr(player, "id", None),
-            options=[DecisionOption.create("Confirm", payload={"army_id": army_id})],
-            context={"army_id": army_id, "ctx": {}},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_BLESSINGS:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id):
+                    req = pending
+                    break
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            try:
+                req = mgr.build_start_of_round_request(army, battle_round=int(battle_round), game=self.game)
+            except Exception:
+                req = None
+            if req is not None and hasattr(self.game, "request_decision"):
+                self.game.request_decision(req)
+        if req is None:
+            self._open_next_blessings_prompt(battle_round)
+            return
+
+        ctx_data = dict(getattr(req, "context", {}) or {}).get("ctx") or {}
+        ctx = None
+        try:
+            if ctx_data and hasattr(mgr, "deserialize_ctx_payload"):
+                ctx = mgr.deserialize_ctx_payload(ctx_data)
+        except Exception:
+            ctx = None
+        if ctx is None:
+            if not bool(getattr(self.game, "is_authoritative", True)):
+                self._open_next_blessings_prompt(battle_round)
+                return
+            try:
+                from ..rules.blessings_of_khorne import BlessingsTiming
+                ctx = mgr.create_roll_context(
+                    battle_round=int(battle_round),
+                    timing=BlessingsTiming.START_OF_BATTLE_ROUND,
+                    max_activations=2,
+                    counts_toward_baseline_limit=True,
+                    already_active_keys=set(),
+                    reborn_in_blood_available=False,
+                )
+            except Exception:
+                self._open_next_blessings_prompt(battle_round)
+                return
 
         def _on_confirm(option_id: str, payload: dict):
             value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
@@ -9272,34 +9367,49 @@ class GameView:
             options = []
 
         from ..engine.decision_kinds import DECISION_CHOOSE_VOW
-        from ..engine.decisions import DecisionOption, DecisionRequest
         from ..utility.decision_utils import resolve_decision_value
         from ..utility.entity_ids import get_entity_id
         from .decision_ui_utils import option_id_for_payload
 
         army_id = get_entity_id(army)
-        req_options = []
-        for vow in options:
-            key = getattr(vow, "key", None)
-            name = getattr(vow, "name", None) or str(vow)
-            summary = getattr(vow, "summary", "") or getattr(vow, "effect", "")
-            if not key:
-                continue
-            req_options.append(
-                DecisionOption.create(
-                    name,
-                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_VOW:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id):
+                    req = pending
+                    break
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            from ..engine.decisions import DecisionOption, DecisionRequest
+
+            req_options = []
+            for vow in options:
+                key = getattr(vow, "key", None)
+                name = getattr(vow, "name", None) or str(vow)
+                summary = getattr(vow, "summary", "") or getattr(vow, "effect", "")
+                if not key:
+                    continue
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                    )
                 )
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_VOW,
+                "Select Templar Vow.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"army_id": army_id},
             )
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_VOW,
-            "Select Templar Vow.",
-            player_id=getattr(player, "id", None),
-            options=req_options,
-            context={"army_id": army_id},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
+            if self.game is not None:
+                self.game.request_decision(req)
+        if req is None:
+            self._open_next_templar_vows_prompt()
+            return
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -9373,7 +9483,7 @@ class GameView:
         except Exception:
             req = None
 
-        if req is None:
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
             req_options = []
             for opt in options:
                 key = getattr(opt, "key", None)
@@ -9396,6 +9506,9 @@ class GameView:
             )
             if self.game is not None:
                 self.game.request_decision(req)
+        if req is None:
+            self._open_next_hyper_adaptations_prompt(battle_round)
+            return
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -9448,10 +9561,11 @@ class GameView:
             except Exception:
                 self.harbingers_of_dread_dialog = None
         if self.harbingers_of_dread_dialog is None:
-            try:
-                mgr.roll_dread_abilities(battle_round=battle_round)
-            except Exception:
-                pass
+            if self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+                try:
+                    mgr.roll_dread_abilities(battle_round=battle_round)
+                except Exception:
+                    pass
             self._open_next_harbingers_prompt(battle_round)
             return
 
@@ -9467,39 +9581,54 @@ class GameView:
             options = []
 
         army_id = get_entity_id(army)
-        req_options = [
-            DecisionOption.create(
-                "Roll 2D6 (randomly select two)",
-                payload={
-                    "choice_key": "ROLL",
-                    "random": True,
-                    "summary": "Apply both results; duplicates have no additional effect.",
-                    "army_id": army_id,
-                },
-            )
-        ]
-        for opt in options:
-            key = getattr(opt, "key", None)
-            if not key:
-                continue
-            name = getattr(opt, "name", None) or str(opt)
-            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
-            req_options.append(
-                DecisionOption.create(
-                    name,
-                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
-                )
-            )
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_HARBINGER:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id):
+                    req = pending
+                    break
 
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_HARBINGER,
-            "Select Harbingers of Dread.",
-            player_id=getattr(player, "id", None),
-            options=req_options,
-            context={"army_id": army_id, "battle_round": battle_round},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            req_options = [
+                DecisionOption.create(
+                    "Roll 2D6 (randomly select two)",
+                    payload={
+                        "choice_key": "ROLL",
+                        "random": True,
+                        "summary": "Apply both results; duplicates have no additional effect.",
+                        "army_id": army_id,
+                    },
+                )
+            ]
+            for opt in options:
+                key = getattr(opt, "key", None)
+                if not key:
+                    continue
+                name = getattr(opt, "name", None) or str(opt)
+                summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                    )
+                )
+
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_HARBINGER,
+                "Select Harbingers of Dread.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"army_id": army_id, "battle_round": battle_round},
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+        if req is None:
+            self._open_next_harbingers_prompt(battle_round)
+            return
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -9544,14 +9673,15 @@ class GameView:
             except Exception:
                 self.doctrina_imperatives_dialog = None
         if self.doctrina_imperatives_dialog is None:
-            try:
-                from ..rules.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
-                from ..utility.dice import get_roll
-                roll = int(get_roll("D6") or 0)
-                choice = PROTECTOR_IMPERATIVE if roll <= 3 else CONQUEROR_IMPERATIVE
-                mgr.select_imperative(choice, battle_round=battle_round)
-            except Exception:
-                pass
+            if self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+                try:
+                    from ..rules.doctrina_imperatives import PROTECTOR_IMPERATIVE, CONQUEROR_IMPERATIVE
+                    from ..utility.dice import get_roll
+                    roll = int(get_roll("D6") or 0)
+                    choice = PROTECTOR_IMPERATIVE if roll <= 3 else CONQUEROR_IMPERATIVE
+                    mgr.select_imperative(choice, battle_round=battle_round)
+                except Exception:
+                    pass
             self._open_next_doctrina_prompt(battle_round)
             return
 
@@ -9567,32 +9697,47 @@ class GameView:
         from ..utility.entity_ids import get_entity_id
 
         army_id = get_entity_id(army)
-        req_options = []
-        for opt in options:
-            key = getattr(opt, "key", None)
-            if not key:
-                continue
-            name = getattr(opt, "name", None) or str(opt)
-            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
-            req_options.append(
-                DecisionOption.create(
-                    name,
-                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_DOCTRINA:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id):
+                    req = pending
+                    break
+
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            req_options = []
+            for opt in options:
+                key = getattr(opt, "key", None)
+                if not key:
+                    continue
+                name = getattr(opt, "name", None) or str(opt)
+                summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                    )
                 )
+            if not req_options:
+                self._open_next_doctrina_prompt(battle_round)
+                return
+
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_DOCTRINA,
+                "Select Doctrina Imperative.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"army_id": army_id, "battle_round": battle_round},
             )
-        if not req_options:
+            if self.game is not None:
+                self.game.request_decision(req)
+        if req is None:
             self._open_next_doctrina_prompt(battle_round)
             return
-
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_DOCTRINA,
-            "Select Doctrina Imperative.",
-            player_id=getattr(player, "id", None),
-            options=req_options,
-            context={"army_id": army_id, "battle_round": battle_round},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -9926,32 +10071,47 @@ class GameView:
 
         options = list(SHADOW_FORM_OPTIONS)
         unit_id = get_entity_id(unit)
-        req_options = []
-        for opt in options:
-            key = getattr(opt, "key", None)
-            if not key:
-                continue
-            name = getattr(opt, "name", None) or str(opt)
-            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
-            req_options.append(
-                DecisionOption.create(
-                    name,
-                    payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_SHADOW_FORM:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("unit_id", "")) == str(unit_id):
+                    req = pending
+                    break
+
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            req_options = []
+            for opt in options:
+                key = getattr(opt, "key", None)
+                if not key:
+                    continue
+                name = getattr(opt, "name", None) or str(opt)
+                summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+                    )
                 )
+            if not req_options:
+                self._open_next_shadow_form_prompt()
+                return
+
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_SHADOW_FORM,
+                "Select Shadow Form.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"unit_id": unit_id, "battle_round": br},
             )
-        if not req_options:
+            if self.game is not None:
+                self.game.request_decision(req)
+        if req is None:
             self._open_next_shadow_form_prompt()
             return
-
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_SHADOW_FORM,
-            "Select Shadow Form.",
-            player_id=getattr(player, "id", None),
-            options=req_options,
-            context={"unit_id": unit_id, "battle_round": br},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)
@@ -10023,32 +10183,47 @@ class GameView:
 
         options = list(WRATHFUL_PRESENCE_OPTIONS)
         unit_id = get_entity_id(unit)
-        req_options = []
-        for opt in options:
-            key = getattr(opt, "key", None)
-            if not key:
-                continue
-            name = getattr(opt, "name", None) or str(opt)
-            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
-            req_options.append(
-                DecisionOption.create(
-                    name,
-                    payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_WRATHFUL_PRESENCE:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("unit_id", "")) == str(unit_id):
+                    req = pending
+                    break
+
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            req_options = []
+            for opt in options:
+                key = getattr(opt, "key", None)
+                if not key:
+                    continue
+                name = getattr(opt, "name", None) or str(opt)
+                summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+                    )
                 )
+            if not req_options:
+                self._open_next_wrathful_presence_prompt()
+                return
+
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_WRATHFUL_PRESENCE,
+                "Select Wrathful Presence.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"unit_id": unit_id, "battle_round": br},
             )
-        if not req_options:
+            if self.game is not None:
+                self.game.request_decision(req)
+        if req is None:
             self._open_next_wrathful_presence_prompt()
             return
-
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_WRATHFUL_PRESENCE,
-            "Select Wrathful Presence.",
-            player_id=getattr(player, "id", None),
-            options=req_options,
-            context={"unit_id": unit_id, "battle_round": br},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
 
         def _on_confirm(option_id: str):
             resolve_decision_value(self.game, req, option_id)

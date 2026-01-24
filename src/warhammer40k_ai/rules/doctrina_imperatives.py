@@ -157,6 +157,44 @@ class DoctrinaImperativesManager:
             return
         if self.active_round == br:
             return
+        if game is not None:
+            if not bool(getattr(game, "is_authoritative", True)):
+                return
+            try:
+                from ..engine.decision_kinds import DECISION_CHOOSE_DOCTRINA
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.entity_ids import get_entity_id
+            except Exception:
+                return
+            army_id = get_entity_id(self.army) if self.army is not None else None
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_DOCTRINA:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", br) or br) == br:
+                        return
+            options = list(DOCTRINA_OPTIONS)
+            req_options = [
+                DecisionOption.create(
+                    opt.name,
+                    payload={"choice_key": opt.key, "summary": opt.summary, "army_id": army_id},
+                )
+                for opt in options
+            ]
+            if not req_options:
+                return
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_DOCTRINA,
+                "Select a Doctrina Imperative.",
+                player_id=getattr(getattr(self.army, "player", None), "id", None),
+                options=req_options,
+                context={"army_id": army_id, "battle_round": br},
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(req)
+            return
 
         player = getattr(self.army, "player", None)
         options = list(DOCTRINA_OPTIONS)

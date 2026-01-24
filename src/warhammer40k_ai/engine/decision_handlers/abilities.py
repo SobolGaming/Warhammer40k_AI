@@ -80,7 +80,13 @@ def _validate_choose_blessings(game: object, request: DecisionRequest, result: D
         return errors
     if is_skip_choice(request, result):
         return ()
-    ctx_data = request.context.get("ctx") or request.context.get("roll_context")
+    ctx_data = None
+    if isinstance(getattr(result, "payload", None), dict):
+        payload_ctx = result.payload.get("ctx")
+        if isinstance(payload_ctx, dict):
+            ctx_data = payload_ctx
+    if ctx_data is None:
+        ctx_data = request.context.get("ctx") or request.context.get("roll_context")
     if not isinstance(ctx_data, dict):
         return ("Blessings decision requires ctx in request context.",)
     selected = result.payload.get("selected_blessings") or result.payload.get("choices")
@@ -106,30 +112,39 @@ def _apply_choose_blessings(game: object, request: DecisionRequest, result: Deci
     mgr = getattr(army, "blessings_of_khorne", None)
     if mgr is None:
         raise RuntimeError("Blessings manager not found.")
-    ctx_data = dict(request.context.get("ctx") or request.context.get("roll_context") or {})
-    timing_val = ctx_data.get("timing")
-    if isinstance(timing_val, BlessingsTiming):
-        timing = timing_val
+    ctx_data = None
+    if isinstance(getattr(result, "payload", None), dict):
+        payload_ctx = result.payload.get("ctx")
+        if isinstance(payload_ctx, dict):
+            ctx_data = payload_ctx
+    if ctx_data is None:
+        ctx_data = dict(request.context.get("ctx") or request.context.get("roll_context") or {})
+    if hasattr(mgr, "deserialize_ctx_payload"):
+        ctx = mgr.deserialize_ctx_payload(ctx_data)
     else:
-        timing_name = str(timing_val or "").strip()
-        try:
-            timing = BlessingsTiming[timing_name]
-        except Exception:
+        timing_val = ctx_data.get("timing")
+        if isinstance(timing_val, BlessingsTiming):
+            timing = timing_val
+        else:
+            timing_name = str(timing_val or "").strip()
             try:
-                timing = BlessingsTiming(timing_name)
-            except Exception as exc:
-                raise RuntimeError("Blessings timing invalid.") from exc
-    ctx = BlessingsRollContext(
-        timing=timing,
-        battle_round=int(ctx_data.get("battle_round", 0) or 0),
-        dice=list(ctx_data.get("dice", []) or []),
-        rerolls_allowed=int(ctx_data.get("rerolls_allowed", 0) or 0),
-        rerolled_indices=list(ctx_data.get("rerolled_indices", []) or []),
-        max_activations=int(ctx_data.get("max_activations", 0) or 0),
-        counts_toward_baseline_limit=bool(ctx_data.get("counts_toward_baseline_limit", False)),
-        already_active_keys=set(ctx_data.get("already_active_keys", []) or []),
-        reborn_in_blood_available=bool(ctx_data.get("reborn_in_blood_available", False)),
-    )
+                timing = BlessingsTiming[timing_name]
+            except Exception:
+                try:
+                    timing = BlessingsTiming(timing_name)
+                except Exception as exc:
+                    raise RuntimeError("Blessings timing invalid.") from exc
+        ctx = BlessingsRollContext(
+            timing=timing,
+            battle_round=int(ctx_data.get("battle_round", 0) or 0),
+            dice=list(ctx_data.get("dice", []) or []),
+            rerolls_allowed=int(ctx_data.get("rerolls_allowed", 0) or 0),
+            rerolled_indices=list(ctx_data.get("rerolled_indices", []) or []),
+            max_activations=int(ctx_data.get("max_activations", 0) or 0),
+            counts_toward_baseline_limit=bool(ctx_data.get("counts_toward_baseline_limit", False)),
+            already_active_keys=set(ctx_data.get("already_active_keys", []) or []),
+            reborn_in_blood_available=bool(ctx_data.get("reborn_in_blood_available", False)),
+        )
     selected = result.payload.get("selected_blessings") or result.payload.get("choices") or []
     use_reborn = bool(result.payload.get("use_reborn", False))
     return mgr.apply_choice(ctx, selected_blessing_keys=list(selected), use_reborn_in_blood=use_reborn)
@@ -480,6 +495,10 @@ def _apply_choose_harbinger(game: object, request: DecisionRequest, result: Deci
     choice = payload.get("choice_key") or payload.get("key")
     battle_round = request.context.get("battle_round")
     if bool(payload.get("random", False)) or str(choice or "").strip().upper() == "ROLL":
+        rolls = payload.get("rolls")
+        selected_keys = payload.get("selected_keys")
+        if rolls or selected_keys:
+            return mgr.apply_roll_results(rolls=rolls, selected_keys=selected_keys, battle_round=battle_round)
         return mgr.roll_dread_abilities(battle_round=battle_round)
     return bool(mgr.select_dread_ability(choice, battle_round=battle_round))
 
@@ -608,6 +627,26 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
     unit_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
     chosen = resolve_unit(game, unit_val)
     ctx = dict(getattr(request, "context", {}) or {})
+    if str(ctx.get("ability", "") or "") == "monarch_of_the_hunt":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            ids = set()
+            try:
+                members = list(chosen.get_attached_unit_members() or [])
+            except Exception:
+                members = [chosen]
+            for m in members:
+                try:
+                    mid = getattr(m, "_id", None)
+                    if mid:
+                        ids.add(mid)
+                except Exception:
+                    continue
+            setattr(source_unit, "_monarch_of_the_hunt_quarry_ids", ids)
+            try:
+                setattr(source_unit, "_monarch_of_the_hunt_quarry_name", str(getattr(chosen, "name", "")))
+            except Exception:
+                pass
     if ctx.get("necrons_command_phase_enhancement"):
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "necrons_detachments", None) if army is not None else None

@@ -72,6 +72,8 @@ class Game:
         self.random_source = RandomSource()
         self.ability_lifecycle = AbilityLifecycle(self)
         self.event_system.lifecycle = self.ability_lifecycle
+        # Authoritative (server/local) vs client-replay gating for decision queues.
+        self.is_authoritative = True
         self.phase = BattleRoundPhases.COMMAND_PHASE  # Initialize phase to COMMAND_PHASE
         # Command phase timing: True only during the Battle-shock step of the current player's Command phase.
         self.battle_shock_step_active = False
@@ -82,6 +84,11 @@ class Game:
 
         # Install default rules subscribers (e.g. on-kill rewards)
         self._install_default_event_subscribers()
+        # Server-authoritative decision hooks
+        try:
+            self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_monarch_of_the_hunt)
+        except Exception:
+            pass
 
         # Setup phase tracking
         self.setup_phase = SetupPhase.MUSTER_ARMIES  # Start with first setup phase
@@ -134,6 +141,68 @@ class Game:
         registry = RuleRegistry(build_default_rule_providers())
         registry.apply(self)
         self.rule_registry = registry
+
+    def _on_unit_destroyed_monarch_of_the_hunt(self, unit=None, **_kwargs) -> None:
+        if unit is None or not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            destroyed_owner = unit.get_parent_army().player
+        except Exception:
+            destroyed_owner = None
+
+        for player in list(getattr(self, "players", []) or []):
+            try:
+                army = player.get_army()
+            except Exception:
+                army = None
+            if army is None:
+                continue
+            for shalaxi_unit in list(getattr(army, "units", []) or []):
+                try:
+                    found, _ = shalaxi_unit._find_ability_with_patterns(["monarch of the hunt"])
+                except Exception:
+                    found = False
+                if not found:
+                    continue
+                quarry_ids = getattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", None)
+                if not quarry_ids:
+                    continue
+                try:
+                    if getattr(unit, "_id", None) not in quarry_ids:
+                        continue
+                except Exception:
+                    continue
+
+                alive_ids = set()
+                enemy_army = None
+                try:
+                    enemy_army = destroyed_owner.get_army() if destroyed_owner is not None else None
+                except Exception:
+                    enemy_army = None
+                if enemy_army is not None:
+                    by_id = {getattr(u2, "_id", None): u2 for u2 in list(getattr(enemy_army, "units", []) or [])}
+                    for qid in list(quarry_ids):
+                        u2 = by_id.get(qid)
+                        if u2 is None:
+                            continue
+                        try:
+                            if u2.is_alive():
+                                alive_ids.add(qid)
+                        except Exception:
+                            continue
+                setattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", alive_ids)
+
+                if not alive_ids:
+                    try:
+                        req = army._build_monarch_of_the_hunt_request(
+                            game=self,
+                            source_unit=shalaxi_unit,
+                            enemy_units=list(self.get_enemy_units(player)),
+                        )
+                    except Exception:
+                        req = None
+                    if req is not None and hasattr(self, "request_decision"):
+                        self.request_decision(req)
 
     def rebuild_entity_registry(self) -> None:
         rebuild_registry_from_game(self.entity_registry, self)

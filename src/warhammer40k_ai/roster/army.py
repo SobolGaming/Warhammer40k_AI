@@ -1876,6 +1876,31 @@ class Army:
         mgr = getattr(self, "blessings_of_khorne", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round))
+            if game is not None and bool(getattr(game, "is_authoritative", True)):
+                try:
+                    from ..engine.decision_kinds import DECISION_CHOOSE_BLESSINGS
+                    from ..utility.entity_ids import get_entity_id
+                except Exception:
+                    DECISION_CHOOSE_BLESSINGS = None
+                if DECISION_CHOOSE_BLESSINGS:
+                    army_id = get_entity_id(self)
+                    queue = getattr(game, "decision_queue", None)
+                    pending = False
+                    if queue is not None and hasattr(queue, "list"):
+                        for req in list(queue.list() or []):
+                            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BLESSINGS:
+                                continue
+                            ctx = getattr(req, "context", {}) or {}
+                            if str(ctx.get("army_id", "")) == str(army_id):
+                                pending = True
+                                break
+                    if not pending:
+                        try:
+                            req = mgr.build_start_of_round_request(self, battle_round=int(battle_round), game=game)
+                        except Exception:
+                            req = None
+                        if req is not None and hasattr(game, "request_decision"):
+                            game.request_decision(req)
         mgr = getattr(self, "battle_focus", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
@@ -1911,7 +1936,126 @@ class Army:
             # Orders per officer are tracked by battle round.
             for unit in list(getattr(self, "units", []) or []):
                 mgr._order_issued_state(unit, int(battle_round))
+        self._queue_monarch_of_the_hunt(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
+
+    def _queue_monarch_of_the_hunt(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        try:
+            enemy_units = list(game.get_enemy_units(player))
+        except Exception:
+            enemy_units = []
+        if not enemy_units:
+            return
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                found, _ = unit._find_ability_with_patterns(["monarch of the hunt"])
+            except Exception:
+                found = False
+            if not found:
+                continue
+            if getattr(unit, "_monarch_of_the_hunt_quarry_ids", None):
+                continue
+            req = self._build_monarch_of_the_hunt_request(game=game, source_unit=unit, enemy_units=enemy_units)
+            if req is not None and hasattr(game, "request_decision"):
+                game.request_decision(req)
+
+    def _build_monarch_of_the_hunt_request(self, *, game, source_unit, enemy_units: list) -> Optional[object]:
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            return None
+
+        player = getattr(self, "player", None)
+        if player is None or source_unit is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        source_id = None
+        try:
+            source_id = get_entity_id(source_unit)
+        except Exception:
+            source_id = None
+        if queue is not None and hasattr(queue, "list") and source_id:
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("ability", "")) == "monarch_of_the_hunt" and str(ctx.get("source_unit_id", "")) == str(source_id):
+                    return None
+
+        eligible = []
+        seen = set()
+        for enemy in list(enemy_units or []):
+            if enemy is None:
+                continue
+            try:
+                if bool(getattr(enemy, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            try:
+                rid = getattr(root, "_id", None)
+                if not rid or rid in seen:
+                    continue
+                seen.add(rid)
+            except Exception:
+                continue
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)):
+                    continue
+                if getattr(root, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                pass
+            eligible.append(root)
+
+        if not eligible:
+            return None
+        try:
+            eligible.sort(key=lambda u: str(getattr(u, "name", "")))
+        except Exception:
+            pass
+
+        options = [
+            DecisionOption.create(
+                str(getattr(u, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(u)},
+            )
+            for u in eligible
+        ]
+        if not options:
+            return None
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select quarry (Monarch of the Hunt).",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"ability": "monarch_of_the_hunt", "source_unit_id": source_id},
+        )
 
     def schedule_reborn_in_blood(self, *, game) -> bool:
         """
