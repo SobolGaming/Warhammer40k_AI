@@ -18952,6 +18952,31 @@ class Unit:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("enhancement_bearer_fnp_entries") if isinstance(sr, dict) else None
+            if isinstance(entries, list):
+                seen = set((int(v), (c or "")) for v, c in result)
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        val = entry.get("value")
+                        cond = entry.get("condition")
+                    elif isinstance(entry, (list, tuple)):
+                        val = entry[0] if entry else None
+                        cond = entry[1] if len(entry) > 1 else None
+                    else:
+                        continue
+                    try:
+                        val = int(val)
+                    except Exception:
+                        continue
+                    key = (int(val), str(cond or ""))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    result.append((int(val), cond))
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "blood_tithe_enraged_abjuration_applies", None):

@@ -3,6 +3,82 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Set, Tuple
 
+
+def _ensure_enhancement_fnp_entry(
+    unit,
+    value: int,
+    *,
+    condition: str | None = None,
+    source: str | None = None,
+    tag: str | None = None,
+) -> bool:
+    if unit is None:
+        return False
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    entries = list(sr.get("enhancement_bearer_fnp_entries", []) or [])
+    if tag:
+        for entry in entries:
+            if isinstance(entry, dict) and entry.get("tag") == tag:
+                return False
+    entry = {
+        "value": int(value),
+        "condition": str(condition) if condition else None,
+        "source": str(source or "Enhancement"),
+        "tag": str(tag or ""),
+    }
+    entries.append(entry)
+    sr["enhancement_bearer_fnp_entries"] = entries
+    unit.special_rules = sr
+    return True
+
+
+def _current_unit_wounds(unit) -> int:
+    total = 0
+    for model in list(getattr(unit, "models", []) or []):
+        alive = getattr(model, "is_alive", True)
+        try:
+            alive = alive() if callable(alive) else bool(alive)
+        except Exception:
+            alive = True
+        if not alive:
+            continue
+        val = getattr(model, "wounds", None)
+        if val is None:
+            val = getattr(model, "_wounds", 0)
+        try:
+            total += int(val or 0)
+        except Exception:
+            continue
+    return total
+
+
+def maybe_upgrade_adaptive_biology(unit) -> bool:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict) or not sr.get("enhancement_adaptive_biology"):
+        return False
+    if sr.get("enhancement_adaptive_biology_upgraded"):
+        return False
+    starting = int(getattr(unit, "starting_total_wounds", 0) or 0)
+    if starting <= 0:
+        return False
+    current = _current_unit_wounds(unit)
+    if current >= starting:
+        return False
+    _ensure_enhancement_fnp_entry(
+        unit,
+        4,
+        source="Adaptive Biology",
+        tag="adaptive_biology_upgrade",
+    )
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    sr["enhancement_adaptive_biology_upgraded"] = True
+    unit.special_rules = sr
+    return True
+
 from .enhancement_effects import (
     EnhancementEffectSpec,
     apply_enhancement_effects,
@@ -183,6 +259,15 @@ class Enhancement:
 
         if name == "rise to the challenge" or enh_id == "000010002005":
             unit.special_rules["enhancement_rise_to_challenge"] = True
+
+        if name == "adaptive biology" or enh_id == "000008348005":
+            unit.special_rules["enhancement_adaptive_biology"] = True
+            _ensure_enhancement_fnp_entry(
+                unit,
+                5,
+                source="Adaptive Biology",
+                tag="adaptive_biology_base",
+            )
 
         invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
         if callable(invalidate_fn):

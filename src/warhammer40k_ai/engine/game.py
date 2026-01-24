@@ -6160,6 +6160,16 @@ class Game:
             return getter()
         return getattr(player, "army", None)
 
+    def _apply_adaptive_biology_turn_start(self) -> None:
+        from ..rules.enhancement import maybe_upgrade_adaptive_biology
+
+        for player in list(self.players or []):
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                maybe_upgrade_adaptive_biology(unit)
+
     def _warp_rifts_min_distance(self, unit: Unit) -> float:
         if unit is None or not self._unit_has_keyword(unit, "LEGIONES DAEMONICA"):
             return 9.0
@@ -6206,6 +6216,9 @@ class Game:
         army = self._get_player_army(current_player)
         if army is None:
             return
+
+        # Adaptive Biology (Tyranids enhancement): check at the start of any turn.
+        self._apply_adaptive_biology_turn_start()
 
         for unit in list(getattr(army, "units", []) or []):
             fn = getattr(unit, "clear_battle_shock", None)
