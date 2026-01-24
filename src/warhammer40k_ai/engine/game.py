@@ -1267,6 +1267,13 @@ class Game:
                         "relentless_rage_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("maddened_ferocity_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "maddened_ferocity_melee_attacks_bonus",
+                        "maddened_ferocity_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_expires_phase"):
@@ -4447,6 +4454,48 @@ class Game:
                 append_action(player, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} gains bonuses this Fight phase.")
         except Exception:
             pass
+
+    def _on_fight_unit_selected_maddened_ferocity(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "maddened_ferocity_applies", lambda _u: False)(root):
+            return
+
+        bonus = 0
+        try:
+            if root.is_battle_shocked():
+                bonus = 2
+            elif bool(getattr(getattr(root, "round_state", None), "charged_this_round", False)):
+                bonus = 1
+        except Exception:
+            bonus = 0
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if bonus:
+                sr["maddened_ferocity_melee_attacks_bonus"] = int(bonus)
+                sr["maddened_ferocity_expires_phase"] = "FIGHT_PHASE"
+            else:
+                sr.pop("maddened_ferocity_melee_attacks_bonus", None)
+                sr.pop("maddened_ferocity_expires_phase", None)
+            member.special_rules = sr
 
     def _alive_model_count(self, unit) -> int:
         if unit is None:

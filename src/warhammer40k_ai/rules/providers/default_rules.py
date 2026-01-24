@@ -129,6 +129,20 @@ def build_default_rule_providers() -> List[RuleProvider]:
 
     providers.append(
         RuleProvider(
+            name="space_marines",
+            predicate=lambda ctxs, _g: any_manager(
+                ctxs,
+                "space_marines_detachments",
+                ("is_rage_cursed_onslaught",),
+            ),
+            subscriptions=[
+                ("fight_unit_selected", "_on_fight_unit_selected_maddened_ferocity"),
+            ],
+        )
+    )
+
+    providers.append(
+        RuleProvider(
             name="imperial_knights",
             predicate=lambda ctxs, _g: any_manager(ctxs, "code_chivalric", ("_army_has_code_chivalric",))
             or any_manager(ctxs, "bondsman", ("_army_has_bondsman",)),

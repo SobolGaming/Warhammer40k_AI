@@ -766,6 +766,15 @@ class WargearProfile:
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("maddened_ferocity_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="detachment:maddened_ferocity_attacks"))
+                    attack_result.attacks_special_modifiers.append(f"Maddened Ferocity +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_bonus", 0) or 0)
                 if bonus:
                     atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="power_from_pain:melee_attacks_add"))
@@ -4827,6 +4836,25 @@ class WargearProfile:
                         wound_result["reroll"] = rr
                         dice_roll = rr
                         reroll_used = True
+        except Exception:
+            pass
+
+        # Rage-cursed Onslaught: Maddened Ferocity re-roll Wound rolls of 1 (melee).
+        try:
+            if dice_roll == 1 and "reroll" not in wound_result:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    unit = attacker.parent_unit
+                    army = unit.get_parent_army() if unit is not None else None
+                    mgr = getattr(army, "space_marines_detachments", None) if army is not None else None
+                    if mgr is not None and getattr(mgr, "is_rage_cursed_onslaught", lambda: False)():
+                        if getattr(mgr, "unit_is_adeptus_astartes", lambda _u: False)(unit):
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append("Maddened Ferocity: re-roll Wound roll of 1")
+                            wound_result["reroll_of_one"] = 1
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
         except Exception:
             pass
 

@@ -168,6 +168,39 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Gladius Task Force")
 
+    def is_rage_cursed_onslaught(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Rage-cursed Onslaught")
+
+    def unit_is_adeptus_astartes(self, unit) -> bool:
+        return self._unit_has_keyword_or_faction(unit, "ADEPTUS ASTARTES", faction_id=self.faction_id)
+
+    def attached_unit_is_adeptus_astartes(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            if self.unit_is_adeptus_astartes(member):
+                return True
+        return False
+
+    def maddened_ferocity_applies(self, unit) -> bool:
+        if unit is None:
+            return False
+        if not self.is_rage_cursed_onslaught():
+            return False
+        return self.attached_unit_is_adeptus_astartes(unit)
+
     def has_divergent_chapter_keywords(self) -> bool:
         army = self.army
         if army is None:
