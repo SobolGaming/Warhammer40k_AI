@@ -279,8 +279,6 @@ class DiceRollManager:
     ):
         from .decisions import DecisionOption, DecisionRequest
         from .decision_kinds import DECISION_REQUEST_DICE_ROLL
-        from ..utility.decision_utils import resolve_decision_command
-
         rid = self._new_roll_id()
         roll_spec = dict(spec or {})
         roll_spec.setdefault("dice_count", 1)
@@ -309,21 +307,6 @@ class DiceRollManager:
         self.link_decision(req.decision_id, rid)
         if hasattr(game, "request_decision"):
             game.request_decision(req)
-        # Auto-resolve in headless/test mode.
-        try:
-            if bool(getattr(game, "auto_resolve_dice_rolls", False)):
-                option_id = None
-                for opt in list(getattr(req, "options", []) or []):
-                    payload = dict(getattr(opt, "payload", {}) or {})
-                    if str(payload.get("action_id", "") or "") == "roll":
-                        option_id = opt.option_id
-                        break
-                if option_id is None and req.options:
-                    option_id = req.options[0].option_id
-                if option_id:
-                    resolve_decision_command(game, req, option_id, result_payload={}, player_id=player_id)
-        except Exception:
-            pass
         return req
 
     def _build_dice(self, roll_id: int, values: List[int], faces: int, *, derived: Optional[List[dict]] = None) -> List[dict]:
@@ -563,8 +546,6 @@ class DiceRollManager:
     def _queue_reroll_decision(self, game: object, state: DiceRollState) -> None:
         from .decisions import DecisionOption, DecisionRequest
         from .decision_kinds import DECISION_SELECT_DICE_REROLL
-        from ..utility.decision_utils import resolve_decision_command
-
         if state.final:
             return
         options = []
@@ -590,31 +571,6 @@ class DiceRollManager:
         self.link_decision(req.decision_id, state.roll_id)
         if hasattr(game, "request_decision"):
             game.request_decision(req)
-        # Auto-resolve reroll decision in headless/test mode.
-        try:
-            if bool(getattr(game, "auto_resolve_dice_rolls", False)):
-                action_id, selected = self._auto_pick_reroll_action(game, state)
-                option_id = None
-                for opt in list(getattr(req, "options", []) or []):
-                    payload = dict(getattr(opt, "payload", {}) or {})
-                    if str(payload.get("action_id", "") or "") == str(action_id):
-                        option_id = opt.option_id
-                        break
-                if option_id is None and req.options:
-                    option_id = req.options[0].option_id
-                if option_id:
-                    payload = {}
-                    if selected is not None:
-                        payload["selected_die_ids"] = list(selected)
-                    resolve_decision_command(
-                        game,
-                        req,
-                        option_id,
-                        result_payload=payload,
-                        player_id=state.player_id,
-                    )
-        except Exception:
-            pass
 
     def _auto_pick_reroll_action(self, game: object, state: DiceRollState) -> tuple[str, list[str] | None]:
         """Best-effort auto selection for rerolls in headless mode."""
@@ -862,6 +818,7 @@ class DiceRollManager:
                 reroll_locked=True,
                 kept_indices=list(spec.get("kept_indices", []) or []) if spec.get("kept_indices", None) is not None else None,
                 dropped_indices=list(spec.get("dropped_indices", []) or []) if spec.get("dropped_indices", None) is not None else None,
+                target_unit_ids=list(spec.get("target_unit_ids", []) or []),
             )
         except Exception:
             pass

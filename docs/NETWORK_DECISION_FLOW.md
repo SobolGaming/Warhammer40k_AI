@@ -15,6 +15,7 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 - **Clients are thin views**: each client runs a local game state by applying server‑accepted commands/events.
 - **DecisionRequest → DecisionResult**: UI decisions are serialized as `REQUEST_DECISION` + `RESOLVE_DECISION` commands.
 - **Waiting**: “server waits” means it does not advance to the next step until required decisions are resolved.
+- **Headless auto-decisions**: in local/headless mode, a server-side agent may auto-resolve dice roll decisions via `RESOLVE_DECISION` (no direct engine bypass).
 
 **Simultaneous vs Sequential**
 - **Simultaneous**: both players can decide independently at the same time (e.g., formations).
@@ -145,6 +146,7 @@ Currently queued at battle round start (when applicable):
 2. MOVEMENT_PHASE
    - Active player submits movement decisions (`SELECT_MOVEMENT_ACTION`,
      `MOVE_UNIT`, etc).
+   - Advance rolls are server-originated dice roll decisions; movement prompts open after the roll resolves.
    - Some opponent reactions can interrupt (e.g., reactive moves) and are handled
      as sequential DecisionRequests.
 3. SHOOTING_PHASE
@@ -153,6 +155,7 @@ Currently queued at battle round start (when applicable):
    - Opponent reactions (Overwatch, etc) are sequential interrupts.
 4. CHARGE_PHASE
    - Active player declares charges (`DECLARE_CHARGE`), rolls, and resolves.
+   - Charge rolls are server-originated dice roll decisions; charge movement prompts open after the roll resolves.
    - Overwatch and other reactions can interrupt.
 5. FIGHT_PHASE
    - Units fight in alternating order (sequential).

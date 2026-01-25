@@ -77,6 +77,12 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
             unit._execute_action("remain_stationary", (0, 0, 0), getattr(game, "map", None))
         except Exception as exc:
             raise RuntimeError(f"Stationary action failed: {exc}") from exc
+    elif action == "advance":
+        if bool(getattr(game, "is_authoritative", True)):
+            try:
+                unit.prepare_advance()
+            except Exception as exc:
+                raise RuntimeError(f"Advance roll request failed: {exc}") from exc
     return None
 
 

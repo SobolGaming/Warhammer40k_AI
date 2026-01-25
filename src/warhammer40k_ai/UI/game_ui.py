@@ -5336,8 +5336,57 @@ class GameView:
                         _finish_and_next()
                     return
                 if action == "charge":
-                    game_ctx.attempt_charge(unit, target_unit, out_of_turn=True, count_as_charged=False)
-                    _finish_and_next()
+                    def _on_charge_done(_completed: bool, _success: bool, _unit, _targets):
+                        _finish_and_next()
+                    try:
+                        from ..engine.decision_kinds import DECISION_DECLARE_CHARGE
+                        from ..engine.decisions import DecisionOption, DecisionRequest
+                        from ..engine.command_kinds import CMD_RESOLVE_DECISION
+                        from ..engine.commands import GameCommand
+                        from ..utility.entity_ids import get_entity_id
+
+                        unit_id = get_entity_id(unit)
+                        target_id = get_entity_id(target_unit)
+                        req = DecisionRequest.create(
+                            DECISION_DECLARE_CHARGE,
+                            f"{source}: {getattr(unit, 'name', 'Unit')} declares a charge",
+                            player_id=getattr(player, "id", None),
+                            options=[
+                                DecisionOption.create(
+                                    getattr(target_unit, "name", "Target"),
+                                    payload={"unit_id": unit_id, "target_unit_id": target_id, "out_of_turn": True},
+                                )
+                            ],
+                            context={"unit_id": unit_id, "out_of_turn": True},
+                        )
+                        self.game.request_decision(req)
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": req.options[0].option_id if req.options else "",
+                            "result_payload": {"target_unit_ids": [target_id]},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        cmd_result = self.game.apply_command(cmd)
+                        if cmd_result is None or not getattr(cmd_result, "ok", False):
+                            _finish_and_next()
+                            return
+                    except Exception:
+                        _finish_and_next()
+                        return
+                    try:
+                        if self.phase_manager is not None:
+                            self.phase_manager._queue_pending_charge(
+                                unit,
+                                [target_unit],
+                                suppress_charge_bonus=True,
+                                on_complete=_on_charge_done,
+                            )
+                            if getattr(unit.round_state, "charge_roll", 0):
+                                self.phase_manager._handle_charge_roll_ready(unit, [get_entity_id(target_unit)])
+                        else:
+                            _finish_and_next()
+                    except Exception:
+                        _finish_and_next()
                     return
                 _finish_and_next()
 
@@ -11783,12 +11832,39 @@ class GameView:
             print("Heroic Intervention: unit cannot declare a charge against that enemy")
             return
 
-        declared = None
+        cmd_result = None
         try:
-            declared = self.game.declare_charge(unit, [enemy_unit], out_of_turn=True)
+            from ..engine.decision_kinds import DECISION_DECLARE_CHARGE
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..engine.command_kinds import CMD_RESOLVE_DECISION
+            from ..engine.commands import GameCommand
+            from ..utility.entity_ids import get_entity_id
+
+            unit_id = get_entity_id(unit)
+            enemy_id = get_entity_id(enemy_unit)
+            req = DecisionRequest.create(
+                DECISION_DECLARE_CHARGE,
+                f"Heroic Intervention: {getattr(unit, 'name', 'Unit')} declares a charge",
+                player_id=getattr(player, "id", None),
+                options=[
+                    DecisionOption.create(
+                        getattr(enemy_unit, "name", "Target"),
+                        payload={"unit_id": unit_id, "target_unit_id": enemy_id, "out_of_turn": True},
+                    )
+                ],
+                context={"unit_id": unit_id, "out_of_turn": True},
+            )
+            self.game.request_decision(req)
+            payload = {
+                "decision_id": req.decision_id,
+                "option_id": req.options[0].option_id if req.options else "",
+                "result_payload": {"target_unit_ids": [enemy_id]},
+            }
+            cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+            cmd_result = self.game.apply_command(cmd)
         except Exception:
-            declared = None
-        if not declared:
+            cmd_result = None
+        if cmd_result is None or not getattr(cmd_result, "ok", False):
             print("Heroic Intervention: charge declaration failed")
             return
 
@@ -11827,28 +11903,12 @@ class GameView:
         except Exception:
             pass
 
-        base_roll = int(declared.get("base_roll", 0) or 0)
-        modifiers = []
-        getter = getattr(self.game, "get_charge_roll_modifiers", None)
-        if callable(getter):
-            modifiers = list(getter(unit, target_unit=enemy_unit) or [])
-        mod_total = sum(int(val) for val, _source in modifiers if isinstance(val, (int, float)))
-        max_charge_distance = max(0, base_roll + mod_total)
         self._heroic_flow_active = True
 
-        def on_charge_movement_complete(completed: bool):
+        def on_charge_complete(completed: bool, success: bool, _unit, _targets):
             self._heroic_flow_active = False
             if completed:
-                in_engagement_range = False
-                try:
-                    enemy_units = self.game.map.get_enemy_units(unit)
-                    in_engagement_range = any(
-                        self.game.map.is_within_engagement_range(unit, enemy)
-                        for enemy in enemy_units if enemy.is_alive()
-                    )
-                except Exception:
-                    in_engagement_range = False
-                if in_engagement_range:
+                if success:
                     print(f"{unit.name} Heroic Intervention charge successful - achieved engagement range")
                 else:
                     print(f"{unit.name} Heroic Intervention charge failed - did not achieve engagement range")
@@ -11856,16 +11916,19 @@ class GameView:
                 print(f"{unit.name} Heroic Intervention charge movement failed or skipped")
 
         try:
-            self.phase_manager._request_move_unit_decision(
-                unit,
-                "charge",
-                on_charge_movement_complete,
-                max_distance=max_charge_distance,
-                target_unit=enemy_unit,
-            )
+            if self.phase_manager is not None:
+                self.phase_manager._queue_pending_charge(
+                    unit,
+                    [enemy_unit],
+                    suppress_charge_bonus=False,
+                    on_complete=on_charge_complete,
+                )
+                if getattr(unit.round_state, "charge_roll", 0):
+                    from ..utility.entity_ids import get_entity_id
+                    self.phase_manager._handle_charge_roll_ready(unit, [get_entity_id(enemy_unit)])
         except Exception:
             self._heroic_flow_active = False
-            print("Heroic Intervention: failed to open charge movement dialog")
+            print("Heroic Intervention: failed to queue charge movement")
             return
 
         print(f"Used stratagem: {name}")

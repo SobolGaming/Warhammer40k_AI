@@ -2155,88 +2155,13 @@ class BattlePhaseHandler(BasePhaseHandler):
                         declared = getattr(apply_result, "value", None)
                 if not declared:
                     return
-
-                base_roll = int(declared.get("base_roll", 0) or 0)
-                getter = getattr(self.game, "get_charge_roll_modifiers", None)
-                mod_totals = []
-                if callable(getter):
-                    for tgt in targets:
-                        mods = list(getter(charging_unit, target_unit=tgt) or [])
-                        mod_total = sum(int(val) for val, _source in mods if isinstance(val, (int, float)))
-                        mod_totals.append(mod_total)
-                mod_total = min(mod_totals) if mod_totals else 0
-                max_charge_distance = max(0, base_roll + mod_total)
-
-                # Open individual model movement dialog for charge movement
-                def on_charge_movement_complete(completed: bool):
-                    from ...engine.command_kinds import CMD_RESOLVE_DECISION
-                    from ...engine.commands import GameCommand
-                    from ...utility.entity_ids import get_entity_id
-
-                    payload = {"skipped": not completed}
-                    if completed:
-                        model_positions = []
-                        for model in list(getattr(charging_unit, "models", []) or []):
-                            if not getattr(model, "is_alive", True):
-                                continue
-                            loc = model.get_location()
-                            if not loc:
-                                continue
-                            model_positions.append(
-                                {
-                                    "model_id": get_entity_id(model),
-                                    "position": [float(loc[0]), float(loc[1]), float(loc[2])],
-                                    "facing": float(getattr(model.model_base, "facing", 0.0)),
-                                }
-                            )
-                        payload["model_positions"] = model_positions
-                    cmd_payload = {
-                        "decision_id": move_request.decision_id,
-                        "option_id": move_request.options[0].option_id if move_request.options else "",
-                        "result_payload": payload,
-                    }
-                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=move_request.player_id, payload=cmd_payload)
-                    self.game.apply_command(cmd)
-                    if completed:
-                        ok, reason = charging_unit.validate_charge_end_state(targets, self.game.map)
-                        if ok:
-                            print(f"{charging_unit.name} charge successful - achieved engagement range for all targets")
-                            charging_unit.round_state.charged_this_round = True
-                        else:
-                            print(f"{charging_unit.name} charge failed - {reason}")
-                            charging_unit.round_state.charged_this_round = False
-                    else:
-                        print(f"{charging_unit.name} charge movement failed or skipped")
-                        # Do not set charged_this_round = True for failed charges
-
-                from ...engine.decision_kinds import DECISION_MOVE_UNIT
-                from ...engine.decisions import DecisionOption, DecisionRequest
-                from ...utility.entity_ids import get_entity_id
-
-                unit_id = get_entity_id(charging_unit)
-                move_request = DecisionRequest.create(
-                    DECISION_MOVE_UNIT,
-                    f"Charge move {getattr(charging_unit, 'name', 'Unit')}",
-                    player_id=getattr(self.game.get_current_player(), "id", None),
-                    options=[
-                        DecisionOption.create(
-                            "Confirm charge move",
-                            payload={"unit_id": unit_id, "movement_type": "charge"},
-                        )
-                    ],
-                    context={"unit_id": unit_id, "movement_type": "charge", "max_distance": max_charge_distance},
-                )
-                self.game.request_decision(move_request)
-
-                self.game_view.individual_model_movement_dialog.show(
-                    charging_unit,
-                    'charge',
-                    on_charge_movement_complete,
-                    self.game.map,
-                    max_charge_distance,
-                    targets,
-                    decision_request=move_request,
-                )
+                self._queue_pending_charge(charging_unit, targets, suppress_charge_bonus=False)
+                # If the roll already resolved (headless), open movement now.
+                try:
+                    if getattr(charging_unit.round_state, "charge_roll", 0):
+                        self._handle_charge_roll_ready(charging_unit, [get_entity_id(t) for t in targets])
+                except Exception:
+                    pass
 
             primary_target = targets[0] if targets else None
             self.game_view._maybe_prompt_battle_focus_charge(charging_unit, primary_target, _after_battle_focus)
@@ -3760,23 +3685,74 @@ class BattlePhaseHandler(BasePhaseHandler):
             if not hasattr(self.game_view, 'selected_model_for_movement'):
                 self.game_view.selected_model_for_movement = None
 
-            # Roll advance dice immediately if advancing
-            if choice == 'advance':
-                advance_roll = unit.prepare_advance()
-                max_distance = unit.movement + advance_roll
-            else:
-                max_distance = unit.movement
-
             if choice == 'stationary':
-                # Execute stationary action immediately (no destination needed)
-                success = unit._execute_action(chosen_action.value, (0, 0, 0), self.game.map)
-                if success:
+                # Execute stationary action via server decision
+                try:
+                    from ...engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
+                    from ...engine.decisions import DecisionOption, DecisionRequest
+                    from ...utility.decision_utils import resolve_decision_command
+                    from ...utility.entity_ids import get_entity_id
+
+                    unit_id = get_entity_id(unit)
+                    req = DecisionRequest.create(
+                        DECISION_SELECT_MOVEMENT_ACTION,
+                        f"{getattr(unit, 'name', 'Unit')} remains stationary",
+                        player_id=getattr(self.game.get_current_player(), "id", None),
+                        options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "action_type": "stationary"})],
+                        context={"unit_id": unit_id},
+                    )
+                    self.game.request_decision(req)
+                    if req.options:
+                        resolve_decision_command(self.game, req, req.options[0].option_id, result_payload={})
                     print(f"INFO: {unit.name} remains stationary")
+                except Exception:
+                    print(f"ERROR: Failed to resolve stationary action for {unit.name}")
                 # Clear selection since action is complete
                 self.game_view.selected_unit_for_movement = None
                 self.game_view.movement_action = None
                 self.game_view.selected_model_for_movement = None
-            else:
+                return
+            if choice == 'advance':
+                # Request advance roll via server decision; movement opens after roll resolves.
+                try:
+                    from ...engine.decision_kinds import DECISION_SELECT_MOVEMENT_ACTION
+                    from ...engine.decisions import DecisionOption, DecisionRequest
+                    from ...utility.decision_utils import resolve_decision_command
+                    from ...utility.entity_ids import get_entity_id
+
+                    unit_id = get_entity_id(unit)
+                    self._pending_advance_units.add(unit_id)
+                    req = DecisionRequest.create(
+                        DECISION_SELECT_MOVEMENT_ACTION,
+                        f"Advance with {getattr(unit, 'name', 'Unit')}",
+                        player_id=getattr(self.game.get_current_player(), "id", None),
+                        options=[DecisionOption.create("Confirm", payload={"unit_id": unit_id, "action_type": "advance"})],
+                        context={"unit_id": unit_id},
+                    )
+                    self.game.request_decision(req)
+                    if req.options:
+                        cmd_result = resolve_decision_command(self.game, req, req.options[0].option_id, result_payload={})
+                        if cmd_result is None or not getattr(cmd_result, "ok", False):
+                            self._pending_advance_units.discard(unit_id)
+                            print(f"ERROR: Advance decision rejected for {unit.name}")
+                            return
+                except Exception:
+                    print(f"ERROR: Failed to request advance roll for {unit.name}")
+                    try:
+                        self._pending_advance_units.discard(get_entity_id(unit))
+                    except Exception:
+                        pass
+                # If the roll resolved immediately (headless), open movement now.
+                try:
+                    if getattr(unit.round_state, "advance_roll", None):
+                        self._handle_advance_roll_ready(unit)
+                except Exception:
+                    pass
+                return
+
+            max_distance = unit.movement
+
+            if choice != 'stationary':
                 from ...engine.decision_kinds import DECISION_MOVE_UNIT
                 from ...engine.decisions import DecisionOption, DecisionRequest
                 from ...utility.entity_ids import get_entity_id
@@ -3848,6 +3824,140 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement)
         else:
             _begin_movement()
+
+    def _on_roll_made(self, player=None, unit=None, roll_type: str = "", **kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            if player is not None and not bool(getattr(player, "has_control", lambda: False)()):
+                return
+        except Exception:
+            return
+        roll_type = str(roll_type or "").strip().lower()
+        if roll_type == "advance":
+            self._handle_advance_roll_ready(unit)
+        elif roll_type == "charge":
+            self._handle_charge_roll_ready(unit, kwargs.get("target_unit_ids"))
+
+    def _handle_advance_roll_ready(self, unit) -> None:
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            return
+        if unit_id not in self._pending_advance_units:
+            return
+        self._pending_advance_units.discard(unit_id)
+        try:
+            advance_roll = int(getattr(getattr(unit, "round_state", None), "advance_roll", 0) or 0)
+        except Exception:
+            advance_roll = 0
+        if advance_roll <= 0:
+            return
+        max_distance = float(getattr(unit, "movement", 0) or 0) + float(advance_roll)
+
+        def _on_complete(completed: bool):
+            if completed:
+                print(f"{unit.name} advance movement completed")
+            else:
+                print(f"{unit.name} advance movement skipped")
+            self.game_view.selected_unit_for_movement = None
+            self.game_view.movement_action = None
+            self.game_view.selected_model_for_movement = None
+
+        self._request_move_unit_decision(unit, "advance", _on_complete, max_distance=max_distance)
+
+    def _queue_pending_charge(self, unit, targets, *, suppress_charge_bonus: bool = False, on_complete=None) -> None:
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            return
+        clean_targets = [t for t in list(targets or []) if t is not None]
+        self._pending_charge_units[unit_id] = {
+            "unit": unit,
+            "targets": clean_targets,
+            "suppress_charge_bonus": bool(suppress_charge_bonus),
+            "on_complete": on_complete,
+        }
+
+    def _handle_charge_roll_ready(self, unit, target_unit_ids=None) -> None:
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            return
+        entry = self._pending_charge_units.pop(unit_id, None)
+        if entry is None:
+            return
+        targets = list(entry.get("targets") or [])
+        if not targets and target_unit_ids:
+            resolved = []
+            registry = getattr(self.game, "entity_registry", None)
+            for tid in list(target_unit_ids or []):
+                try:
+                    if registry is not None:
+                        tgt = registry.get(str(tid), kind="unit")
+                        if tgt is not None:
+                            resolved.append(tgt)
+                except Exception:
+                    continue
+            targets = resolved
+        if not targets:
+            return
+
+        try:
+            base_roll = int(getattr(getattr(unit, "round_state", None), "charge_roll", 0) or 0)
+        except Exception:
+            base_roll = 0
+        if base_roll <= 0:
+            return
+        getter = getattr(self.game, "get_charge_roll_modifiers", None)
+        mod_totals = []
+        if callable(getter):
+            for tgt in targets:
+                mods = list(getter(unit, target_unit=tgt) or [])
+                mod_total = sum(int(val) for val, _source in mods if isinstance(val, (int, float)))
+                mod_totals.append(mod_total)
+        mod_total = min(mod_totals) if mod_totals else 0
+        max_charge_distance = max(0, base_roll + mod_total)
+        suppress_bonus = bool(entry.get("suppress_charge_bonus", False))
+        callback = entry.get("on_complete")
+
+        def _on_charge_complete(completed: bool):
+            success = False
+            if completed:
+                ok, reason = unit.validate_charge_end_state(targets, self.game.map)
+                if ok:
+                    unit.round_state.charged_this_round = True
+                    if suppress_bonus:
+                        try:
+                            unit.mark_charge_bonus_suppressed(self.game)
+                        except Exception:
+                            pass
+                    success = True
+                    if callback is None:
+                        print(f"{unit.name} charge successful - achieved engagement range for all targets")
+                else:
+                    unit.round_state.charged_this_round = False
+                    if callback is None:
+                        print(f"{unit.name} charge failed - {reason}")
+            else:
+                if callback is None:
+                    print(f"{unit.name} charge movement failed or skipped")
+            self.game_view.selected_unit_for_movement = None
+            self.game_view.movement_action = None
+            self.game_view.selected_model_for_movement = None
+            if callable(callback):
+                try:
+                    callback(completed, success, unit, targets)
+                except Exception:
+                    pass
+
+        self._request_move_unit_decision(
+            unit,
+            "charge",
+            _on_charge_complete,
+            max_distance=max_charge_distance,
+            target_unit=targets[0] if targets else None,
+        )
 
     def _show_transport_embark_dialog(self, transport_unit) -> None:
         """Show a dialog listing only valid units that can embark into the selected transport."""
@@ -4473,6 +4583,15 @@ class PhaseManager:
         # Target model selection dialog
         from ..dialogs.target_model_selection_dialog import TargetModelSelectionDialog
         self.game_view.target_model_selection_dialog = TargetModelSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
+
+        # Pending dice-driven movement flows
+        self._pending_advance_units: set[str] = set()
+        self._pending_charge_units: Dict[str, dict] = {}
+        try:
+            if self.game is not None and getattr(self.game, "event_system", None) is not None:
+                self.game.event_system.subscribe("roll_made", self._on_roll_made)
+        except Exception:
+            pass
     
     def get_current_handler(self) -> BasePhaseHandler:
         """Get the appropriate handler for the current game phase"""

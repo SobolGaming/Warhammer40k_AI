@@ -15,6 +15,7 @@ def _validate_declare_charge(game: object, request: DecisionRequest, result: Dec
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
     attacker_id = str(payload.get("unit_id", "") or "")
+    out_of_turn = bool(payload.get("out_of_turn", False) or request.context.get("out_of_turn", False))
     selected_ids = list(result.payload.get("target_unit_ids", []) or [])
     if not selected_ids:
         target_id = str(payload.get("target_unit_id", "") or "")
@@ -33,10 +34,10 @@ def _validate_declare_charge(game: object, request: DecisionRequest, result: Dec
     if attacker is None or any(t is None for t in targets):
         return ("Charge declaration units not found.",)
     try:
-        if not attacker.can_declare_charge(game):
+        if not attacker.can_declare_charge(game, out_of_turn=out_of_turn):
             return ("Unit cannot declare a charge.",)
         for target in targets:
-            if not attacker.can_declare_charge_against(target, game):
+            if not attacker.can_declare_charge_against(target, game, out_of_turn=out_of_turn):
                 return ("Unit cannot declare a charge against one or more targets.",)
     except Exception:
         return ("Charge validation failed.",)
@@ -46,6 +47,7 @@ def _validate_declare_charge(game: object, request: DecisionRequest, result: Dec
 def _apply_declare_charge(game: object, request: DecisionRequest, result: DecisionResult):
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+    out_of_turn = bool(payload.get("out_of_turn", False) or request.context.get("out_of_turn", False))
     attacker = get_unit(game, str(payload.get("unit_id", "") or ""))
     selected_ids = list(result.payload.get("target_unit_ids", []) or [])
     if not selected_ids:
@@ -58,7 +60,7 @@ def _apply_declare_charge(game: object, request: DecisionRequest, result: Decisi
     declare_fn = getattr(game, "declare_charge", None)
     if not callable(declare_fn):
         raise RuntimeError("Game missing declare_charge.")
-    return declare_fn(attacker, targets)
+    return declare_fn(attacker, targets, out_of_turn=out_of_turn)
 
 
 register_decision_handler(DECISION_DECLARE_CHARGE, validate=_validate_declare_charge, apply=_apply_declare_charge)

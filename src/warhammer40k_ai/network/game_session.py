@@ -241,7 +241,7 @@ class NetworkGameSession:
             if not bool(getattr(game, "auto_resolve_dice_rolls", False)):
                 return
             dtype = getattr(request, "decision_type", None)
-            if dtype != DECISION_REQUEST_DICE_ROLL:
+            if dtype not in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
                 return
             player_id = getattr(request, "player_id", None)
             player = None
@@ -265,19 +265,46 @@ class NetworkGameSession:
             except Exception:
                 return
             option_id = None
-            for opt in list(getattr(request, "options", []) or []):
-                payload = dict(getattr(opt, "payload", {}) or {})
-                if str(payload.get("action_id", "")) == "roll":
-                    option_id = opt.option_id
-                    break
-            if option_id is None and getattr(request, "options", None):
-                option_id = request.options[0].option_id
+            result_payload = {}
+            if dtype == DECISION_REQUEST_DICE_ROLL:
+                for opt in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(opt, "payload", {}) or {})
+                    if str(payload.get("action_id", "")) == "roll":
+                        option_id = opt.option_id
+                        break
+                if option_id is None and getattr(request, "options", None):
+                    option_id = request.options[0].option_id
+            else:
+                mgr = getattr(game, "roll_manager", None)
+                ctx = dict(getattr(request, "context", {}) or {})
+                roll_id = ctx.get("roll_id")
+                state = None
+                try:
+                    if mgr is not None and roll_id is not None:
+                        state = mgr.get_roll(int(roll_id))
+                except Exception:
+                    state = None
+                action_id, selected = ("none", [])
+                try:
+                    if mgr is not None and state is not None:
+                        action_id, selected = mgr._auto_pick_reroll_action(game, state)
+                except Exception:
+                    action_id, selected = ("none", [])
+                for opt in list(getattr(request, "options", []) or []):
+                    payload = dict(getattr(opt, "payload", {}) or {})
+                    if str(payload.get("action_id", "")) == str(action_id):
+                        option_id = opt.option_id
+                        break
+                if option_id is None and getattr(request, "options", None):
+                    option_id = request.options[0].option_id
+                if selected is not None:
+                    result_payload["selected_die_ids"] = list(selected)
             if not option_id:
                 return
             cmd = GameCommand.create(
                 CMD_RESOLVE_DECISION,
                 player_id=player_id,
-                payload={"decision_id": request.decision_id, "option_id": option_id, "result_payload": {}},
+                payload={"decision_id": request.decision_id, "option_id": option_id, "result_payload": result_payload},
             )
             self.queue_command(cmd)
 

@@ -9772,6 +9772,11 @@ class Unit:
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
             advance_roll = None
             miracle_used = False
+            fixed_roll = None
+            fixed_source = None
+            army = None
+            player = None
+            game = None
             try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("chronoshift_active"):
@@ -9787,37 +9792,17 @@ class Unit:
                         if pname and pname != exp:
                             apply_bonus = False
                     if apply_bonus and (not exp or exp == "MOVEMENT_PHASE"):
-                        advance_roll = 6
-                        try:
-                            advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
-                        except Exception:
-                            pass
-                        self.round_state.advance_roll = advance_roll
-                        try:
-                            from ..utility.event_bus import append_dice
-                            pn = self.get_parent_army().player
-                            append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name} (Chronoshift)")
-                        except Exception:
-                            pass
-                        return int(advance_roll)
+                        fixed_roll = 6
+                        fixed_source = "rule"
             except Exception:
                 pass
             try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
-                    fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
-                    self.round_state.advance_roll = fixed
-                    try:
-                        from ..utility.event_bus import append_dice
-                        pn = self.get_parent_army().player
-                        append_dice(pn, f"Advance roll fixed: {fixed} for {self.name}")
-                    except Exception:
-                        pass
-                    return fixed
+                    fixed_roll = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
+                    fixed_source = "rule"
             except Exception:
                 pass
-            game = None
-            player = None
             try:
                 army = self.get_parent_army()
                 player = getattr(army, "player", None) if army is not None else None
@@ -9826,47 +9811,51 @@ class Unit:
                 game = None
                 player = None
             # Acts of Faith: allow Miracle die selection (no roll needed if used).
-            try:
-                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-                if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
-                    chosen = mgr.maybe_use_miracle_die(
-                        self,
-                        roll_type="advance",
-                        dice_count=1,
-                        die_faces=6,
-                        game=game,
-                    )
-                    if chosen is not None:
-                        advance_roll = int(chosen)
-                        miracle_used = True
-            except Exception:
-                advance_roll = None
-                miracle_used = False
-            if advance_roll is not None:
+            if fixed_roll is None:
                 try:
-                    advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
+                    mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                    if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                        chosen = mgr.maybe_use_miracle_die(
+                            self,
+                            roll_type="advance",
+                            dice_count=1,
+                            die_faces=6,
+                            game=game,
+                        )
+                        if chosen is not None:
+                            fixed_roll = int(chosen)
+                            fixed_source = "miracle"
+                            miracle_used = True
                 except Exception:
-                    pass
-                try:
-                    self.round_state.advance_roll = int(advance_roll)
-                except Exception:
-                    pass
-                try:
-                    from ..utility.event_bus import append_dice
-                    if player is not None:
-                        append_dice(player, f"Miracle die used for Advance roll: {int(advance_roll)} for {self.name}")
-                except Exception:
-                    pass
-                return int(advance_roll)
+                    fixed_roll = fixed_roll
+                    miracle_used = False
 
             if game is None or player is None:
+                if fixed_roll is not None:
+                    try:
+                        advance_roll = self._apply_advance_roll_modifiers(int(fixed_roll))
+                    except Exception:
+                        advance_roll = int(fixed_roll)
+                    try:
+                        self.round_state.advance_roll = int(advance_roll)
+                    except Exception:
+                        pass
+                    try:
+                        from ..utility.event_bus import append_dice
+                        if player is not None:
+                            append_dice(player, f"Advance roll fixed: {int(advance_roll)} for {self.name}")
+                    except Exception:
+                        pass
+                    return int(advance_roll)
+                return None
+            if not bool(getattr(game, "is_authoritative", True)):
                 return None
 
             from ..utility.entity_ids import get_entity_id
             from ..engine.roll_utils import command_reroll_available
             reroll_rules = []
             try:
-                if self.can_reroll_advance_roll():
+                if fixed_source is None and self.can_reroll_advance_roll():
                     reroll_rules.append(
                         {
                             "action_id": "reroll_advance",
@@ -9877,7 +9866,9 @@ class Unit:
                     )
             except Exception:
                 pass
-            command_reroll_ok = command_reroll_available(game, player, roll_type="advance")
+            command_reroll_ok = False
+            if fixed_source is None:
+                command_reroll_ok = command_reroll_available(game, player, roll_type="advance")
             spec = {
                 "dice_count": 1,
                 "faces": 6,
@@ -9889,16 +9880,29 @@ class Unit:
                 "command_reroll_allowed": command_reroll_ok,
                 "command_reroll_mode": "one",
             }
+            if fixed_roll is not None:
+                spec["fixed_dice"] = [int(fixed_roll)]
+                if fixed_source == "miracle":
+                    spec["miracle_used"] = True
             try:
                 if bool(getattr(game, "auto_resolve_dice_rolls", False)):
-                    fixed_val = int(get_roll("D6") or 0)
-                    spec["fixed_dice"] = [fixed_val]
-                    if reroll_rules or command_reroll_ok:
+                    if fixed_roll is None:
+                        fixed_val = int(get_roll("D6") or 0)
+                        spec["fixed_dice"] = [fixed_val]
+                    if (reroll_rules or command_reroll_ok) and fixed_source is None:
                         spec["roll_sequence"] = [int(get_roll("D6") or 0)]
             except Exception:
                 pass
+            req = None
             try:
                 req = game.request_dice_roll(player_id=getattr(player, "id", None), spec=spec, prompt=spec["reason"])
+            except Exception:
+                pass
+            try:
+                roll_id = None
+                if req is not None:
+                    roll_id = getattr(req, "context", {}).get("roll_id")
+                self.round_state.advance_roll_id = roll_id
             except Exception:
                 pass
             if bool(getattr(game, "auto_resolve_dice_rolls", False)):
@@ -13520,9 +13524,9 @@ class Unit:
                     except Exception:
                         return 0
 
-            # Interactive dice roll flow
+            # Dice roll flow (server-authoritative when game exists)
             try:
-                if game is not None and not bool(getattr(game, "auto_resolve_dice_rolls", True)):
+                if game is not None and bool(getattr(game, "is_authoritative", True)):
                     if leadership_value is None:
                         leadership_value = _safe_leadership()
                     from ..engine.roll_utils import command_reroll_available
@@ -13593,6 +13597,9 @@ class Unit:
                     return
             except Exception:
                 pass
+
+            if game is not None and not bool(getattr(game, "is_authoritative", True)):
+                return
 
             manual_roll = bool(synapse_3d6 or total_mod != 0 or icon_of_war_reroll_available or carmine_reroll_available)
             if not manual_roll:

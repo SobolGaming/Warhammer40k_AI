@@ -143,7 +143,7 @@ class TestSetupReactiveShootCharge(unittest.TestCase):
         pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CHOOSE_SETUP_REACTIVE_ACTION]
         self.assertEqual(len(pending), 1)
 
-    def test_setup_reactive_action_charge_calls_attempt_charge(self):
+    def test_setup_reactive_action_charge_defers_to_ui(self):
         game, moving_player, reacting_player, moving_unit, reacting_unit = self._arrange_units()
         game._setup_reactive_available_actions = lambda _u, _t: ["charge"]
         reacting_unit.can_declare_charge_against = lambda _t, _g, out_of_turn=False: True
@@ -169,10 +169,7 @@ class TestSetupReactiveShootCharge(unittest.TestCase):
         action_option = next(opt for opt in action_req.options if (opt.payload or {}).get("action") == "charge")
         resolve_decision_command(game, action_req, action_option.option_id, player_id=reacting_player.id)
 
-        self.assertIs(called.get("unit"), reacting_unit)
-        self.assertIs(called.get("target"), moving_unit)
-        self.assertTrue(bool(called.get("out_of_turn")))
-        self.assertFalse(bool(called.get("count_as_charged")))
+        self.assertFalse(bool(called), "Setup reactive charge should defer to UI/decision flow (no auto attempt).")
 
     def test_setup_reactive_action_shoot_queues_declare_shots(self):
         game, moving_player, reacting_player, moving_unit, _reacting_unit = self._arrange_units()

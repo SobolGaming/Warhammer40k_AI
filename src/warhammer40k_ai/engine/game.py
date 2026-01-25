@@ -74,9 +74,14 @@ class Game:
         self.random_source = RandomSource()
         self.roll_manager = DiceRollManager()
         self.attack_manager = AttackResolutionManager()
-        # Headless/test default: auto-resolve dice rolls without waiting for UI decisions.
+        # Headless/test default: auto-resolve dice roll decisions via headless agent.
         # Interactive UI or network server should disable this.
         self.auto_resolve_dice_rolls = True
+        try:
+            from .headless_decision_agent import HeadlessDecisionAgent
+            self._headless_decision_agent = HeadlessDecisionAgent(self)
+        except Exception:
+            self._headless_decision_agent = None
         self.ability_lifecycle = AbilityLifecycle(self)
         self.event_system.lifecycle = self.ability_lifecycle
         # Authoritative (server/local) vs client-replay gating for decision queues.
@@ -2361,7 +2366,8 @@ class Game:
             if action == "charge":
                 if not unit.can_declare_charge_against(target_unit, self, out_of_turn=True):
                     return
-                self.attempt_charge(unit, target_unit, out_of_turn=True, count_as_charged=False)
+                # Charge declaration/roll/move should be handled via decision flow (UI/headless).
+                return
             return
 
     def _maybe_queue_reverberating_summons_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
@@ -7892,6 +7898,14 @@ class Game:
             chargers.add(get_entity_id(charging_unit))
             self.phase_charge_targets[tgt_id] = chargers
 
+        is_authoritative = bool(getattr(self, "is_authoritative", True))
+        if not is_authoritative:
+            return {
+                "roll_id": None,
+                "target_unit_ids": [get_entity_id(t) for t in targets],
+                "miracle_used": False,
+            }
+
         spec = self._get_charge_roll_spec(charging_unit, target_unit=targets[0])
         player = charging_unit.get_parent_army().player
         dice_count = int(getattr(spec, "dice_count", 2) or 2)
@@ -7996,8 +8010,13 @@ class Game:
             except Exception:
                 pass
         req = self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+        try:
+            roll_id = getattr(req, "context", {}).get("roll_id")
+            charging_unit.round_state.charge_roll_id = roll_id
+        except Exception:
+            roll_id = getattr(req, "context", {}).get("roll_id") if req is not None else None
         result = {
-            "roll_id": getattr(req, "context", {}).get("roll_id"),
+            "roll_id": roll_id,
             "target_unit_ids": [get_entity_id(t) for t in targets],
             "miracle_used": bool(miracle_used),
         }
