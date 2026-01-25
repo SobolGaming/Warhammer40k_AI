@@ -681,6 +681,8 @@ class WargearProfile:
         attacks_override_modifiers: Optional[list[str]] = None,
         attacks_override_note: Optional[str] = None,
         publish_roll_event: bool = True,
+        roll_value: Optional[int] = None,
+        roll_values: Optional[list[int]] = None,
     ) -> AttackCountInfo:
         if attacks_override is not None:
             num_attacks = max(0, int(attacks_override))
@@ -703,7 +705,14 @@ class WargearProfile:
                 attack_result.attacks_rolled = new_num
                 attack_result.attacks_dice_rolls = new_rolls
                 return new_num, new_rolls
-            num_attacks, dice_rolls = self.attacks.resolve_detailed()
+            if roll_value is not None:
+                try:
+                    num_attacks = int(roll_value)
+                except Exception:
+                    num_attacks = 0
+                dice_rolls = list(roll_values or [])
+            else:
+                num_attacks, dice_rolls = self.attacks.resolve_detailed()
             attack_result.attacks_rolled = num_attacks
             attack_result.attacks_dice_rolls = dice_rolls
             if publish_roll_event:
@@ -1019,8 +1028,7 @@ class WargearProfile:
         attacks_override_modifiers: Optional[list[str]] = None,
         attacks_override_note: Optional[str] = None,
     ) -> Optional[AttackResult]:
-        # ONE SHOT: enforce once per battle per model per weapon.
-        # (Higher-level code also filters declarations, but this is the final guard.)
+        # ONE SHOT: enforce once per battle per model per weapon (guard before queuing).
         try:
             if self.is_one_shot():
                 key = self.one_shot_key()
@@ -1032,6 +1040,45 @@ class WargearProfile:
                     except Exception:
                         pass
                     return
+        except Exception:
+            pass
+
+        # Interactive dice roll mode: defer to attack manager.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+            if game is not None and not bool(getattr(game, "auto_resolve_dice_rolls", True)):
+                mgr = getattr(game, "attack_manager", None)
+                if mgr is not None:
+                    mgr.queue_attack_declarations(
+                        game,
+                        [
+                            {
+                                "weapon_profile": self,
+                                "target_unit": target,
+                                "models": [attacker],
+                                "attacks_override": attacks_override,
+                                "attacks_override_modifiers": attacks_override_modifiers,
+                                "attacks_override_note": attacks_override_note,
+                            }
+                        ],
+                        out_of_phase=False,
+                    )
+                    # ONE SHOT: mark expended once queued.
+                    try:
+                        if self.is_one_shot():
+                            key = self.one_shot_key()
+                            if key:
+                                used = getattr(attacker, "_one_shot_used", set())
+                                if not isinstance(used, set):
+                                    used = set()
+                                used.add(key)
+                                setattr(attacker, "_one_shot_used", used)
+                    except Exception:
+                        pass
+                    return None
         except Exception:
             pass
 
@@ -1526,42 +1573,19 @@ class WargearProfile:
                 except Exception:
                     root_unit = attacker.parent_unit
                 # Eligible models: alive models in the (attached) unit equipped with >=1 Hazardous weapon
-                eligible = []
-                try:
-                    all_models = root_unit.get_models_for_collision()
-                except Exception:
-                    all_models = list(getattr(root_unit, "models", []) or [])
                 try:
                     root_sr = getattr(root_unit, "special_rules", None)
                     pain_hazardous = isinstance(root_sr, dict) and root_sr.get("pain_melee_hazardous_non_character")
                 except Exception:
                     pain_hazardous = False
-                for m in all_models:
-                    try:
-                        if not getattr(m, "is_alive", True):
-                            continue
-                        has_hazardous = False
-                        for wg in (getattr(m, "wargear", []) or []):
-                            for prof in (getattr(wg, "profiles", {}) or {}).values():
-                                if prof is None:
-                                    continue
-                                if prof.is_hazardous():
-                                    has_hazardous = True
-                                    break
-                            if has_hazardous:
-                                break
-                        if not has_hazardous and pain_hazardous and not bool(getattr(m, "is_character", False)):
-                            for wg in (getattr(m, "wargear", []) or []):
-                                try:
-                                    if wg.is_melee():
-                                        has_hazardous = True
-                                        break
-                                except Exception:
-                                    continue
-                        if has_hazardous:
-                            eligible.append(m)
-                    except Exception:
-                        continue
+                try:
+                    from ..utility.hazardous import collect_hazardous_eligible_models
+                    eligible = collect_hazardous_eligible_models(
+                        root_unit,
+                        include_melee_non_character=bool(pain_hazardous),
+                    )
+                except Exception:
+                    eligible = []
 
                 # If somehow no eligible model found, fall back to the attacker model.
                 if not eligible:
@@ -1760,7 +1784,16 @@ class WargearProfile:
                 return roll_value, None
         return roll_value, "skip"
 
-    def _hit_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
+    def _hit_target_with_tracking(
+        self, 
+        target: 'Unit', 
+        attacker: 'Model', 
+        attack_instance: Dict,
+        *,
+        roll_value: Optional[int] = None,
+        allow_rerolls: bool = True,
+        log_roll: bool = True,
+    ) -> Dict:
         """Hit resolution with detailed tracking"""
         hit_result = {
             'roll': None,
@@ -1774,6 +1807,7 @@ class WargearProfile:
             'modified_roll': None,    # Track final modified roll
             'hit_modifier_total': 0,  # Track total modifier applied
         }
+        rerolls_allowed = bool(allow_rerolls)
 
         base_skill = self.skill
         try:
@@ -2533,42 +2567,50 @@ class WargearProfile:
         # Provide reroll callback for hit
         def _reroll_hit():
             new_roll = get_roll("D6")
-            try:
-                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
-            except Exception:
-                pass
+            if log_roll:
+                try:
+                    weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit re-roll: {new_roll} for {attacker.name} with {weapon_name_for_log}")
+                except Exception:
+                    pass
             return new_roll
         dice_roll = None
         miracle_used = False
-        try:
-            unit = attacker.parent_unit
-            army = unit.get_parent_army() if unit is not None else None
-            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
-                dice_roll, _dice, miracle_used = mgr.resolve_roll(
-                    unit,
-                    roll_type="hit",
-                    game=game,
-                    dice_count=1,
-                    die_faces=6,
-                    needed=final_needed,
-                )
-        except Exception:
-            dice_roll = None
-            miracle_used = False
+        if roll_value is not None:
+            try:
+                dice_roll = int(roll_value)
+            except Exception:
+                dice_roll = None
+        if dice_roll is None:
+            try:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                    dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                        unit,
+                        roll_type="hit",
+                        game=game,
+                        dice_count=1,
+                        die_faces=6,
+                        needed=final_needed,
+                    )
+            except Exception:
+                dice_roll = None
+                miracle_used = False
         if dice_roll is None:
             dice_roll = get_roll("D6")
-        try:
-            # Use parent wargear name when available for log context.
-            weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-            if miracle_used:
-                append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
-            else:
-                append_dice(attacker.parent_unit.get_parent_army().player, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
-        except Exception:
-            pass
+        if log_roll:
+            try:
+                # Use parent wargear name when available for log context.
+                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                if miracle_used:
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+                else:
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Hit roll: {dice_roll} for {attacker.name} with {weapon_name_for_log}")
+            except Exception:
+                pass
 
         # Value-based and full rerolls from aura/leading/unit rules.
         reroll_used = False
@@ -2617,68 +2659,87 @@ class WargearProfile:
                     reroll_full_reasons.extend(list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
         except Exception:
             pass
-
+        # Contextual reroll sources carried on the attack instance (best-effort).
         try:
-            if dice_roll in reroll_hit_values and "reroll" not in hit_result:
-                rr = _reroll_hit()
-                if reroll_value_reasons:
-                    hit_result.setdefault("special_effects", []).extend(reroll_value_reasons)
-                else:
-                    hit_result.setdefault("special_effects", []).append("Re-roll Hit roll")
-                if dice_roll == 1:
-                    hit_result["reroll_of_one"] = 1
-                hit_result["reroll"] = rr
-                dice_roll = rr
-                reroll_used = True
+            if bool(attack_instance.get("furious_onslaught_applies")):
+                reroll_full_reasons.append("Furious Onslaught")
+        except Exception:
+            pass
+        try:
+            rule = attack_instance.get("closest_enemy_hit_reroll_rule")
+            if rule:
+                reason = str(rule.get("source", "") or "Closest enemy unit").strip() or "Closest enemy unit"
+                reroll_full_reasons.append(reason)
         except Exception:
             pass
 
-        try:
-            if reroll_full_reasons and "reroll" not in hit_result:
-                try:
-                    success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
-                except Exception:
-                    success = False
-                do_reroll = False
-                try:
-                    unit = attacker.parent_unit
-                    game = unit.get_parent_army().player.game
-                    player = unit.get_parent_army().player
-                    is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                except Exception:
-                    is_human = False
-                    provider = None
-                    player = None
-                reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
-                if is_human and callable(provider):
-                    try:
-                        do_reroll = bool(provider(
-                            player=player,
-                            unit=unit,
-                            roll_type="hit",
-                            value=dice_roll,
-                            dice=None,
-                            needed=final_needed,
-                            success=success,
-                            reason=reason,
-                        ))
-                    except Exception:
-                        do_reroll = False
-                else:
-                    do_reroll = (not success)
-                if do_reroll:
+        hit_result["reroll_values"] = list(sorted(reroll_hit_values))
+        hit_result["reroll_value_reasons"] = list(reroll_value_reasons)
+        hit_result["reroll_full_reasons"] = list(reroll_full_reasons)
+
+        if rerolls_allowed:
+            try:
+                if rerolls_allowed and dice_roll in reroll_hit_values and "reroll" not in hit_result:
                     rr = _reroll_hit()
-                    hit_result.setdefault("special_effects", []).extend(reroll_full_reasons)
+                    if reroll_value_reasons:
+                        hit_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+                    else:
+                        hit_result.setdefault("special_effects", []).append("Re-roll Hit roll")
+                    if dice_roll == 1:
+                        hit_result["reroll_of_one"] = 1
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
+            except Exception:
+                pass
+
+        if rerolls_allowed:
+            try:
+                if rerolls_allowed and reroll_full_reasons and "reroll" not in hit_result:
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=reason,
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).extend(reroll_full_reasons)
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+            except Exception:
+                pass
 
         # Grey Knights: Fury of Titan (Deep Strike) re-roll Hit rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in hit_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 sr = getattr(unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("fury_of_titan_active"):
@@ -2693,7 +2754,7 @@ class WargearProfile:
 
         # Model-specific abilities: re-roll Hit roll vs CHARACTER targets (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 is_character_target = False
                 try:
@@ -2750,7 +2811,7 @@ class WargearProfile:
 
         # World Eaters: Furious Onslaught (Forgefiend) re-roll Hit roll vs closest eligible target within 18" (optional).
         try:
-            if attack_instance.get("furious_onslaught_applies") and "reroll" not in hit_result:
+            if rerolls_allowed and attack_instance.get("furious_onslaught_applies") and "reroll" not in hit_result:
                 try:
                     success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
                 except Exception:
@@ -2793,7 +2854,7 @@ class WargearProfile:
         # Closest enemy unit: re-roll Hit roll (optional).
         try:
             rule = attack_instance.get("closest_enemy_hit_reroll_rule")
-            if rule and "reroll" not in hit_result:
+            if rerolls_allowed and rule and "reroll" not in hit_result:
                 try:
                     success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
                 except Exception:
@@ -2840,7 +2901,7 @@ class WargearProfile:
 
         # Emperor's Children: Pledges to the Dark Prince (1+) re-roll Hit rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in hit_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
@@ -2856,7 +2917,7 @@ class WargearProfile:
 
         # Emperor's Children: Mechanised Murder re-roll Hit rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in hit_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
@@ -2872,7 +2933,7 @@ class WargearProfile:
 
         # Cabal of Sorcerers: Destiny's Ruin rerolls (TS/Scintillating Legions only).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 sr = getattr(target, "special_rules", None)
                 if isinstance(sr, dict):
@@ -2943,7 +3004,7 @@ class WargearProfile:
 
         # Oath of Moment: attacks vs the selected target can re-roll the Hit roll (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army()
                 mgr = getattr(army, "oath_of_moment", None) if army is not None else None
@@ -2993,7 +3054,7 @@ class WargearProfile:
 
         # Bondsman: Atrapos's Duty re-roll Hit rolls vs TITANIC/TOWERING targets.
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 sr = getattr(unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("bondsman_reroll_hit_wound_vs_titanic"):
@@ -3044,7 +3105,7 @@ class WargearProfile:
 
         # Bondsman: Gallant's Duty re-roll Hit rolls in melee (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
                     unit = attacker.parent_unit
@@ -3092,7 +3153,7 @@ class WargearProfile:
 
         # Code Chivalric: Martial Valour re-roll Hit roll (one per selection).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "code_chivalric", None) if army is not None else None
@@ -3138,7 +3199,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Hatred Eternal) re-roll Hit rolls (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("pain_reroll_hit"):
                     try:
@@ -3183,7 +3244,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Winged Strike) re-roll Hit rolls for ranged attacks (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
                 if is_ranged:
                     sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -3230,7 +3291,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Goaded Savagery) re-roll Hit rolls for non-character melee attacks (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee and not bool(getattr(attacker, "is_character", False)):
                     sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -3277,7 +3338,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Splinter Racks) re-roll Hit rolls with Anti weapons (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("pain_splinter_racks_active"):
                     is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
@@ -3326,7 +3387,7 @@ class WargearProfile:
 
         # Seductive Gambit: melee attacks can re-roll the Hit roll (optional).
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
                     unit = attacker.parent_unit
@@ -3379,7 +3440,7 @@ class WargearProfile:
         # to allow "fishing" for 6s (e.g. Devastating Wounds downstream on critical wounds, etc).
         # Note: a dice cannot be re-rolled more than once, so skip if a reroll already occurred.
         try:
-            if "reroll" not in hit_result:
+            if rerolls_allowed and "reroll" not in hit_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
                     quarry_ids = getattr(attacker.parent_unit, "_monarch_of_the_hunt_quarry_ids", None)
@@ -3436,29 +3497,30 @@ class WargearProfile:
         if miracle_used:
             hit_result['special_effects'].append("Miracle die")
         # Publish roll_made for hit
-        try:
-            unit = attacker.parent_unit
-            game = unit.get_parent_army().player.game
-            from ..utility.reroll_tracker import prepare_reroll_event
-            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
-                game,
-                _reroll_hit,
-                reroll_used=bool(reroll_used),
-                used_result=dice_roll,
-            )
-            game.event_system.publish(
-                "roll_made",
-                player=unit.get_parent_army().player,
-                unit=unit,
-                roll_type="hit",
-                value=dice_roll,
-                reroll=reroll_cb,
-                reroll_locked=bool(reroll_locked),
-                roll_id=roll_id,
-                miracle_used=bool(miracle_used),
-            )
-        except Exception:
-            pass
+        if log_roll:
+            try:
+                unit = attacker.parent_unit
+                game = unit.get_parent_army().player.game
+                from ..utility.reroll_tracker import prepare_reroll_event
+                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                    game,
+                    _reroll_hit,
+                    reroll_used=bool(reroll_used),
+                    used_result=dice_roll,
+                )
+                game.event_system.publish(
+                    "roll_made",
+                    player=unit.get_parent_army().player,
+                    unit=unit,
+                    roll_type="hit",
+                    value=dice_roll,
+                    reroll=reroll_cb,
+                    reroll_locked=bool(reroll_locked),
+                    roll_id=roll_id,
+                    miracle_used=bool(miracle_used),
+                )
+            except Exception:
+                pass
 
         # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         new_roll, decision = self._maybe_apply_aspect_shrine_token(
@@ -3522,6 +3584,8 @@ class WargearProfile:
                             empowered_sustained = True
         except Exception:
             pass
+
+        hit_result["crit_threshold"] = int(crit_threshold)
 
         # Precompute attack context (for Blitzing Firepower and critical hit effects).
         try:
@@ -4010,7 +4074,16 @@ class WargearProfile:
 
         return hit_result
 
-    def _wound_target_with_tracking(self, target: 'Unit', attacker: 'Model', attack_instance: Dict) -> Dict:
+    def _wound_target_with_tracking(
+        self, 
+        target: 'Unit', 
+        attacker: 'Model', 
+        attack_instance: Dict,
+        *,
+        roll_value: Optional[int] = None,
+        allow_rerolls: bool = True,
+        log_roll: bool = True,
+    ) -> Dict:
         """Wound resolution with detailed tracking"""
         wound_result = {
             'roll': None,
@@ -4022,6 +4095,7 @@ class WargearProfile:
             'wound': False,
             'special_effects': []
         }
+        rerolls_allowed = bool(allow_rerolls)
         
         if attack_instance.get('lethal_hit', False):
             wound_result['wound'] = True
@@ -4199,11 +4273,12 @@ class WargearProfile:
         # Provide reroll callback for wound
         def _reroll_wound():
             new_roll = get_roll("D6")
-            try:
-                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-                append_dice(attacker.parent_unit.get_parent_army().player, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
-            except Exception:
-                pass
+            if log_roll:
+                try:
+                    weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Wound re-roll: {new_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                except Exception:
+                    pass
             return new_roll
         # Precompute wound-roll modifiers (10e-style +/-1 cap)
         dice_modifier = 0
@@ -4482,6 +4557,8 @@ class WargearProfile:
         except Exception:
             pass
 
+        wound_result["crit_threshold"] = int(crit_wound_threshold or 6)
+
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
             if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():
@@ -4533,50 +4610,57 @@ class WargearProfile:
 
         dice_roll = None
         miracle_used = False
-        try:
-            unit = attacker.parent_unit
-            army = unit.get_parent_army() if unit is not None else None
-            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
-                final_needed = None
-                try:
-                    if isinstance(strength, int) and isinstance(target_toughness, int):
-                        if strength >= 2 * target_toughness:
-                            final_needed = 2
-                        elif strength > target_toughness:
-                            final_needed = 3
-                        elif strength == target_toughness:
-                            final_needed = 4
-                        elif strength * 2 <= target_toughness:
-                            final_needed = 6
-                        else:
-                            final_needed = 5
-                        final_needed = int(final_needed) - int(dice_modifier)
-                        final_needed = min(max(final_needed, 2), 6)
-                except Exception:
+        if roll_value is not None:
+            try:
+                dice_roll = int(roll_value)
+            except Exception:
+                dice_roll = None
+        if dice_roll is None:
+            try:
+                unit = attacker.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
                     final_needed = None
-                dice_roll, _dice, miracle_used = mgr.resolve_roll(
-                    unit,
-                    roll_type="wound",
-                    game=game,
-                    dice_count=1,
-                    die_faces=6,
-                    needed=final_needed,
-                )
-        except Exception:
-            dice_roll = None
-            miracle_used = False
+                    try:
+                        if isinstance(strength, int) and isinstance(target_toughness, int):
+                            if strength >= 2 * target_toughness:
+                                final_needed = 2
+                            elif strength > target_toughness:
+                                final_needed = 3
+                            elif strength == target_toughness:
+                                final_needed = 4
+                            elif strength * 2 <= target_toughness:
+                                final_needed = 6
+                            else:
+                                final_needed = 5
+                            final_needed = int(final_needed) - int(dice_modifier)
+                            final_needed = min(max(final_needed, 2), 6)
+                    except Exception:
+                        final_needed = None
+                    dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                        unit,
+                        roll_type="wound",
+                        game=game,
+                        dice_count=1,
+                        die_faces=6,
+                        needed=final_needed,
+                    )
+            except Exception:
+                dice_roll = None
+                miracle_used = False
         if dice_roll is None:
             dice_roll = get_roll("D6")
-        try:
-            weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
-            if miracle_used:
-                append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
-            else:
-                append_dice(attacker.parent_unit.get_parent_army().player, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
-        except Exception:
-            pass
+        if log_roll:
+            try:
+                weapon_name_for_log = getattr(self, 'parent_wargear', None).name if getattr(self, 'parent_wargear', None) else getattr(self, 'name', 'Weapon')
+                if miracle_used:
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Miracle die used for Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+                else:
+                    append_dice(attacker.parent_unit.get_parent_army().player, f"Wound roll: {dice_roll} vs T{target_toughness} by {attacker.name} with {weapon_name_for_log}")
+            except Exception:
+                pass
         if miracle_used:
             wound_result['special_effects'].append("Miracle die")
 
@@ -4627,90 +4711,139 @@ class WargearProfile:
                     reroll_full_reasons.extend(list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ()))
         except Exception:
             pass
-
+        # Contextual reroll sources carried on the attack instance (best-effort).
         try:
-            if dice_roll in reroll_wound_values and "reroll" not in wound_result:
-                rr = _reroll_wound()
-                if reroll_value_reasons:
-                    wound_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+            rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
+            if rule and bool(rule.get("reroll_wound")):
+                reason = str(rule.get("source", "") or "Closest eligible MONSTER/VEHICLE").strip() or "Closest eligible MONSTER/VEHICLE"
+                reroll_full_reasons.append(reason)
+        except Exception:
+            pass
+        # Twin-linked grants reroll of wound rolls.
+        try:
+            twin_linked_active = False
+            if self.is_twin_linked():
+                twin_linked_active = True
+            bonus_twin_linked = bool(attack_instance.get("bonus_twin_linked"))
+            if bonus_twin_linked:
+                twin_linked_active = True
+            # Daemonic Fury twin-linked (melee) special case.
+            daemonic_fury_twin_linked = False
+            try:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("daemonic_fury_twin_linked_active") is True:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                    if is_melee:
+                        expires_phase = str(sr.get("daemonic_fury_twin_linked_expires_phase", "") or "")
+                        if expires_phase:
+                            phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                            if phase_key and expires_phase != phase_key:
+                                is_melee = False
+                    if is_melee:
+                        twin_linked_active = True
+                        daemonic_fury_twin_linked = True
+            except Exception:
+                pass
+            if twin_linked_active:
+                if daemonic_fury_twin_linked and not self.is_twin_linked():
+                    reroll_full_reasons.append("Twin-linked (Daemonic Fury)")
+                elif bonus_twin_linked and not self.is_twin_linked():
+                    reroll_full_reasons.append("Twin-linked (objective target)")
                 else:
-                    wound_result.setdefault("special_effects", []).append("Re-roll Wound roll")
-                if dice_roll == 1:
-                    wound_result["reroll_of_one"] = 1
-                wound_result["reroll"] = rr
-                dice_roll = rr
-                reroll_used = True
+                    reroll_full_reasons.append("Twin-linked (re-roll failed wound)")
         except Exception:
             pass
 
-        try:
-            if reroll_full_reasons and "reroll" not in wound_result:
-                needed = 0
-                try:
-                    s_val = strength
-                    t_val = target_toughness
-                    if isinstance(s_val, int) and isinstance(t_val, int):
-                        if s_val >= 2 * t_val:
-                            needed = 2
-                        elif s_val > t_val:
-                            needed = 3
-                        elif s_val == t_val:
-                            needed = 4
-                        elif s_val * 2 <= t_val:
-                            needed = 6
-                        else:
-                            needed = 5
-                except Exception:
-                    needed = 0
-                final_needed = needed
-                try:
-                    final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
-                except Exception:
-                    pass
-                try:
-                    success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
-                except Exception:
-                    success = False
-                do_reroll = False
-                try:
-                    unit = attacker.parent_unit
-                    game = unit.get_parent_army().player.game
-                    player = unit.get_parent_army().player
-                    is_human = bool(getattr(player, "has_control", lambda: False)())
-                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                except Exception:
-                    is_human = False
-                    provider = None
-                    player = None
-                reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
-                if is_human and callable(provider):
-                    try:
-                        do_reroll = bool(provider(
-                            player=player,
-                            unit=unit,
-                            roll_type="wound",
-                            value=dice_roll,
-                            dice=None,
-                            needed=final_needed,
-                            success=success,
-                            reason=reason,
-                        ))
-                    except Exception:
-                        do_reroll = False
-                else:
-                    do_reroll = (not success)
-                if do_reroll:
+        wound_result["reroll_values"] = list(sorted(reroll_wound_values))
+        wound_result["reroll_value_reasons"] = list(reroll_value_reasons)
+        wound_result["reroll_full_reasons"] = list(reroll_full_reasons)
+
+        if rerolls_allowed:
+            try:
+                if rerolls_allowed and dice_roll in reroll_wound_values and "reroll" not in wound_result:
                     rr = _reroll_wound()
-                    wound_result.setdefault("special_effects", []).extend(reroll_full_reasons)
+                    if reroll_value_reasons:
+                        wound_result.setdefault("special_effects", []).extend(reroll_value_reasons)
+                    else:
+                        wound_result.setdefault("special_effects", []).append("Re-roll Wound roll")
+                    if dice_roll == 1:
+                        wound_result["reroll_of_one"] = 1
                     wound_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
+            except Exception:
+                pass
+
+        if rerolls_allowed:
+            try:
+                if rerolls_allowed and reroll_full_reasons and "reroll" not in wound_result:
+                    needed = 0
+                    try:
+                        s_val = strength
+                        t_val = target_toughness
+                        if isinstance(s_val, int) and isinstance(t_val, int):
+                            if s_val >= 2 * t_val:
+                                needed = 2
+                            elif s_val > t_val:
+                                needed = 3
+                            elif s_val == t_val:
+                                needed = 4
+                            elif s_val * 2 <= t_val:
+                                needed = 6
+                            else:
+                                needed = 5
+                    except Exception:
+                        needed = 0
+                    final_needed = needed
+                    try:
+                        final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                    except Exception:
+                        pass
+                    try:
+                        success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                    reason = reroll_full_reasons[0] if reroll_full_reasons else "Unit ability"
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="wound",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=reason,
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll:
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).extend(reroll_full_reasons)
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+            except Exception:
+                pass
 
         # Grey Knights: Fury of Titan (Deep Strike) re-roll Wound rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 sr = getattr(unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("fury_of_titan_active"):
@@ -4725,7 +4858,7 @@ class WargearProfile:
 
         # Model-specific abilities: re-roll Wound roll vs CHARACTER targets (optional).
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 is_character_target = False
                 try:
@@ -4805,7 +4938,7 @@ class WargearProfile:
         # Closest eligible MONSTER/VEHICLE target: re-roll Wound roll (optional).
         try:
             rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
-            if rule and rule.get("reroll_wound") and "reroll" not in wound_result:
+            if rerolls_allowed and rule and rule.get("reroll_wound") and "reroll" not in wound_result:
                 needed = 0
                 try:
                     s_val = strength
@@ -4873,7 +5006,7 @@ class WargearProfile:
 
         # Emperor's Children: Pledges to the Dark Prince (3+) re-roll Wound rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
@@ -4889,7 +5022,7 @@ class WargearProfile:
 
         # Emperor's Children: Mechanised Murder re-roll Wound rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
@@ -4905,7 +5038,7 @@ class WargearProfile:
 
         # Seductive Gambit: melee attacks can re-roll Wound rolls of 1.
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in wound_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
                     unit = attacker.parent_unit
@@ -4921,7 +5054,7 @@ class WargearProfile:
 
         # Rage-cursed Onslaught: Maddened Ferocity re-roll Wound rolls of 1 (melee).
         try:
-            if dice_roll == 1 and "reroll" not in wound_result:
+            if rerolls_allowed and dice_roll == 1 and "reroll" not in wound_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
                     unit = attacker.parent_unit
@@ -4955,7 +5088,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Sadistic Raiders) re-roll Wound roll if target is on an objective (optional).
         try:
-            if pain_objective_reroll and "reroll" not in wound_result:
+            if rerolls_allowed and pain_objective_reroll and "reroll" not in wound_result:
                 needed = 0
                 try:
                     s_val = strength
@@ -5020,7 +5153,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Sadistic Raiders) re-roll Wound rolls of 1.
         try:
-            if (not pain_objective_reroll) and dice_roll == 1 and "reroll" not in wound_result:
+            if rerolls_allowed and (not pain_objective_reroll) and dice_roll == 1 and "reroll" not in wound_result:
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("pain_reroll_wound_ones"):
                     rr = _reroll_wound()
@@ -5034,7 +5167,7 @@ class WargearProfile:
 
         # Drukhari: Power from Pain (Goaded Savagery) re-roll Wound rolls for non-character melee attacks (optional).
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee and not bool(getattr(attacker, "is_character", False)):
                     sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -5103,7 +5236,7 @@ class WargearProfile:
 
         # Emperor's Children: Internal Rivalries (Favoured Champions) re-roll Wound roll (optional).
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
@@ -5171,7 +5304,7 @@ class WargearProfile:
 
         # Bondsman: Atrapos's Duty re-roll Wound rolls vs TITANIC/TOWERING targets.
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 sr = getattr(unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("bondsman_reroll_hit_wound_vs_titanic"):
@@ -5244,7 +5377,7 @@ class WargearProfile:
 
         # Bondsman: Mentor re-roll Wound rolls vs this model's quarry.
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 sr = getattr(unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("bondsman_reroll_wound_vs_quarry"):
@@ -5324,7 +5457,7 @@ class WargearProfile:
 
         # Code Chivalric: Martial Valour re-roll Wound roll (one per selection).
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 unit = attacker.parent_unit
                 army = unit.get_parent_army() if unit is not None else None
                 mgr = getattr(army, "code_chivalric", None) if army is not None else None
@@ -5394,7 +5527,7 @@ class WargearProfile:
         # to allow "fishing" for 6s.
         # Note: cannot re-roll a dice more than once, so skip if already rerolled.
         try:
-            if "reroll" not in wound_result:
+            if rerolls_allowed and "reroll" not in wound_result:
                 is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
                 if is_melee:
                     quarry_ids = getattr(attacker.parent_unit, "_monarch_of_the_hunt_quarry_ids", None)
@@ -5472,29 +5605,30 @@ class WargearProfile:
             pass
         wound_result['roll'] = dice_roll
         # Publish roll_made for wound
-        try:
-            unit = attacker.parent_unit
-            game = unit.get_parent_army().player.game
-            from ..utility.reroll_tracker import prepare_reroll_event
-            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
-                game,
-                _reroll_wound,
-                reroll_used=bool(reroll_used),
-                used_result=dice_roll,
-            )
-            game.event_system.publish(
-                "roll_made",
-                player=unit.get_parent_army().player,
-                unit=unit,
-                roll_type="wound",
-                value=dice_roll,
-                reroll=reroll_cb,
-                reroll_locked=bool(reroll_locked),
-                roll_id=roll_id,
-                miracle_used=bool(miracle_used),
-            )
-        except Exception:
-            pass
+        if log_roll:
+            try:
+                unit = attacker.parent_unit
+                game = unit.get_parent_army().player.game
+                from ..utility.reroll_tracker import prepare_reroll_event
+                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
+                    game,
+                    _reroll_wound,
+                    reroll_used=bool(reroll_used),
+                    used_result=dice_roll,
+                )
+                game.event_system.publish(
+                    "roll_made",
+                    player=unit.get_parent_army().player,
+                    unit=unit,
+                    roll_type="wound",
+                    value=dice_roll,
+                    reroll=reroll_cb,
+                    reroll_locked=bool(reroll_locked),
+                    roll_id=roll_id,
+                    miracle_used=bool(miracle_used),
+                )
+            except Exception:
+                pass
 
         # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         needed_for_prompt = None
@@ -5721,7 +5855,7 @@ class WargearProfile:
             except Exception:
                 daemonic_fury_twin_linked = False
             bonus_twin = bool(attack_instance.get("bonus_twin_linked"))
-            if (not wound_result['wound']) and (self.is_twin_linked() or daemonic_fury_twin_linked or bonus_twin):
+            if rerolls_allowed and (not wound_result['wound']) and "reroll" not in wound_result and (self.is_twin_linked() or daemonic_fury_twin_linked or bonus_twin):
                 reroll = _reroll_wound()
                 if daemonic_fury_twin_linked and not self.is_twin_linked():
                     wound_result['special_effects'].append("Twin-linked (Daemonic Fury)")
@@ -5739,7 +5873,16 @@ class WargearProfile:
 
         return wound_result
 
-    def _save_with_tracking(self, target_model: 'Model', attack_instance: Dict, ap: int) -> Dict:
+    def _save_with_tracking(
+        self,
+        target_model: 'Model',
+        attack_instance: Dict,
+        ap: int,
+        *,
+        roll_value: Optional[int] = None,
+        allow_rerolls: bool = True,
+        log_roll: bool = True,
+    ) -> Dict:
         """Saving throw resolution with detailed tracking"""
         save_result = {
             'roll': None,
@@ -5751,6 +5894,7 @@ class WargearProfile:
             'final_save': None,
             'special_effects': []
         }
+        rerolls_allowed = bool(allow_rerolls)
         
         # Stratagem / rule-driven defensive modifiers that need to be reflected in the attack_instance.
         # - GO TO GROUND: 6++ invulnerable + Benefit of Cover until end of phase.
@@ -5882,62 +6026,71 @@ class WargearProfile:
         # Provide reroll callback for save
         def _reroll_save():
             new_roll = get_roll("D6")
-            try:
-                append_dice(target_model.parent_unit.get_parent_army().player, f"Save re-roll: {new_roll} (need {save_value}+) for {target_model.name}")
-            except Exception:
-                pass
+            if log_roll:
+                try:
+                    append_dice(target_model.parent_unit.get_parent_army().player, f"Save re-roll: {new_roll} (need {save_value}+) for {target_model.name}")
+                except Exception:
+                    pass
             return new_roll
         dice_roll = None
         miracle_used = False
-        try:
-            unit = target_model.parent_unit
-            army = unit.get_parent_army() if unit is not None else None
-            mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-            if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
-                dice_roll, _dice, miracle_used = mgr.resolve_roll(
-                    unit,
-                    roll_type="save",
-                    game=game,
-                    dice_count=1,
-                    die_faces=6,
-                    needed=save_value,
-                )
-        except Exception:
-            dice_roll = None
-            miracle_used = False
+        if roll_value is not None:
+            try:
+                dice_roll = int(roll_value)
+            except Exception:
+                dice_roll = None
+        if dice_roll is None:
+            try:
+                unit = target_model.parent_unit
+                army = unit.get_parent_army() if unit is not None else None
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                    dice_roll, _dice, miracle_used = mgr.resolve_roll(
+                        unit,
+                        roll_type="save",
+                        game=game,
+                        dice_count=1,
+                        die_faces=6,
+                        needed=save_value,
+                    )
+            except Exception:
+                dice_roll = None
+                miracle_used = False
         if dice_roll is None:
             dice_roll = get_roll("D6")
-        try:
-            if miracle_used:
-                append_dice(target_model.parent_unit.get_parent_army().player, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
-            else:
-                append_dice(target_model.parent_unit.get_parent_army().player, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
-        except Exception:
-            pass
+        if log_roll:
+            try:
+                if miracle_used:
+                    append_dice(target_model.parent_unit.get_parent_army().player, f"Miracle die used for Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+                else:
+                    append_dice(target_model.parent_unit.get_parent_army().player, f"Save roll: {dice_roll} (need {save_value}+) for {target_model.name}")
+            except Exception:
+                pass
         save_result['roll'] = dice_roll
         save_result['needed'] = save_value
         if miracle_used:
             save_result['special_effects'].append("Miracle die")
         # Publish roll_made for save
-        try:
-            unit = target_model.parent_unit
-            game = unit.get_parent_army().player.game
-            from ..utility.reroll_tracker import prepare_reroll_event
-            roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_save)
-            game.event_system.publish(
-                "roll_made",
-                player=unit.get_parent_army().player,
-                unit=unit,
-                roll_type="save",
-                value=dice_roll,
-                reroll=reroll_cb,
-                reroll_locked=bool(reroll_locked),
-                roll_id=roll_id,
-                miracle_used=bool(miracle_used),
-            )
-        except Exception:
-            pass
+        if log_roll:
+            try:
+                unit = target_model.parent_unit
+                game = unit.get_parent_army().player.game
+                from ..utility.reroll_tracker import prepare_reroll_event
+                roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_save)
+                game.event_system.publish(
+                    "roll_made",
+                    player=unit.get_parent_army().player,
+                    unit=unit,
+                    roll_type="save",
+                    value=dice_roll,
+                    reroll=reroll_cb,
+                    reroll_locked=bool(reroll_locked),
+                    roll_id=roll_id,
+                    miracle_used=bool(miracle_used),
+                )
+            except Exception:
+                pass
         
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             save_result['saved'] = False
@@ -6039,7 +6192,17 @@ class WargearProfile:
             pass
         return get_entity_id(target_unit)
 
-    def _damage_target_with_tracking(self, target_model: 'Model', attacker: 'Model', attack_instance: Dict, game_map: Optional['Map'] = None) -> Dict:
+    def _damage_target_with_tracking(
+        self,
+        target_model: 'Model',
+        attacker: 'Model',
+        attack_instance: Dict,
+        game_map: Optional['Map'] = None,
+        *,
+        roll_value: Optional[int] = None,
+        roll_values: Optional[list[int]] = None,
+        allow_rerolls: bool = True,
+    ) -> Dict:
         """Damage application with detailed tracking"""
         damage_result = {
             'damage_rolled': 0,
@@ -6053,6 +6216,7 @@ class WargearProfile:
             'damage_expression': str(self.damage),
             'special_effects': []
         }
+        rerolls_allowed = bool(allow_rerolls)
         
         # Calculate base Damage characteristic with detailed tracking
         if isinstance(self.damage, DiceCollection):
@@ -6063,24 +6227,31 @@ class WargearProfile:
             damage_value = None
             dice_rolls = None
             miracle_used = False
-            try:
-                unit = attacker.parent_unit
-                army = unit.get_parent_army() if unit is not None else None
-                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
-                if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
-                    damage_value, dice_rolls, miracle_used = mgr.resolve_roll(
-                        unit,
-                        roll_type="damage",
-                        game=game,
-                        dice_count=self.damage.number,
-                        die_faces=self.damage.die_faces,
-                        modifier=self.damage.modifier,
-                    )
-            except Exception:
-                damage_value = None
-                dice_rolls = None
-                miracle_used = False
+            if roll_value is not None:
+                try:
+                    damage_value = int(roll_value)
+                except Exception:
+                    damage_value = None
+                dice_rolls = list(roll_values or [])
+            if damage_value is None:
+                try:
+                    unit = attacker.parent_unit
+                    army = unit.get_parent_army() if unit is not None else None
+                    mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if mgr is not None and mgr.can_use_act_of_faith(unit, game=game):
+                        damage_value, dice_rolls, miracle_used = mgr.resolve_roll(
+                            unit,
+                            roll_type="damage",
+                            game=game,
+                            dice_count=self.damage.number,
+                            die_faces=self.damage.die_faces,
+                            modifier=self.damage.modifier,
+                        )
+                except Exception:
+                    damage_value = None
+                    dice_rolls = None
+                    miracle_used = False
             if damage_value is None or dice_rolls is None:
                 damage_value, dice_rolls = self.damage.roll_detailed()
             damage_result['damage_dice_rolls'] = dice_rolls
@@ -6114,7 +6285,7 @@ class WargearProfile:
         # Closest eligible MONSTER/VEHICLE target: re-roll Damage roll (optional).
         try:
             rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
-            if rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection):
+            if rerolls_allowed and rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection):
                 do_reroll = False
                 try:
                     unit = attacker.parent_unit

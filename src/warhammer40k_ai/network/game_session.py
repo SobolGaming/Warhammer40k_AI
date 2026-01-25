@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Callable, Deque, Optional
 
 from ..engine.command_dispatcher import CommandResult
-from ..engine.command_kinds import CMD_REQUEST_DECISION
+from ..engine.command_kinds import CMD_REQUEST_DECISION, CMD_RESOLVE_DECISION
+from ..engine.decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
 from ..engine.commands import GameCommand
 from ..engine.decisions import DecisionRequest
 from ..engine.event_log import DeterministicEventLog
@@ -74,11 +75,31 @@ class NetworkGameProxy:
                 ok=False,
                 errors=("Spectators cannot issue commands.",),
             )
+        if self._is_dice_roll_resolution(cmd):
+            # Server-authoritative roll resolution: do not apply locally.
+            self._session.queue_command(cmd)
+            return CommandResult(command_id=cmd.command_id, kind=cmd.kind, ok=True, value=None)
         result = self._game.apply_command(cmd)
         if getattr(result, "ok", False):
             self._session.record_applied(cmd.command_id)
             self._session.queue_command(cmd)
         return result
+
+    def _is_dice_roll_resolution(self, command: GameCommand) -> bool:
+        if command is None or getattr(command, "kind", None) != CMD_RESOLVE_DECISION:
+            return False
+        payload = getattr(command, "payload", {}) or {}
+        decision_id = payload.get("decision_id")
+        if not decision_id:
+            return False
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "get"):
+            return False
+        request = queue.get(str(decision_id))
+        if request is None:
+            return False
+        dtype = getattr(request, "decision_type", None)
+        return dtype in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL)
 
     def request_decision(self, request: DecisionRequest) -> None:
         if request is None:
@@ -118,6 +139,7 @@ class NetworkGameSession:
         self.game_version = 0
         self.last_error: Optional[str] = None
         self.on_game_loaded: Optional[Callable[[GameUpdate], None]] = None
+        self._auto_dice_group = "network:auto_dice"
 
     def ensure_player_id(self, command: GameCommand) -> GameCommand:
         if command.player_id is not None:
@@ -183,13 +205,83 @@ class NetworkGameSession:
         return game
 
     def _set_game(self, game: object) -> None:
+        if self.game is not None:
+            try:
+                event_system = getattr(self.game, "event_system", None)
+                if event_system is not None:
+                    event_system.unsubscribe_group(self._auto_dice_group)
+            except Exception:
+                pass
         self.game = game
         self.game_proxy = NetworkGameProxy(self, game)
         self.game_version += 1
         self._applied_ids.clear()
         self._applied_order.clear()
+        self._attach_auto_dice_resolution()
         if self.on_game_loaded is not None:
             self.on_game_loaded(GameUpdate(game=game, game_proxy=self.game_proxy))
+
+    def _attach_auto_dice_resolution(self) -> None:
+        game = self.game
+        if game is None:
+            return
+        event_system = getattr(game, "event_system", None)
+        if event_system is None:
+            return
+        try:
+            event_system.unsubscribe_group(self._auto_dice_group)
+        except Exception:
+            pass
+
+        def _on_decision_requested(request: DecisionRequest | None = None, **_kwargs):
+            if request is None:
+                return
+            if not self.allow_commands:
+                return
+            if not bool(getattr(game, "auto_resolve_dice_rolls", False)):
+                return
+            dtype = getattr(request, "decision_type", None)
+            if dtype != DECISION_REQUEST_DICE_ROLL:
+                return
+            player_id = getattr(request, "player_id", None)
+            player = None
+            try:
+                registry = getattr(game, "entity_registry", None)
+                if registry is not None:
+                    player = registry.get(str(player_id), kind="player")
+            except Exception:
+                player = None
+            if player is None:
+                try:
+                    for p in list(getattr(game, "players", []) or []):
+                        if getattr(p, "id", None) == player_id:
+                            player = p
+                            break
+                except Exception:
+                    player = None
+            try:
+                if player is not None and not player.has_control():
+                    return
+            except Exception:
+                return
+            option_id = None
+            for opt in list(getattr(request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action_id", "")) == "roll":
+                    option_id = opt.option_id
+                    break
+            if option_id is None and getattr(request, "options", None):
+                option_id = request.options[0].option_id
+            if not option_id:
+                return
+            cmd = GameCommand.create(
+                CMD_RESOLVE_DECISION,
+                player_id=player_id,
+                payload={"decision_id": request.decision_id, "option_id": option_id, "result_payload": {}},
+            )
+            self.queue_command(cmd)
+
+        event_system.subscribe("decision_requested", _on_decision_requested, group=self._auto_dice_group)
 
     async def request_resync(self) -> None:
         token = self.client.session_token

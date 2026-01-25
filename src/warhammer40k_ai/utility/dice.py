@@ -91,6 +91,10 @@ class DiceCollection:
 
 def get_roll(data: str) -> Union[int, None]:
     try:
+        if str(data or "").strip().upper() == "D33":
+            tens = get_dice_roll(3)
+            ones = get_dice_roll(3)
+            return int(int(tens) * 10 + int(ones))
         dice = DiceCollection.from_string(data)
         return dice.roll()
     except ValueError as e:

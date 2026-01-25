@@ -175,6 +175,13 @@ def _validate_request_decision(game: object, command: GameCommand) -> Sequence[s
         return ("Decision request missing decision_type.",)
     if not has_decision_handler(request.decision_type):
         return (f"Unknown decision type: {request.decision_type}",)
+    try:
+        from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
+        if bool(getattr(game, "is_authoritative", True)):
+            if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
+                return ("Dice roll decisions are server-originated only.",)
+    except Exception:
+        pass
     queue = getattr(game, "decision_queue", None)
     if queue is None or not hasattr(queue, "get"):
         return ("Game missing decision_queue.",)

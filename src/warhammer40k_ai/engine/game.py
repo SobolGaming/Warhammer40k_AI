@@ -36,6 +36,8 @@ from .decision_kinds import (
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
 from .random_source import RandomSource
+from .dice_rolls import DiceRollManager
+from .attack_resolution import AttackResolutionManager
 from .ref_codec import encode_refs
 from ..rules.lifecycle import AbilityLifecycle
 from ..rules.registry import RuleRegistry
@@ -70,6 +72,11 @@ class Game:
         self._command_context_depth = 0
         self.decision_queue = DecisionQueue()
         self.random_source = RandomSource()
+        self.roll_manager = DiceRollManager()
+        self.attack_manager = AttackResolutionManager()
+        # Headless/test default: auto-resolve dice rolls without waiting for UI decisions.
+        # Interactive UI or network server should disable this.
+        self.auto_resolve_dice_rolls = True
         self.ability_lifecycle = AbilityLifecycle(self)
         self.event_system.lifecycle = self.ability_lifecycle
         # Authoritative (server/local) vs client-replay gating for decision queues.
@@ -5176,8 +5183,32 @@ class Game:
         """Queue a decision request (interrupt window)."""
         if request is None:
             return
+        # Ensure dice roll state exists on clients for dice roll decisions.
+        try:
+            from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
+            if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
+                ctx = dict(getattr(request, "context", {}) or {})
+                roll_id = ctx.get("roll_id")
+                if roll_id is not None and self.roll_manager is not None:
+                    if self.roll_manager.get_roll(int(roll_id)) is None:
+                        from .dice_rolls import DiceRollState
+                        spec = dict(ctx.get("roll_spec", {}) or {})
+                        self.roll_manager.rolls[int(roll_id)] = DiceRollState(
+                            roll_id=int(roll_id),
+                            player_id=request.player_id,
+                            spec=spec,
+                            status="pending",
+                        )
+        except Exception:
+            pass
         self.decision_queue.add(request)
         self.event_system.publish("decision_requested", request=request, game=self)
+
+    def request_dice_roll(self, *, player_id: Optional[str], spec: dict, prompt: Optional[str] = None) -> DecisionRequest:
+        """Create and queue a dice roll decision via the roll manager."""
+        if self.roll_manager is None:
+            raise RuntimeError("Roll manager missing.")
+        return self.roll_manager.request_roll(self, player_id=player_id, spec=dict(spec or {}), prompt=prompt)
 
     def request_mission_selection(self) -> DecisionRequest:
         """Queue a mission selection decision request and return it."""
@@ -7862,117 +7893,140 @@ class Game:
             self.phase_charge_targets[tgt_id] = chargers
 
         spec = self._get_charge_roll_spec(charging_unit, target_unit=targets[0])
-        from ..utility import dice as dice_mod
-        base_roll = None
-        dice = None
-        miracle_used = False
-        mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-        if mgr is not None and mgr.can_use_act_of_faith(charging_unit, game=self):
-                base_roll, dice, miracle_used = mgr.resolve_roll(
-                charging_unit,
-                roll_type="charge",
-                game=self,
-                    dice_count=int(spec.dice_count or 2),
-                die_faces=6,
-            )
-        if base_roll is None or dice is None:
-            dice = [dice_mod.get_dice_roll(6) for _ in range(int(spec.dice_count or 2))]
-
-        roll_result = ChargeRollResult.from_dice(spec, dice)
-        base_roll = roll_result.total
-
         player = charging_unit.get_parent_army().player
-
-        # Optional rule-based reroll (e.g. "No Prey Can Evade").
-        reroll_used = False
-        can_rule_reroll = bool(
-            charging_unit.can_reroll_charge_roll(target_unit=targets[0], game_map=self.map, game=self)
-        )
-        mgr = getattr(army, "templar_vows", None) if army is not None else None
-        if mgr is not None and mgr.can_reroll_charge_against(charging_unit, targets[0]):
-            can_rule_reroll = True
-
-        # Always prompt humans via provider if available; provider will disable the reroll button if not allowed.
-        is_human = bool(getattr(player, "has_control", lambda: False)())
-        provider = getattr(getattr(self, "map", None), "roll_reroll_provider", None)
-        if is_human and callable(provider):
-            want = bool(provider(
-                player=player,
-                unit=charging_unit,
-                roll_type="charge",
-                value=base_roll,
-                dice=list(dice),
-                allow_reroll=bool(can_rule_reroll),
-            ))
-            if want and can_rule_reroll:
-                dice = [dice_mod.get_dice_roll(6) for _ in range(int(spec.dice_count or 2))]
-                roll_result = ChargeRollResult.from_dice(spec, dice)
-                base_roll = roll_result.total
-                reroll_used = True
-
-        # Store roll for UI/telemetry
-        charging_unit.round_state.charge_roll = int(base_roll or 0)
-
-        # Publish roll event (reroll_locked means "already rerolled").
-        def _reroll():
-            new_dice = [dice_mod.get_dice_roll(6) for _ in range(int(spec.dice_count or 2))]
-            new_result = ChargeRollResult.from_dice(spec, new_dice)
-            new_total = int(new_result.total or 0)
-            # If a consumer uses this (e.g. Command Re-roll), keep unit state consistent.
-            charging_unit.round_state.charge_roll = int(new_total or 0)
-            return new_total, new_dice
-
-        from ..utility.reroll_tracker import prepare_reroll_event
-        roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
-            self,
-            _reroll,
-            reroll_used=bool(reroll_used),
-            used_result=(int(base_roll or 0), list(dice)),
-        )
-        self.event_system.publish(
-            "roll_made",
-            player=player,
-            unit=charging_unit,
-            roll_type="charge",
-            value=int(base_roll or 0),
-            dice=list(dice),
-            reroll=reroll_cb,
-            reroll_locked=bool(reroll_locked),
-            roll_id=roll_id,
-            miracle_used=bool(miracle_used),
-            kept_indices=list(getattr(roll_result, "kept_indices", []) or []),
-            dropped_indices=list(getattr(roll_result, "dropped_indices", []) or []),
-        )
-
-        # Dice log
-        from ..utility.event_bus import append_dice
-        kept_note = ""
-        try:
-            kept = roll_result.kept_values()
-            dropped = roll_result.dropped_values()
-            if dropped:
-                kept_note = f" (kept {kept}, dropped {dropped})"
-        except Exception:
-            kept_note = ""
-        if miracle_used:
-            append_dice(
-                player,
-                f"Miracle die used for Charge roll: {int(base_roll or 0)} (dice {list(dice)}{kept_note}) for {charging_unit.name}",
-            )
+        dice_count = int(getattr(spec, "dice_count", 2) or 2)
+        keep_highest = int(getattr(spec, "keep_highest", dice_count) or dice_count)
+        fixed_dice = []
+        miracle_used = False
+        use_aof_rolls = False
+        auto_resolve = bool(getattr(self, "auto_resolve_dice_rolls", False))
+        if auto_resolve:
+            try:
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(charging_unit, game=self):
+                    try:
+                        _total, dice_vals, used = mgr.resolve_roll(
+                            charging_unit,
+                            roll_type="charge",
+                            game=self,
+                            dice_count=dice_count,
+                            die_faces=6,
+                        )
+                        fixed_dice = list(dice_vals or [])
+                        miracle_used = bool(used)
+                        use_aof_rolls = True
+                    except Exception:
+                        fixed_dice = []
+                        miracle_used = False
+                        use_aof_rolls = False
+            except Exception:
+                fixed_dice = []
+                miracle_used = False
+                use_aof_rolls = False
+            if not fixed_dice:
+                try:
+                    from ..utility.dice import get_dice_roll
+                    fixed_dice = [int(get_dice_roll(6) or 0) for _ in range(dice_count)]
+                except Exception:
+                    fixed_dice = []
         else:
-            append_dice(
-                player,
-                f"Charge roll: {int(base_roll or 0)} (dice {list(dice)}{kept_note}) for {charging_unit.name}",
+            try:
+                mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                if mgr is not None and mgr.can_use_act_of_faith(charging_unit, game=self):
+                    chosen = mgr.maybe_use_miracle_die(
+                        charging_unit,
+                        roll_type="charge",
+                        dice_count=dice_count,
+                        die_faces=6,
+                        game=self,
+                    )
+                    if chosen is not None:
+                        fixed_dice = [int(chosen)] + [None] * max(0, dice_count - 1)
+                        miracle_used = True
+            except Exception:
+                fixed_dice = []
+                miracle_used = False
+
+        reroll_rules = []
+        try:
+            can_rule_reroll = bool(
+                charging_unit.can_reroll_charge_roll(target_unit=targets[0], game_map=self.map, game=self)
             )
-        return {
-            "base_roll": int(base_roll or 0),
-            "dice": list(dice),
-            "reroll_used": bool(reroll_used),
-            "miracle_used": bool(miracle_used),
-            "kept_indices": list(getattr(roll_result, "kept_indices", []) or []),
-            "dropped_indices": list(getattr(roll_result, "dropped_indices", []) or []),
+            mgr = getattr(army, "templar_vows", None) if army is not None else None
+            if mgr is not None and mgr.can_reroll_charge_against(charging_unit, targets[0]):
+                can_rule_reroll = True
+            if can_rule_reroll:
+                reroll_rules.append(
+                    {
+                        "action_id": "reroll_charge",
+                        "label": "Re-roll Charge roll",
+                        "mode": "all",
+                        "source": "rule",
+                    }
+                )
+        except Exception:
+            pass
+
+        from ..engine.roll_utils import command_reroll_available
+        command_reroll_ok = command_reroll_available(self, player, roll_type="charge")
+        roll_spec = {
+            "dice_count": dice_count,
+            "faces": 6,
+            "reason": f"Charge roll for {charging_unit.name}",
+            "roll_type": "charge",
+            "unit_id": get_entity_id(charging_unit),
             "target_unit_ids": [get_entity_id(t) for t in targets],
+            "handler_key": "charge_roll",
+            "charge_spec": {"dice_count": dice_count, "keep_highest": keep_highest},
+            "reroll_rules": reroll_rules,
+            "command_reroll_allowed": command_reroll_ok,
+            "command_reroll_mode": "whole",
         }
+        if fixed_dice:
+            roll_spec["fixed_dice"] = list(fixed_dice)
+            roll_spec["miracle_used"] = bool(miracle_used)
+        if auto_resolve and (reroll_rules or command_reroll_ok):
+            try:
+                if use_aof_rolls:
+                    from ..rules import acts_of_faith as aof
+                    roll_spec["roll_sequence"] = [int(aof.get_dice_roll(6) or 0) for _ in range(dice_count)]
+                else:
+                    from ..utility.dice import get_dice_roll
+                    roll_spec["roll_sequence"] = [int(get_dice_roll(6) or 0) for _ in range(dice_count)]
+            except Exception:
+                pass
+        req = self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+        result = {
+            "roll_id": getattr(req, "context", {}).get("roll_id"),
+            "target_unit_ids": [get_entity_id(t) for t in targets],
+            "miracle_used": bool(miracle_used),
+        }
+        if auto_resolve:
+            try:
+                roll_id = result.get("roll_id")
+                state = None
+                if roll_id is not None and self.roll_manager is not None:
+                    state = self.roll_manager.get_roll(int(roll_id))
+                dice_vals = list(getattr(charging_unit.round_state, "charge_dice", []) or [])
+                if not dice_vals and state is not None:
+                    dice_vals = [int(d.get("value", 0) or 0) for d in list(state.dice or []) if not bool(d.get("is_derived", False))]
+                base_roll = int(getattr(charging_unit.round_state, "charge_roll", 0) or 0)
+                if not base_roll and state is not None:
+                    base_roll = int(state.total or 0)
+                if dice_vals:
+                    result["dice"] = list(dice_vals)
+                if base_roll:
+                    result["base_roll"] = int(base_roll)
+                if state is not None:
+                    kept = state.spec.get("kept_indices", None)
+                    dropped = state.spec.get("dropped_indices", None)
+                    if kept is not None:
+                        result["kept_indices"] = list(kept or [])
+                    if dropped is not None:
+                        result["dropped_indices"] = list(dropped or [])
+            except Exception:
+                pass
+        return result
 
     def roll_blood_surge_distance(self, unit: 'Unit') -> int:
         """Roll Blood Surge distance (D6+2), optionally applying leader-provided rerolls."""
@@ -8069,7 +8123,7 @@ class Game:
         *,
         out_of_turn: bool = False,
         count_as_charged: bool = True,
-    ) -> bool:
+    ) -> Optional[bool]:
         """Attempt a charge move with the given unit against the target.
 
         According to 10th edition rules, a successful charge requires at least one model
@@ -8092,8 +8146,10 @@ class Game:
         # So we need to move: current_distance - 1.0 inches
         distance_needed = max(0, current_distance - 1.0)
 
-        base_charge_roll = int(declared.get("base_roll", 0) or 0)
-        individual_dice = list(declared.get("dice", []) or [])
+        base_charge_roll = int(getattr(charging_unit.round_state, "charge_roll", 0) or 0)
+        if not base_charge_roll:
+            return None
+        individual_dice = list(getattr(charging_unit.round_state, "charge_dice", []) or [])
         charge_roll = self._apply_charge_modifiers(charging_unit, base_charge_roll, target_unit=target_unit)
 
         print(f"Charge: {charging_unit.name} charging {target_unit.name}")

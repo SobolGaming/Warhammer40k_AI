@@ -97,6 +97,11 @@ class GameView:
         self.game_map = game_map
         self.player1 = player1
         self.player2 = player2
+        try:
+            if self.game is not None:
+                self.game.auto_resolve_dice_rolls = False
+        except Exception:
+            pass
         self.selected_unit = None
         self.dragging_unit = None
         self.dragging = False
@@ -189,9 +194,10 @@ class GameView:
         # Stratagem interaction dialogs
         screen_width, screen_height = self.screen.get_size()
         # Generic Yes/No prompt dialog (used for optional abilities, confirmations, etc.)
-        from .dialogs import YesNoDialog, FrenzyChoiceDialog
+        from .dialogs import YesNoDialog, FrenzyChoiceDialog, DiceRollDialog
         self.yes_no_dialog = YesNoDialog(screen_width, screen_height)
         self.frenzy_choice_dialog = FrenzyChoiceDialog(screen_width, screen_height)
+        self.dice_roll_dialog = DiceRollDialog(screen_width, screen_height)
         self.cult_ambush_point_dialog = BattlefieldPointPickDialog(screen_width, screen_height)
         self.secondary_discard_dialog = SecondaryDiscardDialog(screen_width, screen_height)
         self.overwatch_shooter_dialog = OverwatchShooterDialog(screen_width, screen_height)
@@ -2420,6 +2426,62 @@ class GameView:
         game = game or self.game
         if request is None or game is None:
             return
+        try:
+            decision_type = str(getattr(request, "decision_type", "") or "")
+        except Exception:
+            decision_type = ""
+        if not decision_type:
+            return
+
+        # Dice roll decisions should display for local and remote players.
+        try:
+            from ..engine.decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
+        except Exception:
+            DECISION_REQUEST_DICE_ROLL = ""
+            DECISION_SELECT_DICE_REROLL = ""
+        if decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            can_resolve = False
+            try:
+                can_resolve = bool(player.has_control())
+            except Exception:
+                can_resolve = False
+
+            def _on_resolve(option_id: str, payload: dict):
+                if not can_resolve:
+                    return
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload=dict(payload or {}),
+                    player_id=getattr(player, "id", None),
+                )
+            if getattr(self, "dice_roll_dialog", None) is None:
+                try:
+                    from .dialogs import DiceRollDialog
+                    sw, sh = self.screen.get_size()
+                    self.dice_roll_dialog = DiceRollDialog(sw, sh)
+                except Exception:
+                    self.dice_roll_dialog = None
+            if self.dice_roll_dialog is None:
+                return
+            self.dice_roll_dialog.show(
+                game=game,
+                player=player,
+                decision_request=request,
+                on_resolve=_on_resolve if can_resolve else None,
+            )
+            try:
+                self.dialog_manager.open(self.dice_roll_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
         if bool(getattr(game, "is_authoritative", True)):
             return
 
@@ -2430,13 +2492,6 @@ class GameView:
             if not player.has_control():
                 return
         except Exception:
-            return
-
-        try:
-            decision_type = str(getattr(request, "decision_type", "") or "")
-        except Exception:
-            decision_type = ""
-        if not decision_type:
             return
 
         try:

@@ -9767,7 +9767,7 @@ class Unit:
             return
         self.apply_dark_pacts_choice(game, choice=str(choice), phase_name=phase_name, trigger=trigger)
 
-    def prepare_advance(self) -> int:
+    def prepare_advance(self) -> Optional[int]:
         """Pre-roll advance dice for UI display. Returns the advance roll."""
         if not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:
             advance_roll = None
@@ -9816,95 +9816,94 @@ class Unit:
                     return fixed
             except Exception:
                 pass
+            game = None
+            player = None
             try:
                 army = self.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                game = getattr(player, "game", None) if player is not None else None
+            except Exception:
+                game = None
+                player = None
+            # Acts of Faith: allow Miracle die selection (no roll needed if used).
+            try:
                 mgr = getattr(army, "acts_of_faith", None) if army is not None else None
-                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
                 if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
-                    advance_roll, _dice, miracle_used = mgr.resolve_roll(
+                    chosen = mgr.maybe_use_miracle_die(
                         self,
                         roll_type="advance",
-                        game=game,
                         dice_count=1,
                         die_faces=6,
+                        game=game,
                     )
+                    if chosen is not None:
+                        advance_roll = int(chosen)
+                        miracle_used = True
             except Exception:
                 advance_roll = None
                 miracle_used = False
-            if advance_roll is None:
-                advance_roll = get_roll("D6")
-            try:
-                from ..utility.event_bus import append_dice
-                pn = self.get_parent_army().player
-                if miracle_used:
-                    append_dice(pn, f"Miracle die used for Advance roll: {advance_roll} for {self.name}")
-                else:
-                    append_dice(pn, f"Advance roll: {advance_roll} for {self.name}")
-            except Exception:
-                pass
-            # Apply advance roll modifiers (includes Code Chivalric, etc).
-            try:
-                advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
-            except Exception:
-                pass
-            # Provide reroll callback (may be used by rules/stratagems)
-            try:
-                _player = getattr(self.get_parent_army(), 'player', None)
-                _game = getattr(_player, 'game', None) if _player else None
-                if _game and hasattr(_game, 'event_system'):
-                    def _reroll():
-                        new_roll = get_roll("D6")
-                        self.round_state.advance_roll = new_roll
-                        try:
-                            from ..utility.event_bus import append_dice as _append
-                            _append(_player, f"Advance re-roll: {new_roll} for {self.name}")
-                        except Exception:
-                            pass
-                        print(f"{self.name} advance re-roll: {new_roll}")
-                        return new_roll
-                    # If this unit has a rule-based reroll (e.g., "re-roll Advance rolls"),
-                    # offer it via a blocking provider BEFORE publishing roll_made for Command Re-roll.
-                    reroll_used = False
-                    try:
-                        provider = getattr(getattr(_game, "map", None), "roll_reroll_provider", None)
-                        is_human = self._player_has_local_control(_player)
-                        if is_human and callable(provider) and self.can_reroll_advance_roll():
-                            want = bool(provider(player=_player, unit=self, roll_type="advance", value=advance_roll, dice=None))
-                            if want:
-                                advance_roll = _reroll()
-                                reroll_used = True
-                    except Exception:
-                        reroll_used = False
+            if advance_roll is not None:
+                try:
+                    advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
+                except Exception:
+                    pass
+                try:
+                    self.round_state.advance_roll = int(advance_roll)
+                except Exception:
+                    pass
+                try:
+                    from ..utility.event_bus import append_dice
+                    if player is not None:
+                        append_dice(player, f"Miracle die used for Advance roll: {int(advance_roll)} for {self.name}")
+                except Exception:
+                    pass
+                return int(advance_roll)
 
-                    # Store final value
-                    self.round_state.advance_roll = advance_roll
-                    print(f"{self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
+            if game is None or player is None:
+                return None
 
-                    # Publish roll event (reroll may be locked if already used)
-                    from ..utility.reroll_tracker import prepare_reroll_event
-                    roll_id, reroll_cb, reroll_locked = prepare_reroll_event(
-                        _game,
-                        _reroll,
-                        reroll_used=bool(reroll_used),
-                        used_result=advance_roll,
-                    )
-                    _game.event_system.publish(
-                        "roll_made",
-                        player=_player,
-                        unit=self,
-                        roll_type="advance",
-                        value=advance_roll,
-                        reroll=reroll_cb,
-                        reroll_locked=bool(reroll_locked),
-                        roll_id=roll_id,
-                        miracle_used=bool(miracle_used),
+            from ..utility.entity_ids import get_entity_id
+            from ..engine.roll_utils import command_reroll_available
+            reroll_rules = []
+            try:
+                if self.can_reroll_advance_roll():
+                    reroll_rules.append(
+                        {
+                            "action_id": "reroll_advance",
+                            "label": "Re-roll Advance roll",
+                            "mode": "all",
+                            "source": "rule",
+                        }
                     )
             except Exception:
                 pass
-            # Ensure stored even if no game/event_system
-            self.round_state.advance_roll = advance_roll
-            print(f"{self.name} advance roll: {advance_roll}\" (Move {self.movement}\" + {advance_roll}\" = {self.movement + advance_roll}\")")
-            return advance_roll
+            command_reroll_ok = command_reroll_available(game, player, roll_type="advance")
+            spec = {
+                "dice_count": 1,
+                "faces": 6,
+                "reason": f"Advance roll for {self.name}",
+                "roll_type": "advance",
+                "unit_id": get_entity_id(self),
+                "handler_key": "advance_roll",
+                "reroll_rules": reroll_rules,
+                "command_reroll_allowed": command_reroll_ok,
+                "command_reroll_mode": "one",
+            }
+            try:
+                if bool(getattr(game, "auto_resolve_dice_rolls", False)):
+                    fixed_val = int(get_roll("D6") or 0)
+                    spec["fixed_dice"] = [fixed_val]
+                    if reroll_rules or command_reroll_ok:
+                        spec["roll_sequence"] = [int(get_roll("D6") or 0)]
+            except Exception:
+                pass
+            try:
+                req = game.request_dice_roll(player_id=getattr(player, "id", None), spec=spec, prompt=spec["reason"])
+            except Exception:
+                pass
+            if bool(getattr(game, "auto_resolve_dice_rolls", False)):
+                return self.round_state.advance_roll
+            return None
         return self.round_state.advance_roll
 
     def get_advance_roll(self) -> int:
@@ -12329,6 +12328,17 @@ class Unit:
             pass
 
         print(f"{self.name} executing {len(weapon_declarations)} shooting declarations...")
+
+        # Detect interactive dice roll mode (server-authoritative roll decisions).
+        game = None
+        interactive_mode = False
+        try:
+            game = getattr(self.get_parent_army().player, "game", None)
+            if game is not None and not bool(getattr(game, "auto_resolve_dice_rolls", True)):
+                interactive_mode = True
+        except Exception:
+            game = None
+            interactive_mode = False
         
         if not out_of_phase:
             # Mark unit as having shot this round (regardless of success)
@@ -12412,6 +12422,16 @@ class Unit:
                     t.begin_attack_resolution()
         except Exception:
             touched_targets = []
+
+        # Interactive dice roll mode: queue attack sequences after bookkeeping and return.
+        if interactive_mode:
+            try:
+                mgr = getattr(game, "attack_manager", None)
+                if mgr is not None:
+                    queued = mgr.queue_attack_declarations(game, weapon_declarations, out_of_phase=out_of_phase)
+                    return bool(queued)
+            except Exception:
+                return False
 
         attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
         remaining_by_target: dict[str, dict] = {}
@@ -13488,6 +13508,92 @@ class Unit:
 
         if not auto_passed:
             total_mod = int(shadow_mod) + int(extra_mod)
+            dice_count = 3 if synapse_3d6 else 2
+            dice_expr = "3D6" if synapse_3d6 else "2D6"
+            leadership_value = None
+            def _safe_leadership() -> int:
+                try:
+                    return int(self.leadership)
+                except Exception:
+                    try:
+                        return int(getattr(self, "_leadership", 0) or 0)
+                    except Exception:
+                        return 0
+
+            # Interactive dice roll flow
+            try:
+                if game is not None and not bool(getattr(game, "auto_resolve_dice_rolls", True)):
+                    if leadership_value is None:
+                        leadership_value = _safe_leadership()
+                    from ..engine.roll_utils import command_reroll_available
+                    from ..utility.entity_ids import get_entity_id
+                    reroll_rules = []
+                    if icon_of_war_reroll_available:
+                        reroll_rules.append(
+                            {
+                                "action_id": "reroll_battle_shock_icon_of_war",
+                                "label": "Re-roll Battle-shock (Icon of War)",
+                                "mode": "all",
+                                "source": "rule",
+                            }
+                        )
+                    if carmine_reroll_available:
+                        reroll_rules.append(
+                            {
+                                "action_id": "reroll_battle_shock_carmine",
+                                "label": "Re-roll Battle-shock (Carmine Reliquary)",
+                                "mode": "all",
+                                "source": "rule",
+                            }
+                        )
+                    fixed_dice = []
+                    try:
+                        mgr = getattr(army, "acts_of_faith", None) if army is not None else None
+                        if mgr is not None and mgr.can_use_act_of_faith(self, game=game):
+                            chosen = mgr.maybe_use_miracle_die(
+                                self,
+                                roll_type="battle-shock",
+                                dice_count=dice_count,
+                                die_faces=6,
+                                game=game,
+                                needed=leadership_value,
+                            )
+                            if chosen is not None:
+                                fixed_dice = [int(chosen)] + [None] * max(0, int(dice_count) - 1)
+                    except Exception:
+                        fixed_dice = []
+                    roll_spec = {
+                        "dice_count": int(dice_count),
+                        "faces": 6,
+                        "reason": f"Battle-shock test for {self.name} (Ld {leadership_value}+, {dice_expr})",
+                        "roll_type": "battle_shock",
+                        "show_sum": True,
+                        "sum_target": int(leadership_value),
+                        "sum_op": "lte",
+                        "sum_modifier": int(total_mod),
+                        "unit_id": get_entity_id(self),
+                        "current_turn": int(current_turn),
+                        "was_battle_shocked": bool(is_already_battle_shocked),
+                        "shadow_modifier": int(shadow_mod),
+                        "shadow_manifestation_active": bool(getattr(shadow_ctx, "manifestation_active", False)) if shadow_ctx is not None else False,
+                        "shadow_terror_active": bool(getattr(shadow_ctx, "terror_active", False)) if shadow_ctx is not None else False,
+                        "leadership": int(leadership_value),
+                        "handler_key": "battle_shock",
+                        "reroll_rules": reroll_rules,
+                        "command_reroll_allowed": command_reroll_available(game, player, roll_type="battle_shock"),
+                        "command_reroll_mode": "whole",
+                    }
+                    if fixed_dice:
+                        roll_spec["fixed_dice"] = list(fixed_dice)
+                        roll_spec["miracle_used"] = True
+                    try:
+                        game.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                pass
+
             manual_roll = bool(synapse_3d6 or total_mod != 0 or icon_of_war_reroll_available or carmine_reroll_available)
             if not manual_roll:
                 try:
@@ -13495,7 +13601,8 @@ class Unit:
                 except Exception:
                     passed = False
             else:
-                dice_expr = "3D6" if synapse_3d6 else "2D6"
+                if leadership_value is None:
+                    leadership_value = _safe_leadership()
                 roll_result = None
                 dice_rolls = None
                 try:
@@ -13507,7 +13614,7 @@ class Unit:
                             self,
                             roll_type="battle-shock",
                             game=game,
-                            dice_count=3 if synapse_3d6 else 2,
+                            dice_count=int(dice_count),
                             die_faces=6,
                         )
                 except Exception:
@@ -13515,7 +13622,6 @@ class Unit:
                     dice_rolls = None
                 if roll_result is None:
                     roll_result = get_roll(dice_expr)
-                leadership_value = self.leadership
                 try:
                     mod_roll = int(roll_result) + int(total_mod)
                 except Exception:
@@ -13601,10 +13707,30 @@ class Unit:
                                     f"{source_label}: {self.name} keeps Battle-shock roll ({roll_result}).",
                                 )
 
+        self._apply_battle_shock_outcome(
+            passed=bool(passed),
+            current_turn=int(current_turn),
+            was_battle_shocked=bool(is_already_battle_shocked),
+            shadow_ctx=shadow_ctx,
+            game=game,
+            event_system=event_system,
+        )
+
+    def _apply_battle_shock_outcome(
+        self,
+        *,
+        passed: bool,
+        current_turn: int,
+        was_battle_shocked: bool,
+        shadow_ctx=None,
+        game=None,
+        event_system=None,
+    ) -> None:
+        """Apply Battle-shock outcomes after a test result is known."""
         # Units that are already Battle-shocked can still be forced to take another Battle-shock test,
         # but the result does not change the unit's Battle-shocked status or duration.
-        if (not passed) and (not is_already_battle_shocked):
-            battle_shock_effect = BattleShockEffect(current_turn)
+        if (not passed) and (not was_battle_shocked):
+            battle_shock_effect = BattleShockEffect(int(current_turn))
             self.apply_status_effect(battle_shock_effect)
             print(f"{self.name} has failed the battle shock test and is battle-shocked!")
 

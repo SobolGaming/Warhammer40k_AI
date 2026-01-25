@@ -40,7 +40,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -1120,6 +1120,8 @@ def snapshot_game(game: Game) -> dict:
         "commands": [_serialize_command(c) for c in list(getattr(game, "command_queue", []) or [])],
         "events": list(events or []),
         "rng_state": _serialize_rng_state(getattr(game, "random_source").getstate()),
+        "roll_manager": getattr(game, "roll_manager", None).to_dict() if getattr(game, "roll_manager", None) is not None else {},
+        "attack_manager": getattr(game, "attack_manager", None).to_dict() if getattr(game, "attack_manager", None) is not None else {},
     }
 
 
@@ -1138,6 +1140,20 @@ def load_game_snapshot(snapshot: dict) -> Game:
         players.append(player)
 
     game = Game(battlefield, players=players)
+    roll_mgr_payload = snapshot.get("roll_manager")
+    if isinstance(roll_mgr_payload, dict):
+        try:
+            from .dice_rolls import DiceRollManager
+            game.roll_manager = DiceRollManager.from_dict(roll_mgr_payload)
+        except Exception:
+            pass
+    attack_mgr_payload = snapshot.get("attack_manager")
+    if isinstance(attack_mgr_payload, dict):
+        try:
+            from .attack_resolution import AttackResolutionManager
+            game.attack_manager = AttackResolutionManager.from_dict(attack_mgr_payload)
+        except Exception:
+            pass
     events_payload = list(snapshot.get("events", []) or [])
     from .event_log import DeterministicEventLog
     existing_log = getattr(game, "event_log", None)

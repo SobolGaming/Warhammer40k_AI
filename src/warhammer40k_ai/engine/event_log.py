@@ -61,6 +61,7 @@ class DeterministicEventLog:
         if event_system is None:
             return
         event_system.subscribe_group(EVENT_LOG_GROUP, "roll_made", self._on_roll_made)
+        event_system.subscribe_group(EVENT_LOG_GROUP, "roll_rerolled", self._on_roll_rerolled)
         event_system.subscribe_group(EVENT_LOG_GROUP, "decision_requested", self._on_decision_requested)
         event_system.subscribe_group(EVENT_LOG_GROUP, "decision_resolved", self._on_decision_resolved)
         event_system.subscribe_group(EVENT_LOG_GROUP, "unit_move_started", self._on_unit_move_started)
@@ -203,7 +204,27 @@ class DeterministicEventLog:
             payload["success"] = kwargs.get("success")
         if "reason" in kwargs:
             payload["reason"] = kwargs.get("reason")
+        if "faces" in kwargs:
+            payload["faces"] = kwargs.get("faces")
+        if "dice_ids" in kwargs:
+            payload["dice_ids"] = list(kwargs.get("dice_ids") or [])
+        if "per_die_success" in kwargs:
+            payload["per_die_success"] = dict(kwargs.get("per_die_success") or {})
+        if "sum_success" in kwargs:
+            payload["sum_success"] = kwargs.get("sum_success")
         self.record("roll_made", actor_id=payload.get("player_id"), payload=payload, validate_payload=True)
+
+    def _on_roll_rerolled(self, **kwargs: Any) -> None:
+        payload: dict[str, Any] = {
+            "player_id": maybe_entity_id(kwargs.get("player")),
+            "roll_id": kwargs.get("roll_id"),
+            "action_id": kwargs.get("action_id"),
+            "selected": list(kwargs.get("selected", []) or []),
+            "dice": list(kwargs.get("dice", []) or []),
+            "total": kwargs.get("total"),
+            "reason": kwargs.get("reason", None),
+        }
+        self.record("roll_rerolled", actor_id=payload.get("player_id"), payload=payload, validate_payload=True)
 
     def _on_decision_requested(self, **kwargs: Any) -> None:
         request = kwargs.get("request")

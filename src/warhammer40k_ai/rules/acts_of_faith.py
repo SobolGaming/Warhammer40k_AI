@@ -236,6 +236,38 @@ class ActsOfFaithManager:
             return None
         return None
 
+    def maybe_use_miracle_die(
+        self,
+        unit,
+        *,
+        roll_type: str,
+        dice_count: int,
+        die_faces: int,
+        game=None,
+        needed=None,
+    ) -> Optional[int]:
+        """
+        Prompt for a Miracle die selection and consume it if chosen.
+        Returns the chosen value, or None if no Miracle die is used.
+        """
+        chosen = None
+        try:
+            chosen = self._choose_miracle_die(
+                unit,
+                roll_type=roll_type,
+                dice_count=int(dice_count or 1),
+                die_faces=int(die_faces or 6),
+                game=game,
+                needed=needed,
+            )
+        except Exception:
+            chosen = None
+        if chosen is None:
+            return None
+        if self._consume_miracle_die(unit, int(chosen), roll_type=roll_type, game=game):
+            return int(chosen)
+        return None
+
     def _consume_miracle_die(self, unit, value: int, *, roll_type: str, game=None) -> bool:
         try:
             idx = self.miracle_dice.index(int(value))

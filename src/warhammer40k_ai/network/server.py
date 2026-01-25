@@ -24,6 +24,8 @@ from ..engine.decision_kinds import (
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_CHOOSE_PLAGUE,
+    DECISION_REQUEST_DICE_ROLL,
+    DECISION_SELECT_DICE_REROLL,
 )
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
@@ -399,12 +401,46 @@ class NetworkServer:
     async def _apply_server_command(self, command: GameCommand, *, broadcast: bool = True):
         if self._game is None:
             return []
+        roll_context = None
+        if command is not None and getattr(command, "kind", None) == CMD_RESOLVE_DECISION:
+            payload = getattr(command, "payload", {}) or {}
+            decision_id = payload.get("decision_id")
+            if decision_id:
+                queue = getattr(self._game, "decision_queue", None)
+                req = queue.get(str(decision_id)) if queue is not None and hasattr(queue, "get") else None
+                if req is not None and getattr(req, "decision_type", None) in (
+                    DECISION_REQUEST_DICE_ROLL,
+                    DECISION_SELECT_DICE_REROLL,
+                ):
+                    roll_context = {"decision_id": str(decision_id), "roll_id": req.context.get("roll_id")}
+
         message = CommandMessage(command=command, client_last_event_id=None)
         results = handle_command_message(self._game, message, require_client_sync=False)
         had_resync = any(isinstance(result, ResyncMessage) for result in results)
         had_error = any(isinstance(result, ErrorMessage) for result in results)
+        broadcast_command = command
+        if roll_context and self._game is not None:
+            roll_id = roll_context.get("roll_id")
+            try:
+                mgr = getattr(self._game, "roll_manager", None)
+                if mgr is not None and roll_id is not None:
+                    roll_results = mgr.export_roll_results(int(roll_id))
+                    payload = dict(getattr(command, "payload", {}) or {})
+                    rp = dict(payload.get("result_payload", {}) or {})
+                    rp["roll_results"] = roll_results
+                    payload["result_payload"] = rp
+                    broadcast_command = GameCommand(
+                        command_id=command.command_id,
+                        kind=command.kind,
+                        player_id=command.player_id,
+                        payload=payload,
+                        metadata=command.metadata,
+                        created_at=command.created_at,
+                    )
+            except Exception:
+                broadcast_command = command
         if broadcast and not had_resync and not had_error:
-            await self._broadcast_game_message(CommandMessage(command=command))
+            await self._broadcast_game_message(CommandMessage(command=broadcast_command))
         for result in results:
             if isinstance(result, EventMessage):
                 if broadcast:
@@ -615,6 +651,10 @@ class NetworkServer:
         player2 = Player("Player 2", control=PlayerControl.REMOTE, army=army2)
         battlefield = Battlefield(BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield, [player1, player2])
+        try:
+            game.auto_resolve_dice_rolls = False
+        except Exception:
+            pass
         try:
             game.is_authoritative = True
         except Exception:
