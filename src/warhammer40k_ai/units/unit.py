@@ -12784,7 +12784,13 @@ class Unit:
                 distance = float(distance_between_models_bases_3d(measuring_model, target_model))
                 min_distance = min(min_distance, distance)
 
-        if min_distance > weapon_profile.range.max:
+        effective_max = weapon_profile.range.max
+        try:
+            if hasattr(weapon_profile, "_effective_range_max"):
+                effective_max = weapon_profile._effective_range_max(model)
+        except Exception:
+            effective_max = weapon_profile.range.max
+        if min_distance > effective_max:
             return False
 
         # Check line of sight (INDIRECT FIRE weapons can target without LOS)
@@ -15768,6 +15774,56 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = flags
         return _resolve(flags, attack_type)
+
+    def leading_unit_melta_range_bonus(self) -> int:
+        """
+        Leading-only ability: while a leader is attached, Melta weapon range in that unit is increased.
+        Returns the summed range bonus (in inches).
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        cache_key = "leading_unit_melta_range_bonus"
+        cache = getattr(root, "_ability_cache", {})
+        if cache_key in cache:
+            try:
+                return int(cache.get(cache_key) or 0)
+            except Exception:
+                return 0
+
+        total_bonus = 0
+        melta_range_re = re.compile(
+            r"add\s+(?P<val>\d+)\s*\"?\s+to\s+the\s+range\s+characteristic\s+of\s+melta\s+weapons?\s+"
+            r"equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s|that|this)\s+unit",
+            re.IGNORECASE,
+        )
+        for ab, _leader in root._iter_attached_leader_leading_abilities():
+            try:
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+            except Exception:
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            try:
+                rest = self._LEADING_ABILITY_PREFIX_RE.sub("", text, count=1).strip(" ,:;-")
+            except Exception:
+                rest = text
+            m = melta_range_re.search(rest)
+            if not m:
+                continue
+            try:
+                total_bonus += int(m.group("val"))
+            except Exception:
+                continue
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = int(total_bonus)
+        return int(total_bonus)
 
     def _get_attack_keyword_bonus_rules(self, model: Optional['Model'] = None) -> list[dict]:
         """Collect objective-target keyword bonuses from ability text."""
@@ -19873,7 +19929,13 @@ class Unit:
                 # Get the maximum range from all profiles
                 for profile in weapon.profiles.values():
                     if hasattr(profile, 'range') and profile.range and hasattr(profile.range, 'max'):
-                        max_range = max(max_range, profile.range.max)
+                        effective_max = profile.range.max
+                        try:
+                            if hasattr(profile, "_effective_range_max"):
+                                effective_max = profile._effective_range_max(model)
+                        except Exception:
+                            effective_max = profile.range.max
+                        max_range = max(max_range, effective_max)
         
         return max_range
 

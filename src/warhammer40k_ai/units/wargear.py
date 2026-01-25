@@ -274,6 +274,32 @@ class WargearProfile:
         except Exception:
             return None
 
+    def _effective_range_max(self, attacker: Optional['Model'] = None) -> int:
+        """Return range max after applying model/unit effects (e.g., leading Melta range bonus)."""
+        try:
+            base_max = int(getattr(self.range, "max", 0) or 0)
+        except Exception:
+            base_max = 0
+        if base_max <= 0:
+            return base_max
+        if attacker is None:
+            return base_max
+        try:
+            if not self.is_melta():
+                return base_max
+        except Exception:
+            return base_max
+        bonus = 0
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "leading_unit_melta_range_bonus"):
+                bonus = int(unit.leading_unit_melta_range_bonus() or 0)
+        except Exception:
+            bonus = 0
+        if bonus:
+            return base_max + bonus
+        return base_max
+
     def _plunging_fire_applies(self, attacker: 'Model', target: 'Unit') -> bool:
         """PLUNGING FIRE:
         - Attacker is wholly within a RUINS terrain feature
@@ -897,11 +923,17 @@ class WargearProfile:
         except Exception:
             pass
 
+        effective_range_max = self._effective_range_max(attacker)
+        try:
+            half_range = float(effective_range_max) / 2.0
+        except Exception:
+            half_range = float(getattr(self.range, "max", 0) or 0) / 2.0
+
         applied_pain_rapid_fire = False
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             bonuses = dict(sr.get("pain_rapid_fire_weapon_bonus", {}) or {}) if isinstance(sr, dict) else {}
-            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= (self.range.max / 2):
+            if bonuses and self.parent_wargear and self.parent_wargear.is_ranged() and closest_dist <= half_range:
                 parent_name = str(getattr(self.parent_wargear, "name", "") or "").strip().lower()
                 matched = None
                 for key, val in bonuses.items():
@@ -916,7 +948,7 @@ class WargearProfile:
         except Exception:
             applied_pain_rapid_fire = False
 
-        if (not applied_pain_rapid_fire) and closest_dist <= (self.range.max / 2) and self.is_rapid_fire():
+        if (not applied_pain_rapid_fire) and closest_dist <= half_range and self.is_rapid_fire():
             try:
                 rf = self.get_rapid_fire_bonus()
                 rf_bonus = int(rf.resolve())
@@ -1300,6 +1332,12 @@ class WargearProfile:
                     f"Conversion active (target >{conversion_distance_threshold}\")"
                 )
 
+        effective_range_max = self._effective_range_max(attacker)
+        try:
+            half_range = float(effective_range_max) / 2.0
+        except Exception:
+            half_range = float(getattr(self.range, "max", 0) or 0) / 2.0
+
         # Imperial Agents Kill Team: majority Toughness (tie -> highest) for the attack sequence.
         kill_team_toughness = None
         try:
@@ -1321,7 +1359,7 @@ class WargearProfile:
                 'crit_hit': False,
                 'crit_wound': False,
                 'mortal_wound': False,
-                'below_half_distance': closest_dist <= (self.range.max / 2),
+                'below_half_distance': closest_dist <= half_range,
                 'damage': 0,
                 'target_toughness_override': kill_team_toughness,
                 'conversion_active': conversion_active,

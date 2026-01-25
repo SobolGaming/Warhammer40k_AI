@@ -805,14 +805,33 @@ class Model:
     def maximum_range(self, wargear_item: Optional[Wargear] = None, wargear_profile: Optional[WargearProfile] = None) -> int:
         max_range = 0
         if wargear_profile:
+            try:
+                if hasattr(wargear_profile, "_effective_range_max"):
+                    return int(wargear_profile._effective_range_max(self))
+            except Exception:
+                pass
             return wargear_profile.range.max
         elif wargear_item:
             if wargear_item.is_ranged():
-                max_range = max(max_range, wargear_item.maximum_range())
+                for profile in wargear_item.profiles.values():
+                    try:
+                        if hasattr(profile, "_effective_range_max"):
+                            max_range = max(max_range, int(profile._effective_range_max(self)))
+                        else:
+                            max_range = max(max_range, profile.range.max)
+                    except Exception:
+                        continue
         else:
             for wargear in self.wargear:
                 if wargear.is_ranged():
-                    max_range = max(max_range, wargear.maximum_range())
+                    for profile in wargear.profiles.values():
+                        try:
+                            if hasattr(profile, "_effective_range_max"):
+                                max_range = max(max_range, int(profile._effective_range_max(self)))
+                            else:
+                                max_range = max(max_range, profile.range.max)
+                        except Exception:
+                            continue
         return max_range
 
     def ranged_attack(self, target: 'Unit', wargear_profile: WargearProfile) -> None:

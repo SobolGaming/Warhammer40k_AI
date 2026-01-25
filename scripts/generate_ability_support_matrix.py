@@ -306,6 +306,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "psychic": "Tags Psychic attacks; conditional defenses (FNP/Invulnerable) check this keyword.",
         "psychic assassin": "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",
         "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
+        "linked fire": "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied.",
         # Ork-specific keywords
         "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",
         "dead choppy": "+1 Attacks for each additional dread klaw equipped.",
@@ -1718,6 +1719,18 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
                 notes.append(f"Bearer's unit weapons gain Sustained Hits {val}.")
 
     m = re.search(
+        r"add\s+(\d+)\s*\"?\s+to\s+the\s+range\s+characteristic\s+of\s+melta\s+weapons?\s+equipped\s+by\s+models\s+in\s+"
+        r"(?:the\s+bearer'?s|that|this)\s+unit",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Melta weapon range +{m.group(1)}\".")
+        else:
+            notes.append(f"Bearer's unit Melta weapon range +{m.group(1)}\".")
+
+    m = re.search(
         r"(?:(melee|ranged)\s+)?(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+"
         r"(?:the\s+bearer'?s\s+unit|that\s+unit).*?ignores\s+cover",
         low,
@@ -1779,6 +1792,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
+        rf"{lead_prefix}add \d+ to the range characteristic of melta weapons equipped by models in {unit_ref}",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
         rf"{lead_prefix}.*eligible to (?:declare a charge|charge).*",
