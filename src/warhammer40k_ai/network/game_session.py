@@ -16,6 +16,7 @@ from ..engine.ref_codec import encode_refs
 from ..roster.player import PlayerControl
 from .client import NetworkClient
 from .messages import CommandMessage, ErrorMessage, parse_message
+from .debug import log_network
 
 
 def _strip_ref_wrappers(value: Any) -> Any:
@@ -317,6 +318,11 @@ class NetworkGameSession:
         await self.client.send_auth(reconnect_token=token, last_event_id=self.client.event_cursor.last_event_id)
 
     async def handle_message(self, event) -> None:
+        log_network(
+            "session.recv",
+            category=getattr(event, "category", None),
+            type=getattr(event, "message_type", None),
+        )
         self.client.handle_message(event)
         if event.category != "game":
             return
@@ -325,12 +331,24 @@ class NetworkGameSession:
 
         if msg_type == "snapshot":
             snapshot = payload.get("snapshot", {}) or {}
+            log_network(
+                "session.snapshot",
+                setup_phase=(snapshot.get("game", {}) or {}).get("setup_phase"),
+                events=len(list(snapshot.get("events", []) or [])),
+            )
             self._set_game(self._build_game(snapshot))
             return
 
         if msg_type == "resync":
             snapshot = payload.get("snapshot", {}) or {}
             events = list(payload.get("events", []) or [])
+            log_network(
+                "session.resync",
+                reason=payload.get("reason"),
+                since_event_id=payload.get("since_event_id"),
+                setup_phase=(snapshot.get("game", {}) or {}).get("setup_phase"),
+                events=len(events),
+            )
             self._set_game(self._build_game(snapshot, events_tail=events))
             return
 
@@ -338,7 +356,12 @@ class NetworkGameSession:
             parsed = parse_message(event.message)
             if isinstance(parsed, CommandMessage):
                 command = parsed.command
-                if command.command_id not in self._applied_ids and self.game is not None:
+                if self.game is None:
+                    log_network("session.command.skip", reason="no_game", kind=command.kind)
+                elif command.command_id in self._applied_ids:
+                    log_network("session.command.skip", reason="already_applied", kind=command.kind)
+                else:
+                    log_network("session.command.apply", kind=command.kind, command_id=command.command_id)
                     self.game.apply_command(command)
                     self.record_applied(command.command_id)
             return
@@ -347,6 +370,7 @@ class NetworkGameSession:
             parsed = parse_message(event.message)
             if isinstance(parsed, ErrorMessage):
                 self.last_error = "; ".join(parsed.errors)
+                log_network("session.error", errors=self.last_error)
                 await self.request_resync()
 
     async def poll_messages(self) -> None:

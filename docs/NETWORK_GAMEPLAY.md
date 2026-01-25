@@ -46,6 +46,12 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Each connection receives a session-scoped token for reconnects and role locking.
 - Optional join code or password for private sessions.
 
+## Debugging
+
+- To log incoming client messages and how they are processed, set `W40K_NETWORK_LOG=1`.
+  - Works for both `client` (headless) and `client-ui` (pygame) clients.
+  - Logs appear in the terminal running the client.
+
 ## Message Channels
 
 Reuse existing game message envelopes for live gameplay:

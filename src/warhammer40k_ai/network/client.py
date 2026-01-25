@@ -7,6 +7,7 @@ from ..engine.commands import GameCommand
 from ..version import get_app_version
 from .control import build_control_message
 from .messages import CommandMessage, parse_message
+from .debug import log_network
 from .protocol import EventStreamCursor
 from .transport import TransportClient, build_client_ssl_context
 
@@ -107,11 +108,23 @@ class NetworkClient:
         return await self.transport.next_message(timeout=timeout)
 
     def handle_message(self, event) -> None:
+        log_network(
+            "client.recv",
+            category=getattr(event, "category", None),
+            type=getattr(event, "message_type", None),
+        )
         msg = event.message
         if event.category == "control":
             msg_type = msg.get("type")
             payload = msg.get("payload", {})
             if msg_type == "hello":
+                log_network(
+                    "client.control.hello",
+                    ok=payload.get("ok"),
+                    server_version=payload.get("server_version"),
+                    client_version=payload.get("client_version"),
+                    errors=payload.get("errors"),
+                )
                 self.server_version = payload.get("server_version") or self.server_version
                 ok = payload.get("ok")
                 if ok is False:
@@ -128,13 +141,26 @@ class NetworkClient:
                         self.version_ok = True
                 return
             if msg_type == "auth" and payload.get("ok"):
+                log_network(
+                    "client.control.auth",
+                    ok=payload.get("ok"),
+                    session_id=payload.get("session_id"),
+                    role=payload.get("role"),
+                    errors=payload.get("errors"),
+                )
                 self.session_token = payload.get("token") or self.session_token
                 self.session_id = payload.get("session_id") or self.session_id
                 if payload.get("role"):
                     self.role = payload.get("role")
             if msg_type == "role_select" and payload.get("ok") and payload.get("role"):
+                log_network("client.control.role_select", ok=payload.get("ok"), role=payload.get("role"))
                 self.role = payload.get("role")
             if msg_type == "lobby_state":
+                log_network(
+                    "client.control.lobby_state",
+                    session_id=payload.get("session_id"),
+                    started=payload.get("started"),
+                )
                 self.lobby_state = dict(payload)
             return
 
@@ -144,6 +170,11 @@ class NetworkClient:
         msg_type = msg.get("type")
         if msg_type == "snapshot":
             snapshot = msg.get("payload", {}).get("snapshot", {})
+            log_network(
+                "client.game.snapshot",
+                players=len(list(snapshot.get("players", []) or [])),
+                setup_phase=(snapshot.get("game", {}) or {}).get("setup_phase"),
+            )
             players = list(snapshot.get("players", []) or [])
             if self.role == "player1" and players:
                 self.player_id = players[0].get("id", self.player_id)
@@ -157,6 +188,13 @@ class NetworkClient:
         if msg_type == "resync":
             payload = msg.get("payload", {})
             snapshot = payload.get("snapshot", {}) or {}
+            log_network(
+                "client.game.resync",
+                reason=payload.get("reason"),
+                since_event_id=payload.get("since_event_id"),
+                setup_phase=(snapshot.get("game", {}) or {}).get("setup_phase"),
+                events=len(list(payload.get("events", []) or [])),
+            )
             players = list(snapshot.get("players", []) or [])
             if self.role == "player1" and players:
                 self.player_id = players[0].get("id", self.player_id)
@@ -176,5 +214,6 @@ class NetworkClient:
             return
         if msg_type == "event":
             events = list(msg.get("payload", {}).get("events", []) or [])
+            log_network("client.game.event", count=len(events))
             if events:
                 self.event_cursor.validate_and_advance(events)
