@@ -179,18 +179,24 @@ simply **presents valid choices** and validates all selections.
    - target selection (and split‑fire decisions if needed)
    - weapon/profile selection
 4. **Client resolves target/weapon choices.**
-5. **Server resolves the attack sequence** for that unit:
-   - hit roll decision(s)
-   - wound roll decision(s)
-   - save roll decision(s)
-   - damage roll decision(s) (as needed)
-6. **If any selected weapon is Hazardous**:
+5. **Defender reaction window (if applicable)**:
+   - If the defender has any reactive abilities/stratagems available on being targeted
+     (e.g., Smokescreen, Go to Ground, reactive moves), the server queues those decisions now.
+   - Defender resolves them via `RESOLVE_DECISION`; server validates and applies any state changes.
+6. **Server resolves the attack sequence** for that unit, step‑by‑step:
+   - **Hit roll decision(s)** → server rolls and broadcasts results.
+     - If rerolls/stratagems are available, the server queues a reroll decision.
+     - Client either selects rerolls or chooses “None” to accept the roll.
+   - **Wound roll decision(s)** → same sub‑flow as hits (server rolls, reroll window, accept/none).
+   - **Save roll decision(s)** → queued to the **defending player** (server rolls, reroll window, accept/none).
+   - **Damage roll decision(s)** as needed (including any required allocation choices).
+7. **If any selected weapon is Hazardous**:
    - The server **queues a dice roll decision** for the hazardous test (e.g., `3D6` fail on 1).
    - The client resolves the hazardous roll (server rolls + broadcasts results).
    - For **each failed hazardous die**, the server **requires a model allocation choice** from
      the eligible models with hazardous weapons (UI dialog / selection provider).
    - The server applies the mortal wounds to the chosen model(s), then completes the unit’s shooting.
-7. **Only after this unit fully resolves**, the server queues the next `DECLARE_SHOTS`
+8. **Only after this unit fully resolves**, the server queues the next `DECLARE_SHOTS`
    (or allows the player to end the phase).
 
 Key point: the client **never invents a roll**. The server issues the roll request; the client only
