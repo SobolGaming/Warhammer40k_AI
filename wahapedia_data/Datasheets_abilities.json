@@ -49405,7 +49405,7 @@
         "ability_id": "",
         "model": "",
         "name": "Indomitable Strength of Will",
-        "description": "While this model is leading a unit, each time you spend a Battle Focus token to enable that unit to perform an Agile Manoeuvre, roll one 06: on a 3+, you gain 1 Battle Focus token.",
+        "description": "While this model is leading a unit, each time you spend a Battle Focus token to enable that unit to perform an Agile Manoeuvre, roll one D6: on a 3+, you gain 1 Battle Focus token.",
         "type": "Datasheet",
         "parameter": ""
     },

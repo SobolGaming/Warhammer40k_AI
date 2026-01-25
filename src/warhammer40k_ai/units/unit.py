@@ -8103,6 +8103,56 @@ class Unit:
             except Exception:
                 continue
 
+    def get_indomitable_strength_of_will_refund_source(self) -> str:
+        """Return a non-empty source string if Indomitable Strength of Will is active.
+
+        This ability is a leading-only rule (Autarch Wayleaper). We treat it as active for
+        the *attached unit root* while a leader with that ability is attached and the
+        ability passes the existing leading-only gates.
+
+        Returns:
+            str: A short source label (typically the leader name) if active; otherwise "".
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+
+        cache_key = "indomitable_strength_of_will_refund_source"
+        try:
+            cache = getattr(root, "_ability_cache", None)
+            if isinstance(cache, dict) and cache_key in cache:
+                return str(cache.get(cache_key) or "")
+        except Exception:
+            pass
+
+        source = ""
+        try:
+            for ab, leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    if isinstance(ab, dict):
+                        name = str(ab.get("name", "") or "")
+                    elif isinstance(ab, str):
+                        name = str(ab or "")
+                    else:
+                        name = str(getattr(ab, "name", "") or "")
+                except Exception:
+                    name = ""
+                if name.strip().lower() != "indomitable strength of will":
+                    continue
+                try:
+                    source = str(getattr(leader, "name", "") or "").strip() or name.strip()
+                except Exception:
+                    source = name.strip()
+                break
+        except Exception:
+            source = ""
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = str(source or "")
+        return str(source or "")
+
     def _iter_reroll_scan_texts(self):
         """Yield ability texts for reroll detection."""
         iter_active = getattr(self, "_iter_active_ability_texts", None)

@@ -302,6 +302,50 @@ class BattleFocusManager:
         self.tokens = int(self.tokens) - 1
         return True
 
+    def _maybe_refund_token_indomitable_strength_of_will(self, unit, maneuver: str, game) -> None:
+        """Indomitable Strength of Will (Autarch Wayleaper): refund BF token on 3+.
+
+        Trigger: each time a Battle Focus token is spent to enable an Agile Manoeuvre.
+        Gate: only while the leader is attached (leading-only ability).
+        """
+        if unit is None or game is None:
+            return
+        # Only applies if the attached unit root has an attached leader with the ability.
+        try:
+            getter = getattr(unit, "get_indomitable_strength_of_will_refund_source", None)
+            source = str(getter() or "") if callable(getter) else ""
+        except Exception:
+            source = ""
+        if not source:
+            return
+
+        try:
+            from ..utility.dice import get_roll
+            roll = int(get_roll("D6") or 0)
+        except Exception:
+            roll = 0
+
+        refunded = int(roll) >= 3
+        if refunded:
+            self.tokens = int(self.tokens or 0) + 1
+
+        # UI-facing transparency (works for both local + remote controllers that read event_bus).
+        try:
+            from ..utility.event_bus import append_dice
+        except Exception:
+            append_dice = None
+        try:
+            player = getattr(self.army, "player", None)
+        except Exception:
+            player = None
+        if append_dice is not None and player is not None:
+            try:
+                m = str(maneuver or "").strip()
+                suffix = "+1 Battle Focus token" if refunded else "no refund"
+                append_dice(player, f"Indomitable Strength of Will ({m}): D6={int(roll)} (3+) -> {suffix}")
+            except Exception:
+                pass
+
     def _should_use(self, player, key: str, ctx: dict) -> bool:
         try:
             return bool(player._should_use_optional_ability(key, ctx))
@@ -658,6 +702,8 @@ class BattleFocusManager:
         if not self._spend_token():
             return
 
+        self._maybe_refund_token_indomitable_strength_of_will(unit, maneuver, game)
+
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
@@ -722,6 +768,9 @@ class BattleFocusManager:
         unit.special_rules = sr
 
         self._mark_used(unit, maneuver)
+
+        # Keep existing reactive-move distance roll order intact, then perform the token-refund roll.
+        self._maybe_refund_token_indomitable_strength_of_will(unit, maneuver, game)
 
     def cleanup_on_phase_end(self, phase, player) -> None:
         pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
