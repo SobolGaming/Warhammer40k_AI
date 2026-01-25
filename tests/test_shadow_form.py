@@ -40,6 +40,14 @@ class MockDatasheet:
         self.loadout = "This model is equipped with: nothing"
 
 
+class _StubRng:
+    def __init__(self, values):
+        self._it = iter(values)
+
+    def randint(self, _a, _b):
+        return next(self._it)
+
+
 def _setup_game():
     bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
     game = Game(bf)
@@ -171,19 +179,10 @@ def test_pall_of_despair_heals_on_failed_battle_shock(monkeypatch):
 
     set_active_shadow_form(belakor, KEY_PALL, battle_round=1)
 
-    import warhammer40k_ai.units.unit as unit_mod
     import warhammer40k_ai.rules.shadow_form as shadow_form_mod
 
-    rolls = iter([12, 2])
-
-    def rigged(_expr: str):
-        try:
-            return next(rolls)
-        except StopIteration:
-            return 6
-
-    monkeypatch.setattr(unit_mod, "get_roll", rigged)
-    monkeypatch.setattr(shadow_form_mod, "get_roll", rigged)
+    game.random_source = _StubRng([6, 6])
+    monkeypatch.setattr(shadow_form_mod, "get_roll", lambda _expr: 2)
 
     enemy.take_battle_shock_test(game.turn)
 

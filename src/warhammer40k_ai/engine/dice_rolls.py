@@ -721,6 +721,7 @@ class DiceRollManager:
             return state
 
         faces = int(state.spec.get("faces", 6) or 6)
+        rerolled_ids: list[str] = []
         for die in list(state.dice or []):
             die_id = str(die.get("die_id", ""))
             if die_id not in chosen:
@@ -731,6 +732,7 @@ class DiceRollManager:
             die["rerolled_from"] = int(die.get("value", 0) or 0)
             die["value"] = int(new_val)
             die["reroll_count"] = int(die.get("reroll_count", 0) or 0) + 1
+            rerolled_ids.append(die_id)
 
         state.total = int(_sum_base_dice(state.dice))
         if str(state.spec.get("display_kind", "") or "") == "d33":
@@ -745,6 +747,13 @@ class DiceRollManager:
                 "time": _now(),
             }
         )
+        if rerolled_ids:
+            from ..utility.event_bus import append_action
+            player_obj = _resolve_player(game, actor_player_id or state.player_id)
+            if player_obj is not None:
+                label = str(action.get("label", "") or action_id or "Re-roll")
+                reason = str(state.spec.get("reason", "") or "Roll")
+                append_action(player_obj, f"{label}: re-rolled {reason}.")
         state.reroll_options = self._compute_reroll_options(game, state)
         try:
             event_system = getattr(game, "event_system", None)

@@ -43,6 +43,14 @@ class _MockDatasheet:
         self.attached_to_names = []
 
 
+class _StubRng:
+    def __init__(self, values):
+        self._it = iter(values)
+
+    def randint(self, _a, _b):
+        return next(self._it)
+
+
 class TestRageCursedOnslaughtEnhancements(unittest.TestCase):
     def _make_unit(
         self,
@@ -154,12 +162,10 @@ class TestRageCursedOnslaughtEnhancements(unittest.TestCase):
             return True
 
         game.map.roll_reroll_provider = _provider
-
-        with patch("warhammer40k_ai.units.unit.get_roll", side_effect=[9, 5]) as mock_roll:
-            target.take_battle_shock_test(current_turn=1)
+        game.random_source = _StubRng([6, 3, 2, 3])
+        target.take_battle_shock_test(current_turn=1)
 
         self.assertEqual(calls["count"], 1)
-        self.assertEqual(mock_roll.call_count, 2)
         self.assertFalse(target.is_battle_shocked())
 
     def test_sanguinary_tear_aura_strength_bonus(self):

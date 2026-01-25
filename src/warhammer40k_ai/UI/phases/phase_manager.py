@@ -12,6 +12,43 @@ from warhammer40k_ai.utility.dice import get_roll
 from ..ui_constants import TILE_SIZE
 
 
+def _apply_game_command(game, kind: str, *, player_id: str | None = None, payload: Optional[dict] = None):
+    from ...engine.commands import GameCommand
+
+    cmd = GameCommand.create(kind, player_id=player_id, payload=dict(payload or {}))
+    return game.apply_command(cmd)
+
+def _current_player_id(game) -> str | None:
+    try:
+        return game.get_current_player().id
+    except Exception:
+        return None
+
+
+def _execute_setup_phase_cmd(game, *, player_id: str | None = None, payload: Optional[dict] = None):
+    from ...engine.command_kinds import CMD_EXECUTE_SETUP_PHASE
+
+    return _apply_game_command(game, CMD_EXECUTE_SETUP_PHASE, player_id=player_id, payload=payload)
+
+
+def _advance_setup_phase_cmd(game, *, player_id: str | None = None):
+    from ...engine.command_kinds import CMD_ADVANCE_SETUP_PHASE
+
+    return _apply_game_command(game, CMD_ADVANCE_SETUP_PHASE, player_id=player_id, payload={})
+
+
+def _set_deployment_waiting_cmd(game, value: bool, *, player_id: str | None = None):
+    from ...engine.command_kinds import CMD_SET_DEPLOYMENT_WAITING
+
+    return _apply_game_command(game, CMD_SET_DEPLOYMENT_WAITING, player_id=player_id, payload={"value": bool(value)})
+
+
+def _next_phase_cmd(game, *, player_id: str | None = None):
+    from ...engine.command_kinds import CMD_NEXT_PHASE
+
+    return _apply_game_command(game, CMD_NEXT_PHASE, player_id=player_id, payload={})
+
+
 class PhaseEventHandler(Protocol):
     """Protocol for phase-specific event handlers"""
     def handle_event(self, event: pygame.event.Event, game_view: 'GameView') -> bool:
@@ -76,7 +113,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     hasattr(self.game, 'waiting_for_deployment_input') and 
                     self.game.waiting_for_deployment_input):
                     # Continue deployment
-                    self.game.set_waiting_for_deployment_input(False)
+                    _set_deployment_waiting_cmd(self.game, False, player_id=_current_player_id(self.game))
                     return True
                 
                 # Execute the current setup phase
@@ -109,8 +146,9 @@ class SetupPhaseHandler(BasePhaseHandler):
                     self._start_declare_battle_formations_flow()
                     return True  # Don't advance phase yet, wait for dialog
                 
-                self.game.execute_current_setup_phase(**setup_kwargs)
-                setup_complete = self.game.advance_setup_phase()
+                exec_result = _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload=setup_kwargs)
+                adv_result = _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
+                setup_complete = bool(getattr(adv_result, "value", False)) if adv_result and getattr(adv_result, "ok", False) else False
                 
                 # Update UI after specific phases that change game state
                 if current_phase_before.name == 'MUSTER_ARMIES':
@@ -175,8 +213,8 @@ class SetupPhaseHandler(BasePhaseHandler):
             print(f"Mission selected: {combination.get('id')} - {combination.get('primary')} / {combination.get('deployment')} / Layout {layout}")
 
             # Execute the phase and advance
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
+            _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+            _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
 
         def _cancel() -> None:
             print("Mission selection cancelled - using default")
@@ -186,8 +224,8 @@ class SetupPhaseHandler(BasePhaseHandler):
                 layouts = list(combo.get("layouts", []) or [])
                 layout = layouts[0] if layouts else 1
                 resolve_decision_command(self.game, req, default_opt.option_id, result_payload={"layout": layout})
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
+            _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+            _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
 
         modal.show(on_confirm=_apply_result, on_cancel=_cancel, decision_request=req)
         # Push to modal stack
@@ -324,8 +362,8 @@ class SetupPhaseHandler(BasePhaseHandler):
                 self.game.apply_command(cmd)
 
             # Execute the phase and advance
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
+            _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+            _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
 
         def _skip():
             # Execute the phase and advance without changing transport assignments
@@ -345,8 +383,8 @@ class SetupPhaseHandler(BasePhaseHandler):
                 }
                 cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
                 self.game.apply_command(cmd)
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
+            _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+            _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
 
         pending = {
             str(getattr(req, "context", {}).get("unit_id", "")): req
@@ -484,8 +522,8 @@ class SetupPhaseHandler(BasePhaseHandler):
         players = list(getattr(self.game, "players", []) or [])
         if not players:
             # Fallback: execute and advance (no UI)
-            self.game.execute_current_setup_phase()
-            self.game.advance_setup_phase()
+            _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+            _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
             return
 
         def _after_hover():
@@ -504,15 +542,15 @@ class SetupPhaseHandler(BasePhaseHandler):
                     self._show_leader_attachment_dialog()
                     return
                 except Exception:
-                    self.game.execute_current_setup_phase()
-                    self.game.advance_setup_phase()
+                    _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+                    _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
                     return
 
             p_left, p_right = players[0], players[1]
             a_left, a_right = p_left.get_army(), p_right.get_army()
             if a_left is None or a_right is None:
-                self.game.execute_current_setup_phase()
-                self.game.advance_setup_phase()
+                _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+                _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
                 return
 
             from ..dialogs.side_by_side_modal import SideBySideModal
@@ -750,8 +788,8 @@ class SetupPhaseHandler(BasePhaseHandler):
                     if m.left_done and m.right_done:
                         m.hide()
                         # Execute phase logic (validations) and advance setup phase.
-                        self.game.execute_current_setup_phase()
-                        self.game.advance_setup_phase()
+                        _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
+                        _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
                         try:
                             self.game_view.refresh_roster_panes()
                         except Exception:
@@ -2523,7 +2561,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     self.game.fight_phase_manager = None
                 except Exception:
                     pass
-                self.game.next_phase()
+                _next_phase_cmd(self.game, player_id=_current_player_id(self.game))
 
             self._maybe_prompt_rise_to_challenge(current_player, opponent_player, _advance_phase)
 

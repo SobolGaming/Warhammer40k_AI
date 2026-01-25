@@ -15,7 +15,7 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 - **Clients are thin views**: each client runs a local game state by applying server‑accepted commands/events.
 - **DecisionRequest → DecisionResult**: UI decisions are serialized as `REQUEST_DECISION` + `RESOLVE_DECISION` commands.
 - **Waiting**: “server waits” means it does not advance to the next step until required decisions are resolved.
-- **Headless auto-decisions**: in local/headless mode, a server-side agent may auto-resolve dice roll decisions via `RESOLVE_DECISION` (no direct engine bypass).
+- **Headless auto-decisions**: optional server-side headless agent can auto-resolve **dice roll + dice reroll** decisions via `RESOLVE_DECISION` when `auto_resolve_dice_rolls` is enabled; otherwise no auto-decisions are performed.
 
 **Simultaneous vs Sequential**
 - **Simultaneous**: both players can decide independently at the same time (e.g., formations).
@@ -71,7 +71,7 @@ own formation choices independently while the server waits for both to finish.
    - `ATTACH_LEADER`
    - `ASSIGN_TRANSPORT`
    - `DECLARE_RESERVES`
-   - `CHOOSE_PLAGUE` (Nurgle's Gift only, if applicable)
+   - `CHOOSE_PLAGUE` (Death Guard faction — Nurgle's Gift army rule, if applicable)
 2. Server sends `CMD_REQUEST_DECISION` for each request.
 3. Each client resolves its own requests (UI dialogs) and sends `CMD_RESOLVE_DECISION`.
 4. Server buffers `RESOLVE_DECISION` for formation decisions:
@@ -132,14 +132,18 @@ Clients resolve via `CMD_RESOLVE_DECISION`; the server validates and broadcasts 
 resulting command/event stream so **both players** see the final outcome.
 
 Currently queued at battle round start (when applicable):
+
+Every battle round:
 - Blessings of Khorne (World Eaters)
-- Templar Vows (Black Templars, BR1)
-- Hyper-adaptations (Tyranids Invasion Fleet, BR1)
-- Harbingers of Dread (Chaos Knights, BR1/3/5)
 - Doctrina Imperatives (Adeptus Mechanicus)
 - Shadow Form (Be’lakor)
 - Wrathful Presence (Angron)
-- Monarch of the Hunt quarry selection (Shalaxi, BR1 and re-pick on quarry destroyed)
+
+Battle-round-specific:
+- Harbingers of Dread (Chaos Knights — BR 1/3/5)
+- Templar Vows (Black Templars — BR1 only)
+- Hyper-adaptations (Tyranids Invasion Fleet — BR1 only)
+- Monarch of the Hunt quarry selection (Shalaxi Helbane — BR1 only; re‑pick triggered later if the quarry is destroyed)
 
 1. COMMAND_PHASE
    - Active player resolves start-of-turn decisions (if any).
