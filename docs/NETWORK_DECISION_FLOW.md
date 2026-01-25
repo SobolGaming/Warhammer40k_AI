@@ -16,6 +16,7 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 - **DecisionRequest → DecisionResult**: UI decisions are serialized as `REQUEST_DECISION` + `RESOLVE_DECISION` commands.
 - **Waiting**: “server waits” means it does not advance to the next step until required decisions are resolved.
 - **Headless auto-decisions**: optional server-side headless agent can auto-resolve **dice roll + dice reroll** decisions via `RESOLVE_DECISION` when `auto_resolve_dice_rolls` is enabled; otherwise no auto-decisions are performed.
+- **Decision timeouts**: `DecisionRequest` supports `timeout_seconds` (payload field). Enforcement is a planned server feature; see “Decision Timeouts” below.
 
 **Simultaneous vs Sequential**
 - **Simultaneous**: both players can decide independently at the same time (e.g., formations).
@@ -230,6 +231,27 @@ but the active player still picks the order of charges.
 
 Key point: the server controls the **alternation**, the client controls **which eligible unit fights**.
 
+### 5.2) Phase Transitions + Reaction Windows
+
+Phase changes are **broadcast** (e.g., `CMD_NEXT_PHASE` / `CMD_EXECUTE_SETUP_PHASE`), but they are **not**
+reaction windows by themselves. Reaction windows are explicit **DecisionRequests** that the server inserts
+*before* it advances the phase when a rule/stratagem allows it.
+
+General pattern:
+1. **Server completes the current phase** (resolves all in‑phase actions).
+2. **Server checks end‑of‑phase / end‑of‑turn reactions** for either player.
+3. If any reactions are available, the server **queues decisions** and waits for `RESOLVE_DECISION`.
+4. Once reactions resolve (or are declined), the server **broadcasts the phase transition** and continues.
+
+Examples:
+- **Rapid Ingress**: at the end of the opponent’s Movement phase, if the defending player has CP and an
+  eligible unit in reserves, the server queues a decision to use Rapid Ingress before advancing to Shooting.
+- **Hunters from the Warp (Flesh Hounds)**: at the end of the opponent’s turn (after their Fight phase),
+  the server queues the ability decision for the owning player **before** advancing to the next player’s
+  Command phase.
+
+If no reactions are available, the server advances phases immediately.
+
 ---
 
 ## 6) Waiting Points (Summary)
@@ -258,3 +280,18 @@ Key point: the server controls the **alternation**, the client controls **which 
    (or full snapshot when no cursor is provided).
 
 For decision dialog mappings, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
+
+---
+
+## 8) Decision Timeouts (Planned / Design)
+
+Reactive decisions (especially interrupts like Rapid Ingress or Overwatch) should not be allowed to stall
+the game indefinitely. We plan to add **server‑side timeouts** for DecisionRequests, with these rules:
+
+- **Timeout value**: DecisionRequests may include `timeout_seconds` in their payload.
+- **Default behavior on timeout**: server auto‑resolves to a **no‑op / decline** option.
+- **Broadcast**: the server broadcasts the auto‑resolution so all clients stay in sync.
+- **Audit/logging**: event log records that the decision timed out and which default was applied.
+
+This is **not yet enforced** by the server, but the payload field already exists and the decision flow
+assumes eventual enforcement.
