@@ -1314,6 +1314,7 @@ def _classify_ability(
     if chapter_restriction_support:
         return chapter_restriction_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
+    monster_vehicle_reroll_support = _monster_vehicle_reroll_support(description)
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
@@ -1401,6 +1402,8 @@ def _classify_ability(
         return ("Supported", "Power from Pain ability effects implemented.")
     if closest_m_veh_support:
         return closest_m_veh_support
+    if monster_vehicle_reroll_support:
+        return monster_vehicle_reroll_support
     if unit_contains_oc_support:
         return unit_contains_oc_support
     if aura_oc_support:
@@ -1819,6 +1822,41 @@ def _closest_monster_vehicle_reroll_support(description: str) -> Optional[Tuple[
         notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Wound roll (optional).")
     if allow_damage:
         notes.append(f"Ranged attacks vs closest eligible MONSTER/VEHICLE within {rng}\" can re-roll the Damage roll (optional).")
+    return ("Supported", " ".join(notes))
+
+
+def _monster_vehicle_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "ranged attack" not in norm:
+        return None
+    if "monster or vehicle" not in norm:
+        return None
+    if "each time a model in this unit makes a ranged attack" not in norm:
+        return None
+    if "closest" in norm:
+        return None
+    if "reroll" not in norm:
+        return None
+    if not re.search(r"targets (?:an? )?(?:enemy )?monster or vehicle unit", norm):
+        return None
+    allow_hit = "reroll the hit roll" in norm
+    allow_wound = "reroll the wound roll" in norm
+    allow_damage = "reroll the damage roll" in norm
+    if not (allow_hit or allow_wound or allow_damage):
+        return None
+    notes = []
+    if "shooting phase" in norm:
+        notes.append("Shooting phase only.")
+    if allow_hit:
+        notes.append("Ranged attacks vs MONSTER/VEHICLE can re-roll the Hit roll (optional).")
+    if allow_wound:
+        notes.append("Ranged attacks vs MONSTER/VEHICLE can re-roll the Wound roll (optional).")
+    if allow_damage:
+        notes.append("Ranged attacks vs MONSTER/VEHICLE can re-roll the Damage roll (optional).")
     return ("Supported", " ".join(notes))
 
 

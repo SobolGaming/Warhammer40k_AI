@@ -18146,6 +18146,59 @@ class Unit:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_monster_vehicle_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "In your Shooting phase, each time a model in this unit makes a ranged attack that targets a MONSTER or VEHICLE unit,
+        you can re-roll the Hit roll, you can re-roll the Wound roll and you can re-roll the Damage roll."
+        """
+        if model is None:
+            return None
+        cache_key = f"monster_vehicle_reroll_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=None):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if "ranged attack" not in low:
+                    continue
+                if "monster" not in low or "vehicle" not in low:
+                    continue
+                if "each time a model in this unit makes a ranged attack" not in low:
+                    continue
+                if "closest" in low:
+                    continue
+                if not re.search(r"targets (?:an? )?(?:enemy )?monster or vehicle unit", low):
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+                allow_hit = bool(re.search(r"re-?roll the hit roll", low))
+                allow_wound = bool(re.search(r"re-?roll the wound roll", low))
+                allow_damage = bool(re.search(r"re-?roll the damage roll", low))
+                if not (allow_hit or allow_wound or allow_damage):
+                    continue
+                source = str(name or "Monster/Vehicle rerolls").strip() or "Monster/Vehicle rerolls"
+                rule = {
+                    "reroll_hit": bool(allow_hit),
+                    "reroll_wound": bool(allow_wound),
+                    "reroll_damage": bool(allow_damage),
+                    "requires_shooting_phase": ("shooting phase" in low),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_two_melee_weapons_attacks_bonus(self, model: Optional['Model'] = None) -> int:
         """
         Return the Attacks bonus for abilities like:
