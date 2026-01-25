@@ -39,28 +39,16 @@ python3 scripts/main.py --manual-phases
 #### Network Play (Server/Client)
 ```bash
 # Server (TLS required)
-python3 -m warhammer40k_ai.network.cli server \
-  --host 0.0.0.0 --port 8765 \
-  --cert tests/fixtures/tls/server.crt \
-  --key tests/fixtures/tls/server.key
+python3 -m warhammer40k_ai.network.cli server --host 0.0.0.0 --port 40000 --cert tests/fixtures/tls/server.crt --key tests/fixtures/tls/server.key
 
 # Client 1 (Player 1, pygame UI)
-python3 -m warhammer40k_ai.network.cli client-ui \
-  --server wss://localhost:8765 \
-  --ca-cert tests/fixtures/tls/server.crt \
-  --display-name "Player One" \
-  --role player1 \
-  --army-file army_lists/chaos_test.txt \
-  --ready
+python3 -m warhammer40k_ai.network.cli client-ui --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Player One" --role player1 --army-file army_lists/chaos_test.txt --ready
 
 # Client 2 (Player 2, headless)
-python3 -m warhammer40k_ai.network.cli client \
-  --server wss://localhost:8765 \
-  --ca-cert tests/fixtures/tls/server.crt \
-  --display-name "Player Two" \
-  --role player2 \
-  --army-file army_lists/aeldari_test.txt \
-  --ready
+python3 -m warhammer40k_ai.network.cli client --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Player Two" --role player2 --army-file army_lists/aeldari_test.txt --ready
+
+# Spectator (pygame UI)
+python3 -m warhammer40k_ai.network.cli client-ui --server wss://localhost:40000 --ca-cert tests/fixtures/tls/server.crt --display-name "Spectator One" --role spectator
 ```
 
 Notes:
@@ -68,6 +56,7 @@ Notes:
 - For custom certs, generate your own and pass `--cert`/`--key`.
 - Clients can pass `--insecure` for dev-only TLS bypass (not recommended).
 - Use `client-ui` for human players (pygame UI); use `client` for headless AI/spectator tooling.
+- Spectators can join at any time (including mid-game) and are read-only.
 
 #### Data Exploration
 ```bash
