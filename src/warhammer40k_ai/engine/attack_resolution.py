@@ -1159,13 +1159,21 @@ class AttackResolutionManager:
         except Exception:
             player_id = None
         from .roll_utils import command_reroll_available
-        reason = f"Hazardous test for {getattr(attacker_unit, 'name', 'Unit')} ({len(test_model_ids)}D6, fail on 1)"
+        from ..utility.hazardous import hazardous_fail_on_values
+        fail_on = hazardous_fail_on_values(profile)
+        if not fail_on:
+            fail_on = [1]
+        if len(fail_on) == 1:
+            fail_on_desc = f"fail on {fail_on[0]}"
+        else:
+            fail_on_desc = f"fail on {fail_on[0]}-{fail_on[-1]}"
+        reason = f"Hazardous test for {getattr(attacker_unit, 'name', 'Unit')} ({len(test_model_ids)}D6, {fail_on_desc})"
         roll_spec = {
             "dice_count": int(len(test_model_ids)),
             "faces": 6,
             "reason": reason,
             "roll_type": "hazardous",
-            "fail_on": [1],
+            "fail_on": list(fail_on),
             "handler_key": "attack_hazardous",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "command_reroll_allowed": command_reroll_available(game, attacker_unit.get_parent_army().player, roll_type="hazardous") if player_id else False,
@@ -1194,11 +1202,12 @@ class AttackResolutionManager:
             root_unit = attacker_unit
         pain_hazardous = bool(seq.context.get("hazardous_pain_melee_non_character", False))
         from ..utility.damage_allocation import DamageAllocationCtx, choose_hazardous_failure_model
+        from ..utility.hazardous import is_hazardous_failure
         for die in list(roll_state.dice or []):
             if bool(die.get("is_derived", False)):
                 continue
             try:
-                if int(die.get("value", 0) or 0) != 1:
+                if not is_hazardous_failure(profile, int(die.get("value", 0) or 0)):
                     continue
             except Exception:
                 continue

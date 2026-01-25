@@ -171,11 +171,11 @@ Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 <td bgcolor="#d4edda">Enforced: each model can use a ONE SHOT weapon once per battle.</td>
 </tr>
 <tr>
-<td bgcolor="#f8d7da"><code>overcharge</code></td>
-<td bgcolor="#f8d7da"><b>🟥 Not implemented</b></td>
-<td bgcolor="#f8d7da">1</td>
-<td bgcolor="#f8d7da">overcharge</td>
-<td bgcolor="#f8d7da">No explicit gameplay effect currently wired for this keyword.</td>
+<td bgcolor="#d4edda"><code>overcharge</code></td>
+<td bgcolor="#d4edda"><b>🟩 Supported</b></td>
+<td bgcolor="#d4edda">1</td>
+<td bgcolor="#d4edda">overcharge</td>
+<td bgcolor="#d4edda">Hazardous tests for this profile apply a -2 modifier to the roll result.</td>
 </tr>
 <tr>
 <td bgcolor="#d4edda"><code>pistol</code></td>

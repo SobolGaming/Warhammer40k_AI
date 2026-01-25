@@ -5,6 +5,11 @@ import copy
 import uuid
 import re
 from warhammer40k_ai.utility.dice import DiceCollection, get_roll
+from warhammer40k_ai.utility.hazardous import (
+    apply_hazardous_roll_modifier,
+    hazardous_roll_modifier,
+    is_hazardous_failure,
+)
 from warhammer40k_ai.utility.event_bus import append_dice, append_action
 from warhammer40k_ai.utility.range import Range
 from warhammer40k_ai.utility.count import Count
@@ -1640,7 +1645,7 @@ class WargearProfile:
                 )
             except Exception:
                 pass
-            if hazard_roll == 1:
+            if is_hazardous_failure(self, hazard_roll):
                 attack_result.hazardous_damage = 3
                 # 10e: For each failed test, select an eligible model in that unit equipped with one or more Hazardous weapons.
                 # Priority: wounded eligible; otherwise non-Character eligible; otherwise eligible Character.
@@ -7487,8 +7492,14 @@ class WargearProfile:
 
         # Hazardous effects
         if result.hazardous_roll is not None:
-            hazard_result = "Backfire!" if result.hazardous_roll == 1 else "Safe"
-            print(f"   Hazardous: Rolled {result.hazardous_roll} - {hazard_result}")
+            modified_hazard_roll = apply_hazardous_roll_modifier(self, result.hazardous_roll)
+            hazard_modifier = hazardous_roll_modifier(self)
+            hazard_result = "Backfire!" if modified_hazard_roll <= 1 else "Safe"
+            if hazard_modifier:
+                roll_text = f"{result.hazardous_roll} ({hazard_modifier:+d} -> {modified_hazard_roll})"
+            else:
+                roll_text = f"{result.hazardous_roll}"
+            print(f"   Hazardous: Rolled {roll_text} - {hazard_result}")
             if result.hazardous_damage > 0:
                 print(f"      {result.attacker_name} takes {result.hazardous_damage} mortal wounds")
 
@@ -7558,6 +7569,9 @@ class WargearProfile:
 
     def is_hazardous(self) -> bool:
         return 'hazardous' in [keyword.lower() for keyword in self.get_keywords()]
+
+    def is_overcharge(self) -> bool:
+        return 'overcharge' in [keyword.lower() for keyword in self.get_keywords()]
 
     def is_explosive(self) -> bool:
         return 'explosive' in [keyword.lower() for keyword in self.get_keywords()]
