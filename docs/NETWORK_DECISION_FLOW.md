@@ -165,6 +165,65 @@ Battle-round-specific:
    - Units fight in alternating order (sequential).
    - Each step is driven by DecisionRequests (select unit, targets, weapons, etc).
 
+### 5.1) Worked Examples (Authoritative server, client chooses)
+
+These examples show how a **single player’s** turn proceeds when the server is authoritative and
+clients respond to server‑issued decisions. The client still chooses order/targets; the server
+simply **presents valid choices** and validates all selections.
+
+#### Example A — Shooting phase (standard + hazardous weapon)
+
+1. **Server enters SHOOTING_PHASE** and queues `DECLARE_SHOTS` for the active player.
+2. **Client chooses a unit** to shoot and resolves `DECLARE_SHOTS`.
+3. **Server validates** eligibility (has not shot, has targets, etc) and queues:
+   - target selection (and split‑fire decisions if needed)
+   - weapon/profile selection
+4. **Client resolves target/weapon choices.**
+5. **Server resolves the attack sequence** for that unit:
+   - hit roll decision(s)
+   - wound roll decision(s)
+   - save roll decision(s)
+   - damage roll decision(s) (as needed)
+6. **If any selected weapon is Hazardous**:
+   - The server **queues a dice roll decision** for the hazardous test (e.g., `3D6` fail on 1).
+   - The client resolves the hazardous roll (server rolls + broadcasts results).
+   - For **each failed hazardous die**, the server **requires a model allocation choice** from
+     the eligible models with hazardous weapons (UI dialog / selection provider).
+   - The server applies the mortal wounds to the chosen model(s), then completes the unit’s shooting.
+7. **Only after this unit fully resolves**, the server queues the next `DECLARE_SHOTS`
+   (or allows the player to end the phase).
+
+Key point: the client **never invents a roll**. The server issues the roll request; the client only
+confirms it, then selects any required follow‑up allocations.
+
+#### Example B — Charge phase with Fire Overwatch interrupt
+
+1. **Server enters CHARGE_PHASE** and queues `DECLARE_CHARGE`.
+2. **Client chooses a charging unit + targets** and resolves `DECLARE_CHARGE`.
+3. **Server validates** charge eligibility and broadcasts the declaration.
+4. **Overwatch window opens (interrupt):**
+   - If the defending player has CP and Overwatch available, the server **queues**
+     `SELECT_OVERWATCH_SHOOTER` for the defender.
+   - Defender either selects a shooter or declines; the server resolves Overwatch shots immediately.
+5. **Server queues the charge roll** decision for the charging unit.
+6. **Client resolves the charge roll** (server rolls + broadcasts results).
+7. **If the charge succeeds**, the server queues charge‑move placement decisions for the charger.
+8. **After placement completes**, the server proceeds to the next charge declaration (or end phase).
+
+Key point: the server can **pause charge placement** until the Overwatch interrupt is resolved,
+but the active player still picks the order of charges.
+
+#### Example C — Fight phase (alternating selections)
+
+1. **Server enters FIGHT_PHASE** and determines eligible units for the active player.
+2. **Server queues “select fighting unit”** decision.
+3. **Client chooses a unit**, then selects targets and weapon profiles (as required).
+4. **Server resolves attack sequence** and any follow‑up roll decisions.
+5. **Server then queues the opponent’s selection** (alternating order), repeating steps 2–4.
+6. **Phase ends** only after all eligible units have fought or the players pass.
+
+Key point: the server controls the **alternation**, the client controls **which eligible unit fights**.
+
 ---
 
 ## 6) Waiting Points (Summary)
