@@ -137,6 +137,32 @@ class AttackResolutionManager:
         profiles = getattr(wargear, "profiles", {}) or {}
         return profiles.get(str(profile_name))
 
+    def _maybe_clear_selected_to_shoot_rerolls(self, game: object, unit_id: str) -> None:
+        if not unit_id:
+            return
+        try:
+            for seq in list(self.sequences.values()):
+                if str(getattr(seq, "attacker_unit_id", "") or "") == str(unit_id):
+                    if str(getattr(seq, "step", "") or "") != "done":
+                        return
+        except Exception:
+            return
+        unit = self._resolve_unit(game, unit_id)
+        if unit is None:
+            return
+        try:
+            if hasattr(unit, "clear_selected_to_shoot_rerolls"):
+                unit.clear_selected_to_shoot_rerolls()
+        except Exception:
+            pass
+
+    def _mark_sequence_done(self, game: object, seq: AttackSequence) -> None:
+        seq.step = "done"
+        try:
+            self._maybe_clear_selected_to_shoot_rerolls(game, seq.attacker_unit_id)
+        except Exception:
+            pass
+
     def queue_attack_declarations(self, game: object, declarations: list[dict], *, out_of_phase: bool = False) -> bool:
         if not declarations:
             return False
@@ -416,7 +442,7 @@ class AttackResolutionManager:
 
     def _begin_hits(self, game: object, seq: AttackSequence) -> None:
         if not seq.attack_instances:
-            seq.step = "done"
+            self._mark_sequence_done(game, seq)
             return
         # Group attacks by hit context (final needed + crit threshold + reroll signatures)
         groups: dict[tuple, list[int]] = {}
@@ -679,7 +705,7 @@ class AttackResolutionManager:
 
     def _begin_wounds(self, game: object, seq: AttackSequence) -> None:
         if not seq.hit_instances:
-            seq.step = "done"
+            self._mark_sequence_done(game, seq)
             return
         # Separate auto-wounds (lethal hits) from those requiring wound rolls.
         seq.wound_instances = []
@@ -834,7 +860,7 @@ class AttackResolutionManager:
             self._resolve_pending_mortals(game, seq)
             if self._request_hazardous_roll(game, seq):
                 return
-            seq.step = "done"
+            self._mark_sequence_done(game, seq)
             return
         wound_instance = seq.wound_instances[seq.save_index]
         attacker = self._resolve_model(game, wound_instance.get("attacker_model_id"))
@@ -1158,8 +1184,8 @@ class AttackResolutionManager:
         profile = self._resolve_profile(game, seq.wargear_id, seq.profile_name)
         attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
         if profile is None or attacker_unit is None:
-            seq.step = "done"
             seq.context["hazardous_done"] = True
+            self._mark_sequence_done(game, seq)
             return
         game_map = getattr(game, "map", None)
         try:
@@ -1215,7 +1241,7 @@ class AttackResolutionManager:
             except Exception:
                 pass
         seq.context["hazardous_done"] = True
-        seq.step = "done"
+        self._mark_sequence_done(game, seq)
 
     def handle_save_roll(self, game: object, roll_state) -> None:
         seq = self.sequences.get(int(roll_state.spec.get("handler_payload", {}).get("sequence_id", 0) or 0))

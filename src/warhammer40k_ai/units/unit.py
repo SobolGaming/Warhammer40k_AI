@@ -12409,6 +12409,24 @@ class Unit:
         except Exception:
             pass
 
+        # Selected-to-shoot rerolls (model-specific, once each for hit/wound/damage).
+        try:
+            selected_models = {}
+            for decl in weapon_declarations:
+                for m in list(decl.get("models") or []):
+                    if m is None:
+                        continue
+                    try:
+                        if not getattr(m, "is_alive", False):
+                            continue
+                    except Exception:
+                        continue
+                    selected_models[get_entity_id(m)] = m
+            if selected_models:
+                self.grant_selected_to_shoot_rerolls_for_models(list(selected_models.values()))
+        except Exception:
+            pass
+
         touched_targets = []
         try:
             seen_targets = set()
@@ -12541,6 +12559,12 @@ class Unit:
         # Clear BGNT snapshot to avoid leaking state into future activations.
         try:
             delattr(self, "_bgnt_locked_at_target_selection")
+        except Exception:
+            pass
+
+        # Clear selected-to-shoot reroll allowances once this shooting sequence is resolved.
+        try:
+            self.clear_selected_to_shoot_rerolls()
         except Exception:
             pass
 
@@ -18254,6 +18278,99 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule
         return rule
+
+    def get_selected_to_shoot_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model is selected to shoot, you can re-roll one Hit roll and you can re-roll one Wound roll
+        when resolving those attacks."
+        """
+        if model is None:
+            return None
+        cache_key = f"selected_to_shoot_reroll_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if "selected to shoot" not in low:
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+                if "selected to shoot or fight" in low or "selected to fight" in low:
+                    continue
+                allow_hit = bool(re.search(r"re-?roll\s+one\s+hit\s+roll", low))
+                allow_wound = bool(re.search(r"re-?roll\s+one\s+wound\s+roll", low))
+                allow_damage = bool(re.search(r"re-?roll\s+one\s+damage\s+roll", low))
+                if not (allow_hit or allow_wound or allow_damage):
+                    continue
+                source = str(name or "Selected to shoot").strip() or "Selected to shoot"
+                rule = {
+                    "reroll_hit": bool(allow_hit),
+                    "reroll_wound": bool(allow_wound),
+                    "reroll_damage": bool(allow_damage),
+                    "requires_shooting_phase": ("shooting phase" in low),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def grant_selected_to_shoot_rerolls_for_models(self, models: list['Model']) -> None:
+        if not models:
+            return
+        for model in list(models or []):
+            try:
+                if not getattr(model, "is_alive", False):
+                    continue
+            except Exception:
+                continue
+            rule = self.get_selected_to_shoot_reroll_rule(model)
+            if not rule:
+                continue
+            if rule.get("requires_shooting_phase"):
+                game = None
+                try:
+                    game = self.get_parent_army().player.game
+                except Exception:
+                    game = None
+                if game is None or not bool(getattr(game, "is_shooting_phase", lambda: False)()):
+                    continue
+                try:
+                    if game.get_current_player() is not self.get_parent_army().player:
+                        continue
+                except Exception:
+                    continue
+            try:
+                model.grant_selected_to_shoot_rerolls(
+                    hit=bool(rule.get("reroll_hit")),
+                    wound=bool(rule.get("reroll_wound")),
+                    damage=bool(rule.get("reroll_damage")),
+                    source=str(rule.get("source", "") or ""),
+                )
+            except Exception:
+                continue
+
+    def clear_selected_to_shoot_rerolls(self) -> None:
+        try:
+            models = list(getattr(self, "models", []) or [])
+        except Exception:
+            models = []
+        for model in models:
+            try:
+                model.clear_selected_to_shoot_rerolls()
+            except Exception:
+                continue
 
     def get_two_melee_weapons_attacks_bonus(self, model: Optional['Model'] = None) -> int:
         """

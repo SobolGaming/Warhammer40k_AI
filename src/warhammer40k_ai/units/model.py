@@ -301,6 +301,78 @@ class Model:
         eff["code_chivalric_rerolls"] = data
         return True
 
+    # ---------------- Selected-to-shoot reroll helpers ----------------
+
+    def grant_selected_to_shoot_rerolls(self, *, hit: bool, wound: bool, damage: bool, source: str = "") -> None:
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        data = self._temporary_effects.get("selected_to_shoot_rerolls", {})
+        if not isinstance(data, dict):
+            data = {}
+        if hit:
+            data["hit_remaining"] = max(int(data.get("hit_remaining", 0) or 0), 1)
+        if wound:
+            data["wound_remaining"] = max(int(data.get("wound_remaining", 0) or 0), 1)
+        if damage:
+            data["damage_remaining"] = max(int(data.get("damage_remaining", 0) or 0), 1)
+        if source:
+            data["source"] = str(source or "")
+        self._temporary_effects["selected_to_shoot_rerolls"] = data
+
+    def clear_selected_to_shoot_rerolls(self) -> None:
+        try:
+            eff = getattr(self, "_temporary_effects", None)
+            if isinstance(eff, dict):
+                eff.pop("selected_to_shoot_rerolls", None)
+        except Exception:
+            pass
+
+    def can_use_selected_to_shoot_reroll(self, kind: str) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("selected_to_shoot_rerolls", {})
+        if not isinstance(data, dict):
+            return False
+        key = str(kind or "").strip().lower()
+        if key == "hit":
+            field = "hit_remaining"
+        elif key == "wound":
+            field = "wound_remaining"
+        else:
+            field = "damage_remaining"
+        try:
+            return int(data.get(field, 0) or 0) > 0
+        except Exception:
+            return False
+
+    def consume_selected_to_shoot_reroll(self, kind: str) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("selected_to_shoot_rerolls", {})
+        if not isinstance(data, dict):
+            return False
+        key = str(kind or "").strip().lower()
+        if key == "hit":
+            field = "hit_remaining"
+        elif key == "wound":
+            field = "wound_remaining"
+        else:
+            field = "damage_remaining"
+        try:
+            remaining = int(data.get(field, 0) or 0)
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            return False
+        data[field] = remaining - 1
+        eff["selected_to_shoot_rerolls"] = data
+        return True
+
+    def get_selected_to_shoot_reroll_source(self) -> str:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("selected_to_shoot_rerolls", {})
+        if not isinstance(data, dict):
+            return ""
+        return str(data.get("source", "") or "")
+
     def on_phase_end(self, phase) -> None:
         """Clear temporary effects that expire at end of the provided phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

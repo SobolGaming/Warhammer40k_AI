@@ -1109,6 +1109,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
         ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
+        ("AE", "Linked Fire"): ("Supported", "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied."),
         ("AE", "Acrobatic"): ("Supported", "Charge-after-Advance/Fall Back eligibility."),
         ("AE", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("AE", "War Construct"): ("Supported", "Shoot after Falling Back."),
@@ -1367,6 +1368,7 @@ def _classify_ability(
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
+    selected_to_shoot_reroll_support = _selected_to_shoot_single_reroll_support(description)
     attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
@@ -1504,6 +1506,8 @@ def _classify_ability(
         return attached_unit_support
     if model_reroll_support:
         return model_reroll_support
+    if selected_to_shoot_reroll_support:
+        return selected_to_shoot_reroll_support
     if attack_roll_cp_support:
         return attack_roll_cp_support
     if model_hit_vs_fly_support:
@@ -2258,6 +2262,31 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).",
         )
     return None
+
+
+def _selected_to_shoot_single_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if "selected to shoot" not in norm:
+        return None
+    if "selected to shoot or fight" in norm or "selected to fight" in norm:
+        return None
+    if "reroll" not in norm:
+        return None
+    allow_hit = bool(re.search(r"reroll\s+one\s+hit\s+roll", norm))
+    allow_wound = bool(re.search(r"reroll\s+one\s+wound\s+roll", norm))
+    allow_damage = bool(re.search(r"reroll\s+one\s+damage\s+roll", norm))
+    if not (allow_hit or allow_wound or allow_damage):
+        return None
+    notes = []
+    if allow_hit:
+        notes.append("Selected to shoot: can re-roll one Hit roll (optional).")
+    if allow_wound:
+        notes.append("Selected to shoot: can re-roll one Wound roll (optional).")
+    if allow_damage:
+        notes.append("Selected to shoot: can re-roll one Damage roll (optional).")
+    return ("Supported", " ".join(notes))
 
 
 def _fight_within_3_support(description: str) -> Optional[Tuple[str, str]]:
