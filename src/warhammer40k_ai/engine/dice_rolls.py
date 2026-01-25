@@ -860,6 +860,8 @@ class DiceRollManager:
                 per_die_success=dict(state.per_die_success or {}),
                 sum_success=state.sum_success,
                 reroll_locked=True,
+                kept_indices=list(spec.get("kept_indices", []) or []) if spec.get("kept_indices", None) is not None else None,
+                dropped_indices=list(spec.get("dropped_indices", []) or []) if spec.get("dropped_indices", None) is not None else None,
             )
         except Exception:
             pass
