@@ -27,6 +27,7 @@ from .blood_tithe_dialog import BloodTitheDialog
 from .battlefield_point_pick_dialog import BattlefieldPointPickDialog
 from .hazard_objective_select_dialog import HazardObjectiveSelectDialog
 from .frenzy_choice_dialog import FrenzyChoiceDialog
+from .exploding_horrors_model_selection_dialog import ExplodingHorrorsModelSelectionDialog
 from .yes_no_dialog import YesNoDialog
 from .quarry_selection_dialog import QuarrySelectionDialog
 from .pledge_selection_dialog import PledgeSelectionDialog
@@ -81,6 +82,7 @@ __all__ = [
     'BattlefieldPointPickDialog',
     'HazardObjectiveSelectDialog',
     'FrenzyChoiceDialog',
+    'ExplodingHorrorsModelSelectionDialog',
     'YesNoDialog',
     'QuarrySelectionDialog',
     'PledgeSelectionDialog',

@@ -92,12 +92,170 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
     unit = get_unit(game, unit_id)
     if unit is None:
         return ("Move unit: unit not found.",)
-    if bool(result.payload.get("skipped", False)):
+    ctx = dict(getattr(request, "context", {}) or {})
+    allow_skip = bool(ctx.get("allow_skip", True))
+    if is_skip_choice(request, result):
+        if not allow_skip:
+            return ("Move unit: skipping is not allowed for this placement.",)
         return ()
     model_positions = result.payload.get("model_positions")
     errors = validate_model_positions(game, unit, model_positions, context="Move unit")
     if errors:
         return errors
+    allowed_ids = ctx.get("allowed_model_ids")
+    placement_kind = str(ctx.get("placement_kind", "") or "")
+    if allowed_ids is not None:
+        allowed_set = {str(v) for v in list(allowed_ids or []) if v is not None}
+        if not allowed_set:
+            return ("Move unit: allowed_model_ids is empty.",)
+        seen: set[str] = set()
+        for entry in list(model_positions or []):
+            mid = str(entry.get("model_id", "") or "")
+            if not mid:
+                return ("Move unit: model_positions missing model_id.",)
+            if mid in seen:
+                return ("Move unit: duplicate model_id in model_positions.",)
+            seen.add(mid)
+        if seen != allowed_set:
+            return ("Move unit: model_positions must include all and only allowed_model_ids.",)
+    if placement_kind or allowed_ids is not None:
+        placement_errors = _validate_placement_positions(game, unit, model_positions, allowed_ids=allowed_ids)
+        if placement_errors:
+            return placement_errors
+    return ()
+
+
+def _validate_placement_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+    *,
+    allowed_ids: object = None,
+) -> Sequence[str]:
+    if not isinstance(model_positions, list) or not model_positions:
+        return ("Move unit: placement requires model_positions.",)
+    game_map = getattr(game, "map", None)
+    if game_map is None:
+        return ()
+
+    from ...battlefield.map import validate_ruins_placement
+    from ...utility.placement_validation import bases_overlap_3d
+    from ...utility.calcs import validate_unit_coherency_after_movement
+    from ...utility.entity_ids import get_entity_id
+
+    allowed_set = None
+    if allowed_ids is not None:
+        allowed_set = {str(v) for v in list(allowed_ids or []) if v is not None}
+
+    positions_by_id: dict[str, tuple[float, float, float, float]] = {}
+    candidate_bases: dict[str, object] = {}
+
+    collision_fn = getattr(game_map, "check_collision_with_obstacles", None)
+    if not callable(collision_fn):
+        collision_fn = getattr(game_map, "check_collision_with_terrain", None)
+
+    for entry in list(model_positions or []):
+        mid = str(entry.get("model_id", "") or "")
+        if not mid:
+            return ("Move unit: model_positions missing model_id.",)
+        model = get_model(game, mid)
+        if model is None:
+            return (f"Move unit: model not found: {mid}",)
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            return ("Move unit: model_positions missing position.",)
+        x = float(pos[0])
+        y = float(pos[1])
+        z = float(pos[2]) if len(pos) > 2 else float(getattr(model.model_base, "z", 0.0))
+        facing = entry.get("facing", None)
+        if facing is None:
+            facing = float(getattr(model.model_base, "facing", 0.0))
+        else:
+            facing = float(facing)
+        positions_by_id[mid] = (x, y, z, facing)
+
+        if hasattr(game_map, "is_within_boundary") and not game_map.is_within_boundary(model, destination=(x, y)):
+            return ("Move unit: placement outside battlefield boundary.",)
+        if callable(collision_fn) and collision_fn(model, destination=(x, y)):
+            return ("Move unit: placement collides with terrain.",)
+        ruins_validation = validate_ruins_placement(unit, (x, y, z), game_map.terrain_features, moving_model=model)
+        if not ruins_validation.get("valid", False):
+            return (f"Move unit: RUINS placement invalid: {ruins_validation.get('reason', 'invalid')}",)
+
+        if hasattr(unit, "_create_potential_base"):
+            base = unit._create_potential_base(x, y, z, facing, model=model)
+        else:
+            base = getattr(model, "model_base", None)
+        if base is None:
+            return ("Move unit: unable to resolve model base for placement.",)
+        candidate_bases[mid] = base
+
+    # Check overlap against existing models in this unit (excluding pending/placed models)
+    for other in list(getattr(unit, "models", []) or []):
+        if not getattr(other, "is_alive", True):
+            continue
+        if getattr(other, "_pending_placement", False):
+            continue
+        other_id = str(get_entity_id(other))
+        if other_id in candidate_bases:
+            continue
+        other_base = getattr(other, "model_base", None)
+        if other_base is None:
+            continue
+        for base in candidate_bases.values():
+            if bases_overlap_3d(base, other_base):
+                return ("Move unit: placement overlaps another model in the unit.",)
+
+    # Check overlap among newly placed models
+    ids = list(candidate_bases.keys())
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            if bases_overlap_3d(candidate_bases[ids[i]], candidate_bases[ids[j]]):
+                return ("Move unit: placement overlaps between placed models.",)
+
+    # Check overlap against other units on the battlefield
+    for other_unit in list(getattr(game_map, "units", []) or []):
+        if other_unit is unit:
+            continue
+        try:
+            other_models = list(other_unit.get_models_for_collision() or [])
+        except Exception:
+            other_models = list(getattr(other_unit, "models", []) or [])
+        for other in list(other_models or []):
+            if not getattr(other, "is_alive", True):
+                continue
+            other_base = getattr(other, "model_base", None)
+            if other_base is None:
+                continue
+            for base in candidate_bases.values():
+                if bases_overlap_3d(base, other_base):
+                    return ("Move unit: placement overlaps another unit.",)
+
+    # Coherency validation (placements must end in coherency)
+    final_positions: list[tuple[float, float, float]] = []
+    for model in list(getattr(unit, "models", []) or []):
+        mid = str(get_entity_id(model))
+        if mid in positions_by_id:
+            x, y, z, _f = positions_by_id[mid]
+            final_positions.append((x, y, z))
+        else:
+            try:
+                pos = model.get_location()
+                final_positions.append((float(pos[0]), float(pos[1]), float(pos[2])))
+            except Exception:
+                final_positions.append((0.0, 0.0, 0.0))
+
+    is_coherent, _non_coherent = validate_unit_coherency_after_movement(
+        unit, final_positions, ignore_pending=False
+    )
+    if not is_coherent:
+        return ("Move unit: placement breaks unit coherency.",)
+
+    # Ensure only allowed ids are placed (if provided)
+    if allowed_set is not None:
+        if set(candidate_bases.keys()) != allowed_set:
+            return ("Move unit: placement must include all allowed models.",)
+
     return ()
 
 
@@ -115,6 +273,20 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         return None
     model_positions = list(result.payload.get("model_positions") or [])
     apply_model_positions(game, model_positions)
+
+    ctx = dict(getattr(request, "context", {}) or {})
+    placement_kind = str(ctx.get("placement_kind", "") or "")
+    allowed_ids = {str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None}
+    if placement_kind or allowed_ids:
+        for entry in list(model_positions or []):
+            model_id = str(entry.get("model_id", "") or "")
+            model = get_model(game, model_id)
+            if model is None:
+                continue
+            model._pending_placement = False
+            model._pending_placement_source = None
+        if hasattr(unit, "update_coherency"):
+            unit.update_coherency()
 
     members = _movement_members(unit)
     for member in members:

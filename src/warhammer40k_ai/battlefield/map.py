@@ -215,7 +215,11 @@ class Map:
             test_base = model.parent_unit._create_potential_base(destination[0], destination[1], test_base.z, test_base.facing)
         for unit in self.get_friendly_units(model.parent_unit):
             if unit != model.parent_unit:  #  inter-unit collisions check done elsewhere
-                for other_model in unit.models:
+                try:
+                    other_models = list(unit.get_models_for_collision() or [])
+                except Exception:
+                    other_models = list(getattr(unit, "models", []) or [])
+                for other_model in other_models:
                     #print(f"Friendly Unit Check :: {model.parent_unit.name} checking collision with friendly units :: {other_model.parent_unit.name}")
                     if test_base.collides_with(other_model.model_base):
                         return True
@@ -227,7 +231,11 @@ class Map:
             test_base = model.parent_unit._create_potential_base(destination[0], destination[1], test_base.z, test_base.facing)
         
         for unit in self.get_enemy_units(model.parent_unit):
-            for other_model in unit.models:
+            try:
+                other_models = list(unit.get_models_for_collision() or [])
+            except Exception:
+                other_models = list(getattr(unit, "models", []) or [])
+            for other_model in other_models:
                 #print(f"Enemy Unit Check :: {model.parent_unit.name} checking collision with enemy units :: {other_model.parent_unit.name}")
                 if test_base.collides_with(other_model.model_base):
                     return True

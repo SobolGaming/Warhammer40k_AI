@@ -3296,7 +3296,12 @@ def check_unit_coherency(unit: 'Unit') -> dict:
 
     return {'coherent': True, 'reason': 'All alive models meet coherency neighbor requirements', 'non_coherent_models': []}
 
-def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tuple[float, float, float]]) -> Tuple[bool, List[int]]:
+def validate_unit_coherency_after_movement(
+    unit: 'Unit',
+    new_positions: List[Tuple[float, float, float]],
+    *,
+    ignore_pending: bool = True,
+) -> Tuple[bool, List[int]]:
     """
     Validate that unit coherency is maintained after model movement.
     
@@ -3316,7 +3321,10 @@ def validate_unit_coherency_after_movement(unit: 'Unit', new_positions: List[Tup
     # - For 7+ models: each model must be within coherency of at least 2 other models.
     # - For 1 model: always coherent.
 
-    alive_indices = [i for i, m in enumerate(unit.models) if getattr(m, 'is_alive', True)]
+    alive_indices = [
+        i for i, m in enumerate(unit.models)
+        if getattr(m, 'is_alive', True) and (not ignore_pending or not getattr(m, "_pending_placement", False))
+    ]
     alive_count = len(alive_indices)
 
     # Single-model units never need coherency checks

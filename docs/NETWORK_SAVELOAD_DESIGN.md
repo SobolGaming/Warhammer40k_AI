@@ -152,7 +152,7 @@ Deployment / Pre-battle:
 
 Movement:
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
-- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions}
+- individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip` for placement-only flows)
 - coherency_violation_dialog: RESOLVE_COHERENCY {unit_id, fix_choice}
 - transport_embark_dialog: EMBARK {unit_id, transport_id}
 - transport_disembark_dialog: DISEMBARK {unit_id, transport_id, positions}
@@ -190,6 +190,8 @@ Charge:
 Fight:
 - fight_unit_selection_dialog: SELECT_FIGHTER {unit_id}
 - fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids}
+- fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
+- exploding_horrors_model_selection_dialog: SELECT_EXPLODING_HORRORS_MODELS {model_ids[]} (context `unit_id`, `target_unit_id`, `allowed_model_ids`)
 - melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
 - melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {bundle_id, target_unit_id}
 - melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}

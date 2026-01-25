@@ -2341,7 +2341,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return
 
         def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
-            if active_player.has_control():
+            if not active_player.has_control():
+                print(f"Waiting for remote target selection: {active_player.name}")
+                return
+
+            def _start_fight_target_selection() -> None:
                 print(f"INFO: {active_player.name} must select targets for {fighting_unit.name}")
                 print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
                 from ...engine.decision_kinds import DECISION_SELECT_FIGHT_TARGETS
@@ -2417,9 +2421,174 @@ class BattlePhaseHandler(BasePhaseHandler):
                     on_cancel,
                     decision_request=req,
                 )
-            else:
-                print(f"Waiting for remote target selection: {active_player.name}")
+
+            def _start_exploding_horrors_flow() -> bool:
+                if fighting_unit is None or not callable(getattr(fighting_unit, "can_use_exploding_horrors", None)):
+                    return False
+                if not fighting_unit.can_use_exploding_horrors():
+                    return False
+                if not eligible_targets:
+                    return False
+                brimstones = []
+                try:
+                    brimstones = list(fighting_unit._horrors_brimstone_models() or [])
+                except Exception:
+                    brimstones = []
+                if not brimstones:
+                    return False
+
+                from ...engine.decision_kinds import (
+                    DECISION_SELECT_EXPLODING_HORRORS_MODELS,
+                    DECISION_SELECT_EXPLODING_HORRORS_TARGET,
+                )
+                from ...engine.decisions import DecisionOption, DecisionRequest
+                from ...engine.decision_handlers._helpers import find_option, get_unit, is_skip_choice
+                from ...utility.decision_utils import resolve_decision_value
+                from ...utility.entity_ids import get_entity_id
+
+                options = []
+                for target in list(eligible_targets or []):
+                    target_id = get_entity_id(target)
+                    label = getattr(target, "name", "Target")
+                    options.append(DecisionOption.create(label, payload={"target_unit_id": target_id}))
+                options.append(
+                    DecisionOption.create(
+                        "Do not use Exploding Horrors",
+                        payload={"action": "skip"},
+                    )
+                )
+
+                req = DecisionRequest.create(
+                    DECISION_SELECT_EXPLODING_HORRORS_TARGET,
+                    f"Exploding Horrors - Select target for {getattr(fighting_unit, 'name', 'Unit')}",
+                    player_id=getattr(active_player, "id", None),
+                    options=options,
+                    context={"unit_id": get_entity_id(fighting_unit)},
+                )
+                self.game.request_decision(req)
+
+                def _start_model_selection(target_unit: Unit) -> None:
+                    if target_unit is None:
+                        _start_fight_target_selection()
+                        return
+                    current_brimstones = []
+                    try:
+                        current_brimstones = list(fighting_unit._horrors_brimstone_models() or [])
+                    except Exception:
+                        current_brimstones = []
+                    if not current_brimstones:
+                        _start_fight_target_selection()
+                        return
+
+                    model_options = [DecisionOption.create("Confirm", payload={"action": "confirm"})]
+                    req_models = DecisionRequest.create(
+                        DECISION_SELECT_EXPLODING_HORRORS_MODELS,
+                        "Exploding Horrors - Select Brimstones",
+                        player_id=getattr(active_player, "id", None),
+                        options=model_options,
+                        context={
+                            "unit_id": get_entity_id(fighting_unit),
+                            "target_unit_id": get_entity_id(target_unit),
+                            "allowed_model_ids": [get_entity_id(m) for m in current_brimstones],
+                        },
+                    )
+                    self.game.request_decision(req_models)
+
+                    def _apply_models_local(option_id: str, payload: dict):
+                        value, apply_result = resolve_decision_value(
+                            self.game, req_models, option_id, result_payload=payload
+                        )
+                        if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                            _start_fight_target_selection()
+                            return
+                        game_map = getattr(self.game, "map", None)
+                        fighting_unit.resolve_exploding_horrors(target_unit, list(value or []), game_map=game_map)
+                        _start_fight_target_selection()
+
+                    def _on_models_resolved(request, result):
+                        if request is None or result is None:
+                            _start_fight_target_selection()
+                            return
+                        selected = list(getattr(result, "payload", {}).get("model_ids", []) or [])
+                        if not selected:
+                            _start_fight_target_selection()
+                            return
+                        from ...engine.decision_handlers._helpers import resolve_model
+                        models = [resolve_model(self.game, mid) for mid in selected]
+                        models = [m for m in models if m is not None]
+                        game_map = getattr(self.game, "map", None)
+                        fighting_unit.resolve_exploding_horrors(target_unit, models, game_map=game_map)
+                        _start_fight_target_selection()
+
+                    dialog = getattr(self.game_view, "exploding_horrors_model_selection_dialog", None)
+                    if dialog is not None and hasattr(dialog, "show"):
+                        def on_confirm(option_id: str, payload: dict):
+                            _apply_models_local(option_id, payload)
+
+                        dialog.show(
+                            fighting_unit,
+                            current_brimstones,
+                            on_confirm,
+                            decision_request=req_models,
+                        )
+                    else:
+                        self._register_decision_callback(req_models, _on_models_resolved)
+
+                def _apply_target(option_id: str):
+                    value, apply_result = resolve_decision_value(self.game, req, option_id)
+                    if apply_result is None or not getattr(apply_result, "ok", False):
+                        _start_fight_target_selection()
+                        return
+                    if value is None:
+                        _start_fight_target_selection()
+                        return
+                    _start_model_selection(value)
+
+                def _on_target_resolved(request, result):
+                    if request is None or result is None:
+                        _start_fight_target_selection()
+                        return
+                    if is_skip_choice(request, result):
+                        _start_fight_target_selection()
+                        return
+                    opt = find_option(request, getattr(result, "option_id", ""))
+                    payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
+                    target_unit = get_unit(self.game, str(payload.get("target_unit_id", "") or ""))
+                    _start_model_selection(target_unit)
+
+                def on_target_selected(option_id: str, _selected_ids: List[str]):
+                    _apply_target(option_id)
+
+                def on_cancel():
+                    skip_option_id = ""
+                    for opt in options:
+                        payload = dict(getattr(opt, "payload", {}) or {})
+                        if payload.get("action") == "skip":
+                            skip_option_id = opt.option_id
+                            break
+                    if skip_option_id:
+                        _apply_target(skip_option_id)
+                    else:
+                        _start_fight_target_selection()
+
+                dialog = getattr(self.game_view, "fight_target_selection_dialog", None)
+                if dialog is not None and hasattr(dialog, "show"):
+                    dialog.show(
+                        fighting_unit,
+                        eligible_targets,
+                        on_target_selected,
+                        on_cancel,
+                        decision_request=req,
+                        title="Exploding Horrors",
+                        instructions="Select an engaged enemy unit, or choose not to use this ability.",
+                    )
+                else:
+                    self._register_decision_callback(req, _on_target_resolved)
+                return True
+
+            if _start_exploding_horrors_flow():
                 return
+            _start_fight_target_selection()
         
         def on_stage_complete():
             print("OK: Fight Phase complete")
@@ -2715,7 +2884,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             self._bonus_fight_on_complete = on_done
         self._start_comprehensive_fight_sequence(unit, engaged, player, opponent)
 
-    def _serialize_unit_positions(self, unit: Unit) -> List[dict]:
+    def _serialize_unit_positions(self, unit: Unit, *, allowed_model_ids: Optional[set[str]] = None) -> List[dict]:
         from ...utility.entity_ids import get_entity_id
 
         try:
@@ -2729,6 +2898,8 @@ class BattlePhaseHandler(BasePhaseHandler):
                     continue
             except Exception:
                 pass
+            if allowed_model_ids is not None and str(get_entity_id(model)) not in allowed_model_ids:
+                continue
             base = getattr(model, "model_base", None)
             if base is None:
                 continue
@@ -2803,10 +2974,17 @@ class BattlePhaseHandler(BasePhaseHandler):
                 max_distance = None
         confirm_id = first_option_id(req)
         skip_id = option_id_for_action(req, "skip") or confirm_id
+        ctx = getattr(req, "context", {}) or {}
+        allowed_ids = ctx.get("allowed_model_ids")
+        allowed_set = None
+        if allowed_ids is not None:
+            allowed_set = {str(v) for v in list(allowed_ids or []) if v is not None}
+        allow_skip = bool(ctx.get("allow_skip", True))
+        placement_kind = str(ctx.get("placement_kind", "") or "") or None
 
         def _on_move_complete(completed: bool):
             if completed:
-                payload = {"model_positions": self._serialize_unit_positions(unit)}
+                payload = {"model_positions": self._serialize_unit_positions(unit, allowed_model_ids=allowed_set)}
                 resolve_decision_command(self.game, req, confirm_id, result_payload=payload)
             else:
                 resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
@@ -2822,6 +3000,9 @@ class BattlePhaseHandler(BasePhaseHandler):
             target_unit=target_unit,
             placement_validator=placement_validator,
             decision_request=req,
+            place_only_model_ids=allowed_set,
+            allow_skip=allow_skip,
+            placement_kind=placement_kind,
         )
         try:
             self.game_view.dialog_manager.open(self.game_view.individual_model_movement_dialog, modal=True)
@@ -4284,6 +4465,10 @@ class PhaseManager:
         # Fight target selection dialog
         from ..dialogs.fight_target_selection_dialog import FightTargetSelectionDialog
         self.game_view.fight_target_selection_dialog = FightTargetSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
+
+        # Exploding Horrors model selection dialog
+        from ..dialogs.exploding_horrors_model_selection_dialog import ExplodingHorrorsModelSelectionDialog
+        self.game_view.exploding_horrors_model_selection_dialog = ExplodingHorrorsModelSelectionDialog(game_view.screen.get_width(), game_view.screen.get_height())
         
         # Target model selection dialog
         from ..dialogs.target_model_selection_dialog import TargetModelSelectionDialog

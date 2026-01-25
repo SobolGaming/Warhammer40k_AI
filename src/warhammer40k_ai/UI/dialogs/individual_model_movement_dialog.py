@@ -5,6 +5,7 @@ from typing import List, Optional, Callable, Dict, Any
 from .base_dialog import BaseDialog, TEXT_SUCCESS, TEXT_WARNING, BUTTON_SELECTED
 from ...utility.constants import RUINS_FLOOR_HEIGHT
 from ...utility.placement_validation import bases_overlap_3d
+from ...utility.entity_ids import get_entity_id
 
 # Additional colors specific to this dialog
 HIGHLIGHT_COLOR = (255, 255, 0)  # Yellow for model highlighting
@@ -40,12 +41,29 @@ class IndividualModelMovementDialog(BaseDialog):
         self._aircraft_move_completed_all: bool = False
         # Optional custom placement validator for deploy-like placement.
         self.placement_validator = None
+        self.place_only_model_ids = None
+        self._place_only_model_indices = None
+        self.allow_skip = True
+        self.placement_kind = None
         
         # UI elements
         self.model_buttons = []
         self.decision_request = None
         
-    def show(self, unit, movement_type: str, callback: Callable, game_map, max_distance: float = None, target_unit=None, placement_validator: Optional[Callable] = None, decision_request=None):
+    def show(
+        self,
+        unit,
+        movement_type: str,
+        callback: Callable,
+        game_map,
+        max_distance: float = None,
+        target_unit=None,
+        placement_validator: Optional[Callable] = None,
+        decision_request=None,
+        place_only_model_ids=None,
+        allow_skip: bool = True,
+        placement_kind: Optional[str] = None,
+    ):
         """Show the dialog for the given unit and movement type"""
 
         # Check if unit has already moved this round (prevent multiple movements)
@@ -89,6 +107,17 @@ class IndividualModelMovementDialog(BaseDialog):
             self.target_units = None
             self.target_unit = target_unit
         self.placement_validator = placement_validator
+        self.place_only_model_ids = None
+        self._place_only_model_indices = None
+        if place_only_model_ids is not None:
+            self.place_only_model_ids = {str(v) for v in list(place_only_model_ids or []) if v is not None}
+        if self.place_only_model_ids:
+            self._place_only_model_indices = [
+                idx for idx, m in enumerate(self.unit.models)
+                if str(get_entity_id(m)) in self.place_only_model_ids
+            ]
+        self.allow_skip = bool(allow_skip)
+        self.placement_kind = str(placement_kind or "") or None
 
         # Reset movement tracking
         self.model_movements = {}
@@ -126,7 +155,13 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # In deploy mode, auto-select the first alive model and wait for battlefield click
         if self.movement_type == 'deploy':
-            for idx, m in enumerate(self.unit.models):
+            indices = range(len(self.unit.models))
+            if self._place_only_model_indices is not None:
+                indices = self._place_only_model_indices
+            for idx in indices:
+                if idx >= len(self.unit.models):
+                    continue
+                m = self.unit.models[idx]
                 if getattr(m, 'is_alive', True):
                     self._select_model(idx)
                     break
@@ -178,6 +213,10 @@ class IndividualModelMovementDialog(BaseDialog):
         self._aircraft_move_completed_all = False
         self.placement_validator = None
         self._coherency_request = None
+        self.place_only_model_ids = None
+        self._place_only_model_indices = None
+        self.allow_skip = True
+        self.placement_kind = None
         # Hide nested dialogs as well
         if hasattr(self, 'floor_selection_dialog') and self.floor_selection_dialog:
             self.floor_selection_dialog.hide()
@@ -203,6 +242,8 @@ class IndividualModelMovementDialog(BaseDialog):
         
         button_index = 0  # Separate index for button positioning
         for i, model in enumerate(self.unit.models):
+            if self._place_only_model_indices is not None and i not in self._place_only_model_indices:
+                continue
             if not model.is_alive:
                 continue
             
@@ -304,11 +345,14 @@ class IndividualModelMovementDialog(BaseDialog):
     
     def _create_dialog_buttons(self):
         """Create the Complete and Skip buttons using base dialog button system"""
+        self.buttons.clear()
+        self.button_states.clear()
         # Add Complete button
         self.add_button('complete', self.width - 180, self.height - 50, 80, 35)
         
         # Add Skip button  
-        self.add_button('skip', self.width - 90, self.height - 50, 80, 35)
+        if self.allow_skip:
+            self.add_button('skip', self.width - 90, self.height - 50, 80, 35)
         
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events from base class"""
@@ -316,8 +360,10 @@ class IndividualModelMovementDialog(BaseDialog):
             self._complete_movement()
             return True
         elif button_name == 'skip':
-            self._skip_movement()
-            return True
+            if self.allow_skip:
+                self._skip_movement()
+                return True
+            return False
         return False
     
     def _handle_dialog_click(self, mouse_pos) -> bool:
@@ -351,6 +397,8 @@ class IndividualModelMovementDialog(BaseDialog):
     def _select_model(self, model_index: int):
         """Select a model for movement"""
         if model_index >= len(self.unit.models):
+            return
+        if self._place_only_model_indices is not None and model_index not in self._place_only_model_indices:
             return
             
         model = self.unit.models[model_index]
@@ -987,6 +1035,13 @@ class IndividualModelMovementDialog(BaseDialog):
 
     def _validate_deploy_like_placement(self, game, model, x: float, y: float, z: float, player_id: str) -> dict:
         """Validate deployment or custom placement for a single model."""
+        if self.placement_kind:
+            if callable(self.placement_validator):
+                try:
+                    return self.placement_validator(model, x, y, z)
+                except Exception:
+                    return {"valid": False, "reason": "Custom placement validation failed"}
+            return self._validate_custom_placement(model, x, y, z)
         if callable(self.placement_validator):
             try:
                 return self.placement_validator(model, x, y, z)
@@ -996,6 +1051,30 @@ class IndividualModelMovementDialog(BaseDialog):
             return game.is_valid_single_model_deployment(model, x, y, z, player_id)
         except Exception:
             return {"valid": False, "reason": "Deployment validation failed"}
+
+    def _validate_custom_placement(self, model, x: float, y: float, z: float) -> dict:
+        """Validate non-deployment placement (reanimation/split/etc.) for a single model."""
+        if not self.game_map:
+            return {"valid": True, "reason": "No map validation"}
+        if hasattr(self.game_map, "is_within_boundary"):
+            if not self.game_map.is_within_boundary(model, destination=(x, y)):
+                return {"valid": False, "reason": "Placement outside battlefield boundary"}
+        collision_fn = getattr(self.game_map, "check_collision_with_obstacles", None)
+        if not callable(collision_fn):
+            collision_fn = getattr(self.game_map, "check_collision_with_terrain", None)
+        if callable(collision_fn) and collision_fn(model, destination=(x, y)):
+            return {"valid": False, "reason": "Placement collides with terrain"}
+        try:
+            from ...battlefield.map import validate_ruins_placement
+        except ImportError:
+            validate_ruins_placement = None
+        if callable(validate_ruins_placement):
+            rv = validate_ruins_placement(
+                model.parent_unit, (x, y, z), self.game_map.terrain_features, moving_model=model
+            )
+            if not rv.get("valid", False):
+                return {"valid": False, "reason": f"RUINS: {rv.get('reason', 'invalid placement')}"}
+        return {"valid": True, "reason": "Valid placement"}
 
     def _validate_deployment_no_base_overlap(self, model, x: float, y: float, z: float, facing: Optional[float] = None) -> dict:
         """Ensure deployment placement doesn't overlap any model bases.
@@ -1329,7 +1408,13 @@ class IndividualModelMovementDialog(BaseDialog):
         
     def _all_models_moved(self) -> bool:
         """Check if all models have been moved"""
-        for i, model in enumerate(self.unit.models):
+        indices = range(len(self.unit.models))
+        if self._place_only_model_indices is not None:
+            indices = self._place_only_model_indices
+        for i in indices:
+            if i >= len(self.unit.models):
+                continue
+            model = self.unit.models[i]
             if not model.is_alive:
                 continue
             if i not in self.model_movements or not self.model_movements[i]['completed']:
@@ -1341,17 +1426,21 @@ class IndividualModelMovementDialog(BaseDialog):
         if not self.unit:
             return
 
-        # During deployment, require every alive model to be placed before completing
-        if self.movement_type == 'deploy' and not self._all_models_moved():
+        # During deployment/placement, require every required model to be placed before completing
+        require_all = self.movement_type == 'deploy' or bool(self.placement_kind)
+        if require_all and not self._all_models_moved():
+            remaining_indices = self._place_only_model_indices
+            if remaining_indices is None:
+                remaining_indices = list(range(len(self.unit.models)))
             remaining_models = [
                 idx + 1
-                for idx, model in enumerate(self.unit.models)
-                if model.is_alive and (
+                for idx in remaining_indices
+                if idx < len(self.unit.models) and self.unit.models[idx].is_alive and (
                     idx not in self.model_movements
                     or not self.model_movements[idx]['completed']
                 )
             ]
-            print(f"ERROR: Cannot complete deployment: models {remaining_models} still need placement")
+            print(f"ERROR: Cannot complete placement: models {remaining_models} still need placement")
             return
 
         # Validate unit coherency
@@ -1362,7 +1451,10 @@ class IndividualModelMovementDialog(BaseDialog):
         for model in self.unit.models:
             final_positions.append(model.get_location())
 
-        is_coherent, non_coherent_models = validate_unit_coherency_after_movement(self.unit, final_positions)
+        ignore_pending = not require_all
+        is_coherent, non_coherent_models = validate_unit_coherency_after_movement(
+            self.unit, final_positions, ignore_pending=ignore_pending
+        )
 
         if not is_coherent:
             # Movement/deployment must END in coherency. If coherency would be broken, the move is not allowed.
@@ -1545,8 +1637,12 @@ class IndividualModelMovementDialog(BaseDialog):
         self.draw_dialog_background(screen)
         
         # Draw title bar
-        title = f"Individual Model Movement: {self.unit.name}"
-        subtitle = f"{self.movement_type.title()} Movement (Max: {self.max_distance:.1f}\")"
+        if self.movement_type == 'deploy' and self.placement_kind:
+            title = f"Place Models: {self.unit.name}"
+            subtitle = f"{self.placement_kind.replace('_', ' ').title()} placement"
+        else:
+            title = f"Individual Model Movement: {self.unit.name}"
+            subtitle = f"{self.movement_type.title()} Movement (Max: {self.max_distance:.1f}\")"
         self.draw_title_bar(screen, title, subtitle)
         
         # Draw model buttons
@@ -1597,24 +1693,34 @@ class IndividualModelMovementDialog(BaseDialog):
             
         # Draw instructions
         if self.awaiting_battlefield_click:
-            instruction_text = f"Click on battlefield to move #{self.selected_model_index + 1}: {self.unit.models[self.selected_model_index].name}"
+            action_word = "move"
+            if getattr(self, "movement_type", "") == "deploy" or self.placement_kind:
+                action_word = "place"
+            instruction_text = (
+                f"Click on battlefield to {action_word} #{self.selected_model_index + 1}: "
+                f"{self.unit.models[self.selected_model_index].name}"
+            )
             if getattr(self, "movement_type", "") == "deploy":
                 instruction_text += " | Mouse wheel: rotate facing (5deg)"
             elif getattr(self, "movement_type", "") == "move" and bool(getattr(self.unit, "is_aircraft", False)):
-                instruction_text += f" | Mouse wheel: pivot ±90° (now {self._aircraft_pivot_degrees:.0f}°)"
+                instruction_text += f" | Mouse wheel: pivot ?90? (now {self._aircraft_pivot_degrees:.0f}?)"
             instruction_color = TEXT_WARNING
         else:
-            instruction_text = "Select a model, then click on battlefield to move it. ESC to close."
+            if self.placement_kind:
+                instruction_text = "Select a model, then click on battlefield to place it. ESC to close."
+            else:
+                instruction_text = "Select a model, then click on battlefield to move it. ESC to close."
             instruction_color = (200, 200, 200)  # TEXT_SECONDARY
 
-        # Fit instructions to dialog width
+# Fit instructions to dialog width
         instr_fitted = self._truncate_middle_preserve_suffix(instruction_text, self.font_small, self.width - 40)
         instruction_surface = self.font_small.render(instr_fitted, True, instruction_color)
         screen.blit(instruction_surface, (self.x + 20, self.y + self.height - 80))
         
         # Draw control buttons using base class method
         self.draw_button(screen, 'complete', "Complete")
-        self.draw_button(screen, 'skip', "Skip")
+        if self.allow_skip and 'skip' in self.buttons:
+            self.draw_button(screen, 'skip', "Skip")
 
         # Draw coherency dialog if it's open
         if hasattr(self, 'coherency_dialog') and self.coherency_dialog.visible:

@@ -10,12 +10,14 @@ from ..decision_kinds import (
     DECISION_DECLARE_MELEE_WEAPONS,
     DECISION_SELECT_FIGHTER,
     DECISION_SELECT_FIGHT_TARGETS,
+    DECISION_SELECT_EXPLODING_HORRORS_MODELS,
+    DECISION_SELECT_EXPLODING_HORRORS_TARGET,
     DECISION_SELECT_PRECISION_TARGET,
     DECISION_SELECT_TARGET_MODEL,
     DECISION_SPLIT_ATTACKS,
 )
 from ..decisions import DecisionRequest, DecisionResult
-from ._helpers import find_option, resolve_model, resolve_unit, resolve_wargear, validate_option_choice
+from ._helpers import find_option, is_skip_choice, resolve_model, resolve_unit, resolve_wargear, validate_option_choice
 
 
 def _option_payload(request: DecisionRequest, result: DecisionResult) -> dict:
@@ -74,6 +76,67 @@ def _apply_select_targets(game: object, request: DecisionRequest, result: Decisi
         if unit is not None:
             units.append(unit)
     return units
+
+
+def _validate_select_exploding_horrors_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
+    if target_val is None:
+        return ("Exploding Horrors requires a target unit or skip.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Exploding Horrors target unit not found.",)
+    return ()
+
+
+def _apply_select_exploding_horrors_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
+    return resolve_unit(game, target_val)
+
+
+def _validate_select_exploding_horrors_models(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    model_ids = result.payload.get("model_ids")
+    if not isinstance(model_ids, list) or not model_ids:
+        return ("Exploding Horrors requires model_ids.",)
+    ctx = getattr(request, "context", {}) or {}
+    allowed_ids = {str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None}
+    unit_val = ctx.get("unit_id")
+    unit = resolve_unit(game, unit_val) if unit_val is not None else None
+    seen: set[str] = set()
+    for mid in list(model_ids or []):
+        mid = str(mid or "")
+        if not mid:
+            return ("Exploding Horrors requires valid model_ids.",)
+        if mid in seen:
+            return ("Exploding Horrors model_ids must be unique.",)
+        seen.add(mid)
+        model = resolve_model(game, mid)
+        if model is None:
+            return ("Exploding Horrors model not found.",)
+        if unit is not None and getattr(model, "parent_unit", None) is not unit:
+            return ("Exploding Horrors model does not belong to the unit.",)
+        if allowed_ids and mid not in allowed_ids:
+            return ("Exploding Horrors model is not eligible.",)
+    return ()
+
+
+def _apply_select_exploding_horrors_models(game: object, request: DecisionRequest, result: DecisionResult):
+    models = []
+    for mid in list(result.payload.get("model_ids") or []):
+        model = resolve_model(game, mid)
+        if model is not None:
+            models.append(model)
+    return models
 
 
 def _validate_declare_melee_weapons(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -317,6 +380,16 @@ def _apply_allocate_damage(game: object, request: DecisionRequest, result: Decis
 
 register_decision_handler(DECISION_SELECT_FIGHTER, validate=_validate_select_fighter, apply=_apply_select_fighter)
 register_decision_handler(DECISION_SELECT_FIGHT_TARGETS, validate=_validate_select_targets, apply=_apply_select_targets)
+register_decision_handler(
+    DECISION_SELECT_EXPLODING_HORRORS_TARGET,
+    validate=_validate_select_exploding_horrors_target,
+    apply=_apply_select_exploding_horrors_target,
+)
+register_decision_handler(
+    DECISION_SELECT_EXPLODING_HORRORS_MODELS,
+    validate=_validate_select_exploding_horrors_models,
+    apply=_apply_select_exploding_horrors_models,
+)
 register_decision_handler(DECISION_DECLARE_MELEE_WEAPONS, validate=_validate_declare_melee_weapons, apply=_apply_declare_melee_weapons)
 register_decision_handler(DECISION_ALLOCATE_MELEE_TARGETS, validate=_validate_allocate_melee_targets, apply=_apply_allocate_melee_targets)
 register_decision_handler(DECISION_ALLOCATE_TARGETS, validate=_validate_allocate_targets, apply=_apply_allocate_targets)

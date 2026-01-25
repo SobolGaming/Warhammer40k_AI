@@ -1582,7 +1582,7 @@ class WargearProfile:
                 )
                 if chosen is None:
                     chosen = eligible[0]
-                chosen.take_damage(3, is_mortal=True, weapon_profile=self, game_map=game_map)
+                chosen.take_damage(3, is_mortal=True, weapon_profile=self, game_map=game_map, damage_source="hazardous")
         
         # Print comprehensive attack summary
         self._print_attack_summary(attack_result)
@@ -6463,6 +6463,9 @@ class WargearProfile:
             'excess_damage': 0
         }
         attack_instance = attack_instance if isinstance(attack_instance, dict) else {}
+        if target_model is not None:
+            target_model._last_damage_weapon_profile = self
+            target_model._last_damage_source_kind = "attack"
         
         # Handle Feel No Pain saves
         final_damage = damage_amount

@@ -20,6 +20,8 @@ class FightTargetSelectionDialog(BaseDialog):
         self.decision_request = None
         self._option_entries: List[dict] = []
         self._entry_targets: List[tuple] = []
+        self.custom_title: Optional[str] = None
+        self.custom_instructions: Optional[str] = None
 
         # Button mapping: name -> Unit
         self._button_to_target: Dict[str, Unit] = {}
@@ -27,10 +29,14 @@ class FightTargetSelectionDialog(BaseDialog):
     def show(self, fighting_unit: Unit, eligible_targets: List[Unit],
              on_target_selected: Callable[[str, List[str]], None],
              on_cancel: Optional[Callable[[], None]] = None,
-             decision_request=None) -> None:
+             decision_request=None,
+             title: Optional[str] = None,
+             instructions: Optional[str] = None) -> None:
         self.fighting_unit = fighting_unit
         self.eligible_targets = eligible_targets
         self.decision_request = decision_request
+        self.custom_title = title
+        self.custom_instructions = instructions
         self._option_entries = []
         self._entry_targets = []
         if self.decision_request is not None:
@@ -57,6 +63,8 @@ class FightTargetSelectionDialog(BaseDialog):
         self.decision_request = None
         self._option_entries = []
         self._entry_targets = []
+        self.custom_title = None
+        self.custom_instructions = None
 
     def _create_buttons(self) -> None:
         # Clear any existing buttons
@@ -123,11 +131,15 @@ class FightTargetSelectionDialog(BaseDialog):
 
         # Dialog background and title bar
         self.draw_dialog_background(screen)
-        unit_name = self.fighting_unit.name if self.fighting_unit else "Unit"
-        self.draw_title_bar(screen, f"Select Target for {unit_name}")
+        if self.custom_title:
+            self.draw_title_bar(screen, self.custom_title)
+        else:
+            unit_name = self.fighting_unit.name if self.fighting_unit else "Unit"
+            self.draw_title_bar(screen, f"Select Target for {unit_name}")
 
         # Instructions
-        self.draw_instructions(screen, "Choose an engaged enemy unit to fight.")
+        instruction = self.custom_instructions or "Choose an engaged enemy unit to fight."
+        self.draw_instructions(screen, instruction)
 
         # Draw target buttons
         for name, rect in self.buttons.items():

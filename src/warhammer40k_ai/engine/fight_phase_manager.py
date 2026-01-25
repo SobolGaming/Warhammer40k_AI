@@ -753,6 +753,8 @@ class FightPhaseManager:
                 target_unit.end_attack_resolution(game_map=game_map)
         except Exception:
             pass
+        if hasattr(attacking_unit, "_resolve_pending_horrors_split"):
+            attacking_unit._resolve_pending_horrors_split(game_map=game_map)
 
 
     def get_stage_info(self, current_player: Player, opponent_player: Player) -> Dict:

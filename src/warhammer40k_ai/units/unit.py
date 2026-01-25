@@ -106,6 +106,7 @@ class Unit:
             #print(f"{self.name} - NEED TO HANDLE - ERROR PARSING MODELS COST: {e}")
             self.models_cost = { "spawn_on_death": 0 }
         self.models = self._create_models(datasheet, quantity)
+        self._initialize_horrors_state()
 
         # Wargear Stuff
         self.possible_wargear = self._parse_wargear(datasheet)
@@ -403,6 +404,29 @@ class Unit:
                     mods.append(Modifier(ModifierOp.ADD, bonus, source="aura:objective_control_add"))
             except Exception:
                 pass
+
+        if ckey == "leadership":
+            if game_map is None:
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    game_map = None
+            if game_map is not None:
+                from ..utility.aura_utils import unit_within_range_of_unit
+                get_enemy_units = getattr(game_map, "get_enemy_units", None)
+                if callable(get_enemy_units):
+                    for enemy in list(get_enemy_units(self) or []):
+                        blue_active_fn = getattr(enemy, "_horrors_blue_abilities_active", None)
+                        if not callable(blue_active_fn) or not blue_active_fn():
+                            continue
+                        blue_models_fn = getattr(enemy, "_horrors_has_blue_models", None)
+                        if not callable(blue_models_fn) or not blue_models_fn():
+                            continue
+                        if unit_within_range_of_unit(enemy, self, 6.0):
+                            mods.append(Modifier(ModifierOp.ADD, 1, source="aura:sullen_malevolence"))
+                            break
 
         afflicted_plague = None
         try:
@@ -3015,6 +3039,568 @@ class Unit:
             pass
         return {}
 
+    def _normalize_model_name(self, name: str) -> str:
+        s = (name or "").replace("\u2019", "'").strip().lower()
+        s = re.sub(r"<[^>]+>", " ", s)
+        s = re.sub(r"[^a-z0-9\s]", " ", s)
+        s = re.sub(r"\s+", " ", s).strip()
+        return s
+
+    def _pick_profile_for_model(self, datasheet, model_name: str) -> dict:
+        """
+        Datasheets often have multiple model profiles (e.g. Exarch vs regular).
+        Unit composition names don't always match profile names 1:1.
+
+        Heuristic: exact/substring match on normalized names; otherwise token overlap with
+        light fuzzy matching (biker~bike). Falls back to first profile.
+        """
+        try:
+            profiles = list(getattr(datasheet, "datasheets_models", []) or [])
+        except Exception:
+            profiles = []
+        if not profiles:
+            return {}
+
+        want = self._normalize_model_name(model_name)
+        want_tokens = set(want.split())
+
+        best = profiles[0]
+        best_score = -1
+
+        for prof in profiles:
+            pname = self._normalize_model_name(str(prof.get("name", "") or ""))
+            if not pname:
+                continue
+            if pname == want:
+                return prof
+            if pname and (pname in want or want in pname):
+                score = 100
+            else:
+                p_tokens = set(pname.split())
+                overlap = len(want_tokens & p_tokens)
+                fuzzy = 0
+                if "biker" in want_tokens and "bike" in p_tokens:
+                    fuzzy += 1
+                if "bikes" in want_tokens and "bike" in p_tokens:
+                    fuzzy += 1
+                if "bike" in want_tokens and "biker" in p_tokens:
+                    fuzzy += 1
+                score = overlap + fuzzy
+
+            if score > best_score:
+                best = prof
+                best_score = score
+
+        return best
+
+    def _select_fallback_base_size(self, datasheet) -> Optional[str]:
+        try:
+            profiles = list(getattr(datasheet, "datasheets_models", []) or [])
+        except Exception:
+            profiles = []
+        for prof in profiles:
+            try:
+                raw = str(prof.get("base_size", "") or "").strip()
+            except Exception:
+                raw = ""
+            if raw and not self._is_unknown_base_size(raw):
+                return raw
+        return None
+
+    def _build_model_from_profile(self, datasheet, model_name: str, profile: dict, *, fallback_base_size: Optional[str] = None) -> Model:
+        if not profile:
+            profile = datasheet.datasheets_models[0]
+        return Model(
+            name=model_name,
+            movement=self._parse_attribute(profile.get("M", datasheet.datasheets_models[0]["M"])),
+            toughness=self._parse_attribute(profile.get("T", datasheet.datasheets_models[0]["T"])),
+            save=self._parse_attribute(profile.get("Sv", datasheet.datasheets_models[0]["Sv"])),
+            wounds=self._parse_attribute(profile.get("W", datasheet.datasheets_models[0]["W"])),
+            leadership=self._parse_attribute(profile.get("Ld", datasheet.datasheets_models[0]["Ld"])),
+            objective_control=self._parse_attribute(profile.get("OC", datasheet.datasheets_models[0]["OC"])),
+            model_base=self._parse_base_size(
+                self._select_base_size_override(
+                    str(profile.get("base_size_descr", datasheet.datasheets_models[0].get("base_size_descr", "")) or ""),
+                    model_name,
+                )
+                or profile.get("base_size", datasheet.datasheets_models[0]["base_size"]),
+                fallback_base_size=fallback_base_size,
+                model_name=model_name,
+            ),
+            inv_save=self._parse_attribute(profile.get("inv_sv", datasheet.datasheets_models[0]["inv_sv"])),
+            inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower(),
+            movement_raw=str(profile.get("M", datasheet.datasheets_models[0].get("M", "")) or ""),
+            toughness_raw=str(profile.get("T", datasheet.datasheets_models[0].get("T", "")) or ""),
+            save_raw=str(profile.get("Sv", datasheet.datasheets_models[0].get("Sv", "")) or ""),
+            wounds_raw=str(profile.get("W", datasheet.datasheets_models[0].get("W", "")) or ""),
+            leadership_raw=str(profile.get("Ld", datasheet.datasheets_models[0].get("Ld", "")) or ""),
+            objective_control_raw=str(profile.get("OC", datasheet.datasheets_models[0].get("OC", "")) or ""),
+            inv_save_raw=str(profile.get("inv_sv", datasheet.datasheets_models[0].get("inv_sv", "")) or ""),
+            keywords=list(getattr(datasheet, 'keywords', []) or []),
+            faction_keywords=list(getattr(datasheet, 'faction_keywords', []) or []),
+        )
+
+    def _initialize_horrors_state(self) -> None:
+        """Initialize Pink/Blue Horrors tracking (origin/state/model tags)."""
+        self._horrors_origin = None
+        self._horrors_state = None
+        self._horrors_origin_name = None
+        self._horrors_blue_datasheet_id = None
+        self._horrors_blue_datasheet_name = None
+        self._pending_horrors_split = []
+        ds = getattr(self, "_datasheet", None)
+        ds_name = str(getattr(ds, "name", "") or "")
+        if not ds_name:
+            return
+        low = ds_name.lower()
+        if "pink horrors" in low:
+            self._horrors_origin = "pink"
+            self._horrors_state = "pink"
+            self._horrors_origin_name = ds_name
+            self._horrors_blue_datasheet_name = "Blue Horrors"
+        elif "blue horrors" in low:
+            self._horrors_origin = "blue"
+            self._horrors_state = "blue"
+            self._horrors_origin_name = ds_name
+        else:
+            return
+
+        for m in list(getattr(self, "models", []) or []):
+            kind = self._horrors_model_kind_from_name(getattr(m, "name", "") or "")
+            if kind:
+                try:
+                    setattr(m, "_horrors_kind", kind)
+                except Exception:
+                    pass
+
+    def _is_horrors_unit(self) -> bool:
+        return bool(getattr(self, "_horrors_origin", None) in ("pink", "blue"))
+
+    def _horrors_model_kind_from_name(self, name: str) -> Optional[str]:
+        n = str(name or "").lower()
+        if "pink horror" in n:
+            return "pink"
+        if "brimstone" in n:
+            return "brimstone"
+        if "blue horror" in n:
+            return "blue"
+        return None
+
+    def _horrors_model_kind(self, model: Model) -> Optional[str]:
+        if model is None:
+            return None
+        kind = getattr(model, "_horrors_kind", None)
+        if kind:
+            return kind
+        kind = self._horrors_model_kind_from_name(getattr(model, "name", "") or "")
+        if kind:
+            try:
+                setattr(model, "_horrors_kind", kind)
+            except Exception:
+                pass
+        return kind
+
+    def _horrors_has_pink_models(self) -> bool:
+        if not self._is_horrors_unit():
+            return False
+        for m in list(getattr(self, "models", []) or []):
+            try:
+                if not getattr(m, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            if self._horrors_model_kind(m) == "pink":
+                return True
+        return False
+
+    def _horrors_has_blue_models(self) -> bool:
+        if not self._is_horrors_unit():
+            return False
+        for m in list(getattr(self, "models", []) or []):
+            try:
+                if not getattr(m, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            if getattr(m, "_pending_placement", False):
+                continue
+            if self._horrors_model_kind(m) == "blue":
+                return True
+        return False
+
+    def _horrors_blue_abilities_active(self) -> bool:
+        if not self._is_horrors_unit():
+            return False
+        if getattr(self, "_horrors_origin", None) == "pink":
+            return not self._horrors_has_pink_models()
+        return True
+
+    def _lookup_blue_horrors_datasheet(self):
+        if not self._is_horrors_unit():
+            return None
+        try:
+            from ..waha_helper import WahaHelper
+        except Exception:
+            return None
+        try:
+            faction_id = getattr(self._datasheet, "faction_id", None)
+        except Exception:
+            faction_id = None
+        waha = WahaHelper()
+        ds = waha.get_full_datasheet_info_by_name("Blue Horrors", faction_id=faction_id)
+        if ds is None:
+            return None
+        try:
+            self._horrors_blue_datasheet_id = getattr(ds, "id", None)
+        except Exception:
+            pass
+        try:
+            self._horrors_blue_datasheet_name = getattr(ds, "name", None)
+        except Exception:
+            pass
+        return ds
+
+    def _apply_datasheet_override(self, datasheet) -> None:
+        if datasheet is None:
+            return
+        self._datasheet = datasheet
+        try:
+            base_name = str(getattr(datasheet, "name", "") or "")
+        except Exception:
+            base_name = str(getattr(self, "name", "") or "")
+        if base_name and getattr(self, "_horrors_origin", None) == "pink":
+            origin_label = str(getattr(self, "_horrors_origin_name", "Pink Horrors") or "Pink Horrors")
+            self.name = f"{base_name} (from {origin_label})"
+        else:
+            self.name = base_name or self.name
+        try:
+            self.faction = datasheet.faction_data["name"]
+        except Exception:
+            pass
+        self.keywords = list(getattr(datasheet, 'keywords', []) or [])
+        self.faction_keywords = list(getattr(datasheet, 'faction_keywords', []) or [])
+        try:
+            self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
+        except Exception:
+            pass
+        try:
+            self.models_cost = self._parse_models_cost(datasheet.datasheets_models_cost)
+        except Exception:
+            pass
+        self.possible_wargear = self._parse_wargear(datasheet)
+        self.wargear_options = []
+        try:
+            self._parse_wargear_options(datasheet)
+        except Exception:
+            pass
+        self.possible_abilities = self._parse_abilities(datasheet)
+        self.can_be_attached_to = getattr(datasheet, 'attached_to', [])
+        self.can_be_attached_to_names = getattr(datasheet, 'attached_to_names', [])
+        try:
+            if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
+                self.damaged_profile = self._parse_range(datasheet.damaged_w)
+                self.damaged_profile_desc = getattr(datasheet, 'damaged_description', None)
+            else:
+                self.damaged_profile = None
+                self.damaged_profile_desc = None
+        except Exception:
+            pass
+        try:
+            self.transport_rules_text = str(getattr(datasheet, "transport", "") or "")
+            self.transport_capacity = self._parse_transport_capacity(datasheet)
+            self.transport_required_keywords, self.transport_excluded_keywords = self._parse_transport_restrictions(datasheet)
+        except Exception:
+            pass
+        try:
+            if hasattr(self, "_invalidate_ability_cache"):
+                self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            self._refresh_command_phase_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fall_back_desperate_escape_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_return_on_death_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_charge_end_mortal_wounds_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_fight_within_3_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_bearer_keyword_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_move_over_friendly_monster_vehicle_flags()
+        except Exception:
+            pass
+
+    def _maybe_swap_horrors_datasheet(self) -> None:
+        if not self._is_horrors_unit():
+            return
+        if getattr(self, "_horrors_origin", None) != "pink":
+            return
+        if getattr(self, "_horrors_state", None) == "blue":
+            return
+        if self._horrors_has_pink_models():
+            return
+        ds = self._lookup_blue_horrors_datasheet()
+        if ds is None:
+            return
+        self._horrors_state = "blue"
+        self._apply_datasheet_override(ds)
+
+    def _spawn_horrors_models(self, kind: str, count: int, *, from_split: bool = True) -> list[Model]:
+        if int(count or 0) <= 0:
+            return []
+        if kind not in ("blue", "brimstone", "pink"):
+            return []
+        name_map = {"pink": "Pink Horror", "blue": "Blue Horror", "brimstone": "Brimstone Horror"}
+        model_name = name_map[kind]
+        ds = getattr(self, "_datasheet", None)
+        if ds is None:
+            return []
+        fallback_base_size = self._select_fallback_base_size(ds)
+        profile = self._pick_profile_for_model(ds, model_name)
+        models: list[Model] = []
+        for _ in range(int(count or 0)):
+            model = self._build_model_from_profile(
+                ds,
+                model_name,
+                profile,
+                fallback_base_size=fallback_base_size,
+            )
+            model.set_parent_unit(self)
+            try:
+                setattr(model, "_horrors_kind", kind)
+            except Exception:
+                pass
+            self._assign_default_wargear_to_model(model, from_split=from_split)
+            models.append(model)
+        return models
+
+    def _pending_placement_models(self) -> list[Model]:
+        return [m for m in (getattr(self, "models", []) or []) if getattr(m, "_pending_placement", False)]
+
+    def _request_pending_placement_decision(self, *, game_map: Optional['Map'] = None) -> None:
+        pending = self._pending_placement_models()
+        if not pending:
+            return
+        game = None
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+        if game is None:
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_MOVE_UNIT
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            return
+
+        # Avoid duplicate placement requests for this unit.
+        try:
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if getattr(req, "decision_type", None) != DECISION_MOVE_UNIT:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("unit_id", "")) == str(get_entity_id(self)) and ctx.get("placement_kind"):
+                        return
+        except Exception:
+            pass
+
+        unit_id = get_entity_id(self)
+        allowed_ids = [get_entity_id(m) for m in pending]
+        sources = {str(getattr(m, "_pending_placement_source", "") or "") for m in pending if m is not None}
+        placement_kind = sources.pop() if len(sources) == 1 else "placement"
+        allow_skip = False
+
+        options = [
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ]
+        if allow_skip:
+            options.append(
+                DecisionOption.create(
+                    "Skip",
+                    payload={"unit_id": unit_id, "movement_type": "deploy", "action": "skip", "skip": True},
+                )
+            )
+        player_id = None
+        try:
+            player_id = self.get_parent_army().player.id
+        except Exception:
+            player_id = None
+        title = f"Place models for {getattr(self, 'name', 'Unit')}"
+        req = DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            title,
+            player_id=player_id,
+            options=options,
+            context={
+                "unit_id": unit_id,
+                "movement_type": "deploy",
+                "placement_kind": placement_kind,
+                "allowed_model_ids": list(allowed_ids),
+                "allow_skip": bool(allow_skip),
+            },
+        )
+        try:
+            if hasattr(game, "request_decision"):
+                game.request_decision(req)
+        except Exception:
+            return
+
+    def _mark_models_pending_placement(self, models: list[Model], *, source: Optional[str] = None) -> None:
+        if not models:
+            return
+        tag = str(source or "placement")
+        for model in list(models or []):
+            if model is None:
+                continue
+            model._pending_placement = True
+            model._pending_placement_source = tag
+
+    def _horrors_brimstone_models(self) -> list[Model]:
+        if not self._is_horrors_unit():
+            return []
+        models = []
+        for m in list(getattr(self, "models", []) or []):
+            if not getattr(m, "is_alive", True):
+                continue
+            if getattr(m, "_pending_placement", False):
+                continue
+            if self._horrors_model_kind(m) == "brimstone":
+                models.append(m)
+        return models
+
+    def _horrors_can_return_model(self, model: Optional[Model]) -> bool:
+        if model is None:
+            return False
+        if not self._is_horrors_unit():
+            return True
+        if getattr(self, "_horrors_origin", None) != "pink":
+            return True
+        if getattr(self, "_horrors_state", None) != "blue":
+            return True
+        return self._horrors_model_kind(model) != "pink"
+
+    def _maybe_queue_horrors_split(self, model: Optional[Model]) -> None:
+        if model is None or not self._is_horrors_unit():
+            return
+        kind = self._horrors_model_kind(model)
+        if kind not in ("pink", "blue"):
+            return
+        damage_source = str(getattr(model, "_last_damage_source_kind", "") or "").lower()
+        if damage_source not in ("attack", "hazardous"):
+            return
+        if damage_source == "attack":
+            root = self._attack_resolution_root()
+            depth = int(getattr(root, "_attack_resolution_depth", 0) or 0)
+            if depth <= 0:
+                return
+        root = self._attack_resolution_root()
+        queue = getattr(root, "_pending_horrors_split", None)
+        if not isinstance(queue, list):
+            queue = []
+            root._pending_horrors_split = queue
+        queue.append({"kind": kind})
+
+    def _resolve_pending_horrors_split(self, *, game_map: Optional['Map'] = None) -> None:
+        root = self._attack_resolution_root()
+        queue = getattr(root, "_pending_horrors_split", None)
+        if not isinstance(queue, list) or not queue:
+            return
+        root._pending_horrors_split = []
+        if not root.is_alive():
+            return
+
+        spawned: list[Model] = []
+        for entry in list(queue or []):
+            kind = str(entry.get("kind", "") or "")
+            roll = int(get_roll("D6"))
+            if roll < 4:
+                continue
+            if kind == "pink":
+                spawned.extend(root._spawn_horrors_models("blue", 2, from_split=True))
+            elif kind == "blue":
+                spawned.extend(root._spawn_horrors_models("brimstone", 1, from_split=True))
+        if not spawned:
+            return
+        root._mark_models_pending_placement(spawned, source="split")
+        for model in spawned:
+            root.add_model(model)
+        root._request_pending_placement_decision(game_map=game_map)
+
+    def can_use_exploding_horrors(self) -> bool:
+        if not self._is_horrors_unit():
+            return False
+        if not self._horrors_blue_abilities_active():
+            return False
+        return bool(self._horrors_brimstone_models())
+
+    def resolve_exploding_horrors(
+        self,
+        target_unit: Optional['Unit'],
+        selected_models: Optional[list[Model]] = None,
+        *,
+        game_map: Optional['Map'] = None,
+    ) -> int:
+        if target_unit is None or not self.can_use_exploding_horrors():
+            return 0
+        if game_map is not None:
+            within_fn = getattr(game_map, "is_within_engagement_range", None)
+            if callable(within_fn):
+                if not within_fn(self, target_unit):
+                    return 0
+        brimstones = set(self._horrors_brimstone_models())
+        if selected_models:
+            chosen = [m for m in list(selected_models or []) if m in brimstones]
+        else:
+            chosen = list(brimstones)
+        if not chosen:
+            return 0
+
+        successes = 0
+        for model in list(chosen or []):
+            roll = int(get_roll("D6"))
+            if roll < 4:
+                continue
+            successes += 1
+            model._last_damage_source_kind = "non_attack"
+            model._last_damage_weapon_profile = None
+            model.wounds = 0
+            if hasattr(model, "die"):
+                model.die(game_map=game_map)
+        if successes > 0:
+            self._apply_mortal_wounds_to_unit(target_unit, successes, game_map=game_map)
+        return successes
+
     def _create_models(self, datasheet, quantity=None):
         models = []
         total_models = 0
@@ -3043,78 +3629,7 @@ class Unit:
         if isinstance(chosen, dict) and chosen:
             self.unit_composition = chosen
 
-        def _normalize_name(s: str) -> str:
-            s = (s or "").replace("\u2019", "'").strip().lower()
-            s = re.sub(r"<[^>]+>", " ", s)
-            s = re.sub(r"[^a-z0-9\s]", " ", s)
-            s = re.sub(r"\s+", " ", s).strip()
-            return s
-
-        def _pick_profile_for_model(model_name: str) -> dict:
-            """
-            Datasheets often have multiple model profiles (e.g. Attack Bike vs Space Marine Bike,
-            Exarch vs regular). Unit composition names don't always match profile names 1:1
-            (e.g. "Biker Sergeant" uses the "SPACE MARINE BIKE" profile).
-
-            Heuristic: exact/substring match on normalized names; otherwise token overlap with
-            light fuzzy matching (biker~bike). Falls back to first profile.
-            """
-            try:
-                profiles = list(getattr(datasheet, "datasheets_models", []) or [])
-            except Exception:
-                profiles = []
-            if not profiles:
-                return {}
-
-            want = _normalize_name(model_name)
-            want_tokens = set(want.split())
-
-            best = profiles[0]
-            best_score = -1
-
-            for prof in profiles:
-                pname = _normalize_name(str(prof.get("name", "") or ""))
-                if not pname:
-                    continue
-                if pname == want:
-                    return prof
-                if pname and (pname in want or want in pname):
-                    # Strong match, but keep searching for exact
-                    score = 100
-                else:
-                    p_tokens = set(pname.split())
-                    overlap = len(want_tokens & p_tokens)
-                    # Fuzzy: treat biker/bikes as matching bike
-                    fuzzy = 0
-                    if "biker" in want_tokens and "bike" in p_tokens:
-                        fuzzy += 1
-                    if "bikes" in want_tokens and "bike" in p_tokens:
-                        fuzzy += 1
-                    if "bike" in want_tokens and "biker" in p_tokens:
-                        fuzzy += 1
-                    score = overlap + fuzzy
-
-                if score > best_score:
-                    best = prof
-                    best_score = score
-
-            return best
-
-        def _select_fallback_base_size() -> Optional[str]:
-            try:
-                profiles = list(getattr(datasheet, "datasheets_models", []) or [])
-            except Exception:
-                profiles = []
-            for prof in profiles:
-                try:
-                    raw = str(prof.get("base_size", "") or "").strip()
-                except Exception:
-                    raw = ""
-                if raw and not self._is_unknown_base_size(raw):
-                    return raw
-            return None
-
-        fallback_base_size = _select_fallback_base_size()
+        fallback_base_size = self._select_fallback_base_size(datasheet)
 
         if quantity is None:
             # If no quantity is specified, use the minimum number of models
@@ -3137,39 +3652,16 @@ class Unit:
             if model_name.endswith('s'):
                 model_name = model_name[:-1]
 
-            profile = _pick_profile_for_model(model_name)
+            profile = self._pick_profile_for_model(datasheet, model_name)
             # Default to first profile if anything is missing
             if not profile:
                 profile = datasheet.datasheets_models[0]
             for _ in range(model_count):
-                model = Model(
-                    name=model_name,
-                    movement=self._parse_attribute(profile.get("M", datasheet.datasheets_models[0]["M"])),
-                    toughness=self._parse_attribute(profile.get("T", datasheet.datasheets_models[0]["T"])),
-                    save=self._parse_attribute(profile.get("Sv", datasheet.datasheets_models[0]["Sv"])),
-                    wounds=self._parse_attribute(profile.get("W", datasheet.datasheets_models[0]["W"])),
-                    leadership=self._parse_attribute(profile.get("Ld", datasheet.datasheets_models[0]["Ld"])),
-                    objective_control=self._parse_attribute(profile.get("OC", datasheet.datasheets_models[0]["OC"])),
-                    model_base=self._parse_base_size(
-                        self._select_base_size_override(
-                            str(profile.get("base_size_descr", datasheet.datasheets_models[0].get("base_size_descr", "")) or ""),
-                            model_name,
-                        )
-                        or profile.get("base_size", datasheet.datasheets_models[0]["base_size"]),
-                        fallback_base_size=fallback_base_size,
-                        model_name=model_name,
-                    ),
-                    inv_save=self._parse_attribute(profile.get("inv_sv", datasheet.datasheets_models[0]["inv_sv"])),
-                    inv_save_condition=str(profile.get("inv_sv_descr", datasheet.datasheets_models[0].get("inv_sv_descr", "")) or "").lower(),
-                    movement_raw=str(profile.get("M", datasheet.datasheets_models[0].get("M", "")) or ""),
-                    toughness_raw=str(profile.get("T", datasheet.datasheets_models[0].get("T", "")) or ""),
-                    save_raw=str(profile.get("Sv", datasheet.datasheets_models[0].get("Sv", "")) or ""),
-                    wounds_raw=str(profile.get("W", datasheet.datasheets_models[0].get("W", "")) or ""),
-                    leadership_raw=str(profile.get("Ld", datasheet.datasheets_models[0].get("Ld", "")) or ""),
-                    objective_control_raw=str(profile.get("OC", datasheet.datasheets_models[0].get("OC", "")) or ""),
-                    inv_save_raw=str(profile.get("inv_sv", datasheet.datasheets_models[0].get("inv_sv", "")) or ""),
-                    keywords=list(getattr(datasheet, 'keywords', []) or []),
-                    faction_keywords=list(getattr(datasheet, 'faction_keywords', []) or []),
+                model = self._build_model_from_profile(
+                    datasheet,
+                    model_name,
+                    profile,
+                    fallback_base_size=fallback_base_size,
                 )
                 model.set_parent_unit(self)
                 models.append(model)
@@ -3178,7 +3670,14 @@ class Unit:
                 break
         return models
 
-    def _parse_loadout(self, loadout: str, model_name: str = "", return_optional: bool = False) -> List[Wargear] | Tuple[List[Wargear], List[str]]:
+    def _parse_loadout(
+        self,
+        loadout: str,
+        model_name: str = "",
+        return_optional: bool = False,
+        *,
+        from_split: bool = False,
+    ) -> List[Wargear] | Tuple[List[Wargear], List[str]]:
         def _norm_item(s: str) -> str:
             s = (s or "").replace("\u2019", "'").lower().strip()
             s = re.sub(r"<[^>]+>", " ", s)
@@ -3240,6 +3739,19 @@ class Unit:
                 for item_name in match.group(1).split(";"):
                     quantity, item_name = _parse_loadout_quantity(item_name)
                     _record_item(item_name, quantity)
+            elif match := re.match(r"^(?:the|every|a|an)?\s*(\D+)\s+added to this unit using the split ability is equipped with: (.*)$", entry):
+                if not from_split:
+                    continue
+                actors = [match.group(1)]
+                if " and " in actors[0]:
+                    actors = actors[0].split(" and ")
+                for actor in actors:
+                    if model_name and model_name == actor.strip():
+                        for item_name in match.group(2).split(";"):
+                            quantity, item_name = _parse_loadout_quantity(item_name)
+                            _record_item(item_name, quantity)
+                    else:
+                        continue
             elif match := re.match(r"^(?:the|every) (.*) model is equipped with: (.*)$", entry):
                 if model_name and model_name == match.group(1).strip():
                     for item_name in match.group(2).split(";"):
@@ -4186,6 +4698,34 @@ class Unit:
                         f"Has {len(ranged)} ranged weapons (max 2 under cyclone pairing rule). Equipped: {[getattr(wg, 'name', '') for wg in wargear]}"
                     )
 
+    def _assign_default_wargear_to_model(self, model: Model, *, from_split: bool = False) -> None:
+        if model is None:
+            return
+        try:
+            parsed = self._parse_loadout(
+                getattr(self._datasheet, "loadout", []),
+                str(getattr(model, "name", "") or "").lower(),
+                return_optional=True,
+                from_split=from_split,
+            )
+        except Exception:
+            parsed = ([], [])
+        wargear_to_add = []
+        optional_wargear = []
+        if isinstance(parsed, tuple):
+            wargear_to_add, optional_wargear = parsed
+        else:
+            wargear_to_add = parsed
+        for wargear_instance in wargear_to_add:
+            if wargear_instance:
+                model.wargear.append(wargear_instance.clone())
+        if optional_wargear:
+            for ow in optional_wargear:
+                try:
+                    model.optional_wargear.append(str(ow))
+                except Exception:
+                    continue
+
     def add_wargear(self, wargear: List[Wargear]=[], model_name: str=None) -> None:
         for model_instance in self.models:
             wargear_to_add = []
@@ -4195,6 +4735,7 @@ class Unit:
                     getattr(self._datasheet, 'loadout', []),
                     model_instance.name.lower(),
                     return_optional=True,
+                    from_split=False,
                 )
                 if isinstance(parsed, tuple):
                     wargear_to_add, optional_wargear = parsed
@@ -4303,6 +4844,7 @@ class Unit:
         #        self.callbacks[hook_events.ENEMY_UNIT_KILLED].append(logger.error(self))
         #    self.parent_detachment.removeUnit(self)
         self.update_coherency()
+        self._maybe_swap_horrors_datasheet()
         try:
             self._refresh_bearer_unit_common_modifiers()
         except Exception:
@@ -4357,6 +4899,7 @@ class Unit:
 
         This is invoked from `Model.die()` right before `Unit.remove_model()`.
         """
+        self._maybe_queue_horrors_split(model)
         if game_map is None:
             return
 
@@ -5028,6 +5571,13 @@ class Unit:
         assert model not in self.models
         model.set_parent_unit(self)
         self.models.append(model)
+        army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+        player = getattr(army, "player", None) if army is not None else None
+        game = getattr(player, "game", None) if player is not None else None
+        registry = getattr(game, "entity_registry", None) if game is not None else None
+        if registry is not None:
+            registry.register(model, kind="model")
+            registry.register_many(getattr(model, "wargear", []) or [], kind="wargear")
         # Invalidate ability cache since unit composition changed
         self._invalidate_ability_cache()
         self.update_coherency()
@@ -5035,7 +5585,10 @@ class Unit:
     def update_coherency(self) -> None:
         # Coherency thresholds depend on the number of models in the unit.
         # Use alive model count so casualties adjust the requirement correctly.
-        alive_count = len([m for m in self.models if getattr(m, 'is_alive', True)])
+        alive_count = len([
+            m for m in self.models
+            if getattr(m, 'is_alive', True) and not getattr(m, "_pending_placement", False)
+        ])
         if alive_count <= 1:
             self.coherency_distance = 2.0
             self.required_neighbors = 0
@@ -5653,7 +6206,10 @@ class Unit:
         models: List['Model'] = []
         for u in self.get_attached_unit_members():
             try:
-                models.extend(list(getattr(u, "models", []) or []))
+                for m in list(getattr(u, "models", []) or []):
+                    if getattr(m, "_pending_placement", False):
+                        continue
+                    models.append(m)
             except Exception:
                 continue
         return models
@@ -5781,7 +6337,10 @@ class Unit:
 
         # Bodyguard models first
         bodyguards = list(getattr(self, "models", []) or [])
-        bodyguards_alive = [m for m in bodyguards if getattr(m, "is_alive", True)]
+        bodyguards_alive = [
+            m for m in bodyguards
+            if getattr(m, "is_alive", True) and not getattr(m, "_pending_placement", False)
+        ]
         if bodyguards_alive:
             return bodyguards_alive
 
@@ -5790,7 +6349,7 @@ class Unit:
         try:
             for l in list(getattr(self, "attached_leaders", []) or []):
                 for m in (getattr(l, "models", []) or []):
-                    if getattr(m, "is_alive", True):
+                    if getattr(m, "is_alive", True) and not getattr(m, "_pending_placement", False):
                         leaders_models.append(m)
         except Exception:
             pass
@@ -11953,6 +12512,7 @@ class Unit:
                     t.end_attack_resolution(game_map=game_map)
         except Exception:
             pass
+        self._resolve_pending_horrors_split(game_map=game_map)
 
         # Clear BGNT snapshot to avoid leaking state into future activations.
         try:
@@ -13234,6 +13794,8 @@ class Unit:
         *,
         game_map: Optional['Map'] = None,
         chosen_models: Optional[list[Model]] = None,
+        wounds: Optional[int] = None,
+        placement_source: Optional[str] = None,
     ) -> int:
         if int(amount or 0) <= 0:
             return 0
@@ -13253,6 +13815,8 @@ class Unit:
             destroyed = list(getattr(root, "models_lost", []) or [])
         except Exception:
             destroyed = []
+        if destroyed:
+            destroyed = [m for m in destroyed if root._horrors_can_return_model(m)]
         if not destroyed:
             return 0
 
@@ -13300,6 +13864,8 @@ class Unit:
             to_return = to_return[:max_return]
 
         returned = 0
+        returned_models: list[Model] = []
+        placement_tag = str(placement_source or "return")
         for model in to_return:
             try:
                 if hasattr(root, "models_lost") and model in root.models_lost:
@@ -13319,11 +13885,14 @@ class Unit:
                 base_wounds = 0
             if base_wounds <= 0:
                 base_wounds = 1
+            desired_wounds = base_wounds if wounds is None else int(wounds)
+            if desired_wounds <= 0:
+                desired_wounds = base_wounds
             try:
-                model.wounds = base_wounds
+                model.wounds = desired_wounds
             except Exception:
                 try:
-                    model._wounds = base_wounds
+                    model._wounds = desired_wounds
                 except Exception:
                     pass
             try:
@@ -13337,6 +13906,7 @@ class Unit:
                 setattr(model, "_shoot_on_death_used", False)
             except Exception:
                 pass
+            root._mark_models_pending_placement([model], source=placement_tag)
             added = False
             try:
                 if hasattr(root, "add_model"):
@@ -13352,27 +13922,16 @@ class Unit:
                     root.models.append(model)
                 except Exception:
                     pass
-            try:
-                if alive_models and hasattr(root, "_find_reanimation_position"):
-                    new_count = len(alive_models) + 1
-                    required_neighbors = 0 if new_count <= 1 else (2 if new_count >= 7 else 1)
-                    pos = root._find_reanimation_position(
-                        model,
-                        alive_models,
-                        game_map=game_map,
-                        required_neighbors=required_neighbors,
-                    )
-                    if pos is not None and hasattr(model, "set_location"):
-                        model.set_location(*pos)
-            except Exception:
-                pass
             alive_models.append(model)
             try:
                 if hasattr(root, "update_coherency"):
                     root.update_coherency()
             except Exception:
                 pass
+            returned_models.append(model)
             returned += 1
+        if returned_models:
+            root._request_pending_placement_decision(game_map=game_map)
         return returned
 
     def apply_reanimation_protocols(
@@ -13444,6 +14003,8 @@ class Unit:
         if not alive_models:
             return result
 
+        returned_models: list[Model] = []
+
         for _ in range(int(wounds_to_restore or 0)):
             wounded = [m for m in alive_models if _is_wounded_model(m)]
             if wounded:
@@ -13480,7 +14041,9 @@ class Unit:
             for u in (members or []):
                 lost = getattr(u, "models_lost", None)
                 if isinstance(lost, list) and lost:
-                    destroyed_pool.extend([(u, m) for m in lost])
+                    for m in lost:
+                        if root._horrors_can_return_model(m):
+                            destroyed_pool.append((u, m))
             if not destroyed_pool:
                 break
 
@@ -13534,6 +14097,7 @@ class Unit:
             except Exception:
                 pass
 
+            unit_for_model._mark_models_pending_placement([model], source="reanimation")
             try:
                 if hasattr(unit_for_model, "add_model"):
                     unit_for_model.add_model(model)
@@ -13543,19 +14107,6 @@ class Unit:
                 pass
 
             alive_models = [m for u in (members or []) for m in (getattr(u, "models", []) or []) if _is_alive_model(m)]
-            new_count = len(alive_models)
-            required_neighbors = 0 if new_count <= 1 else (2 if new_count >= 7 else 1)
-            pos = self._find_reanimation_position(
-                model,
-                [m for m in alive_models if m is not model],
-                game_map=game_map,
-                required_neighbors=required_neighbors,
-            )
-            if pos is not None:
-                try:
-                    model.set_location(*pos)
-                except Exception:
-                    pass
 
             try:
                 if hasattr(unit_for_model, "update_coherency"):
@@ -13564,9 +14115,12 @@ class Unit:
                     root.update_coherency()
             except Exception:
                 pass
+            returned_models.append(model)
 
             result["returned"] += 1
 
+        if returned_models:
+            root._request_pending_placement_decision(game_map=game_map)
         return result
 
     def use_ability(self, ability: Ability, target: 'Unit', game_map: 'Map'):
@@ -14506,6 +15060,7 @@ class Unit:
                 root._resolve_melee_fight_on_death_queue(game_map=game_map)
             except Exception:
                 pass
+            root._resolve_pending_horrors_split(game_map=game_map)
 
     def _resolve_deferred_fight_on_death_queue(self, attr_name: str, game_map: Optional['Map'] = None) -> None:
         pending = getattr(self, attr_name, None)

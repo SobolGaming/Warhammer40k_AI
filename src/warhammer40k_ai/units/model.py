@@ -87,6 +87,13 @@ class Model:
         self._once_per_battle_used: set[str] = set()
         # Temporary effects keyed by effect id; each value is a small dict
         self._temporary_effects: dict[str, dict] = {}
+        # Pending placement (e.g., reanimation/split) and model-specific tags
+        self._pending_placement: bool = False
+        self._pending_placement_source: Optional[str] = None
+        self._horrors_kind: Optional[str] = None
+        # Last damage context (best-effort)
+        self._last_damage_source_kind: Optional[str] = None
+        self._last_damage_weapon_profile = None
 
     @property
     def id(self) -> str:
@@ -342,7 +349,15 @@ class Model:
         wounds_cannot_be_ignored: bool = False,
         is_psychic_attack: bool = False,
         attack_context: Optional[dict] = None,
+        damage_source: Optional[str] = None,
     ) -> int:
+        try:
+            if damage_source is None:
+                damage_source = "attack" if weapon_profile is not None else "non_attack"
+            self._last_damage_weapon_profile = weapon_profile
+            self._last_damage_source_kind = str(damage_source or "")
+        except Exception:
+            pass
         if not wounds_cannot_be_ignored and weapon_profile is not None:
             wcni_fn = getattr(weapon_profile, "wounds_cannot_be_ignored", None)
             if callable(wcni_fn):

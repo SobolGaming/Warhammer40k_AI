@@ -40,7 +40,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -274,6 +274,10 @@ def _serialize_model(model: Model) -> dict:
         "temporary_effects": encode_refs(getattr(model, "_temporary_effects", {}) or {}),
         "last_move_path": last_path,
         "shot_via_firing_deck_this_round": bool(getattr(model, "_shot_via_firing_deck_this_round", False)),
+        "pending_placement": bool(getattr(model, "_pending_placement", False)),
+        "pending_placement_source": getattr(model, "_pending_placement_source", None),
+        "horrors_kind": getattr(model, "_horrors_kind", None),
+        "last_damage_source_kind": getattr(model, "_last_damage_source_kind", None),
     }
     return data
 
@@ -310,6 +314,10 @@ def _apply_model_state(model: Model, data: dict, unit: Unit) -> None:
 
     model._inv_save = inv_stats.get("value", None)
     model._inv_save_condition = inv_stats.get("condition", None)
+    model._pending_placement = bool(data.get("pending_placement", False))
+    model._pending_placement_source = data.get("pending_placement_source", None)
+    model._horrors_kind = data.get("horrors_kind", None)
+    model._last_damage_source_kind = data.get("last_damage_source_kind", None)
 
     base = data.get("base", {}) or {}
     base_type = BaseType[base.get("type", BaseType.CIRCULAR.name)]
