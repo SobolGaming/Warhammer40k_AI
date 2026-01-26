@@ -24,6 +24,7 @@ from ._helpers import (
     validate_model_positions,
     validate_option_choice,
 )
+from ...utility.entity_ids import get_entity_id
 
 
 def _movement_members(unit) -> list:
@@ -45,6 +46,78 @@ def _clear_battle_focus_reactive_flags(unit) -> None:
             "battle_focus_reactive_move_expires_phase",
         ):
             sr.pop(key, None)
+
+
+def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_type: str) -> None:
+    if unit is None or not bool(getattr(game, "is_authoritative", True)):
+        return
+    try:
+        from ..decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+        from ...utility.modifier_choice import CHOICE_LABELS, options_for_numeric_modifiers
+    except Exception:
+        return
+    try:
+        if not driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None)):
+            return
+    except Exception:
+        return
+    try:
+        if getattr(unit.round_state, "move_modifier_choice", None):
+            return
+    except Exception:
+        pass
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_MOVE_MODIFIER_IGNORES:
+                continue
+            ctx = getattr(req, "context", {}) or {}
+            if str(ctx.get("unit_id", "")) == str(get_entity_id(unit)):
+                return
+
+    try:
+        model = next((m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)), None)
+    except Exception:
+        model = None
+    if model is None:
+        return
+    try:
+        base_val = int(getattr(model, "_movement", getattr(model, "movement", 0)) or 0)
+    except Exception:
+        base_val = 0
+    try:
+        mods, _scabrous, _map = unit._collect_characteristic_modifiers(
+            model,
+            "movement",
+            base_val=base_val,
+            base_raw=getattr(model, "_movement_raw", None),
+            game_map=getattr(game, "map", None),
+        )
+    except Exception:
+        mods = []
+    options = options_for_numeric_modifiers(mods, base_val=base_val)
+    if not options:
+        return
+    req_options = [DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt}) for opt in options]
+    request = DecisionRequest.create(
+        DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+        "Choose which modifiers to ignore.",
+        player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+        options=req_options,
+        context={
+            "unit_id": get_entity_id(unit),
+            "action_type": str(action_type or ""),
+            "ability_name": DRIVEN_BY_ULTIMATE_RAGE_NAME,
+        },
+    )
+    if hasattr(game, "request_decision"):
+        game.request_decision(request)
+    try:
+        unit.round_state.move_modifier_choice_pending = True
+    except Exception:
+        pass
 
 
 def _validate_select_movement_action(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -78,11 +151,14 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
         except Exception as exc:
             raise RuntimeError(f"Stationary action failed: {exc}") from exc
     elif action == "advance":
+        _maybe_request_move_modifier_choice(game, unit, action_type=action)
         if bool(getattr(game, "is_authoritative", True)):
             try:
                 unit.prepare_advance()
             except Exception as exc:
                 raise RuntimeError(f"Advance roll request failed: {exc}") from exc
+    elif action in ("move", "fall_back"):
+        _maybe_request_move_modifier_choice(game, unit, action_type=action)
     return None
 
 
@@ -303,6 +379,19 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         elif movement_type in ("move", "pile_in", "consolidate", "charge"):
             member.round_state.moved_this_round = True
             member.round_state.remained_stationary_this_round = False
+        try:
+            if movement_type in ("move", "advance", "fall_back"):
+                member.round_state.move_modifier_choice = None
+                member.round_state.move_modifier_choice_pending = False
+            if movement_type == "advance":
+                member.round_state.advance_modifier_choice = None
+                member.round_state.advance_modifier_choice_pending = False
+            if movement_type == "charge":
+                member.round_state.charge_modifier_choice = None
+                member.round_state.charge_modifier_choice_pending = False
+                member.round_state.charge_modifier_choice_targets = []
+        except Exception:
+            pass
         if movement_type == "loping_speed":
             member.mark_loping_speed_used(game)
         if movement_type == "blood_surge":

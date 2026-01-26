@@ -2629,12 +2629,60 @@ class BattlePhaseHandler(BasePhaseHandler):
             cb = self._decision_callbacks.pop(getattr(request, "decision_id", ""), None)
         except Exception:
             cb = None
+        try:
+            from ...engine.decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
+            if getattr(request, "decision_type", None) == DECISION_CHOOSE_MOVE_MODIFIER_IGNORES:
+                unit_id = str(getattr(request, "context", {}).get("unit_id", "") or "")
+                if unit_id:
+                    self._resume_pending_move_modifier_action(unit_id)
+                    try:
+                        if unit_id in self._pending_advance_units:
+                            reg = getattr(self.game, "entity_registry", None)
+                            unit_obj = reg.get(str(unit_id), kind="unit") if reg is not None else None
+                            if unit_obj is not None:
+                                self._handle_advance_roll_ready(unit_obj)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
         if cb is None:
             return
         try:
             cb(request, result)
         except Exception:
             pass
+
+    def _pending_decision_for_unit(self, decision_kind: str, unit):
+        if unit is None:
+            return None
+        queue = getattr(self.game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return None
+        try:
+            from ...utility.entity_ids import get_entity_id
+            unit_id = get_entity_id(unit)
+        except Exception:
+            return None
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != decision_kind:
+                continue
+            ctx = getattr(req, "context", {}) or {}
+            if str(ctx.get("unit_id", "")) == str(unit_id):
+                return req
+        return None
+
+    def _resume_pending_move_modifier_action(self, unit_id: str) -> None:
+        if not unit_id:
+            return
+        entry = self._pending_move_modifier_actions.pop(str(unit_id), None)
+        if entry is None:
+            return
+        callback = entry.get("callback")
+        if callable(callback):
+            try:
+                callback()
+            except Exception:
+                pass
 
     def _maybe_prompt_rise_to_challenge(self, current_player: Player, opponent_player: Player, on_done) -> None:
         if self._rise_to_challenge_flow_active:
@@ -3858,10 +3906,35 @@ class BattlePhaseHandler(BasePhaseHandler):
                     decision_request=move_request,
                 )
 
-        if choice in ("move", "advance", "fall_back"):
-            self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement)
-        else:
+        def _begin_movement_with_move_choice():
+            if choice in ("move", "fall_back"):
+                from ...engine.decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
+                try:
+                    from ...utility.entity_ids import get_entity_id
+                    unit_id = get_entity_id(unit)
+                except Exception:
+                    unit_id = ""
+                pending_req = self._pending_decision_for_unit(DECISION_CHOOSE_MOVE_MODIFIER_IGNORES, unit)
+                pending_flag = False
+                try:
+                    pending_flag = bool(getattr(unit.round_state, "move_modifier_choice_pending", False))
+                except Exception:
+                    pending_flag = False
+                if pending_req is not None or pending_flag:
+                    if unit_id:
+                        self._pending_move_modifier_actions[str(unit_id)] = {"callback": _begin_movement}
+                    if pending_req is not None:
+                        self._register_decision_callback(
+                            pending_req,
+                            lambda _req, _res, uid=str(unit_id): self._resume_pending_move_modifier_action(uid),
+                        )
+                    return
             _begin_movement()
+
+        if choice in ("move", "advance", "fall_back"):
+            self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement_with_move_choice)
+        else:
+            _begin_movement_with_move_choice()
 
     def _on_roll_made(self, player=None, unit=None, roll_type: str = "", **kwargs) -> None:
         if unit is None:
@@ -3883,6 +3956,22 @@ class BattlePhaseHandler(BasePhaseHandler):
         except Exception:
             return
         if unit_id not in self._pending_advance_units:
+            return
+        from ...engine.decision_kinds import (
+            DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+            DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+        )
+        pending_adv_req = self._pending_decision_for_unit(DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES, unit)
+        pending_move_req = self._pending_decision_for_unit(DECISION_CHOOSE_MOVE_MODIFIER_IGNORES, unit)
+        pending_adv_flag = False
+        pending_move_flag = False
+        try:
+            pending_adv_flag = bool(getattr(unit.round_state, "advance_modifier_choice_pending", False))
+            pending_move_flag = bool(getattr(unit.round_state, "move_modifier_choice_pending", False))
+        except Exception:
+            pending_adv_flag = False
+            pending_move_flag = False
+        if pending_adv_req is not None or pending_move_req is not None or pending_adv_flag or pending_move_flag:
             return
         self._pending_advance_units.discard(unit_id)
         try:
@@ -3921,6 +4010,18 @@ class BattlePhaseHandler(BasePhaseHandler):
         try:
             unit_id = get_entity_id(unit)
         except Exception:
+            return
+        entry = self._pending_charge_units.get(unit_id)
+        if entry is None:
+            return
+        from ...engine.decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES
+        pending_req = self._pending_decision_for_unit(DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES, unit)
+        pending_flag = False
+        try:
+            pending_flag = bool(getattr(unit.round_state, "charge_modifier_choice_pending", False))
+        except Exception:
+            pending_flag = False
+        if pending_req is not None or pending_flag:
             return
         entry = self._pending_charge_units.pop(unit_id, None)
         if entry is None:
@@ -4625,6 +4726,7 @@ class PhaseManager:
         # Pending dice-driven movement flows
         self._pending_advance_units: set[str] = set()
         self._pending_charge_units: Dict[str, dict] = {}
+        self._pending_move_modifier_actions: Dict[str, dict] = {}
         try:
             if self.game is not None and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("roll_made", self._on_roll_made)

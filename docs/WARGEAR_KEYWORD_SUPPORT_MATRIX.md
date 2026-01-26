@@ -3,6 +3,8 @@
 Generated from `wahapedia_data/Datasheets_wargear.json` (`description` field).
 
 > Note: Boarding Actions detachment filtering is not applicable here (wargear keywords are not detachment-scoped in Wahapedia data).
+>
+> Note: Ability-driven keyword grants are supported separately (e.g., objective-target and half-range clauses), including weapon-specific lists like “this model’s X and Y have [KEYWORD] while within half range.”
 
 ## Legend
 

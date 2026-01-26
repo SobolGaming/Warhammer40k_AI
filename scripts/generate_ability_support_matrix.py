@@ -1114,6 +1114,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
         ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
         ("AE", "Linked Fire"): ("Supported", "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied."),
+        ("AE", "SERVANT OF THE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
+        ("AE", "SERVANT OFTHE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
         ("AE", "Acrobatic"): ("Supported", "Charge-after-Advance/Fall Back eligibility."),
         ("AE", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("AE", "War Construct"): ("Supported", "Shoot after Falling Back."),
@@ -1368,6 +1370,7 @@ def _classify_ability(
     battlesuit_support_system_support = _battlesuit_support_system_support(name, description)
     attack_roll_rule_support = _attack_roll_rule_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
+    half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -1425,6 +1428,8 @@ def _classify_ability(
         return phase_move_support
     if phase_terrain_support:
         return phase_terrain_support
+    if half_range_attack_keyword_support:
+        return half_range_attack_keyword_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -2088,30 +2093,7 @@ def _objective_attack_keyword_support(description: str) -> Optional[Tuple[str, s
     if not m:
         return None
     scope = (m.group(1) or "").strip().lower()
-    raw_kw = re.sub(r"\s+", " ", (m.group(2) or "").strip())
-    kw = raw_kw.lower()
-    label = None
-    if kw == "ignores cover":
-        label = "Ignores Cover"
-    elif kw == "lethal hits":
-        label = "Lethal Hits"
-    elif kw.startswith("sustained hits"):
-        m_val = re.search(r"sustained hits (\d+)", kw)
-        if m_val:
-            label = f"Sustained Hits {m_val.group(1)}"
-    elif kw == "devastating wounds":
-        label = "Devastating Wounds"
-    elif kw == "twin linked":
-        label = "Twin-linked"
-    elif kw == "heavy":
-        label = "Heavy"
-    elif kw == "lance":
-        label = "Lance"
-    elif kw.startswith("anti "):
-        m_val = re.search(r"anti ([a-z0-9 ]+) (\\d)", kw)
-        if m_val:
-            anti_kw = m_val.group(1).strip().upper().replace(" ", "-")
-            label = f"Anti-{anti_kw} {m_val.group(2)}+"
+    label = _attack_keyword_label_from_text(m.group(2) or "")
     if not label:
         return None
     scope_text = "Attacks"
@@ -2121,6 +2103,107 @@ def _objective_attack_keyword_support(description: str) -> Optional[Tuple[str, s
         scope_text = "Ranged attacks"
     note = f"{scope_text} vs targets within objective range gain {label}."
     return ("Supported", note)
+
+
+def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
+    kw = re.sub(r"\s+", " ", str(raw or "")).strip().lower()
+    if not kw:
+        return None
+    if kw == "ignores cover":
+        return "Ignores Cover"
+    if kw == "lethal hits":
+        return "Lethal Hits"
+    if kw.startswith("sustained hits"):
+        m_val = re.search(r"sustained hits (\d+)", kw)
+        if m_val:
+            return f"Sustained Hits {m_val.group(1)}"
+        return None
+    if kw == "devastating wounds":
+        return "Devastating Wounds"
+    if kw in ("twin linked", "twin-linked"):
+        return "Twin-linked"
+    if kw == "heavy":
+        return "Heavy"
+    if kw == "lance":
+        return "Lance"
+    if kw.startswith("anti "):
+        m_val = re.search(r"anti ([a-z0-9 ]+) (\\d+)", kw)
+        if m_val:
+            anti_kw = m_val.group(1).strip().upper().replace(" ", "-")
+            return f"Anti-{anti_kw} {m_val.group(2)}+"
+    return None
+
+
+def _half_range_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    sentences = [
+        s for s in (_norm_rules_text(part) for part in re.split(r"[.;]\s*", _strip_html(description))) if s
+    ]
+    if not sentences:
+        return None
+    lead_prefix = r"(?:while this model is leading a unit )?"
+    patterns = [
+        (
+            rf"{lead_prefix}each time this (?:model|unit) makes a (?:(?P<scope>melee|ranged) )?attack "
+            r"that targets (?:an? )?(?:enemy )?unit within half range(?:, )?that attack has the "
+            r"(?P<keyword>[a-z0-9 ]+) ability",
+            "attack",
+        ),
+        (
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by models in "
+            r"(?:the bearers unit|that unit|this unit) have the (?P<keyword>[a-z0-9 ]+) ability.* within half range",
+            "unit_weapons",
+        ),
+        (
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by this model have the "
+            r"(?P<keyword>[a-z0-9 ]+) ability.* within half range",
+            "model_weapons",
+        ),
+        (
+            rf"{lead_prefix}this models (?P<weapons>.+?) (?:have|has) the (?P<keyword>[a-z0-9 ]+) ability.* within half range",
+            "weapon_list",
+        ),
+    ]
+    notes = []
+    for sentence in sentences:
+        matched = False
+        leading = sentence.startswith("while this model is leading a unit")
+        prefix = "Leading: " if leading else ""
+        for pattern, kind in patterns:
+            m = re.fullmatch(pattern, sentence)
+            if not m:
+                continue
+            label = _attack_keyword_label_from_text(m.group("keyword") or "")
+            if not label:
+                return None
+            scope = (m.groupdict().get("scope") or "").strip().lower()
+            if kind == "attack":
+                scope_text = "Attacks"
+                if scope == "melee":
+                    scope_text = "Melee attacks"
+                elif scope == "ranged":
+                    scope_text = "Ranged attacks"
+                notes.append(f"{prefix}{scope_text} vs targets within half range gain {label}.")
+            elif kind == "unit_weapons":
+                if scope:
+                    notes.append(f"{prefix}Unit {scope} weapons gain {label} at half range.")
+                else:
+                    notes.append(f"{prefix}Unit weapons gain {label} at half range.")
+            elif kind == "model_weapons":
+                if scope:
+                    notes.append(f"{prefix}This model's {scope} weapons gain {label} at half range.")
+                else:
+                    notes.append(f"{prefix}This model's weapons gain {label} at half range.")
+            else:
+                notes.append(f"{prefix}Listed weapons gain {label} at half range.")
+            matched = True
+            break
+        if not matched:
+            return None
+    if not notes:
+        return None
+    return ("Supported", " ".join(notes))
 
 
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:

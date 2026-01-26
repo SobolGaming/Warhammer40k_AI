@@ -35,7 +35,7 @@ OVERWHELMING_WRATH = WrathfulPresenceOption(
 DRIVEN_BY_ULTIMATE_RAGE = WrathfulPresenceOption(
     key=KEY_DRIVEN_BY_ULTIMATE_RAGE,
     name=DRIVEN_BY_ULTIMATE_RAGE_NAME,
-    summary='Friendly WORLD EATERS within 6" ignore negative Move, Advance/Charge, WS and Hit roll modifiers.',
+    summary='Friendly WORLD EATERS within 6" can ignore any or all Move, Advance/Charge, WS and Hit roll modifiers.',
 )
 
 WRATHFUL_PRESENCE_OPTIONS: tuple[WrathfulPresenceOption, ...] = (

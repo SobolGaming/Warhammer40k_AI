@@ -1866,6 +1866,64 @@ class WargearProfile:
                 return roll_value, None
         return roll_value, "skip"
 
+    def _ignore_hit_modifier_rule_name(self, attacker: 'Model') -> Optional[str]:
+        """
+        Detect unit/leader abilities that allow ignoring BS and Hit roll modifiers for ranged attacks.
+        Returns the ability name if matched, otherwise None.
+        """
+        try:
+            parent = getattr(self, "parent_wargear", None)
+            if parent is None or not bool(parent.is_ranged()):
+                return None
+        except Exception:
+            return None
+
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+
+        entries = []
+        try:
+            for name, desc in root._iter_ability_entries_for_rules():
+                entries.append((name, desc))
+        except Exception:
+            pass
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "")
+                except Exception:
+                    name = ""
+                    desc = ""
+                entries.append((name, desc))
+        except Exception:
+            pass
+
+        for name, desc in entries:
+            text_src = desc or name or ""
+            try:
+                text = root._normalize_rules_text(text_src)
+            except Exception:
+                text = str(text_src or "")
+            if not text:
+                continue
+            low = text.lower()
+            if "ignore any or all modifiers" not in low:
+                continue
+            if "ballistic skill" not in low:
+                continue
+            if "hit roll" not in low:
+                continue
+            if ("ranged attack" not in low) and ("ranged weapon" not in low):
+                continue
+            return str(name or "Ignore modifiers")
+        return None
+
     def _hit_target_with_tracking(
         self, 
         target: 'Unit', 
@@ -1875,6 +1933,7 @@ class WargearProfile:
         roll_value: Optional[int] = None,
         allow_rerolls: bool = True,
         log_roll: bool = True,
+        preview_modifiers: bool = False,
     ) -> Dict:
         """Hit resolution with detailed tracking"""
         hit_result = {
@@ -1892,6 +1951,20 @@ class WargearProfile:
         rerolls_allowed = bool(allow_rerolls)
 
         base_skill = self.skill
+        skill_mods: list[tuple[int, str]] = []
+
+        def _add_skill_mod(delta, reason: str):
+            try:
+                val = int(delta)
+            except Exception:
+                return
+            if val == 0:
+                return
+            msg = str(reason or "").strip()
+            if not msg:
+                msg = f"{val:+d} to skill"
+            skill_mods.append((val, msg))
+
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
@@ -1900,10 +1973,11 @@ class WargearProfile:
                 bonus = mgr.guided_attack_bonus(unit, target)
                 if isinstance(bonus, dict) and bonus.get("bs_improve"):
                     try:
-                        base_skill = max(2, int(base_skill) - int(bonus.get("bs_improve", 0) or 0))
-                        hit_result['special_effects'].append("For the Greater Good: Guided (+1 BS)")
+                        val = int(bonus.get("bs_improve", 0) or 0)
                     except Exception:
-                        base_skill = base_skill
+                        val = 0
+                    if val:
+                        _add_skill_mod(val, f"For the Greater Good: Guided (+{val} BS)")
                 if isinstance(bonus, dict) and bonus.get("ignores_cover"):
                     attack_instance["ignores_cover"] = True
         except Exception:
@@ -1919,11 +1993,9 @@ class WargearProfile:
                     is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
                     is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
                     if imperative.key == "PROTECTOR" and is_ranged:
-                        base_skill = max(2, int(base_skill) - 1)
-                        hit_result['special_effects'].append("Protector Imperative: +1 BS")
+                        _add_skill_mod(1, "Protector Imperative: +1 BS")
                     elif imperative.key == "CONQUEROR" and is_melee:
-                        base_skill = max(2, int(base_skill) - 1)
-                        hit_result['special_effects'].append("Conqueror Imperative: +1 WS")
+                        _add_skill_mod(1, "Conqueror Imperative: +1 WS")
         except Exception:
             pass
         try:
@@ -1934,11 +2006,9 @@ class WargearProfile:
                 is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
                 is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
                 if order_key == "TAKE_AIM" and is_ranged:
-                    base_skill = max(2, int(base_skill) - 1)
-                    hit_result['special_effects'].append("Take Aim!: +1 BS")
+                    _add_skill_mod(1, "Take Aim!: +1 BS")
                 elif order_key == "FIX_BAYONETS" and is_melee:
-                    base_skill = max(2, int(base_skill) - 1)
-                    hit_result['special_effects'].append("Fix Bayonets!: +1 WS")
+                    _add_skill_mod(1, "Fix Bayonets!: +1 WS")
         except Exception:
             pass
         attacker_unit = getattr(attacker, "parent_unit", None)
@@ -1946,8 +2016,7 @@ class WargearProfile:
             from ..rules.psychic_guidance import psychic_guidance_skill_bonus
             bonus = psychic_guidance_skill_bonus(attacker)
             if bonus and isinstance(base_skill, int) and int(base_skill) > 0:
-                base_skill = max(2, int(base_skill) - int(bonus))
-                hit_result['special_effects'].append("Psychic Guidance: +1 BS/WS")
+                _add_skill_mod(int(bonus), f"Psychic Guidance: +{int(bonus)} BS/WS")
         try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
@@ -1959,14 +2028,11 @@ class WargearProfile:
                     is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
                     is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
                     if is_melee and "SERPENTIN" in keys:
-                        base_skill = max(2, int(base_skill) - 1)
-                        hit_result['special_effects'].append("Combat Drugs: Serpentin +1 WS")
+                        _add_skill_mod(1, "Combat Drugs: Serpentin +1 WS")
                     if is_ranged and "SPLINTERMIND" in keys:
-                        base_skill = max(2, int(base_skill) - 1)
-                        hit_result['special_effects'].append("Combat Drugs: Splintermind +1 BS")
+                        _add_skill_mod(1, "Combat Drugs: Splintermind +1 BS")
         except Exception:
             pass
-        hit_result['base_skill'] = base_skill
 
         # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
         try:
@@ -1999,7 +2065,9 @@ class WargearProfile:
         bonus_devastating = False
         bonus_twin_linked = False
         bonus_heavy = False
+        bonus_heavy_label = ""
         bonus_lance = False
+        bonus_lance_label = ""
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         def _set_bonus_sustained(value: int, label: str) -> None:
@@ -2027,37 +2095,86 @@ class WargearProfile:
             attack_is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
         except Exception:
             attack_is_ranged = False
+        def _merge_anti_specs(existing, incoming):
+            merged = list(existing or ())
+            for spec in list(incoming or ()):
+                if spec not in merged:
+                    merged.append(spec)
+            return tuple(merged)
+
+        def _apply_keyword_bonus(bonus, *, sustained_label: str = "", heavy_label: str = "", lance_label: str = "") -> None:
+            nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label
+            nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
+            nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs
+            if not isinstance(bonus, dict):
+                return
+            if bool(bonus.get("lethal_hits")):
+                bonus_lethal = True
+            bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
+            if bonus_sustained_val:
+                _set_bonus_sustained(bonus_sustained_val, sustained_label)
+            if bool(bonus.get("devastating_wounds")):
+                bonus_devastating = True
+            if bool(bonus.get("twin_linked")):
+                bonus_twin_linked = True
+            if bool(bonus.get("heavy")):
+                bonus_heavy = True
+                if heavy_label and not bonus_heavy_label:
+                    bonus_heavy_label = heavy_label
+            if bool(bonus.get("lance")):
+                bonus_lance = True
+                if lance_label and not bonus_lance_label:
+                    bonus_lance_label = lance_label
+            bonus_anti_specs = _merge_anti_specs(bonus_anti_specs, tuple(bonus.get("anti_specs") or ()))
+            if bool(bonus.get("ignores_cover")) and attack_is_ranged:
+                attack_instance["ignores_cover"] = True
+
         try:
             unit = getattr(attacker, "parent_unit", None)
+            attack_type = "melee" if attack_is_melee else "ranged" if attack_is_ranged else "any"
+            bonus = None
             if unit is not None and hasattr(unit, "get_attack_keyword_bonuses"):
-                attack_type = "melee" if attack_is_melee else "ranged" if attack_is_ranged else "any"
                 bonus = unit.get_attack_keyword_bonuses(
                     target=target,
                     attack_type=attack_type,
                     model=attacker,
                 )
-            else:
-                bonus = None
-            if isinstance(bonus, dict):
-                bonus_lethal = bool(bonus.get("lethal_hits"))
-                bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
-                if bonus_sustained_val:
-                    _set_bonus_sustained(bonus_sustained_val, "Objective Target")
-                bonus_devastating = bool(bonus.get("devastating_wounds"))
-                bonus_twin_linked = bool(bonus.get("twin_linked"))
-                bonus_heavy = bool(bonus.get("heavy"))
-                bonus_lance = bool(bonus.get("lance"))
-                bonus_anti_specs = tuple(bonus.get("anti_specs") or ())
-                if bool(bonus.get("ignores_cover")) and attack_is_ranged:
-                    attack_instance["ignores_cover"] = True
-                if bonus_devastating:
-                    attack_instance["bonus_devastating_wounds"] = True
-                if bonus_twin_linked:
-                    attack_instance["bonus_twin_linked"] = True
-                if bonus_lance:
-                    attack_instance["bonus_lance"] = True
-                if bonus_anti_specs:
-                    attack_instance["bonus_anti_specs"] = bonus_anti_specs
+                _apply_keyword_bonus(bonus, sustained_label="Objective Target", heavy_label="Objective Target", lance_label="Objective Target")
+            within_half_range = None
+            try:
+                if "below_half_distance" in attack_instance:
+                    within_half_range = bool(attack_instance.get("below_half_distance", False))
+            except Exception:
+                within_half_range = None
+            if within_half_range is None:
+                try:
+                    dist = float(attack_instance.get("distance_to_target", 0.0) or 0.0)
+                    effective_range_max = self._effective_range_max(attacker)
+                    if effective_range_max:
+                        within_half_range = dist <= (float(effective_range_max) / 2.0)
+                except Exception:
+                    within_half_range = None
+            if within_half_range is None:
+                within_half_range = False
+            if unit is not None and hasattr(unit, "get_attack_half_range_keyword_bonuses"):
+                half_bonus = unit.get_attack_half_range_keyword_bonuses(
+                    attack_type=attack_type,
+                    model=attacker,
+                    within_half_range=bool(within_half_range),
+                    weapon_profile=self,
+                )
+                _apply_keyword_bonus(half_bonus, sustained_label="Half Range", heavy_label="Half Range", lance_label="Half Range")
+
+            if bonus_devastating:
+                attack_instance["bonus_devastating_wounds"] = True
+            if bonus_twin_linked:
+                attack_instance["bonus_twin_linked"] = True
+            if bonus_lance:
+                attack_instance["bonus_lance"] = True
+                if bonus_lance_label:
+                    attack_instance["bonus_lance_source"] = bonus_lance_label
+            if bonus_anti_specs:
+                attack_instance["bonus_anti_specs"] = bonus_anti_specs
         except Exception:
             bonus_lethal = False
             bonus_sustained_value = 0
@@ -2065,7 +2182,9 @@ class WargearProfile:
             bonus_devastating = False
             bonus_twin_linked = False
             bonus_heavy = False
+            bonus_heavy_label = ""
             bonus_lance = False
+            bonus_lance_label = ""
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
 
@@ -2245,7 +2364,8 @@ class WargearProfile:
             heavy_from_doctrina = False
         if (self.is_heavy() or heavy_from_doctrina or bonus_heavy) and attacker.parent_unit.round_state.remained_stationary_this_round:
             if bonus_heavy and not self.is_heavy():
-                _add_hit_mod(1, "+1 from Heavy [Objective Target]")
+                label = bonus_heavy_label or "Objective Target"
+                _add_hit_mod(1, f"+1 from Heavy [{label}]")
             elif heavy_from_doctrina and not self.is_heavy():
                 _add_hit_mod(1, "+1 from Protector Imperative (counts as Heavy)")
             else:
@@ -2576,15 +2696,27 @@ class WargearProfile:
             from ..rules.psychic_guidance import psychic_guidance_hit_bonus_applies
             if psychic_guidance_hit_bonus_applies(attacker_unit):
                 _add_hit_mod(1, "+1 to hit from Psychic Guidance")
+        from ..utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            options_for_signed_pairs,
+            options_for_signed_values,
+            filter_signed_modifiers,
+        )
 
-        # Driven by Ultimate Rage (Aura): ignore negative Hit roll modifiers for melee attacks.
-        try:
-            attacker_unit = getattr(attacker, "parent_unit", None)
-        except Exception:
-            attacker_unit = None
+        if preview_modifiers:
+            hit_result["skill_mods"] = list(skill_mods)
+            hit_result["hit_mods"] = list(hit_mods)
+            hit_result["base_skill"] = base_skill
+            return hit_result
+
+        driven_by_ultimate_rage = False
+        driven_rule_name = ""
         try:
             if is_melee and attacker_unit is not None:
-                from ..rules.wrathful_presence import driven_by_ultimate_rage_applies
+                from ..rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
                 game_map = None
                 try:
                     army = attacker_unit.get_parent_army()
@@ -2593,43 +2725,234 @@ class WargearProfile:
                 except Exception:
                     game_map = None
                 if driven_by_ultimate_rage_applies(attacker_unit, game_map=game_map):
-                    kept = []
-                    ignored = []
-                    for val, reasons in hit_mods:
-                        if int(val) < 0:
-                            ignored.append((val, reasons))
-                        else:
-                            kept.append((val, reasons))
-                    if ignored:
-                        hit_mods = kept
-                        try:
-                            sr = getattr(attacker_unit, "special_rules", None)
-                            if not isinstance(sr, dict):
-                                sr = {}
-                            ignored_sources = []
-                            for _v, rs in ignored:
-                                ignored_sources.extend([r for r in rs if str(r or "").strip()])
-                            kept_sources = []
-                            for _v, rs in kept:
-                                kept_sources.extend([r for r in rs if str(r or "").strip()])
-                            ignored_sources = tuple(sorted(set(ignored_sources)))
-                            kept_sources = tuple(sorted(set(kept_sources)))
-                            sig = (ignored_sources, kept_sources)
-                            if sr.get("driven_by_ultimate_rage_hit_mod_signature") != sig:
-                                sr["driven_by_ultimate_rage_hit_mod_signature"] = sig
-                                attacker_unit.special_rules = sr
-                                from ..utility.event_bus import append_action
-                                pn = attacker_unit.get_parent_army().player
-                                ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
-                                append_action(pn, f"Driven by Ultimate Rage: ignored negative Hit roll modifiers ({ignored_text}).")
-                                if kept_sources:
-                                    kept_text = ", ".join(s for s in kept_sources if s)
-                                    if kept_text:
-                                        append_action(pn, f"Driven by Ultimate Rage: applied Hit roll modifiers ({kept_text}).")
-                        except Exception:
-                            pass
+                    driven_by_ultimate_rage = True
+                    driven_rule_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
         except Exception:
-            pass
+            driven_by_ultimate_rage = False
+            driven_rule_name = ""
+
+        ignore_rule_name = None
+        try:
+            ignore_rule_name = self._ignore_hit_modifier_rule_name(attacker)
+        except Exception:
+            ignore_rule_name = None
+
+        if ignore_rule_name:
+            ignore_choice = attack_instance.get("hit_modifier_choice")
+            if ignore_choice is None and roll_value is None and (skill_mods or hit_mods):
+                player = None
+                game_map = None
+                try:
+                    army = attacker.parent_unit.get_parent_army()
+                    player = getattr(army, "player", None)
+                    game = getattr(player, "game", None) if player is not None else None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    player = None
+                    game_map = None
+                combined_vals = [int(val) for val, _ in list(skill_mods or [])] + [int(val) for val, _ in list(hit_mods or [])]
+                options = options_for_signed_values(combined_vals)
+                choice = None
+                if options:
+                    provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+                    if callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                attacker=attacker,
+                                target=target,
+                                weapon_profile=self,
+                                ability_name=ignore_rule_name,
+                                choices=options,
+                            )
+                        except Exception:
+                            choice = None
+                    if choice is None and player is not None and callable(getattr(player, "_choose_optional_value", None)):
+                        try:
+                            ctx = {
+                                "ability_name": ignore_rule_name,
+                                "attacker": attacker,
+                                "target": target,
+                                "weapon_profile": self,
+                            }
+                            choice = player._choose_optional_value("HIT_MODIFIER_IGNORES", list(options), ctx)
+                        except Exception:
+                            choice = None
+                if choice not in (options or []):
+                    choice = CHOICE_KEEP_ALL
+                attack_instance["hit_modifier_choice"] = choice
+                ignore_choice = choice
+            if ignore_choice is None:
+                ignore_choice = CHOICE_KEEP_ALL
+            if ignore_choice != CHOICE_KEEP_ALL:
+                kept_skill, _ignored_skill = filter_signed_modifiers(skill_mods, ignore_choice)
+                kept_hit, _ignored_hit = filter_signed_modifiers(hit_mods, ignore_choice)
+                skill_mods = kept_skill
+                hit_mods = kept_hit
+
+        if driven_by_ultimate_rage:
+            skill_choice = attack_instance.get("skill_modifier_choice")
+            hit_choice = attack_instance.get("hit_modifier_choice")
+            if roll_value is None and skill_choice is None and skill_mods:
+                player = None
+                game_map = None
+                try:
+                    army = attacker.parent_unit.get_parent_army()
+                    player = getattr(army, "player", None)
+                    game = getattr(player, "game", None) if player is not None else None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    player = None
+                    game_map = None
+                options = options_for_signed_pairs(skill_mods)
+                if options:
+                    choice = None
+                    provider = getattr(game_map, "skill_modifier_choice_provider", None) if game_map is not None else None
+                    if callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                attacker=attacker,
+                                target=target,
+                                weapon_profile=self,
+                                ability_name=f"{driven_rule_name} (Weapon Skill)",
+                                choices=options,
+                            )
+                        except Exception:
+                            choice = None
+                    if choice is None and player is not None and callable(getattr(player, "_choose_optional_value", None)):
+                        try:
+                            ctx = {
+                                "ability_name": driven_rule_name,
+                                "attacker": attacker,
+                                "target": target,
+                                "weapon_profile": self,
+                                "modifier_kind": "weapon_skill",
+                            }
+                            choice = player._choose_optional_value("SKILL_MODIFIER_IGNORES", list(options), ctx)
+                        except Exception:
+                            choice = None
+                    if choice not in options:
+                        choice = CHOICE_KEEP_ALL
+                    attack_instance["skill_modifier_choice"] = choice
+                    skill_choice = choice
+            if roll_value is None and hit_choice is None and hit_mods:
+                player = None
+                game_map = None
+                try:
+                    army = attacker.parent_unit.get_parent_army()
+                    player = getattr(army, "player", None)
+                    game = getattr(player, "game", None) if player is not None else None
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    player = None
+                    game_map = None
+                options = options_for_signed_pairs(hit_mods)
+                if options:
+                    choice = None
+                    provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+                    if callable(provider):
+                        try:
+                            choice = provider(
+                                player=player,
+                                attacker=attacker,
+                                target=target,
+                                weapon_profile=self,
+                                ability_name=f"{driven_rule_name} (Hit roll)",
+                                choices=options,
+                            )
+                        except Exception:
+                            choice = None
+                    if choice is None and player is not None and callable(getattr(player, "_choose_optional_value", None)):
+                        try:
+                            ctx = {
+                                "ability_name": driven_rule_name,
+                                "attacker": attacker,
+                                "target": target,
+                                "weapon_profile": self,
+                                "modifier_kind": "hit_roll",
+                            }
+                            choice = player._choose_optional_value("HIT_MODIFIER_IGNORES", list(options), ctx)
+                        except Exception:
+                            choice = None
+                    if choice not in options:
+                        choice = CHOICE_KEEP_ALL
+                    attack_instance["hit_modifier_choice"] = choice
+                    hit_choice = choice
+            if skill_choice is None:
+                skill_choice = CHOICE_KEEP_ALL
+            if hit_choice is None:
+                hit_choice = CHOICE_KEEP_ALL
+            if skill_choice != CHOICE_KEEP_ALL:
+                kept_skill, ignored_skill = filter_signed_modifiers(skill_mods, skill_choice)
+                skill_mods = kept_skill
+                try:
+                    if ignored_skill:
+                        sr = getattr(attacker_unit, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            sr = {}
+                        ignored_sources = tuple(
+                            sorted({str(r) for _v, rs in ignored_skill for r in rs if str(r or "").strip()})
+                        )
+                        kept_sources = tuple(
+                            sorted({str(r) for _v, rs in kept_skill for r in rs if str(r or "").strip()})
+                        )
+                        sig = (ignored_sources, kept_sources, str(skill_choice))
+                        if sr.get("driven_by_ultimate_rage_ws_mod_signature") != sig:
+                            sr["driven_by_ultimate_rage_ws_mod_signature"] = sig
+                            attacker_unit.special_rules = sr
+                            from ..utility.event_bus import append_action
+                            pn = attacker_unit.get_parent_army().player
+                            ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                            tag = "negative" if skill_choice == CHOICE_IGNORE_NEGATIVE else "positive" if skill_choice == CHOICE_IGNORE_POSITIVE else "all"
+                            append_action(pn, f"Driven by Ultimate Rage: ignored {tag} Weapon Skill modifiers ({ignored_text}).")
+                            if kept_sources:
+                                kept_text = ", ".join(s for s in kept_sources if s)
+                                if kept_text:
+                                    append_action(pn, f"Driven by Ultimate Rage: applied Weapon Skill modifiers ({kept_text}).")
+                except Exception:
+                    pass
+            if hit_choice != CHOICE_KEEP_ALL:
+                kept_hit, ignored_hit = filter_signed_modifiers(hit_mods, hit_choice)
+                hit_mods = kept_hit
+                try:
+                    if ignored_hit:
+                        sr = getattr(attacker_unit, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            sr = {}
+                        ignored_sources = tuple(
+                            sorted({str(r) for _v, rs in ignored_hit for r in rs if str(r or "").strip()})
+                        )
+                        kept_sources = tuple(
+                            sorted({str(r) for _v, rs in kept_hit for r in rs if str(r or "").strip()})
+                        )
+                        sig = (ignored_sources, kept_sources, str(hit_choice))
+                        if sr.get("driven_by_ultimate_rage_hit_mod_signature") != sig:
+                            sr["driven_by_ultimate_rage_hit_mod_signature"] = sig
+                            attacker_unit.special_rules = sr
+                            from ..utility.event_bus import append_action
+                            pn = attacker_unit.get_parent_army().player
+                            ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                            tag = "negative" if hit_choice == CHOICE_IGNORE_NEGATIVE else "positive" if hit_choice == CHOICE_IGNORE_POSITIVE else "all"
+                            append_action(pn, f"Driven by Ultimate Rage: ignored {tag} Hit roll modifiers ({ignored_text}).")
+                            if kept_sources:
+                                kept_text = ", ".join(s for s in kept_sources if s)
+                                if kept_text:
+                                    append_action(pn, f"Driven by Ultimate Rage: applied Hit roll modifiers ({kept_text}).")
+                except Exception:
+                    pass
+
+        if skill_mods:
+            for _val, reason in skill_mods:
+                if reason:
+                    hit_result['special_effects'].append(str(reason))
+            try:
+                if isinstance(base_skill, int) and int(base_skill) > 0:
+                    total = sum(int(val) for val, _ in skill_mods)
+                    base_skill = max(2, int(base_skill) - int(total))
+            except Exception:
+                pass
+        hit_result['base_skill'] = base_skill
 
         modifiers_list = []
         for val, reasons in hit_mods:
@@ -4546,12 +4869,16 @@ class WargearProfile:
             except Exception:
                 goretrack_lance = False
             bonus_lance = bool(attack_instance.get("bonus_lance"))
+            bonus_lance_source = str(attack_instance.get("bonus_lance_source") or "")
             if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance or goretrack_lance or bonus_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
                     if bonus_lance and not self.is_lance():
-                        wound_result['modifiers'].append("+1 to wound from Lance (objective target)")
+                        if bonus_lance_source:
+                            wound_result['modifiers'].append(f"+1 to wound from Lance ({bonus_lance_source})")
+                        else:
+                            wound_result['modifiers'].append("+1 to wound from Lance (objective target)")
                     elif bondsman_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
                     elif blood_tithe_lance and not self.is_lance():

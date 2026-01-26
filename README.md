@@ -75,6 +75,8 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 
 ## Architecture
 
+For a high-level overview of the codebase structure and data flow, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 ### Game System
 - Complete setup phases: army loading, battlefield creation, attacker/defender determination, deployment, and first turn order
 - Official deployment: alternating deployment with proper zones, reserves, and strategic reserves

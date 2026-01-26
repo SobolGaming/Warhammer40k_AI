@@ -980,6 +980,65 @@ class Army:
             duplicates = [name for name in epic_hero_names if epic_hero_names.count(name) > 1]
             raise ArmyValidationError(f"Epic Hero(s) {duplicates} included more than once.")
 
+    def validate_ynnari_epic_hero_restrictions(self) -> None:
+        def _norm_name(value: str) -> str:
+            text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+            return re.sub(r"\s+", " ", text).strip()
+
+        def _has_keyword(unit, keyword: str) -> bool:
+            if unit is None:
+                return False
+            fn = getattr(unit, "has_any_keyword", None)
+            if callable(fn):
+                return bool(fn(keyword))
+            kw = (keyword or "").strip().upper()
+            if not kw:
+                return False
+            keywords = [
+                str(k).strip().upper()
+                for k in (getattr(unit, "keywords", []) or [])
+                if str(k).strip()
+            ]
+            faction_keywords = [
+                str(k).strip().upper()
+                for k in (getattr(unit, "faction_keywords", []) or [])
+                if str(k).strip()
+            ]
+            return kw in set(keywords + faction_keywords)
+
+        def _is_ynnari_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if _has_keyword(unit, "YNNARI"):
+                return True
+            name_norm = _norm_name(getattr(unit, "name", ""))
+            return name_norm in {"yvraine", "the visarch", "the yncarne"}
+
+        units = list(getattr(self, "units", []) or [])
+        if not units:
+            return
+
+        visarch_present = any(_norm_name(getattr(u, "name", "")) == "the visarch" for u in units)
+        yvraine_present = any(_norm_name(getattr(u, "name", "")) == "yvraine" for u in units)
+        if not visarch_present and not yvraine_present:
+            return
+
+        non_ynnari_epic = [
+            u for u in units
+            if getattr(u, "is_epic_hero", False) and not _is_ynnari_unit(u)
+        ]
+        if not non_ynnari_epic:
+            return
+        names = ", ".join(sorted({getattr(u, "name", "Unknown") for u in non_ynnari_epic}))
+        if visarch_present:
+            raise ArmyValidationError(
+                f"The Visarch restriction: cannot include non-Ynnari Epic Hero units ({names})."
+            )
+        if yvraine_present:
+            raise ArmyValidationError(
+                f"Yvraine restriction: cannot include non-Ynnari Epic Hero units ({names})."
+            )
+
     def validate_leaders(self):
         # Map of units to their attached Leaders
         unit_leader_map: dict = {}
@@ -1796,6 +1855,7 @@ class Army:
         self.validate_points_limit()
         self.validate_unit_limits()
         self.validate_epic_heroes()
+        self.validate_ynnari_epic_hero_restrictions()
         self.validate_leaders()
         self.validate_enhancements()
         self.validate_warlord()

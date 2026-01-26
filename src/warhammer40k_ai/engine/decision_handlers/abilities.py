@@ -33,6 +33,11 @@ from ..decision_kinds import (
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_SELECT_RISE_TO_CHALLENGE,
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
+    DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+    DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+    DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+    DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+    DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
@@ -1120,6 +1125,287 @@ def _apply_select_reverberating_summons_unit(
     return resolve_unit(game, payload.get("unit_id") or payload.get("unit"))
 
 
+def _validate_choose_hit_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    seq_id = ctx.get("sequence_id")
+    attack_index = ctx.get("attack_index")
+    if seq_id is None or attack_index is None:
+        return ()
+    mgr = getattr(game, "attack_manager", None)
+    if mgr is None:
+        return ("Attack manager not found.",)
+    try:
+        seq = mgr.sequences.get(int(seq_id))
+    except Exception:
+        seq = None
+    if seq is None:
+        return ("Attack sequence not found.",)
+    try:
+        idx = int(attack_index)
+    except Exception:
+        return ("Attack index must be an integer.",)
+    if idx < 0 or idx >= len(getattr(seq, "attack_instances", []) or []):
+        return ("Attack index out of range.",)
+    return ()
+
+
+def _apply_choose_hit_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    choice = payload.get("choice")
+    if choice is None:
+        choice = result.payload.get("choice")
+    if choice is None:
+        choice = _option_label(request, result) or "keep_all"
+    ctx = dict(getattr(request, "context", {}) or {})
+    seq_id = ctx.get("sequence_id")
+    attack_index = ctx.get("attack_index")
+    if seq_id is not None and attack_index is not None:
+        mgr = getattr(game, "attack_manager", None)
+        if mgr is not None:
+            try:
+                seq = mgr.sequences.get(int(seq_id))
+            except Exception:
+                seq = None
+            if seq is not None:
+                try:
+                    idx = int(attack_index)
+                except Exception:
+                    idx = None
+                if idx is not None:
+                    instances = list(getattr(seq, "attack_instances", []) or [])
+                    if 0 <= idx < len(instances):
+                        try:
+                            instances[idx]["hit_modifier_choice"] = choice
+                        except Exception:
+                            pass
+                        try:
+                            resume = getattr(mgr, "resume_after_hit_modifier_choice", None)
+                            if callable(resume):
+                                resume(game, seq)
+                        except Exception:
+                            pass
+    return choice
+
+
+def _validate_choose_skill_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    return _validate_choose_hit_modifier_ignores(game, request, result)
+
+
+def _apply_choose_skill_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    choice = payload.get("choice")
+    if choice is None:
+        choice = result.payload.get("choice")
+    if choice is None:
+        choice = _option_label(request, result) or "keep_all"
+    ctx = dict(getattr(request, "context", {}) or {})
+    seq_id = ctx.get("sequence_id")
+    attack_index = ctx.get("attack_index")
+    if seq_id is not None and attack_index is not None:
+        mgr = getattr(game, "attack_manager", None)
+        if mgr is not None:
+            try:
+                seq = mgr.sequences.get(int(seq_id))
+            except Exception:
+                seq = None
+            if seq is not None:
+                try:
+                    idx = int(attack_index)
+                except Exception:
+                    idx = None
+                if idx is not None:
+                    instances = list(getattr(seq, "attack_instances", []) or [])
+                    if 0 <= idx < len(instances):
+                        try:
+                            instances[idx]["skill_modifier_choice"] = choice
+                        except Exception:
+                            pass
+                        try:
+                            resume = getattr(mgr, "resume_after_skill_modifier_choice", None)
+                            if callable(resume):
+                                resume(game, seq)
+                        except Exception:
+                            pass
+    return choice
+
+
+def _validate_choose_move_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = ctx.get("unit_id") or _option_payload(request, result).get("unit_id")
+    if not unit_id:
+        return ("Move modifier choice requires unit_id.",)
+    if resolve_unit(game, unit_id) is None:
+        return ("Move modifier unit not found.",)
+    return ()
+
+
+def _apply_choose_move_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    choice = payload.get("choice")
+    if choice is None:
+        choice = result.payload.get("choice")
+    if choice is None:
+        choice = _option_label(request, result) or "keep_all"
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = ctx.get("unit_id") or payload.get("unit_id")
+    unit = resolve_unit(game, unit_id)
+    if unit is None:
+        return choice
+    try:
+        unit.round_state.move_modifier_choice = choice
+        unit.round_state.move_modifier_choice_pending = False
+    except Exception:
+        pass
+    return choice
+
+
+def _validate_choose_advance_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = ctx.get("unit_id") or _option_payload(request, result).get("unit_id")
+    if not unit_id:
+        return ("Advance modifier choice requires unit_id.",)
+    if resolve_unit(game, unit_id) is None:
+        return ("Advance modifier unit not found.",)
+    return ()
+
+
+def _apply_choose_advance_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult):
+    from ...utility.modifier_choice import filter_signed_modifiers
+
+    payload = _option_payload(request, result)
+    choice = payload.get("choice")
+    if choice is None:
+        choice = result.payload.get("choice")
+    if choice is None:
+        choice = _option_label(request, result) or "keep_all"
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = ctx.get("unit_id") or payload.get("unit_id")
+    unit = resolve_unit(game, unit_id)
+    if unit is None:
+        return choice
+    base_roll = None
+    try:
+        base_roll = int(getattr(unit.round_state, "advance_roll_unmodified", 0) or 0)
+    except Exception:
+        base_roll = None
+    if base_roll is None or base_roll <= 0:
+        try:
+            base_roll = int(getattr(unit.round_state, "advance_roll", 0) or 0)
+        except Exception:
+            base_roll = 0
+    mods = []
+    try:
+        mods = list(unit._collect_advance_roll_modifiers() or [])
+    except Exception:
+        mods = []
+    try:
+        filt = getattr(unit, "_filter_internal_rivalries_roll_modifiers", None)
+        if callable(filt):
+            mods = filt(mods, kind="advance")
+    except Exception:
+        pass
+    kept_mods, _ignored = filter_signed_modifiers(mods, str(choice or "keep_all"))
+    total = int(base_roll or 0)
+    for val, _source in kept_mods:
+        try:
+            total += int(val)
+        except Exception:
+            continue
+    try:
+        unit.round_state.advance_roll = int(total)
+        unit.round_state.advance_modifier_choice = choice
+        unit.round_state.advance_modifier_choice_pending = False
+        unit.round_state.advance_roll_unmodified = None
+    except Exception:
+        pass
+    try:
+        player = unit.get_parent_army().player
+    except Exception:
+        player = None
+    try:
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "roll_made",
+                player=player,
+                unit=unit,
+                roll_type="advance",
+                value=int(total),
+                reroll=None,
+                dice=None,
+            )
+    except Exception:
+        pass
+    return choice
+
+
+def _validate_choose_charge_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = ctx.get("unit_id") or _option_payload(request, result).get("unit_id")
+    if not unit_id:
+        return ("Charge modifier choice requires unit_id.",)
+    if resolve_unit(game, unit_id) is None:
+        return ("Charge modifier unit not found.",)
+    return ()
+
+
+def _apply_choose_charge_modifier_ignores(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    choice = payload.get("choice")
+    if choice is None:
+        choice = result.payload.get("choice")
+    if choice is None:
+        choice = _option_label(request, result) or "keep_all"
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = ctx.get("unit_id") or payload.get("unit_id")
+    unit = resolve_unit(game, unit_id)
+    if unit is None:
+        return choice
+    try:
+        unit.round_state.charge_modifier_choice = choice
+        unit.round_state.charge_modifier_choice_pending = False
+    except Exception:
+        pass
+    target_unit_ids = list(ctx.get("target_unit_ids", []) or [])
+    try:
+        if not target_unit_ids:
+            target_unit_ids = list(getattr(unit.round_state, "charge_modifier_choice_targets", []) or [])
+    except Exception:
+        pass
+    try:
+        player = unit.get_parent_army().player
+    except Exception:
+        player = None
+    try:
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "roll_made",
+                player=player,
+                unit=unit,
+                roll_type="charge",
+                value=int(getattr(unit.round_state, "charge_roll", 0) or 0),
+                reroll=None,
+                dice=None,
+                target_unit_ids=target_unit_ids,
+            )
+    except Exception:
+        pass
+    return choice
+
+
 register_decision_handler(DECISION_CHOOSE_BLESSINGS, validate=_validate_choose_blessings, apply=_apply_choose_blessings)
 register_decision_handler(DECISION_CHOOSE_BLOOD_TITHE, validate=_validate_choose_blood_tithe, apply=_apply_choose_blood_tithe)
 register_decision_handler(DECISION_CHOOSE_RITUALS, validate=_validate_choose_ritual, apply=_apply_choose_ritual)
@@ -1184,4 +1470,29 @@ register_decision_handler(
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
     validate=_validate_select_reverberating_summons_unit,
     apply=_apply_select_reverberating_summons_unit,
+)
+register_decision_handler(
+    DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+    validate=_validate_choose_hit_modifier_ignores,
+    apply=_apply_choose_hit_modifier_ignores,
+)
+register_decision_handler(
+    DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+    validate=_validate_choose_skill_modifier_ignores,
+    apply=_apply_choose_skill_modifier_ignores,
+)
+register_decision_handler(
+    DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+    validate=_validate_choose_move_modifier_ignores,
+    apply=_apply_choose_move_modifier_ignores,
+)
+register_decision_handler(
+    DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+    validate=_validate_choose_advance_modifier_ignores,
+    apply=_apply_choose_advance_modifier_ignores,
+)
+register_decision_handler(
+    DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+    validate=_validate_choose_charge_modifier_ignores,
+    apply=_apply_choose_charge_modifier_ignores,
 )
