@@ -51,6 +51,17 @@ class _DummyUnit:
         self._removed.append(source)
 
 
+class _DummyUnitWithIndomitable(_DummyUnit):
+    """Test stub: simulates an attached Autarch Wayleaper granting refund ability."""
+
+    def __init__(self, name="Unit", *, refund_source: str = "Autarch Wayleaper (Indomitable Strength of Will)"):
+        super().__init__(name=name)
+        self._refund_source = refund_source
+
+    def get_indomitable_strength_of_will_refund_source(self) -> str:
+        return str(self._refund_source or "")
+
+
 class TestBattleFocus(unittest.TestCase):
     def test_tokens_from_battlefield_size(self):
         from warhammer40k_ai.rules.battle_focus import BattleFocusManager
@@ -257,6 +268,91 @@ class TestBattleFocus(unittest.TestCase):
 
         manager._maybe_queue_overwatch(moving_unit, action="move", when="end")
         self.assertEqual(manager._pending_reactions, [])
+
+    def test_indomitable_strength_of_will_refund_on_maneuver(self):
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+
+        unit = _DummyUnitWithIndomitable()
+        army = _DummyArmy([unit])
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="MOVEMENT_PHASE"),
+            get_current_player=lambda: army.player,
+        )
+        army.player.game = game
+
+        mgr = BattleFocusManager(army)
+        mgr.tokens = 1
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=3):
+            applied = mgr.apply_maneuver(unit, mgr.MANEUVER_FLITTING, game)
+
+        self.assertTrue(applied)
+        self.assertEqual(int(mgr.tokens), 1)
+        self.assertIn(unit.id, mgr._units_used_this_phase)
+        self.assertIn(mgr.MANEUVER_FLITTING, mgr._maneuvers_used_this_phase)
+
+    def test_indomitable_strength_of_will_no_refund_on_low_roll(self):
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+
+        unit = _DummyUnitWithIndomitable()
+        army = _DummyArmy([unit])
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="MOVEMENT_PHASE"),
+            get_current_player=lambda: army.player,
+        )
+        army.player.game = game
+
+        mgr = BattleFocusManager(army)
+        mgr.tokens = 1
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=2):
+            applied = mgr.apply_maneuver(unit, mgr.MANEUVER_FLITTING, game)
+
+        self.assertTrue(applied)
+        self.assertEqual(int(mgr.tokens), 0)
+
+    def test_indomitable_strength_of_will_requires_leading(self):
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+
+        # Simulate not-leading (no attached leader source).
+        unit = _DummyUnitWithIndomitable(refund_source="")
+        army = _DummyArmy([unit])
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="MOVEMENT_PHASE"),
+            get_current_player=lambda: army.player,
+        )
+        army.player.game = game
+
+        mgr = BattleFocusManager(army)
+        mgr.tokens = 1
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=6):
+            applied = mgr.apply_maneuver(unit, mgr.MANEUVER_FLITTING, game)
+
+        self.assertTrue(applied)
+        self.assertEqual(int(mgr.tokens), 0)
+
+    def test_indomitable_strength_of_will_applies_to_reactive_maneuver(self):
+        from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+
+        unit = _DummyUnitWithIndomitable()
+        army = _DummyArmy([unit])
+        game = SimpleNamespace(turn=1, phase=SimpleNamespace(name="SHOOTING_PHASE"))
+        army.player.game = game
+
+        mgr = BattleFocusManager(army)
+        mgr.tokens = 1
+
+        # First roll = reactive move distance, second roll = refund check.
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[1, 3]):
+            applied = mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, game)
+
+        self.assertTrue(applied)
+        self.assertEqual(int(mgr.tokens), 1)
+        self.assertIn("battle_focus_reactive_move_max", unit.special_rules)
 
 
 class TestBattleFocusRemoteDecisions(unittest.TestCase):

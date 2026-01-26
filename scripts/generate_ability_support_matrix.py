@@ -1096,6 +1096,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
         ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
         ("AE", "ASPECT TRAINING"): ("Partial", "Fights First/Infiltrators/Scouts/Stealth detected; leader/unit restrictions not enforced."),
+        ("AE", "Indomitable Strength of Will"): (
+            "Supported",
+            "Autarch Wayleaper: when leading, each Battle Focus token spent to enable an Agile Manoeuvre refunds 1 token on a 3+.",
+        ),
         ("AE", "Aspect Shrine Token"): (
             "Supported",
             "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression.",
