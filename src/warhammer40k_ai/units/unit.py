@@ -974,6 +974,10 @@ class Unit:
         r"that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
         re.IGNORECASE,
     )
+    _WEAPON_LIST_HALF_RANGE_KEYWORD_RE = re.compile(
+        r"this\s+model'?s\s+(?P<weapons>.+?)\s+(?:have|has)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
+        re.IGNORECASE,
+    )
     _WEAPON_HALF_RANGE_KEYWORD_RE = re.compile(
         r"(?P<atype>melee|ranged)?\s*weapons?\s+equipped\s+by\s+(?:models\s+in\s+)?(?:this|that|the\s+bearer'?s)\s+unit.*?"
         r"\b(?:have|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
@@ -15956,6 +15960,20 @@ class Unit:
 
         rules: list[dict] = []
         seen: set[tuple[str, str]] = set()
+        def _split_weapon_list(value: str) -> list[str]:
+            cleaned = re.sub(r"\s+", " ", str(value or "")).strip()
+            if not cleaned:
+                return []
+            cleaned = cleaned.replace("&", " and ")
+            cleaned = re.sub(r"\s+(and|or)\s+", ",", cleaned, flags=re.IGNORECASE)
+            parts = [part.strip(" .") for part in cleaned.split(",") if part.strip(" .")]
+            out = []
+            for part in parts:
+                part = re.sub(r"^(the|its)\s+", "", part.strip(), flags=re.IGNORECASE)
+                if part:
+                    out.append(part)
+            return out
+
         for name, desc in entries:
             text = self._normalize_rules_text(desc or name or "")
             if not text:
@@ -15974,6 +15992,23 @@ class Unit:
                     continue
                 seen.add(key)
                 rules.append({"attack_type": atype, "keyword": keyword, "source": str(name or "Ability")})
+            for match in self._WEAPON_LIST_HALF_RANGE_KEYWORD_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                weapons = _split_weapon_list(match.group("weapons") or "")
+                if not weapons:
+                    continue
+                key = ("ranged", keyword.lower(), tuple(sorted(w.lower() for w in weapons)))
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({
+                    "attack_type": "ranged",
+                    "keyword": keyword,
+                    "source": str(name or "Ability"),
+                    "weapon_names": weapons,
+                })
             for match in self._WEAPON_HALF_RANGE_KEYWORD_RE.finditer(text):
                 keyword = str(match.group("keyword") or "").strip()
                 if not keyword:
@@ -16105,12 +16140,38 @@ class Unit:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
 
+    @staticmethod
+    def _normalize_weapon_name(name: str) -> str:
+        cleaned = re.sub(r"[^a-z0-9 ]+", " ", str(name or "").lower())
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        if cleaned.startswith("the "):
+            cleaned = cleaned[4:]
+        if cleaned.startswith("its "):
+            cleaned = cleaned[4:]
+        return cleaned
+
+    def _weapon_name_matches(self, weapon_names: list[str], weapon_name: str) -> bool:
+        if not weapon_names:
+            return True
+        normalized = self._normalize_weapon_name(weapon_name)
+        if not normalized:
+            return False
+        for entry in list(weapon_names or []):
+            candidate = self._normalize_weapon_name(entry)
+            if not candidate:
+                continue
+            if candidate in normalized or normalized in candidate:
+                return True
+        return False
+
     def get_attack_half_range_keyword_bonuses(
         self,
         *,
         attack_type: Optional[str] = None,
         model: Optional['Model'] = None,
         within_half_range: bool = False,
+        weapon_profile=None,
+        weapon_name: str = "",
     ) -> dict:
         """
         Return half-range keyword bonuses for this model/unit.
@@ -16122,7 +16183,26 @@ class Unit:
         rules = self._get_attack_half_range_keyword_bonus_rules(model=model)
         if not rules:
             return {}
-        return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
+        wname = str(weapon_name or "").strip()
+        if not wname and weapon_profile is not None:
+            try:
+                wname = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+            except Exception:
+                wname = ""
+            if not wname:
+                try:
+                    wname = str(getattr(weapon_profile, "name", "") or "")
+                except Exception:
+                    wname = ""
+        filtered = []
+        for rule in list(rules or []):
+            names = rule.get("weapon_names")
+            if names and not self._weapon_name_matches(list(names or []), wname):
+                continue
+            filtered.append(rule)
+        if not filtered:
+            return {}
+        return self._resolve_attack_keyword_bonuses_from_rules(filtered, attack_type=attack_type)
 
     def set_martial_katah_choice(self, choice: str) -> None:
         root = self.get_attached_unit_root()

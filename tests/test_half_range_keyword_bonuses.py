@@ -38,11 +38,11 @@ def _make_unit(name, *, abilities=None, keywords=None):
 
 
 class TestHalfRangeKeywordBonuses(unittest.TestCase):
-    def _make_ranged_profile(self, *, keywords: str = ""):
+    def _make_ranged_profile(self, *, keywords: str = "", name: str = "Test Weapon"):
         from warhammer40k_ai.units.wargear import Wargear
 
         data = {
-            "name": "Test Weapon",
+            "name": name,
             "type": "Ranged",
             "range": "24",
             "A": "1",
@@ -137,6 +137,35 @@ class TestHalfRangeKeywordBonuses(unittest.TestCase):
             profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
 
         self.assertTrue(bool(attack_instance.get("ignores_cover")))
+
+    def test_half_range_weapon_list_applies_only_to_named_weapons(self):
+        ability = {
+            "name": "Targeting Array",
+            "description": (
+                "This model's twin heavy rail cannon and seeker missiles have the [ANTI-TITANIC 3+] ability "
+                "while targeting a unit within half range."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        attacker = _make_unit("Shooter", abilities=[ability])
+        target = _make_unit("Target", keywords=["TITANIC"])
+        cannon_profile = self._make_ranged_profile(name="Twin Heavy Rail Cannon")
+        missiles_profile = self._make_ranged_profile(name="Seeker Missiles")
+        other_profile = self._make_ranged_profile(name="Burst Cannon")
+
+        base_instance = {"below_half_distance": True, "distance_to_target": 6.0}
+        cannon_instance = dict(base_instance)
+        missiles_instance = dict(base_instance)
+        other_instance = dict(base_instance)
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=6):
+            cannon_profile._hit_target_with_tracking(target, attacker.models[0], cannon_instance)
+            missiles_profile._hit_target_with_tracking(target, attacker.models[0], missiles_instance)
+            other_profile._hit_target_with_tracking(target, attacker.models[0], other_instance)
+
+        self.assertIn(("TITANIC", 3), tuple(cannon_instance.get("bonus_anti_specs") or ()))
+        self.assertIn(("TITANIC", 3), tuple(missiles_instance.get("bonus_anti_specs") or ()))
+        self.assertFalse(other_instance.get("bonus_anti_specs"))
 
 
 if __name__ == "__main__":

@@ -2161,6 +2161,7 @@ class WargearProfile:
                     attack_type=attack_type,
                     model=attacker,
                     within_half_range=bool(within_half_range),
+                    weapon_profile=self,
                 )
                 _apply_keyword_bonus(half_bonus, sustained_label="Half Range", heavy_label="Half Range", lance_label="Half Range")
 
