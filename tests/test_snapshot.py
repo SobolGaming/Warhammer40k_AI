@@ -218,10 +218,96 @@ def test_snapshot_roundtrip_core_state():
 
     loaded_cmd = loaded.command_queue[0]
     assert loaded_cmd.command_id == cmd.command_id
+
     assert loaded_cmd.payload["unit"].id == loaded_unit_one.id
     assert loaded_cmd.metadata["model"].id == loaded_unit_one.models[0].id
 
     assert loaded.random_source.random() == pytest.approx(expected_random)
+
+
+def test_snapshot_roundtrip_indomitable_strength_of_will(monkeypatch):
+    """Regression: attached-leader derived abilities must work after snapshot load.
+
+    Specifically validates that attachment restoration + ability cache invalidation means
+    `Indomitable Strength of Will` is detected and can refund a Battle Focus token post-load.
+    """
+
+    waha = WahaHelper()
+    leader_ds = waha.get_full_datasheet_info_by_name("Autarch Wayleaper")
+    assert leader_ds is not None
+    leader = Unit(leader_ds)
+
+    # Pick a bodyguard the leader is actually allowed to attach to (per Wahapedia linkage IDs).
+    # NOTE: In this dataset, Autarch Wayleaper cannot attach to Guardian Defenders, so we must
+    # select from `can_be_attached_to` rather than hard-coding a common bodyguard.
+    allowed_ids = list(getattr(leader, "can_be_attached_to", []) or [])
+    assert allowed_ids, "Autarch Wayleaper has no attachable bodyguard IDs in datasheet linkage."
+
+    bodyguard_ds = None
+
+    # Prefer Guardian Defenders only if its datasheet id is in the allowed linkage list.
+    preferred = waha.get_full_datasheet_info_by_name("Guardian Defenders")
+    if preferred is not None and str(getattr(preferred, "id", "") or "") in set(allowed_ids):
+        bodyguard_ds = preferred
+    else:
+        # Resolve by datasheet id; passing an empty name matches all, id filter picks the correct one.
+        for dsid in allowed_ids:
+            bodyguard_ds = waha.get_full_datasheet_info_by_name("", datasheet_id=str(dsid))
+            if bodyguard_ds is not None:
+                break
+
+    assert bodyguard_ds is not None
+    bodyguard = Unit(bodyguard_ds)
+
+    enemy_ds = waha.get_full_datasheet_info_by_name("Bloodletters")
+    assert enemy_ds is not None
+    enemy = Unit(enemy_ds)
+
+    aeldari_army = Army(faction=leader.faction, detachment_type="")
+    enemy_army = Army(faction=enemy.faction, detachment_type="")
+    bodyguard.parent_army = aeldari_army
+    leader.parent_army = aeldari_army
+    enemy.parent_army = enemy_army
+    aeldari_army.units.extend([bodyguard, leader])
+    enemy_army.units.append(enemy)
+    aeldari_army.warlord = leader
+
+    p1 = Player("Player One", control=PlayerControl.LOCAL, army=aeldari_army)
+    p2 = Player("Player Two", control=PlayerControl.LOCAL, army=enemy_army)
+    game = Game(Battlefield(width=60, height=44), players=[p1, p2])
+    game.map.units = [bodyguard, leader, enemy]
+
+    game.turn = 1
+    game.phase = BattleRoundPhases.MOVEMENT_PHASE
+    game.setup_complete = True
+
+    # Declare Battle Formations: attach leader to bodyguard.
+    leader.attach_to_unit(bodyguard)
+
+    snapshot = snapshot_game(game)
+    loaded = load_game_snapshot(snapshot)
+    loaded_units = {u.id: u for p in loaded.players for u in p.army.units}
+    loaded_bodyguard = loaded_units[bodyguard.id]
+    loaded_leader = loaded_units[leader.id]
+
+    # Attachment links restored.
+    assert getattr(loaded_leader, "attached_to", None) is not None
+    assert loaded_leader.attached_to.id == loaded_bodyguard.id
+    assert loaded_leader.id in {u.id for u in (getattr(loaded_bodyguard, "attached_leaders", []) or [])}
+
+    # Ability lookup (and cache) should recompute correctly after load.
+    assert loaded_bodyguard.get_indomitable_strength_of_will_refund_source()
+
+    # Spend + refund path: spend a token on a maneuver and ensure a 3+ refunds it.
+    from warhammer40k_ai.rules.battle_focus import BattleFocusManager
+
+    army = loaded_bodyguard.get_parent_army()
+    assert str(getattr(army, "faction_id", "") or "").upper() == "AE"
+    mgr = BattleFocusManager(army)
+    mgr.tokens = 1
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", lambda _expr: 3)
+    mgr.apply_maneuver(loaded_bodyguard, BattleFocusManager.MANEUVER_FLITTING, loaded)
+    assert mgr.tokens == 1
 
 
 def test_snapshot_fixed_point_coordinates():
