@@ -1110,6 +1110,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
         ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
         ("AE", "Linked Fire"): ("Supported", "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied."),
+        ("AE", "SERVANT OF THE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
+        ("AE", "SERVANT OFTHE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
         ("AE", "Acrobatic"): ("Supported", "Charge-after-Advance/Fall Back eligibility."),
         ("AE", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
         ("AE", "War Construct"): ("Supported", "Shoot after Falling Back."),
