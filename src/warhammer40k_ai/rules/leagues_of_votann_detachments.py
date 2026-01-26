@@ -20,6 +20,11 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Hearthband")
 
+    def is_needgaard_oathband(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Needgaârd Oathband") or self.detachment_matches("Needgaard Oathband")
+
     def _normalize_text(self, text: str) -> str:
         t = unicodedata.normalize("NFKD", str(text or ""))
         t = t.encode("ascii", "ignore").decode("ascii")
@@ -42,6 +47,28 @@ class LeaguesOfVotannDetachmentManager(DetachmentManagerBase):
             return False
         unit = getattr(model, "parent_unit", None)
         return self._unit_has_keyword_or_faction(unit, "LEAGUES OF VOTANN", faction_id=self.faction_id)
+
+    def _get_yield_points_manager(self):
+        try:
+            return getattr(self.army, "prioritised_efficiency", None) if self.army is not None else None
+        except Exception:
+            return None
+
+    def martial_leverage_on_unit_destroyed(self, destroyed_unit, *, game=None) -> int:
+        if not self.is_needgaard_oathband():
+            return 0
+        if destroyed_unit is None or self.army is None:
+            return 0
+        try:
+            destroyed_army = destroyed_unit.get_parent_army()
+        except Exception:
+            destroyed_army = None
+        if destroyed_army is None or destroyed_army is self.army:
+            return 0
+        mgr = self._get_yield_points_manager()
+        if mgr is None:
+            return 0
+        return int(mgr.add_yield_points(1, game=game) or 0)
 
     def _attached_unit_members(self, unit) -> list:
         if unit is None:

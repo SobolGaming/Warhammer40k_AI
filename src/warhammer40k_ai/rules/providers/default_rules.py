@@ -221,6 +221,20 @@ def build_default_rule_providers() -> List[RuleProvider]:
 
     providers.append(
         RuleProvider(
+            name="leagues_of_votann",
+            predicate=lambda ctxs, _g: any_manager(
+                ctxs,
+                "leagues_of_votann_detachments",
+                ("is_needgaard_oathband",),
+            ),
+            subscriptions=[
+                ("unit_destroyed", "_on_unit_destroyed_martial_leverage"),
+            ],
+        )
+    )
+
+    providers.append(
+        RuleProvider(
             name="world_eaters",
             predicate=lambda ctxs, _g: any_faction(ctxs, "WE"),
             subscriptions=[

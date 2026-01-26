@@ -5072,6 +5072,37 @@ class Game:
                 continue
             mgr.on_enemy_unit_destroyed(unit)
 
+    def _on_unit_destroyed_martial_leverage(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            mgr = getattr(army, "leagues_of_votann_detachments", None)
+            if mgr is None:
+                continue
+            delta = int(mgr.martial_leverage_on_unit_destroyed(unit, game=self) or 0)
+            if not delta:
+                continue
+            pe = getattr(army, "prioritised_efficiency", None)
+            if pe is None:
+                continue
+            try:
+                self.event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=p,
+                    game=self,
+                    delta=int(delta or 0),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Martial Leverage",
+                )
+            except Exception:
+                continue
+
     def _on_unit_destroyed_cult_ambush(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return

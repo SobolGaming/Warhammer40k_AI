@@ -223,14 +223,24 @@ class PrioritisedEfficiencyManager:
 
         if delta <= 0:
             return 0
+        return int(self.add_yield_points(int(delta), game=game) or 0)
 
-        self.yield_points = max(0, int(self.yield_points or 0) + int(delta))
+    def add_yield_points(self, amount: int, *, game=None) -> int:
+        if not self._army_has_rule():
+            return 0
+        try:
+            amount = int(amount or 0)
+        except Exception:
+            amount = 0
+        if amount <= 0:
+            return 0
+        self.yield_points = max(0, int(self.yield_points or 0) + int(amount))
         try:
             turn = self._battle_round(game)
             self.last_gain_turn = int(turn) if turn else self.last_gain_turn
         except Exception:
             pass
-        return int(delta)
+        return int(amount)
 
     def spend_yield_points(self, amount: int) -> bool:
         if not self._army_has_rule():
