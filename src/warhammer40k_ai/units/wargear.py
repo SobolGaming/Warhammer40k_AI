@@ -600,6 +600,17 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "methodical_annihilation_ap_bonus", None)):
+                game_map = self._get_game_map_from_model(attacker)
+                bonus = int(mgr.methodical_annihilation_ap_bonus(attacker, self, target, game_map=game_map) or 0)
+                if bonus:
+                    ap_val -= bonus
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_ranged():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 bonus = int(sr.get("pain_ranged_ap_bonus", 0) or 0) if isinstance(sr, dict) else 0
@@ -5252,6 +5263,17 @@ class WargearProfile:
                 reroll_value_reasons.extend(list(unit_wound_mods.get("reroll_wound_reasons", ()) or ()))
                 if bool(unit_wound_mods.get("reroll_wound_full", False)):
                     reroll_full_reasons.extend(list(unit_wound_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "methodical_annihilation_reroll_wound_ones", None)):
+                game_map = self._get_game_map_from_model(attacker)
+                if mgr.methodical_annihilation_reroll_wound_ones(attacker, self, target, game_map=game_map):
+                    reroll_wound_values.add(1)
+                    reroll_value_reasons.append("Methodical Annihilation: re-roll Wound roll of 1")
         except Exception:
             pass
         # Contextual reroll sources carried on the attack instance (best-effort).
