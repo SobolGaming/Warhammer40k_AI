@@ -968,6 +968,22 @@ class Unit:
         r"objective\s+marker(?:s)?(?:,|\s+).*?that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
         re.IGNORECASE,
     )
+    _ATTACK_TARGET_HALF_RANGE_KEYWORD_RE = re.compile(
+        r"each\s+time\s+this\s+(?:model|unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
+        r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+within\s+half\s+range(?:,|\s+).*?"
+        r"that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
+        re.IGNORECASE,
+    )
+    _WEAPON_HALF_RANGE_KEYWORD_RE = re.compile(
+        r"(?P<atype>melee|ranged)?\s*weapons?\s+equipped\s+by\s+(?:models\s+in\s+)?(?:this|that|the\s+bearer'?s)\s+unit.*?"
+        r"\b(?:have|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
+        re.IGNORECASE,
+    )
+    _WEAPON_HALF_RANGE_KEYWORD_MODEL_RE = re.compile(
+        r"(?P<atype>melee|ranged)?\s*weapons?\s+equipped\s+by\s+this\s+model.*?"
+        r"\b(?:have|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
+        re.IGNORECASE,
+    )
     _CHARGE_ROLL_TARGET_STRENGTH_BONUS_RE = re.compile(
         r"each\s+time\s+this\s+(?:model|unit)\s+declares\s+a\s+charge\s+that\s+targets?\s+one\s+or\s+more\s+units?\s+(?:that\s+are\s+)?"
         r"below\s+starting\s+strength\s+add\s+(?P<base>\d+)\s+to\s+the\s+charge\s+roll\s+if\s+one\s+or\s+more\s+of\s+"
@@ -15912,33 +15928,86 @@ class Unit:
         self._ability_cache[cache_key] = rules
         return rules
 
-    def get_attack_keyword_bonuses(
-        self,
-        *,
-        target=None,
-        attack_type: Optional[str] = None,
-        model: Optional['Model'] = None,
-        game_map=None,
-    ) -> dict:
-        """
-        Return objective-target keyword bonuses for this model/unit.
+    def _get_attack_half_range_keyword_bonus_rules(self, model: Optional['Model'] = None) -> list[dict]:
+        """Collect half-range keyword bonuses from ability text."""
+        cache_key = f"attack_half_range_keyword_bonus_rules:{get_entity_id(model) if model is not None else 'unit'}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
 
-        Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
-        """
+        entries: list[tuple[str, str]] = []
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            entries.append((name, desc))
+
+        if model is not None:
+            model_unit = getattr(model, "parent_unit", None) or self
+            try:
+                for ab in getattr(model, "abilities", {}).values():
+                    try:
+                        if not model_unit._ability_is_active(ab):
+                            continue
+                    except Exception:
+                        pass
+                    if isinstance(ab, str):
+                        entries.append((ab, ab))
+                    else:
+                        entries.append((getattr(ab, "name", "") or "", getattr(ab, "description", "") or ""))
+            except Exception:
+                pass
+
+        rules: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for name, desc in entries:
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            text = Unit._strip_eligibility_prefix(text)
+            for match in self._ATTACK_TARGET_HALF_RANGE_KEYWORD_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                key = (atype, keyword.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"attack_type": atype, "keyword": keyword, "source": str(name or "Ability")})
+            for match in self._WEAPON_HALF_RANGE_KEYWORD_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "ranged"
+                key = (atype, keyword.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"attack_type": atype, "keyword": keyword, "source": str(name or "Ability")})
+            for match in self._WEAPON_HALF_RANGE_KEYWORD_MODEL_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "ranged"
+                key = (atype, keyword.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"attack_type": atype, "keyword": keyword, "source": str(name or "Ability")})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rules
+        return rules
+
+    def _resolve_attack_keyword_bonuses_from_rules(self, rules: list[dict], *, attack_type: Optional[str]) -> dict:
         atype = str(attack_type or "").strip().lower()
         if atype not in ("melee", "ranged"):
             atype = "any"
-
-        rules = self._get_attack_keyword_bonus_rules(model=model)
-        if not rules:
-            return {}
-        if target is None:
-            return {}
-        try:
-            if not self._target_within_objective_range(target, game_map):
-                return {}
-        except Exception:
-            return {}
 
         bonuses = {
             "ignores_cover": False,
@@ -16010,6 +16079,50 @@ class Unit:
         ):
             return bonuses
         return {}
+
+    def get_attack_keyword_bonuses(
+        self,
+        *,
+        target=None,
+        attack_type: Optional[str] = None,
+        model: Optional['Model'] = None,
+        game_map=None,
+    ) -> dict:
+        """
+        Return objective-target keyword bonuses for this model/unit.
+
+        Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
+        """
+        rules = self._get_attack_keyword_bonus_rules(model=model)
+        if not rules:
+            return {}
+        if target is None:
+            return {}
+        try:
+            if not self._target_within_objective_range(target, game_map):
+                return {}
+        except Exception:
+            return {}
+        return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
+
+    def get_attack_half_range_keyword_bonuses(
+        self,
+        *,
+        attack_type: Optional[str] = None,
+        model: Optional['Model'] = None,
+        within_half_range: bool = False,
+    ) -> dict:
+        """
+        Return half-range keyword bonuses for this model/unit.
+
+        Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
+        """
+        if not within_half_range:
+            return {}
+        rules = self._get_attack_half_range_keyword_bonus_rules(model=model)
+        if not rules:
+            return {}
+        return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
 
     def set_martial_katah_choice(self, choice: str) -> None:
         root = self.get_attached_unit_root()

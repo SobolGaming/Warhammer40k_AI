@@ -2065,7 +2065,9 @@ class WargearProfile:
         bonus_devastating = False
         bonus_twin_linked = False
         bonus_heavy = False
+        bonus_heavy_label = ""
         bonus_lance = False
+        bonus_lance_label = ""
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         def _set_bonus_sustained(value: int, label: str) -> None:
@@ -2093,37 +2095,85 @@ class WargearProfile:
             attack_is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
         except Exception:
             attack_is_ranged = False
+        def _merge_anti_specs(existing, incoming):
+            merged = list(existing or ())
+            for spec in list(incoming or ()):
+                if spec not in merged:
+                    merged.append(spec)
+            return tuple(merged)
+
+        def _apply_keyword_bonus(bonus, *, sustained_label: str = "", heavy_label: str = "", lance_label: str = "") -> None:
+            nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label
+            nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
+            nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs
+            if not isinstance(bonus, dict):
+                return
+            if bool(bonus.get("lethal_hits")):
+                bonus_lethal = True
+            bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
+            if bonus_sustained_val:
+                _set_bonus_sustained(bonus_sustained_val, sustained_label)
+            if bool(bonus.get("devastating_wounds")):
+                bonus_devastating = True
+            if bool(bonus.get("twin_linked")):
+                bonus_twin_linked = True
+            if bool(bonus.get("heavy")):
+                bonus_heavy = True
+                if heavy_label and not bonus_heavy_label:
+                    bonus_heavy_label = heavy_label
+            if bool(bonus.get("lance")):
+                bonus_lance = True
+                if lance_label and not bonus_lance_label:
+                    bonus_lance_label = lance_label
+            bonus_anti_specs = _merge_anti_specs(bonus_anti_specs, tuple(bonus.get("anti_specs") or ()))
+            if bool(bonus.get("ignores_cover")) and attack_is_ranged:
+                attack_instance["ignores_cover"] = True
+
         try:
             unit = getattr(attacker, "parent_unit", None)
+            attack_type = "melee" if attack_is_melee else "ranged" if attack_is_ranged else "any"
+            bonus = None
             if unit is not None and hasattr(unit, "get_attack_keyword_bonuses"):
-                attack_type = "melee" if attack_is_melee else "ranged" if attack_is_ranged else "any"
                 bonus = unit.get_attack_keyword_bonuses(
                     target=target,
                     attack_type=attack_type,
                     model=attacker,
                 )
-            else:
-                bonus = None
-            if isinstance(bonus, dict):
-                bonus_lethal = bool(bonus.get("lethal_hits"))
-                bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
-                if bonus_sustained_val:
-                    _set_bonus_sustained(bonus_sustained_val, "Objective Target")
-                bonus_devastating = bool(bonus.get("devastating_wounds"))
-                bonus_twin_linked = bool(bonus.get("twin_linked"))
-                bonus_heavy = bool(bonus.get("heavy"))
-                bonus_lance = bool(bonus.get("lance"))
-                bonus_anti_specs = tuple(bonus.get("anti_specs") or ())
-                if bool(bonus.get("ignores_cover")) and attack_is_ranged:
-                    attack_instance["ignores_cover"] = True
-                if bonus_devastating:
-                    attack_instance["bonus_devastating_wounds"] = True
-                if bonus_twin_linked:
-                    attack_instance["bonus_twin_linked"] = True
-                if bonus_lance:
-                    attack_instance["bonus_lance"] = True
-                if bonus_anti_specs:
-                    attack_instance["bonus_anti_specs"] = bonus_anti_specs
+                _apply_keyword_bonus(bonus, sustained_label="Objective Target", heavy_label="Objective Target", lance_label="Objective Target")
+            within_half_range = None
+            try:
+                if "below_half_distance" in attack_instance:
+                    within_half_range = bool(attack_instance.get("below_half_distance", False))
+            except Exception:
+                within_half_range = None
+            if within_half_range is None:
+                try:
+                    dist = float(attack_instance.get("distance_to_target", 0.0) or 0.0)
+                    effective_range_max = self._effective_range_max(attacker)
+                    if effective_range_max:
+                        within_half_range = dist <= (float(effective_range_max) / 2.0)
+                except Exception:
+                    within_half_range = None
+            if within_half_range is None:
+                within_half_range = False
+            if unit is not None and hasattr(unit, "get_attack_half_range_keyword_bonuses"):
+                half_bonus = unit.get_attack_half_range_keyword_bonuses(
+                    attack_type=attack_type,
+                    model=attacker,
+                    within_half_range=bool(within_half_range),
+                )
+                _apply_keyword_bonus(half_bonus, sustained_label="Half Range", heavy_label="Half Range", lance_label="Half Range")
+
+            if bonus_devastating:
+                attack_instance["bonus_devastating_wounds"] = True
+            if bonus_twin_linked:
+                attack_instance["bonus_twin_linked"] = True
+            if bonus_lance:
+                attack_instance["bonus_lance"] = True
+                if bonus_lance_label:
+                    attack_instance["bonus_lance_source"] = bonus_lance_label
+            if bonus_anti_specs:
+                attack_instance["bonus_anti_specs"] = bonus_anti_specs
         except Exception:
             bonus_lethal = False
             bonus_sustained_value = 0
@@ -2131,7 +2181,9 @@ class WargearProfile:
             bonus_devastating = False
             bonus_twin_linked = False
             bonus_heavy = False
+            bonus_heavy_label = ""
             bonus_lance = False
+            bonus_lance_label = ""
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
 
@@ -2311,7 +2363,8 @@ class WargearProfile:
             heavy_from_doctrina = False
         if (self.is_heavy() or heavy_from_doctrina or bonus_heavy) and attacker.parent_unit.round_state.remained_stationary_this_round:
             if bonus_heavy and not self.is_heavy():
-                _add_hit_mod(1, "+1 from Heavy [Objective Target]")
+                label = bonus_heavy_label or "Objective Target"
+                _add_hit_mod(1, f"+1 from Heavy [{label}]")
             elif heavy_from_doctrina and not self.is_heavy():
                 _add_hit_mod(1, "+1 from Protector Imperative (counts as Heavy)")
             else:
@@ -4815,12 +4868,16 @@ class WargearProfile:
             except Exception:
                 goretrack_lance = False
             bonus_lance = bool(attack_instance.get("bonus_lance"))
+            bonus_lance_source = str(attack_instance.get("bonus_lance_source") or "")
             if is_melee and (self.is_lance() or bondsman_lance or blood_tithe_lance or daemonic_fury_lance or goretrack_lance or bonus_lance):
                 charged = bool(getattr(attacker.parent_unit.round_state, "charged_this_round", False))
                 if charged:
                     dice_modifier += 1
                     if bonus_lance and not self.is_lance():
-                        wound_result['modifiers'].append("+1 to wound from Lance (objective target)")
+                        if bonus_lance_source:
+                            wound_result['modifiers'].append(f"+1 to wound from Lance ({bonus_lance_source})")
+                        else:
+                            wound_result['modifiers'].append("+1 to wound from Lance (objective target)")
                     elif bondsman_lance and not self.is_lance():
                         wound_result['modifiers'].append("+1 to wound from Lance (Bondsman)")
                     elif blood_tithe_lance and not self.is_lance():
