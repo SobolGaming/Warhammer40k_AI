@@ -196,6 +196,22 @@ def compute_save_roll_modifier(
                 return int(s)
         return None
 
+    def _resolve_unmodified_damage_characteristic() -> Optional[int]:
+        dmg_val = None
+        if weapon_profile is not None:
+            dmg_val = getattr(weapon_profile, "damage", None)
+        if dmg_val is None and isinstance(atk, dict):
+            dmg_val = atk.get("damage_characteristic")
+        if isinstance(dmg_val, Count) and dmg_val.ctype == CountType.FLAT:
+            return _coerce_int(dmg_val.value)
+        if isinstance(dmg_val, int):
+            return dmg_val
+        if isinstance(dmg_val, str):
+            s = dmg_val.strip()
+            if s.isdigit():
+                return int(s)
+        return None
+
     # Benefit of Cover: +1 to armor saves against ranged attacks (not invulnerable).
     if save_type == "armor" and atk.get("benefit_of_cover", False):
         ignores_cover = bool(atk.get("ignores_cover", False))
@@ -227,6 +243,23 @@ def compute_save_roll_modifier(
                 if bonus_val:
                     dice_modifier += bonus_val
                     effects.append(f"+{bonus_val} armor save vs Damage {int(dmg_char)}")
+
+        # Thousand Sons: Rubricae Phalanx detachment ("All is Dust").
+        unmod_dmg_char = _resolve_unmodified_damage_characteristic()
+        if unmod_dmg_char == 1:
+            try:
+                army = t_unit.get_parent_army() if t_unit is not None else None
+            except Exception:
+                army = None
+            mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "rubricae_phalanx_armor_save_bonus", None)):
+                try:
+                    bonus_val = int(mgr.rubricae_phalanx_armor_save_bonus(target_model, damage_characteristic=unmod_dmg_char) or 0)
+                except Exception:
+                    bonus_val = 0
+                if bonus_val:
+                    dice_modifier += bonus_val
+                    effects.append("All is Dust (+1 armor save vs Damage 1)")
 
     # Apply externally supplied save roll modifiers.
     extra_save_mods = atk.get("save_roll_modifiers")
