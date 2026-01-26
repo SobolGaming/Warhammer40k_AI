@@ -184,6 +184,8 @@ class NurglesGiftManager:
         if not enemy_units:
             return None
 
+        from ..utility import aura_utils as _aura_utils
+
         checked_armies: set[str] = set()
         for enemy in enemy_units:
             try:
@@ -218,11 +220,26 @@ class NurglesGiftManager:
             for source in sources:
                 if not mgr._unit_is_valid_contagion_source(source):
                     continue
-                try:
-                    from ..utility import aura_utils as _aura_utils
-                    if _aura_utils.unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
-                        return plague
-                except Exception:
+                if _aura_utils.unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
+                    return plague
+
+            # Virulent Vectorium: Worldblight turns controlled objectives into contagion sources.
+            objectives = list(getattr(game_map, "objectives", []) or [])
+            for obj in objectives:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
                     continue
+                worldblight_owner = getattr(loc, "worldblight_controller", None)
+                if worldblight_owner is None:
+                    continue
+                if getattr(worldblight_owner, "army", None) is not enemy_army:
+                    continue
+                if (
+                    getattr(loc, "controlling_player", None) is not worldblight_owner
+                    and getattr(loc, "sticky_controller", None) is not worldblight_owner
+                ):
+                    continue
+                if _aura_utils.unit_within_range_of_point_3d(unit, (loc.x, loc.y), rng, use_attached_aggregate=True):
+                    return plague
 
         return None

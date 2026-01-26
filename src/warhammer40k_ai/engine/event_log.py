@@ -411,6 +411,8 @@ class DeterministicEventLog:
             "previous_controller_id": maybe_entity_id(kwargs.get("previous_controller")),
             "controller_id": maybe_entity_id(kwargs.get("controller")),
             "sticky_controller_id": maybe_entity_id(kwargs.get("sticky_controller")),
+            "worldblight_controller_id": maybe_entity_id(kwargs.get("worldblight_controller")),
+            "worldblight_source": kwargs.get("worldblight_source", None),
             "removed": bool(kwargs.get("removed", False)),
         }
         if objective is not None:

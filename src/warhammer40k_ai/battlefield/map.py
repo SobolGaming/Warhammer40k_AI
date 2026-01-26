@@ -2426,6 +2426,9 @@ class ObjectivePoint:
         # Sticky control tracking (e.g., Uphold the Honour of the Emperor)
         self.sticky_controller = None
         self.sticky_source = None
+        # Virulent Vectorium: Worldblight objective contagion source tracking
+        self.worldblight_controller = None
+        self.worldblight_source = None
 
     @property
     def id(self) -> str:
@@ -2440,6 +2443,8 @@ class ObjectivePoint:
         # Determine which player controls the objective based on base overlap
         prev_controller = self.controlling_player
         prev_sticky = self.sticky_controller
+        prev_worldblight = getattr(self, "worldblight_controller", None)
+        prev_worldblight_source = getattr(self, "worldblight_source", None)
         prev_removed = bool(getattr(self, "removed", False))
         player_oc = {player: 0 for player in game_state.players}  # Initialize all players with 0 OC
         
@@ -2449,6 +2454,8 @@ class ObjectivePoint:
             self.controlling_player = None
             self.sticky_controller = None
             self.sticky_source = None
+            self.worldblight_controller = None
+            self.worldblight_source = None
             return
         # Create objective area as a circle
         objective_area = Point(self.x, self.y).buffer(self.control_radius)
@@ -2522,9 +2529,17 @@ class ObjectivePoint:
                 # Retain control even if tied or empty.
                 self.controlling_player = sticky_owner
 
+        # Worldblight contagion objectives only persist while control is retained.
+        worldblight_owner = getattr(self, "worldblight_controller", None)
+        if worldblight_owner is not None and self.controlling_player is not worldblight_owner:
+            self.worldblight_controller = None
+            self.worldblight_source = None
+
         if (
             prev_controller is not self.controlling_player
             or prev_sticky is not self.sticky_controller
+            or prev_worldblight is not getattr(self, "worldblight_controller", None)
+            or prev_worldblight_source != getattr(self, "worldblight_source", None)
             or prev_removed != bool(getattr(self, "removed", False))
         ):
             event_system = getattr(game_state, "event_system", None)
@@ -2535,6 +2550,8 @@ class ObjectivePoint:
                     previous_controller=prev_controller,
                     controller=self.controlling_player,
                     sticky_controller=self.sticky_controller,
+                    worldblight_controller=getattr(self, "worldblight_controller", None),
+                    worldblight_source=getattr(self, "worldblight_source", None),
                     removed=bool(getattr(self, "removed", False)),
                 )
         

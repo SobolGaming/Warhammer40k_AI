@@ -1475,6 +1475,9 @@ class Game:
                         continue
                     if hasattr(loc, "update_control"):
                         loc.update_control(self)
+                dg_mgr = getattr(army, "death_guard_detachments", None)
+                if dg_mgr is not None:
+                    dg_mgr.on_command_phase_end(game=self, player=player)
                 seen = set()
                 for unit in list(army.units):
                     root = unit.get_attached_unit_root()

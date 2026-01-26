@@ -444,6 +444,10 @@ def _serialize_objective_point(point: ObjectivePoint) -> dict:
         "removed": bool(getattr(point, "removed", False)),
         "sticky_controller_id": get_entity_id(point.sticky_controller) if point.sticky_controller else None,
         "sticky_source": getattr(point, "sticky_source", None),
+        "worldblight_controller_id": get_entity_id(getattr(point, "worldblight_controller", None))
+        if getattr(point, "worldblight_controller", None)
+        else None,
+        "worldblight_source": getattr(point, "worldblight_source", None),
     }
 
 
@@ -458,6 +462,7 @@ def _deserialize_objective_point(data: dict) -> ObjectivePoint:
     point.is_hazard = bool(data.get("is_hazard", False))
     point.removed = bool(data.get("removed", False))
     point.sticky_source = data.get("sticky_source", None)
+    point.worldblight_source = data.get("worldblight_source", None)
     return point
 
 
@@ -1290,6 +1295,8 @@ def load_game_snapshot(snapshot: dict) -> Game:
         point.terraformed_by = game.entity_registry.get(pdata.get("terraformed_by_id"), kind="player")
         point.cleansed_by = game.entity_registry.get(pdata.get("cleansed_by_id"), kind="player")
         point.sticky_controller = game.entity_registry.get(pdata.get("sticky_controller_id"), kind="player")
+        point.worldblight_controller = game.entity_registry.get(pdata.get("worldblight_controller_id"), kind="player")
+        point.worldblight_source = pdata.get("worldblight_source", None)
 
     for player, pdata in zip(players, players_data):
         _apply_player_state(player, pdata, game.entity_registry)
