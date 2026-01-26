@@ -31,23 +31,23 @@ This pattern enables:
 
 ```mermaid
 flowchart LR
-  Data[Wahapedia data\n(wahapedia_data/)] --> Roster[Roster builder\n(roster/)]
-  Army[Army list files\n(army_lists/)] --> Roster
-  Roster --> Engine[Game engine\n(engine/)]
+  Data["Wahapedia data<br/>(wahapedia_data/)"] --> Roster["Roster builder<br/>(roster/)"]
+  Army["Army list files<br/>(army_lists/)"] --> Roster
+  Roster --> Engine["Game engine<br/>(engine/)"]
 
   Engine --> Decisions[DecisionRequests]
-  Decisions --> LocalUI[Local UI\n(UI/)]
-  Decisions --> Clients[Network clients\n(network/)]
+  Decisions --> LocalUI["Local UI<br/>(UI/)"]
+  Decisions --> Clients["Network clients<br/>(network/)"]
 
   LocalUI --> Commands[Commands / DecisionResults]
   Clients --> Commands
   Commands --> Engine
 
-  Engine --> Events[Deterministic Events\n(event_log.py)]
+  Engine --> Events["Deterministic Events<br/>(event_log.py)"]
   Events --> LocalUI
   Events --> Clients
 
-  Engine <--> Snapshot[Snapshot + replay\n(snapshot.py / replay.py)]
+  Engine <--> Snapshot["Snapshot + replay<br/>(snapshot.py / replay.py)"]
 ```
 
 ## Major components
@@ -206,4 +206,3 @@ The codebase has extensive focused tests for rules interactions, timing, and dec
 
 - `docs/NETWORK_SAVELOAD_DESIGN.md`: decision/command/event model, determinism rules, dialog mapping.
 - `docs/DEPLOYMENT_ARCHITECTURE.md`, `docs/MOVEMENT_SYSTEM.md`, `docs/RUINS_TERRAIN_SYSTEM.md`: deeper subsystem designs.
-

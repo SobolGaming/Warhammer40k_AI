@@ -1,15 +1,15 @@
 - Example prompt for developing detailed implementation plan for chatgpt
     ```
-    Ensure Agents.md is in effect.
+    Ensure AGENTS.md is in effect.
     I've merged dev branch into our branch.  Update your internal state to represent the new on disk state.
     Implement the following rule and rule text "Psychic Assassin:
-    Each time you select a PSYKER unit as the target for this weapon, until those attacks are resolved, change the Attacks characteristic of this weapon to 6." Please create the same style of comprehensive issue checklist task oriented implementation plan with file-level targets as like the other implementation plans in `docs/implementation`.   Break development into a phased development plan for easier implementation. Main game rules are located in `docs/warhammer-community`.  Wargear rules specifically will likely only be found in the `wahapedia_data` folder. Create the implementation plan in docs/implementation/psychic_assassin_implementation_plan.md.  Include an explicit step to update the wargear_keyword_support_matrix.md file.
+    Each time you select a PSYKER unit as the target for this weapon, until those attacks are resolved, change the Attacks characteristic of this weapon to 6." Please create the same style of comprehensive issue checklist task oriented implementation plan with file-level targets as like the other implementation plans in `docs/implementation`.   Break development into a phased development plan for easier implementation. Main game rules are located in `docs/warhammer-community`.  Wargear rules specifically will likely only be found in the `wahapedia_data` folder. Create the implementation plan in docs/implementation/psychic_assassin_implementation_plan.md.  Include an explicit step to update the docs/WARGEAR_KEYWORD_SUPPORT_MATRIX.md file.
     ```
 
 - Example prompt for augment code to implement:
     ```
     I've merged dev branch into our branch.  Update your internal state to represent the new on disk state.
-    Ensure Agents.md is in effect.
+    Ensure AGENTS.md is in effect.
 
     Implement the next phase of the detailed plan located at `docs/implementation/psychic_assassin_implementation_plan.md`.  Update and adjust the checklist oriented plan, and it's checklist steps, where needed.  For each task, record implementation results as additional child bullets below each implementation step and mark the task complete when it is finished.
 
