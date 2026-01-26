@@ -136,6 +136,10 @@ def test_driven_by_ultimate_rage_ignores_negative_hit_modifiers(monkeypatch):
 
     monkeypatch.setattr("warhammer40k_ai.units.wargear.get_roll", lambda _: 4)
 
-    hit = wp._hit_target_with_tracking(target, attacker_unit.models[0], {})
+    hit = wp._hit_target_with_tracking(
+        target,
+        attacker_unit.models[0],
+        {"hit_modifier_choice": "ignore_negative"},
+    )
     assert hit["final_needed"] == 3
     assert all("Stealth" not in m for m in hit.get("modifiers", []))

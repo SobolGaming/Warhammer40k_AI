@@ -311,52 +311,20 @@ class Unit:
                 kept.append(m)
             self._characteristic_modifiers[k] = kept
 
-    def get_effective_model_characteristic(self, model: Model, characteristic: str, *, game_map=None) -> int:
-        """
-        Centralized characteristic resolution that follows Core Rules modifier ordering.
-
-        This is intentionally conservative: it only applies engine-registered modifiers plus a small
-        subset of strict text-based effects (e.g. OC while leading, OC-halving in engagement range).
-        """
-        from ..utility.modifiers import (
-            Modifier,
-            ModifierOp,
-            apply_characteristic_caps,
-            apply_numeric_modifiers,
-        )
-
-        c = str(characteristic or "").strip().lower()
-        base_val = None
-        base_raw = None
-
-        if c in ("movement", "move", "m"):
-            base_val = int(getattr(model, "_movement", getattr(model, "movement", 0)))
-            base_raw = getattr(model, "_movement_raw", None)
-            ckey = "movement"
-        elif c in ("toughness", "t"):
-            base_val = int(getattr(model, "_toughness", getattr(model, "toughness", 0)))
-            base_raw = getattr(model, "_toughness_raw", None)
-            ckey = "toughness"
-        elif c in ("save", "sv"):
-            base_val = int(getattr(model, "_save", getattr(model, "save", 0)))
-            base_raw = getattr(model, "_save_raw", None)
-            ckey = "save"
-        elif c in ("leadership", "ld"):
-            base_val = int(getattr(model, "_leadership", getattr(model, "leadership", 0)))
-            base_raw = getattr(model, "_leadership_raw", None)
-            ckey = "leadership"
-        elif c in ("objective_control", "oc"):
-            base_val = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)))
-            base_raw = getattr(model, "_objective_control_raw", None)
-            ckey = "objective_control"
-        else:
-            # Unknown characteristic: best-effort passthrough.
-            try:
-                return int(getattr(model, c))
-            except Exception:
-                return 0
+    def _collect_characteristic_modifiers(
+        self,
+        model: Model,
+        ckey: str,
+        *,
+        base_val: int,
+        base_raw=None,
+        game_map=None,
+    ):
+        from ..utility.modifiers import Modifier, ModifierOp
 
         mods = []
+        scabrous_oc_floor = False
+
         # Engine-registered modifiers (from enhancements, damaged profiles, status effects, etc.)
         try:
             mods.extend(list((self._characteristic_modifiers or {}).get(ckey, []) or []))
@@ -396,7 +364,7 @@ class Unit:
                 except Exception:
                     pass
 
-            # Friendly OC auras (ADD) \u2013 applied as an ADD modifier so DIV happens first.
+            # Friendly OC auras (ADD) – applied as an ADD modifier so DIV happens first.
             try:
                 from ..utility.aura_effects import get_aura_objective_control_bonus
                 bonus = int(get_aura_objective_control_bonus(self, game_map=game_map) or 0)
@@ -439,7 +407,6 @@ class Unit:
         except Exception:
             afflicted_plague = None
 
-        scabrous_oc_floor = False
         if afflicted_plague is not None:
             if ckey == "save" and afflicted_plague.key == PLAGUE_RATTLEJOINT.key:
                 mods.append(Modifier(ModifierOp.ADD, 1, source="nurgles_gift:rattlejoint_ague"))
@@ -490,36 +457,70 @@ class Unit:
             if pg_value is not None:
                 mods.append(Modifier(ModifierOp.SET, int(pg_value), source="ability:psychic_guidance"))
 
+        return mods, scabrous_oc_floor, game_map
+
+    def get_effective_model_characteristic(self, model: Model, characteristic: str, *, game_map=None) -> int:
+        """
+        Centralized characteristic resolution that follows Core Rules modifier ordering.
+
+        This is intentionally conservative: it only applies engine-registered modifiers plus a small
+        subset of strict text-based effects (e.g. OC while leading, OC-halving in engagement range).
+        """
+        from ..utility.modifiers import (
+            Modifier,
+            ModifierOp,
+            apply_characteristic_caps,
+            apply_numeric_modifiers,
+        )
+
+        c = str(characteristic or "").strip().lower()
+        base_val = None
+        base_raw = None
+
+        if c in ("movement", "move", "m"):
+            base_val = int(getattr(model, "_movement", getattr(model, "movement", 0)))
+            base_raw = getattr(model, "_movement_raw", None)
+            ckey = "movement"
+        elif c in ("toughness", "t"):
+            base_val = int(getattr(model, "_toughness", getattr(model, "toughness", 0)))
+            base_raw = getattr(model, "_toughness_raw", None)
+            ckey = "toughness"
+        elif c in ("save", "sv"):
+            base_val = int(getattr(model, "_save", getattr(model, "save", 0)))
+            base_raw = getattr(model, "_save_raw", None)
+            ckey = "save"
+        elif c in ("leadership", "ld"):
+            base_val = int(getattr(model, "_leadership", getattr(model, "leadership", 0)))
+            base_raw = getattr(model, "_leadership_raw", None)
+            ckey = "leadership"
+        elif c in ("objective_control", "oc"):
+            base_val = int(getattr(model, "_objective_control", getattr(model, "objective_control", 0)))
+            base_raw = getattr(model, "_objective_control_raw", None)
+            ckey = "objective_control"
+        else:
+            # Unknown characteristic: best-effort passthrough.
+            try:
+                return int(getattr(model, c))
+            except Exception:
+                return 0
+
+        mods, scabrous_oc_floor, game_map = Unit._collect_characteristic_modifiers(
+            self,
+            model,
+            ckey,
+            base_val=base_val,
+            base_raw=base_raw,
+            game_map=game_map,
+        )
+
         # Emperor's Children: Internal Rivalries (Slaanesh's Chosen) - ignore negative Move modifiers.
         try:
             if ckey == "movement":
                 army = self.get_parent_army()
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
                 if mgr is not None and getattr(mgr, "internal_rivalries_applies", lambda _u: False)(self):
-                    kept = []
-                    ignored = []
-                    for m in list(mods or []):
-                        try:
-                            val = int(getattr(m, "value", 0) or 0)
-                        except Exception:
-                            val = 0
-                        try:
-                            op = getattr(m, "op", None)
-                        except Exception:
-                            op = None
-                        negative = False
-                        if op == ModifierOp.ADD and val < 0:
-                            negative = True
-                        elif op == ModifierOp.SUB and val > 0:
-                            negative = True
-                        elif op == ModifierOp.MUL and val < 1:
-                            negative = True
-                        elif op == ModifierOp.DIV and val > 1:
-                            negative = True
-                        if negative:
-                            ignored.append(m)
-                        else:
-                            kept.append(m)
+                    from ..utility.modifier_choice import CHOICE_IGNORE_NEGATIVE, filter_numeric_modifiers
+                    kept, ignored = filter_numeric_modifiers(mods, CHOICE_IGNORE_NEGATIVE, base_val=base_val)
                     if ignored:
                         mods = kept
                         try:
@@ -546,58 +547,56 @@ class Unit:
         except Exception:
             pass
 
-        # World Eaters: Driven by Ultimate Rage (Aura) - ignore negative Move modifiers.
+        # World Eaters: Driven by Ultimate Rage (Aura) - optional ignore Move modifiers.
         try:
             if ckey == "movement":
                 from ..rules.wrathful_presence import driven_by_ultimate_rage_applies
                 if driven_by_ultimate_rage_applies(self, game_map=game_map):
-                    kept = []
-                    ignored = []
-                    for m in list(mods or []):
-                        try:
-                            val = int(getattr(m, "value", 0) or 0)
-                        except Exception:
-                            val = 0
-                        try:
-                            op = getattr(m, "op", None)
-                        except Exception:
-                            op = None
-                        negative = False
-                        if op == ModifierOp.ADD and val < 0:
-                            negative = True
-                        elif op == ModifierOp.SUB and val > 0:
-                            negative = True
-                        elif op == ModifierOp.MUL and val < 1:
-                            negative = True
-                        elif op == ModifierOp.DIV and val > 1:
-                            negative = True
-                        if negative:
-                            ignored.append(m)
-                        else:
-                            kept.append(m)
-                    if ignored:
-                        mods = kept
-                        try:
-                            sr = getattr(self, "special_rules", None)
-                            if not isinstance(sr, dict):
-                                sr = {}
-                            ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
-                            kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
-                            sig = (ignored_sources, kept_sources)
-                            if sr.get("driven_by_ultimate_rage_move_mod_signature") != sig:
-                                sr["driven_by_ultimate_rage_move_mod_signature"] = sig
-                                self.special_rules = sr
-                                from ..utility.event_bus import append_action
-                                pn = self.get_parent_army().player
-                                ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
-                                msg = f"Driven by Ultimate Rage: ignored negative Move modifiers ({ignored_text})."
-                                append_action(pn, msg)
-                                if kept_sources:
-                                    kept_text = ", ".join(s for s in kept_sources if s)
-                                    if kept_text:
-                                        append_action(pn, f"Driven by Ultimate Rage: applied Move modifiers ({kept_text}).")
-                        except Exception:
-                            pass
+                    from ..utility.modifier_choice import (
+                        CHOICE_KEEP_ALL,
+                        CHOICE_IGNORE_NEGATIVE,
+                        CHOICE_IGNORE_POSITIVE,
+                        CHOICE_IGNORE_ALL,
+                        filter_numeric_modifiers,
+                    )
+                    try:
+                        choice = str(getattr(self.round_state, "move_modifier_choice", "") or "").strip()
+                    except Exception:
+                        choice = ""
+                    if not choice:
+                        choice = CHOICE_KEEP_ALL
+                    if choice != CHOICE_KEEP_ALL:
+                        kept, ignored = filter_numeric_modifiers(mods, choice, base_val=base_val)
+                        if ignored:
+                            mods = kept
+                            try:
+                                sr = getattr(self, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
+                                kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
+                                sig = (ignored_sources, kept_sources, choice)
+                                if sr.get("driven_by_ultimate_rage_move_mod_signature") != sig:
+                                    sr["driven_by_ultimate_rage_move_mod_signature"] = sig
+                                    self.special_rules = sr
+                                    from ..utility.event_bus import append_action
+                                    pn = self.get_parent_army().player
+                                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                                    tag = (
+                                        "negative"
+                                        if choice == CHOICE_IGNORE_NEGATIVE
+                                        else "positive"
+                                        if choice == CHOICE_IGNORE_POSITIVE
+                                        else "all"
+                                    )
+                                    msg = f"Driven by Ultimate Rage: ignored {tag} Move modifiers ({ignored_text})."
+                                    append_action(pn, msg)
+                                    if kept_sources:
+                                        kept_text = ", ".join(s for s in kept_sources if s)
+                                        if kept_text:
+                                            append_action(pn, f"Driven by Ultimate Rage: applied Move modifiers ({kept_text}).")
+                            except Exception:
+                                pass
         except Exception:
             pass
 
@@ -9052,19 +9051,24 @@ class Unit:
                 return list(modifiers or [])
         except Exception:
             return list(modifiers or [])
+        from ..utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_signed_modifiers,
+        )
+        kind_key = str(kind or "").strip().lower()
+        try:
+            choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
+        except Exception:
+            choice = None
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
 
-        kept = []
-        ignored = []
-        for val, source in list(modifiers or []):
-            try:
-                v = int(val or 0)
-            except Exception:
-                v = 0
-            if v < 0:
-                ignored.append((v, source))
-            else:
-                kept.append((v, source))
-
+        kept, ignored = filter_signed_modifiers(modifiers, str(choice))
         if ignored:
             try:
                 sr = getattr(self, "special_rules", None)
@@ -9072,16 +9076,23 @@ class Unit:
                     sr = {}
                 ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
                 kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
-                sig = (ignored_sources, kept_sources)
-                key = f"driven_by_ultimate_rage_{str(kind or '').strip().lower()}_mod_signature"
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = f"driven_by_ultimate_rage_{kind_key}_mod_signature"
                 if sr.get(key) != sig:
                     sr[key] = sig
                     self.special_rules = sr
                     from ..utility.event_bus import append_action
                     pn = self.get_parent_army().player
-                    label = "Advance roll" if str(kind or "").strip().lower() == "advance" else "Charge roll"
+                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
                     ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
-                    append_action(pn, f"Driven by Ultimate Rage: ignored negative {label} modifiers ({ignored_text}).")
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"Driven by Ultimate Rage: ignored {tag} {label} modifiers ({ignored_text}).")
                     if kept_sources:
                         kept_text = ", ".join(s for s in kept_sources if s)
                         if kept_text:

@@ -56,6 +56,71 @@ def handle_advance_roll(game: object, state: DiceRollState):
         return None
     roll_val = int(state.total or 0)
     try:
+        from ..rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+        from ..utility.modifier_choice import CHOICE_LABELS, options_for_signed_pairs
+        from ..engine.decision_kinds import DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES
+        from ..engine.decisions import DecisionOption, DecisionRequest
+    except Exception:
+        driven_by_ultimate_rage_applies = None
+        DRIVEN_BY_ULTIMATE_RAGE_NAME = ""
+        DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES = None
+        DecisionOption = None
+        DecisionRequest = None
+        options_for_signed_pairs = None
+        CHOICE_LABELS = {}
+
+    if (
+        callable(driven_by_ultimate_rage_applies)
+        and bool(getattr(game, "is_authoritative", True))
+        and driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None))
+        and options_for_signed_pairs is not None
+    ):
+        try:
+            mods = list(unit._collect_advance_roll_modifiers() or [])
+        except Exception:
+            mods = []
+        try:
+            filt = getattr(unit, "_filter_internal_rivalries_roll_modifiers", None)
+            if callable(filt):
+                mods = filt(mods, kind="advance")
+        except Exception:
+            pass
+        options = options_for_signed_pairs(mods)
+        if options and DecisionRequest is not None and DecisionOption is not None and DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES:
+            queue = getattr(game, "decision_queue", None)
+            pending = False
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("unit_id", "")) == str(unit_id):
+                        pending = True
+                        break
+            if not pending:
+                req_options = [
+                    DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                    for opt in options
+                ]
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+                    "Choose which modifiers to ignore.",
+                    player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+                    options=req_options,
+                    context={"unit_id": unit_id, "ability_name": DRIVEN_BY_ULTIMATE_RAGE_NAME},
+                )
+                if hasattr(game, "request_decision"):
+                    game.request_decision(request)
+            try:
+                unit.round_state.advance_roll_unmodified = int(roll_val)
+                unit.round_state.advance_modifier_choice_pending = True
+                unit.round_state.advance_modifier_choice = None
+                unit.round_state.advance_roll = None
+            except Exception:
+                pass
+            return None
+
+    try:
         roll_val = int(unit._apply_advance_roll_modifiers(roll_val))
     except Exception:
         pass
@@ -95,6 +160,82 @@ def handle_charge_roll(game: object, state: DiceRollState):
         unit.round_state.charge_dice = list(dice_vals)
     except Exception:
         pass
+    try:
+        from ..rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+        from ..utility.modifier_choice import CHOICE_LABELS, options_for_signed_pairs
+        from ..engine.decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES
+        from ..engine.decisions import DecisionOption, DecisionRequest
+    except Exception:
+        driven_by_ultimate_rage_applies = None
+        DRIVEN_BY_ULTIMATE_RAGE_NAME = ""
+        DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES = None
+        DecisionOption = None
+        DecisionRequest = None
+        options_for_signed_pairs = None
+        CHOICE_LABELS = {}
+
+    if (
+        callable(driven_by_ultimate_rage_applies)
+        and bool(getattr(game, "is_authoritative", True))
+        and driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None))
+        and options_for_signed_pairs is not None
+    ):
+        target_ids = list(spec.get("target_unit_ids", []) or [])
+        targets = []
+        registry = getattr(game, "entity_registry", None)
+        for tid in target_ids:
+            try:
+                if registry is not None:
+                    tgt = registry.get(str(tid), kind="unit")
+                    if tgt is not None:
+                        targets.append(tgt)
+            except Exception:
+                continue
+        all_mods = []
+        try:
+            if targets:
+                for tgt in targets:
+                    all_mods.extend(list(game._collect_charge_modifiers(unit, target_unit=tgt) or []))
+            else:
+                all_mods = list(game._collect_charge_modifiers(unit, target_unit=None) or [])
+        except Exception:
+            all_mods = []
+        options = options_for_signed_pairs(all_mods)
+        if options and DecisionRequest is not None and DecisionOption is not None and DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
+            queue = getattr(game, "decision_queue", None)
+            pending = False
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("unit_id", "")) == str(unit_id):
+                        pending = True
+                        break
+            if not pending:
+                req_options = [
+                    DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                    for opt in options
+                ]
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+                    "Choose which modifiers to ignore.",
+                    player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
+                    options=req_options,
+                    context={
+                        "unit_id": unit_id,
+                        "ability_name": DRIVEN_BY_ULTIMATE_RAGE_NAME,
+                        "target_unit_ids": list(target_ids or []),
+                    },
+                )
+                if hasattr(game, "request_decision"):
+                    game.request_decision(request)
+            try:
+                unit.round_state.charge_modifier_choice_pending = True
+                unit.round_state.charge_modifier_choice = None
+                unit.round_state.charge_modifier_choice_targets = list(target_ids or [])
+            except Exception:
+                pass
     return {
         "base_roll": int(roll_result.total or 0),
         "dice": list(dice_vals),

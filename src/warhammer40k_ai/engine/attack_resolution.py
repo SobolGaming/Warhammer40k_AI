@@ -4,6 +4,11 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from ..utility.entity_ids import get_entity_id
+from .decision_kinds import (
+    DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+    DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+)
+from .decisions import DecisionOption, DecisionRequest
 
 
 @dataclass
@@ -440,9 +445,297 @@ class AttackResolutionManager:
                 instances.append(self._build_attack_instance(ctx, model))
         return instances
 
+    def _ensure_hit_modifier_choices(self, game: object, seq: AttackSequence) -> bool:
+        """
+        Ensure per-attack modifier ignore choices are resolved before grouping hit rolls.
+        Returns True if a decision was requested (pause), False otherwise.
+        """
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
+        target = self._resolve_unit(game, seq.target_unit_id)
+        profile = self._resolve_profile(game, seq.wargear_id, seq.profile_name)
+        if target is None or profile is None:
+            return False
+        from ..utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_LABELS,
+            options_for_signed_pairs,
+            options_for_signed_values,
+        )
+        for idx, attack_instance in enumerate(list(seq.attack_instances or [])):
+            try:
+                hit_choice_set = attack_instance.get("hit_modifier_choice") is not None
+                skill_choice_set = attack_instance.get("skill_modifier_choice") is not None
+            except Exception:
+                hit_choice_set = False
+                skill_choice_set = False
+            attacker = self._resolve_model(game, attack_instance.get("attacker_model_id"))
+            if attacker is None:
+                continue
+            try:
+                rule_name = profile._ignore_hit_modifier_rule_name(attacker)
+            except Exception:
+                rule_name = None
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            try:
+                is_melee = bool(getattr(profile, "parent_wargear", None) and profile.parent_wargear.is_melee())
+            except Exception:
+                is_melee = False
+            driven_by_ultimate_rage = False
+            driven_rule_name = ""
+            if is_melee and attacker_unit is not None:
+                try:
+                    from ..rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+                    driven_by_ultimate_rage = driven_by_ultimate_rage_applies(attacker_unit, game_map=getattr(game, "map", None))
+                    if driven_by_ultimate_rage:
+                        driven_rule_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
+                except Exception:
+                    driven_by_ultimate_rage = False
+                    driven_rule_name = ""
+            if not rule_name and not driven_by_ultimate_rage:
+                continue
+            if rule_name and hit_choice_set and not driven_by_ultimate_rage:
+                continue
+            if driven_by_ultimate_rage and hit_choice_set and skill_choice_set and not rule_name:
+                continue
+
+            preview = profile._hit_target_with_tracking(
+                target,
+                attacker,
+                attack_instance,
+                roll_value=1,
+                allow_rerolls=False,
+                log_roll=False,
+                preview_modifiers=True,
+            )
+            skill_mods = list(preview.get("skill_mods", []) or [])
+            hit_mods = list(preview.get("hit_mods", []) or [])
+
+            player = None
+            try:
+                player = attacker.parent_unit.get_parent_army().player
+            except Exception:
+                player = None
+            game_map = getattr(game, "map", None)
+            provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
+
+            if rule_name:
+                if attack_instance.get("hit_modifier_choice") is None:
+                    combined_vals = [int(val) for val, _ in list(skill_mods or [])] + [int(val) for val, _ in list(hit_mods or [])]
+                    options = options_for_signed_values(combined_vals)
+                    if not options:
+                        attack_instance["hit_modifier_choice"] = CHOICE_KEEP_ALL
+                    elif callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
+                        try:
+                            choice = provider(
+                                player=player,
+                                attacker=attacker,
+                                target=target,
+                                weapon_profile=profile,
+                                ability_name=rule_name,
+                                choices=options,
+                            )
+                        except Exception:
+                            choice = None
+                        if choice not in options:
+                            choice = CHOICE_KEEP_ALL
+                        attack_instance["hit_modifier_choice"] = choice
+                    elif player is not None and callable(getattr(player, "_choose_optional_value", None)):
+                        try:
+                            ctx = {
+                                "ability_name": rule_name,
+                                "attacker": attacker,
+                                "target": target,
+                                "weapon_profile": profile,
+                            }
+                            choice = player._choose_optional_value("HIT_MODIFIER_IGNORES", list(options), ctx)
+                        except Exception:
+                            choice = None
+                        if choice in options:
+                            attack_instance["hit_modifier_choice"] = choice
+                    if attack_instance.get("hit_modifier_choice") is None and options:
+                        prompt = "Choose which modifiers to ignore."
+                        req_options = [
+                            DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                            for opt in options
+                        ]
+                        ctx = {
+                            "sequence_id": int(seq.sequence_id),
+                            "attack_index": int(idx),
+                            "attacker_model_id": attack_instance.get("attacker_model_id"),
+                            "target_unit_id": seq.target_unit_id,
+                            "wargear_id": seq.wargear_id,
+                            "profile_name": seq.profile_name,
+                            "ability_name": rule_name,
+                        }
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+                            prompt,
+                            player_id=getattr(player, "id", None) if player is not None else None,
+                            options=req_options,
+                            context=ctx,
+                        )
+                        try:
+                            seq.step = "hit_modifier_choice"
+                        except Exception:
+                            pass
+                        if hasattr(game, "request_decision"):
+                            game.request_decision(request)
+                        return True
+
+            if driven_by_ultimate_rage:
+                if attack_instance.get("skill_modifier_choice") is None:
+                    skill_opts = options_for_signed_pairs(skill_mods)
+                    if not skill_opts:
+                        attack_instance["skill_modifier_choice"] = CHOICE_KEEP_ALL
+                    else:
+                        skill_provider = getattr(game_map, "skill_modifier_choice_provider", None) if game_map is not None else None
+                        if callable(skill_provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
+                            try:
+                                choice = skill_provider(
+                                    player=player,
+                                    attacker=attacker,
+                                    target=target,
+                                    weapon_profile=profile,
+                                    ability_name=f"{driven_rule_name} (Weapon Skill)",
+                                    choices=skill_opts,
+                                )
+                            except Exception:
+                                choice = None
+                            if choice not in skill_opts:
+                                choice = CHOICE_KEEP_ALL
+                            attack_instance["skill_modifier_choice"] = choice
+                        elif player is not None and callable(getattr(player, "_choose_optional_value", None)):
+                            try:
+                                ctx = {
+                                    "ability_name": driven_rule_name,
+                                    "attacker": attacker,
+                                    "target": target,
+                                    "weapon_profile": profile,
+                                    "modifier_kind": "weapon_skill",
+                                }
+                                choice = player._choose_optional_value("SKILL_MODIFIER_IGNORES", list(skill_opts), ctx)
+                            except Exception:
+                                choice = None
+                            if choice in skill_opts:
+                                attack_instance["skill_modifier_choice"] = choice
+                        if attack_instance.get("skill_modifier_choice") is None and skill_opts:
+                            prompt = "Choose which modifiers to ignore."
+                            req_options = [
+                                DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                                for opt in skill_opts
+                            ]
+                            ctx = {
+                                "sequence_id": int(seq.sequence_id),
+                                "attack_index": int(idx),
+                                "attacker_model_id": attack_instance.get("attacker_model_id"),
+                                "target_unit_id": seq.target_unit_id,
+                                "wargear_id": seq.wargear_id,
+                                "profile_name": seq.profile_name,
+                                "ability_name": f"{driven_rule_name} (Weapon Skill)",
+                                "modifier_kind": "weapon_skill",
+                            }
+                            request = DecisionRequest.create(
+                                DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+                                prompt,
+                                player_id=getattr(player, "id", None) if player is not None else None,
+                                options=req_options,
+                                context=ctx,
+                            )
+                            try:
+                                seq.step = "skill_modifier_choice"
+                            except Exception:
+                                pass
+                            if hasattr(game, "request_decision"):
+                                game.request_decision(request)
+                            return True
+
+                if attack_instance.get("hit_modifier_choice") is None:
+                    hit_opts = options_for_signed_pairs(hit_mods)
+                    if not hit_opts:
+                        attack_instance["hit_modifier_choice"] = CHOICE_KEEP_ALL
+                    else:
+                        if callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
+                            try:
+                                choice = provider(
+                                    player=player,
+                                    attacker=attacker,
+                                    target=target,
+                                    weapon_profile=profile,
+                                    ability_name=f"{driven_rule_name} (Hit roll)",
+                                    choices=hit_opts,
+                                )
+                            except Exception:
+                                choice = None
+                            if choice not in hit_opts:
+                                choice = CHOICE_KEEP_ALL
+                            attack_instance["hit_modifier_choice"] = choice
+                        elif player is not None and callable(getattr(player, "_choose_optional_value", None)):
+                            try:
+                                ctx = {
+                                    "ability_name": driven_rule_name,
+                                    "attacker": attacker,
+                                    "target": target,
+                                    "weapon_profile": profile,
+                                    "modifier_kind": "hit_roll",
+                                }
+                                choice = player._choose_optional_value("HIT_MODIFIER_IGNORES", list(hit_opts), ctx)
+                            except Exception:
+                                choice = None
+                            if choice in hit_opts:
+                                attack_instance["hit_modifier_choice"] = choice
+                        if attack_instance.get("hit_modifier_choice") is None and hit_opts:
+                            prompt = "Choose which modifiers to ignore."
+                            req_options = [
+                                DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                                for opt in hit_opts
+                            ]
+                            ctx = {
+                                "sequence_id": int(seq.sequence_id),
+                                "attack_index": int(idx),
+                                "attacker_model_id": attack_instance.get("attacker_model_id"),
+                                "target_unit_id": seq.target_unit_id,
+                                "wargear_id": seq.wargear_id,
+                                "profile_name": seq.profile_name,
+                                "ability_name": f"{driven_rule_name} (Hit roll)",
+                                "modifier_kind": "hit_roll",
+                            }
+                            request = DecisionRequest.create(
+                                DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+                                prompt,
+                                player_id=getattr(player, "id", None) if player is not None else None,
+                                options=req_options,
+                                context=ctx,
+                            )
+                            try:
+                                seq.step = "hit_modifier_choice"
+                            except Exception:
+                                pass
+                            if hasattr(game, "request_decision"):
+                                game.request_decision(request)
+                            return True
+
+        return False
+
+    def resume_after_hit_modifier_choice(self, game: object, seq: AttackSequence) -> None:
+        if seq is None:
+            return
+        if str(getattr(seq, "step", "")) != "hit_modifier_choice":
+            return
+        self._begin_hits(game, seq)
+
+    def resume_after_skill_modifier_choice(self, game: object, seq: AttackSequence) -> None:
+        if seq is None:
+            return
+        if str(getattr(seq, "step", "")) != "skill_modifier_choice":
+            return
+        self._begin_hits(game, seq)
+
     def _begin_hits(self, game: object, seq: AttackSequence) -> None:
         if not seq.attack_instances:
             self._mark_sequence_done(game, seq)
+            return
+        if self._ensure_hit_modifier_choices(game, seq):
             return
         # Group attacks by hit context (final needed + crit threshold + reroll signatures)
         groups: dict[tuple, list[int]] = {}

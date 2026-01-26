@@ -43,6 +43,16 @@ class Map:
         self.miracle_dice_provider = None
         # Signature: provider(player, unit, roll_type, value, needed, tokens_remaining, ...) -> "use" | "skip" | "suppress"
         self.aspect_shrine_provider = None
+        # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None
+        self.hit_modifier_choice_provider = None
+        # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None
+        self.skill_modifier_choice_provider = None
+        # Signature: provider(player, unit, action_type, ability_name, choices) -> choice_key | None
+        self.move_modifier_choice_provider = None
+        # Signature: provider(player, unit, ability_name, choices) -> choice_key | None
+        self.advance_modifier_choice_provider = None
+        # Signature: provider(player, unit, target_unit_ids, ability_name, choices) -> choice_key | None
+        self.charge_modifier_choice_provider = None
 
     def create_boundary_polygon(self) -> Polygon:
         """

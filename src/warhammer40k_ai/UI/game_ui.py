@@ -2240,6 +2240,11 @@ class GameView:
                 self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game.map.miracle_dice_provider = self._miracle_dice_provider
                 self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
+                self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
+                self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
+                self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
+                self.game.map.advance_modifier_choice_provider = self._advance_modifier_choice_provider
+                self.game.map.charge_modifier_choice_provider = self._charge_modifier_choice_provider
         except Exception:
             pass
         try:
@@ -2251,6 +2256,11 @@ class GameView:
                 self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game_map.miracle_dice_provider = self._miracle_dice_provider
                 self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
+                self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
+                self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
+                self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
+                self.game_map.advance_modifier_choice_provider = self._advance_modifier_choice_provider
+                self.game_map.charge_modifier_choice_provider = self._charge_modifier_choice_provider
         except Exception:
             pass
 
@@ -2500,6 +2510,11 @@ class GameView:
                 DECISION_CHOOSE_DOCTRINA,
                 DECISION_CHOOSE_HARBINGER,
                 DECISION_CHOOSE_HYPER_ADAPTATION,
+                DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+                DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+                DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+                DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+                DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
                 DECISION_CHOOSE_QUARRY,
                 DECISION_CHOOSE_SHADOW_FORM,
                 DECISION_CHOOSE_VOW,
@@ -2512,6 +2527,93 @@ class GameView:
             br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
             self._pending_blessings_queue.append(player)
             self._open_next_blessings_prompt(br)
+            return
+
+        if decision_type in (
+            DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+            DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+            DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+            DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+            DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+        ):
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_payload, first_option_id
+
+            dlg = self.stratagem_choice_dialog
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    sw, sh = self.screen.get_size()
+                    self.stratagem_choice_dialog = QuarrySelectionDialog(sw, sh)
+                except Exception:
+                    self.stratagem_choice_dialog = None
+                dlg = self.stratagem_choice_dialog
+
+            default_id = option_id_for_payload(request, "choice", "keep_all") or first_option_id(request)
+            if dlg is None:
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_name = str(ctx.get("ability_name", "") or "")
+            attacker_name = ""
+            unit_name = ""
+            try:
+                attacker_id = str(ctx.get("attacker_model_id", "") or "")
+                if attacker_id:
+                    reg = getattr(game, "entity_registry", None)
+                    if reg is not None:
+                        model = reg.get(attacker_id, kind="model")
+                        attacker_name = getattr(model, "name", "") if model is not None else ""
+            except Exception:
+                attacker_name = ""
+            try:
+                unit_id = str(ctx.get("unit_id", "") or "")
+                if unit_id:
+                    reg = getattr(game, "entity_registry", None)
+                    if reg is not None:
+                        unit_obj = reg.get(unit_id, kind="unit")
+                        unit_name = getattr(unit_obj, "name", "") if unit_obj is not None else ""
+            except Exception:
+                unit_name = ""
+            header = attacker_name or unit_name or ability_name or "Choose which modifiers to ignore."
+            subtitle = ability_name if (attacker_name or unit_name) and ability_name else ""
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if default_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        default_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True},
+                    )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title="Ignore Modifiers",
+                header=header,
+                subtitle=subtitle,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+                show_cancel=True,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
             return
 
         if decision_type == DECISION_CHOOSE_VOW:
@@ -9274,6 +9376,276 @@ class GameView:
             clock.tick(60)
 
         return str(choice_holder["choice"] or "skip")
+
+    def _blocking_modifier_choice_dialog(
+        self,
+        *,
+        player=None,
+        decision_kind: str,
+        choices=(),
+        title: str = "Ignore Modifiers",
+        header: str = "",
+        subtitle: str = "",
+        context: dict | None = None,
+    ) -> str:
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return "keep_all"
+        except Exception:
+            return "keep_all"
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.modifier_choice import CHOICE_LABELS
+
+        if not hasattr(self, "hit_modifier_choice_dialog") or self.hit_modifier_choice_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                self.hit_modifier_choice_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+            except Exception:
+                self.hit_modifier_choice_dialog = None
+        dlg = self.hit_modifier_choice_dialog
+        if dlg is None:
+            return "keep_all"
+
+        opts = list(choices or ())
+        if not opts:
+            return "keep_all"
+        if len(opts) == 1:
+            return str(opts[0] or "keep_all")
+        options = [DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt}) for opt in opts]
+
+        req = DecisionRequest.create(
+            decision_kind,
+            "Choose which modifiers to ignore.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=dict(context or {}),
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            choice_holder["choice"] = value
+            choice_holder["done"] = True
+
+        def _on_cancel():
+            default_id = options[0].option_id if options else ""
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
+            choice_holder["choice"] = options[0].payload.get("choice") if options else "keep_all"
+            choice_holder["done"] = True
+
+        dlg.show(
+            title=title or "Ignore Modifiers",
+            header=header or subtitle or "Choose which modifiers to ignore.",
+            subtitle=subtitle or "",
+            on_confirm=_on_choice,
+            on_cancel=_on_cancel,
+            decision_request=req,
+            show_cancel=True,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "keep_all"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        choice = choice_holder["choice"]
+        if choice not in opts:
+            return "keep_all"
+        return choice
+
+    def _hit_modifier_choice_provider(
+        self,
+        *,
+        player=None,
+        attacker=None,
+        target=None,
+        weapon_profile=None,
+        ability_name: str = "",
+        choices=(),
+        **_kwargs,
+    ):
+        """
+        Blocking modal prompt for ignore-modifier choices (hit/BS/WS/hit roll).
+        Returns a choice key: keep_all | ignore_negative | ignore_positive | ignore_all.
+        """
+        from ..engine.decision_kinds import DECISION_CHOOSE_HIT_MODIFIER_IGNORES
+        from ..utility.entity_ids import get_entity_id
+
+        attacker_name = getattr(attacker, "name", "Model") if attacker is not None else "Model"
+        weapon_name = getattr(getattr(weapon_profile, "parent_wargear", None), "name", None) or getattr(weapon_profile, "name", "Weapon")
+        context = {
+            "attacker_model_id": get_entity_id(attacker) if attacker is not None else None,
+            "target_unit_id": get_entity_id(target) if target is not None else None,
+            "wargear_id": get_entity_id(getattr(weapon_profile, "parent_wargear", None)) if weapon_profile is not None else None,
+            "profile_name": getattr(weapon_profile, "name", None) if weapon_profile is not None else None,
+            "ability_name": str(ability_name or ""),
+        }
+        context = {k: v for k, v in context.items() if v is not None}
+        return self._blocking_modifier_choice_dialog(
+            player=player,
+            decision_kind=DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
+            choices=choices,
+            title="Ignore Modifiers",
+            header=f"{attacker_name}: {weapon_name}",
+            subtitle=str(ability_name or ""),
+            context=context,
+        )
+
+    def _skill_modifier_choice_provider(
+        self,
+        *,
+        player=None,
+        attacker=None,
+        target=None,
+        weapon_profile=None,
+        ability_name: str = "",
+        choices=(),
+        **_kwargs,
+    ):
+        from ..engine.decision_kinds import DECISION_CHOOSE_SKILL_MODIFIER_IGNORES
+        from ..utility.entity_ids import get_entity_id
+
+        attacker_name = getattr(attacker, "name", "Model") if attacker is not None else "Model"
+        weapon_name = getattr(getattr(weapon_profile, "parent_wargear", None), "name", None) or getattr(weapon_profile, "name", "Weapon")
+        context = {
+            "attacker_model_id": get_entity_id(attacker) if attacker is not None else None,
+            "target_unit_id": get_entity_id(target) if target is not None else None,
+            "wargear_id": get_entity_id(getattr(weapon_profile, "parent_wargear", None)) if weapon_profile is not None else None,
+            "profile_name": getattr(weapon_profile, "name", None) if weapon_profile is not None else None,
+            "ability_name": str(ability_name or ""),
+            "modifier_kind": "skill",
+        }
+        context = {k: v for k, v in context.items() if v is not None}
+        return self._blocking_modifier_choice_dialog(
+            player=player,
+            decision_kind=DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+            choices=choices,
+            title="Ignore Modifiers",
+            header=f"{attacker_name}: {weapon_name}",
+            subtitle=str(ability_name or ""),
+            context=context,
+        )
+
+    def _move_modifier_choice_provider(
+        self,
+        *,
+        player=None,
+        unit=None,
+        action_type: str = "",
+        ability_name: str = "",
+        choices=(),
+        **_kwargs,
+    ):
+        from ..engine.decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
+        from ..utility.entity_ids import get_entity_id
+
+        unit_name = getattr(unit, "name", "Unit") if unit is not None else "Unit"
+        context = {
+            "unit_id": get_entity_id(unit) if unit is not None else None,
+            "action_type": str(action_type or ""),
+            "ability_name": str(ability_name or ""),
+            "modifier_kind": "move",
+        }
+        context = {k: v for k, v in context.items() if v is not None}
+        subtitle = str(ability_name or "")
+        if action_type:
+            subtitle = f"{subtitle} ({action_type})" if subtitle else str(action_type)
+        return self._blocking_modifier_choice_dialog(
+            player=player,
+            decision_kind=DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
+            choices=choices,
+            title="Ignore Modifiers",
+            header=unit_name,
+            subtitle=subtitle,
+            context=context,
+        )
+
+    def _advance_modifier_choice_provider(
+        self,
+        *,
+        player=None,
+        unit=None,
+        ability_name: str = "",
+        choices=(),
+        **_kwargs,
+    ):
+        from ..engine.decision_kinds import DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES
+        from ..utility.entity_ids import get_entity_id
+
+        unit_name = getattr(unit, "name", "Unit") if unit is not None else "Unit"
+        context = {
+            "unit_id": get_entity_id(unit) if unit is not None else None,
+            "ability_name": str(ability_name or ""),
+            "modifier_kind": "advance",
+        }
+        context = {k: v for k, v in context.items() if v is not None}
+        return self._blocking_modifier_choice_dialog(
+            player=player,
+            decision_kind=DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
+            choices=choices,
+            title="Ignore Modifiers",
+            header=unit_name,
+            subtitle=str(ability_name or ""),
+            context=context,
+        )
+
+    def _charge_modifier_choice_provider(
+        self,
+        *,
+        player=None,
+        unit=None,
+        target_unit_ids=None,
+        ability_name: str = "",
+        choices=(),
+        **_kwargs,
+    ):
+        from ..engine.decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES
+        from ..utility.entity_ids import get_entity_id
+
+        unit_name = getattr(unit, "name", "Unit") if unit is not None else "Unit"
+        context = {
+            "unit_id": get_entity_id(unit) if unit is not None else None,
+            "target_unit_ids": list(target_unit_ids or []),
+            "ability_name": str(ability_name or ""),
+            "modifier_kind": "charge",
+        }
+        context = {k: v for k, v in context.items() if v is not None}
+        return self._blocking_modifier_choice_dialog(
+            player=player,
+            decision_kind=DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+            choices=choices,
+            title="Ignore Modifiers",
+            header=unit_name,
+            subtitle=str(ability_name or ""),
+            context=context,
+        )
 
     def _miracle_dice_provider(
         self,
