@@ -210,6 +210,7 @@ class GameView:
         self.harbingers_of_dread_dialog = None
         self.doctrina_imperatives_dialog = None
         self.combat_doctrines_dialog = None
+        self.grand_coven_dialog = None
         self.combat_drugs_dialog = None
         self.hyper_adaptations_dialog = None
         self.voice_of_command_dialog = None
@@ -2159,6 +2160,8 @@ class GameView:
         self._pending_doctrina_queue = []
         # Space Marines: Combat Doctrines selection queue
         self._pending_combat_doctrines_queue = []
+        # Thousand Sons: Grand Coven selection queue
+        self._pending_grand_coven_queue = []
         # Drukhari: Combat Drugs selection queue
         self._pending_combat_drugs_queue = []
         # Imperial Knights: Code Chivalric selection queue
@@ -2298,6 +2301,8 @@ class GameView:
                 event_system.subscribe("voice_of_command_prompt", self._on_voice_of_command_prompt)
                 # Space Marines: Combat Doctrines prompt
                 event_system.subscribe("combat_doctrines_prompt", self._on_combat_doctrines_prompt)
+                # Thousand Sons: Grand Coven prompt
+                event_system.subscribe("grand_coven_prompt", self._on_grand_coven_prompt)
                 # Drukhari: Combat Drugs prompt
                 event_system.subscribe("combat_drugs_prompt", self._on_combat_drugs_prompt)
                 # Grey Knights: Gate of Infinity prompt at end of opponent's Fight phase
@@ -10554,6 +10559,114 @@ class GameView:
         self.combat_doctrines_dialog.show(on_confirm=_on_confirm, decision_request=req)
         try:
             self.dialog_manager.open(self.combat_doctrines_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _on_grand_coven_prompt(self, player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        if mgr is None or not getattr(mgr, "can_select_grand_coven", lambda **_k: False)(game=game):
+            return
+        try:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            battle_round = 0
+        self._pending_grand_coven_queue = [(player, battle_round)]
+        self._open_next_grand_coven_prompt(battle_round)
+
+    def _open_next_grand_coven_prompt(self, battle_round: int) -> None:
+        if not self._pending_grand_coven_queue:
+            return
+        try:
+            player, br = self._pending_grand_coven_queue.pop(0)
+        except Exception:
+            return
+        army = player.get_army()
+        mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "can_select_grand_coven", lambda **_k: False)(game=self.game):
+            self._open_next_grand_coven_prompt(br)
+            return
+        try:
+            options = list(getattr(mgr, "get_available_grand_coven_abilities", lambda: [])() or [])
+        except Exception:
+            options = []
+        if not options:
+            self._open_next_grand_coven_prompt(br)
+            return
+
+        if self.grand_coven_dialog is None:
+            try:
+                from .dialogs import GrandCovenDialog
+                sw, sh = self.screen.get_size()
+                self.grand_coven_dialog = GrandCovenDialog(sw, sh)
+            except Exception:
+                self.grand_coven_dialog = None
+        if self.grand_coven_dialog is None:
+            self._open_next_grand_coven_prompt(br)
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_GRAND_COVEN
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(army)
+        req_options = []
+        req_options.append(
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "summary": "Do not select a Kindred Sorcery ability this Command phase.", "army_id": army_id},
+            )
+        )
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or ""
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            self._open_next_grand_coven_prompt(br)
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_GRAND_COVEN,
+            "Select a Kindred Sorcery ability.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": br},
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
+            self._open_next_grand_coven_prompt(br)
+
+        self.grand_coven_dialog.show(on_confirm=_on_confirm, decision_request=req)
+        try:
+            self.dialog_manager.open(self.grand_coven_dialog, modal=True)
         except Exception:
             pass
 

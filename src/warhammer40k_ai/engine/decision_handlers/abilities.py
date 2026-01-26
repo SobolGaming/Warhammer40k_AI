@@ -12,6 +12,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_DARK_PACT,
     DECISION_CHOOSE_DOCTRINA,
     DECISION_CHOOSE_COMBAT_DOCTRINE,
+    DECISION_CHOOSE_GRAND_COVEN,
     DECISION_CHOOSE_COMBAT_DRUGS,
     DECISION_CHOOSE_HYPER_ADAPTATION,
     DECISION_CHOOSE_FRENZY_TARGET,
@@ -472,6 +473,45 @@ def _apply_choose_combat_doctrine(game: object, request: DecisionRequest, result
         label = _option_label(request, result) or str(choice)
         if label:
             _log_action_for_players(game, player, f"Combat Doctrines: {label} (Battle Round {battle_round})")
+    except Exception:
+        pass
+    return applied
+
+
+def _validate_choose_grand_coven(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    choice = payload.get("choice_key") or payload.get("key")
+    if choice is None:
+        return ("Grand Coven selection requires choice_key.",)
+    army = _resolve_army(game, request, payload)
+    if army is None or getattr(army, "thousand_sons_detachments", None) is None:
+        return ("Grand Coven manager not found.",)
+    return ()
+
+
+def _apply_choose_grand_coven(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Grand Coven army not found.")
+    mgr = getattr(army, "thousand_sons_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Grand Coven manager not found.")
+    choice = payload.get("choice_key") or payload.get("key")
+    battle_round = request.context.get("battle_round")
+    applied = bool(mgr.select_grand_coven(choice, battle_round=battle_round))
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            _log_action_for_players(game, player, f"Kindred Sorcery: {label} (Battle Round {battle_round})")
     except Exception:
         pass
     return applied
@@ -1421,6 +1461,11 @@ register_decision_handler(
     DECISION_CHOOSE_COMBAT_DOCTRINE,
     validate=_validate_choose_combat_doctrine,
     apply=_apply_choose_combat_doctrine,
+)
+register_decision_handler(
+    DECISION_CHOOSE_GRAND_COVEN,
+    validate=_validate_choose_grand_coven,
+    apply=_apply_choose_grand_coven,
 )
 register_decision_handler(
     DECISION_CHOOSE_COMBAT_DRUGS,

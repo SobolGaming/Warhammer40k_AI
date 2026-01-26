@@ -289,18 +289,23 @@ class WargearProfile:
             return base_max
         if attacker is None:
             return base_max
-        try:
-            if not self.is_melta():
-                return base_max
-        except Exception:
-            return base_max
         bonus = 0
         try:
-            unit = getattr(attacker, "parent_unit", None)
-            if unit is not None and hasattr(unit, "leading_unit_melta_range_bonus"):
-                bonus = int(unit.leading_unit_melta_range_bonus() or 0)
+            if self.is_melta():
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and hasattr(unit, "leading_unit_melta_range_bonus"):
+                    bonus += int(unit.leading_unit_melta_range_bonus() or 0)
         except Exception:
-            bonus = 0
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "grand_coven_psychic_range_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None)
+                bonus += int(mgr.grand_coven_psychic_range_bonus(attacker, self, game=game) or 0)
+        except Exception:
+            pass
         if bonus:
             return base_max + bonus
         return base_max
@@ -2187,6 +2192,17 @@ class WargearProfile:
             bonus_lance_label = ""
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
+
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "grand_coven_devastating_wounds", None)):
+                game = getattr(getattr(army, "player", None), "game", None)
+                if mgr.grand_coven_devastating_wounds(attacker, self, game=game):
+                    attack_instance["bonus_devastating_wounds"] = True
+        except Exception:
+            pass
 
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -4916,6 +4932,18 @@ class WargearProfile:
             if mgr is not None and mgr.wound_bonus_applies(attacker.parent_unit, target):
                 dice_modifier += 1
                 wound_result['modifiers'].append("+1 to wound from Oath of Moment")
+        except Exception:
+            pass
+        # Thousand Sons: Grand Coven (Psychic Maelstrom).
+        try:
+            army = attacker.parent_unit.get_parent_army()
+            mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+            if mgr is not None and callable(getattr(mgr, "grand_coven_psychic_wound_bonus", None)):
+                game = getattr(getattr(army, "player", None), "game", None)
+                bonus = int(mgr.grand_coven_psychic_wound_bonus(attacker, self, game=game) or 0)
+                if bonus:
+                    dice_modifier += bonus
+                    wound_result['modifiers'].append(f"+{bonus} to wound from Psychic Maelstrom")
         except Exception:
             pass
         # Drukhari: Power from Pain (Sculptor of Torments).

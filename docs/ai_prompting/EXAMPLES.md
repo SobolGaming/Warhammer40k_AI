@@ -16,6 +16,11 @@
     Stop after each phase so that feedback or approval for next phase can be given.
     ```
 
+- Example prompt for asking for full implementation of a Detachment abililty with user-choices
+    ```
+    Implement support for the Grand Covent detachment ability `In your Command phase, you can select one of the abilities listed below to take effect until the start of your next Command phase. You can only select each of these abilities once per battle. Imbued Manifestation Add 6" to the Range characteristic of ranged Psychic weapons equipped by THOUSAND SONS models from your army. Psychic Maelstrom Each time a THOUSAND SONS model from your army makes an attack with a Psychic weapon , add 1 to the Wound roll . Wrath of the Immaterium Psychic weapons equipped by THOUSAND SONS models from your army have the [devastating wounds] ability.` - ensure proper LOCAL and REMOTE command support and use of selection dialogs for UI.
+    ```
+
 - Example prompt from prompting codex to do complete work
     ```
     USER>Implement support for all unsupported abilities of Pink Horrors and Blue Horrors datasheets. Note the unique UNIT COMPOSITION sections in both Datasheets and special rules in HORRORS ARE PINK. HORRORS ARE BLUE. WHEREONCE THERE WAS ONE, NOW THERE ARE TWO. of Pink Horrors. JSONs have full rules. Do not make any CODE CHANGES yet, process the abilities and describe how you would implement first.

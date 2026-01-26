@@ -43,6 +43,7 @@ from .daemonic_allegiance_dialog import DaemonicAllegianceDialog
 from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
 from .doctrina_imperatives_dialog import DoctrinaImperativesDialog
 from .combat_doctrines_dialog import CombatDoctrinesDialog
+from .grand_coven_dialog import GrandCovenDialog
 from .combat_drugs_dialog import CombatDrugsDialog
 from .hyper_adaptations_dialog import HyperAdaptationsDialog
 from .code_chivalric_dialog import CodeChivalricDialog

@@ -645,6 +645,60 @@ class Game:
             return
         mgr.select_doctrine(selected, battle_round=getattr(self, "turn", 0))
 
+    def _maybe_prompt_grand_coven(self) -> None:
+        es = getattr(self, "event_system", None)
+        if es is None or not hasattr(es, "subscribers"):
+            raise RuntimeError("Event system missing for Grand Coven prompt.")
+        subs = getattr(es, "subscribers", {})
+        if not isinstance(subs, dict):
+            raise RuntimeError("Event system subscribers not configured.")
+
+        player = self.get_current_player()
+        if player is None:
+            raise RuntimeError("Grand Coven prompt requires current player.")
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError("Grand Coven prompt requires an army.")
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        if mgr is None or not getattr(mgr, "can_select_grand_coven", lambda **_k: False)(game=self):
+            return
+        is_human = bool(getattr(player, "has_control", lambda: False)())
+        if is_human and subs.get("grand_coven_prompt"):
+            es.publish("grand_coven_prompt", player=player, game=self)
+            return
+
+        options = list(getattr(mgr, "get_available_grand_coven_abilities", lambda: [])() or [])
+        if not options:
+            return
+        labels = ["None"] + [o.name for o in options]
+        ctx = {
+            "ability_name": "Kindred Sorcery",
+            "phase": "Command phase",
+            "options": list(labels),
+        }
+        choice = None
+        try:
+            choice = player._choose_optional_value("GRAND_COVEN", labels, ctx)
+        except Exception:
+            choice = None
+        if choice is None:
+            return
+        if isinstance(choice, str) and choice.strip().lower() in ("none", "skip", "no"):
+            return
+
+        selected = None
+        if choice in options:
+            selected = choice
+        elif isinstance(choice, str):
+            choice_norm = choice.strip().lower()
+            for opt in options:
+                if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
+                    selected = opt
+                    break
+        if selected is None:
+            return
+        mgr.select_grand_coven(selected, battle_round=getattr(self, "turn", 0))
+
     def _maybe_prompt_combat_drugs(self) -> None:
         es = getattr(self, "event_system", None)
         if es is None or not hasattr(es, "subscribers"):
@@ -6321,6 +6375,11 @@ class Game:
         mgr = getattr(army, "combat_doctrines", None)
         if mgr is not None:
             self._maybe_prompt_combat_doctrines()
+
+        # Thousand Sons: Grand Coven (Kindred Sorcery) selection at the start of your Command phase.
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        if mgr is not None:
+            self._maybe_prompt_grand_coven()
 
         # Drukhari: Combat Drugs selection at the start of your Command phase.
         mgr = getattr(army, "drukhari_detachments", None)

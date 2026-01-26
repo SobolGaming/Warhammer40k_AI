@@ -214,6 +214,7 @@ Faction / Detachment / Ability choices:
 - dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id}
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip}
+- grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip}
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_id}
 - hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}
 - frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
