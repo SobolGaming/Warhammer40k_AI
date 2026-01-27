@@ -374,12 +374,36 @@ class NetworkGameSession:
                 await self.request_resync()
 
     async def poll_messages(self) -> None:
+        processed = 0
+        seen_types: set[str] = set()
         while True:
             try:
                 event = await self.client.next_message(timeout=0.0)
             except asyncio.TimeoutError:
                 break
+            processed += 1
+            seen_types.add(f"{event.category}:{event.message_type}")
             await self.handle_message(event)
+        if processed:
+            setup_phase = None
+            if self.game is not None:
+                setup_phase = getattr(self.game, "setup_phase", None)
+            log_network(
+                "session.poll",
+                processed=processed,
+                types=",".join(sorted(seen_types)),
+                setup_phase=setup_phase,
+                last_event_id=self.current_event_id(),
+            )
+        if not processed:
+            # When polled from a tight UI loop, the zero-timeout queue read can
+            # complete without yielding control. Yield once so the background
+            # receiver task can enqueue newly arrived messages.
+            await asyncio.sleep(0)
+            # On Windows/ProactorEventLoop, a single sleep(0) may not run
+            # tasks that themselves yield once; yield a second time to ensure
+            # receiver tasks get CPU time.
+            await asyncio.sleep(0)
 
     def current_event_id(self) -> int:
         if self.game is None:

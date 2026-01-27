@@ -35,6 +35,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Game state updates flow as: Client Command -> Server validation -> Command broadcast + Event broadcast.
 - Clients keep a local game state by replaying accepted commands from the server.
 - Spectators receive snapshots/events only; commands from spectators are rejected.
+- The pygame UI pumps networking each frame via `NetworkGameSession.poll_messages()`, which yields once when the inbound queue is empty so the background receiver task can enqueue newly arrived messages.
 
 ## Transport and Security
 
@@ -51,6 +52,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - To log incoming client messages and how they are processed, set `W40K_NETWORK_LOG=1`.
   - Works for both `client` (headless) and `client-ui` (pygame) clients.
   - Logs appear in the terminal running the client.
+  - Additional client-side tags include `transport.recv`, `session.poll`, and `client.game.*.cursor` to show inbound queueing and event cursor advances.
 
 ## Message Channels
 

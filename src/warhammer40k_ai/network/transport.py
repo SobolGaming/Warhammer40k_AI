@@ -11,6 +11,7 @@ import websockets
 from websockets.exceptions import ConnectionClosed, WebSocketException
 
 from .messages import ErrorMessage, PROTOCOL_VERSION, parse_message, _ensure_jsonable
+from .debug import log_network
 
 GAME_MESSAGE_TYPES = {"snapshot", "command", "event", "error", "resync"}
 CONTROL_MESSAGE_TYPES = {
@@ -368,6 +369,12 @@ class TransportClient:
                         message_type=msg_type,
                         message=data,
                     )
+                )
+                log_network(
+                    "transport.recv",
+                    category=category,
+                    type=msg_type,
+                    queued=self._incoming.qsize(),
                 )
         except ConnectionClosed:
             pass

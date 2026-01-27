@@ -181,9 +181,15 @@ class NetworkClient:
             if self.role == "player2" and len(players) > 1:
                 self.player_id = players[1].get("id", self.player_id)
             events = list(snapshot.get("events", []) or [])
+            prev_event_id = self.event_cursor.last_event_id
             if events:
                 self.event_cursor.last_event_id = 0
                 self.event_cursor.validate_and_advance(events)
+            log_network(
+                "client.game.snapshot.cursor",
+                previous=prev_event_id,
+                current=self.event_cursor.last_event_id,
+            )
             return
         if msg_type == "resync":
             payload = msg.get("payload", {})
@@ -202,6 +208,7 @@ class NetworkClient:
                 self.player_id = players[1].get("id", self.player_id)
             events = list(payload.get("events", []) or [])
             since_event_id = payload.get("since_event_id")
+            prev_event_id = self.event_cursor.last_event_id
             if events:
                 first_event_id = events[0].get("event_id")
                 if first_event_id is not None:
@@ -211,9 +218,20 @@ class NetworkClient:
                 self.event_cursor.validate_and_advance(events)
             else:
                 self.event_cursor.last_event_id = int(since_event_id or 0)
+            log_network(
+                "client.game.resync.cursor",
+                previous=prev_event_id,
+                current=self.event_cursor.last_event_id,
+            )
             return
         if msg_type == "event":
             events = list(msg.get("payload", {}).get("events", []) or [])
             log_network("client.game.event", count=len(events))
             if events:
+                prev_event_id = self.event_cursor.last_event_id
                 self.event_cursor.validate_and_advance(events)
+                log_network(
+                    "client.game.event.cursor",
+                    previous=prev_event_id,
+                    current=self.event_cursor.last_event_id,
+                )
