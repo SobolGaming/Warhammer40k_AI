@@ -1446,7 +1446,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AC", "Daughters of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Martial Inspiration"): ("Partial", "Advance-and-charge eligibility applied without once-per-battle restriction."),
         ("AC", "Strike from the Skies"): ("Supported", "Shoot and charge after Falling Back."),
-        ("AC", "Tactical Perception"): ("Partial", "Fights First applied without leading restriction."),
+        ("AC", "Tactical Perception"): ("Supported", "Leading: unit gains Fights First."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity or leading restriction."),
@@ -1478,7 +1478,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Within 12\" of friendly AELDARI PSYKER: Leadership set to 6+; Wraithlord improves BS/WS by 1; Wraithguard/Wraithblades add +1 to hit.",
         ),
-        ("AE", "Way of the Blade"): ("Partial", "Fights First applied without leader restriction."),
+        ("AE", "Way of the Blade"): ("Supported", "Leading: unit gains Fights First."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
@@ -1521,15 +1521,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DG", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("DG", "Blinding Spray"): ("Partial", "Fights First applied without selection/once-per-battle restriction."),
         ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
-        ("DRU", "Blur of Blades"): ("Partial", "Fights First applied without leading restriction."),
+        ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
-        ("GC", "Sudden Assault"): ("Partial", "Fights First applied without leading restriction."),
+        ("GC", "Sudden Assault"): ("Supported", "Leading: unit gains Fights First."),
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
         ("LOV", "Brōkhyr Guild Support"): ("Partial", "Lone Operative applied without 3\" Vehicle/Ironkin proximity or attached-unit restriction."),
         ("LOV", "Science Guild Support"): ("Partial", "Lone Operative applied without 3\" Infantry proximity or exclusion of Lone Operative units."),
         ("LOV", "Teleport Crest"): ("Partial", "Deep Strike granted; leading restriction not enforced where applicable."),
         ("NEC", "Adaptive Strategy"): ("Supported", "Shoot and charge after Falling Back."),
-        ("NEC", "Ghostwalk Mantle"): ("Partial", "Fights First applied without leading restriction."),
+        ("NEC", "Ghostwalk Mantle"): ("Supported", "Leading: unit gains Fights First."),
         ("NEC", "Illuminor"): ("Partial", "Lone Operative applied without 3\" proximity to friendly Necrons."),
         ("NEC", "Protective Disciples"): ("Partial", "Lone Operative applied without 3\" proximity to Destroyer Cult units."),
         ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
@@ -2877,9 +2877,14 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if not text:
         return None
     low = text.lower()
-    if "leading a unit" not in low:
+    if not re.search(r"while this model is leading(?:s)?(?: a)? .*? unit", low, flags=re.IGNORECASE):
         return None
-    if "model in that unit" not in low and "models in that unit" not in low:
+    if (
+        "model in that unit" not in low
+        and "models in that unit" not in low
+        and "that unit has" not in low
+        and "that unit have" not in low
+    ):
         return None
     notes: List[str] = []
     lethal_melee = re.search(
@@ -2903,6 +2908,14 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append("Leading: unit ranged weapons gain Lethal Hits.")
     elif lethal_any:
         notes.append("Leading: unit weapons gain Lethal Hits.")
+
+    fight_first_match = re.search(
+        r"(?:models in that unit|that unit)\s+(?:has|have)\s+(?:the\s+)?fights?\s+first\s+ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if fight_first_match:
+        notes.append("Leading: unit gains Fights First.")
 
     invuln_match = re.search(
         r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save",
@@ -2981,11 +2994,12 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         if norm_sentence:
             normalized_sentences.append(norm_sentence)
 
-    lead_prefix = r"(?:while this model is leading a unit )?"
+    lead_prefix = r"(?:while this model is leading(?:s)?(?: a)? .*? unit )?"
     patterns = [
         rf"{lead_prefix}melee weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}ranged weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
+        rf"{lead_prefix}(?:models in that unit|that unit) (?:has|have) (?:the )?fights? first ability",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack(?:s)? add \d+ to the hit roll if that unit is below (?:its )?starting strength and add \d+ to the wound roll(?: as well)? if that unit is below (?:its )?half strength",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the wound roll",

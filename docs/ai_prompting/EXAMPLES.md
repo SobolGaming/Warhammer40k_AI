@@ -112,3 +112,8 @@
     python -m pytest tests/ (pass)
     If you want any extra edge-case tests (e.g., multiple Sanguinary Tear sources or mixed Scout distances), tell me which scenarios to cover.
     ```
+
+- Example prompt for Enhancements of a detachment that just worked
+    ```
+    Implement support for all 4 enhancements of Death Guard - Virulent Vectorium detachment: `Daemon Weapon of Nurgle`, `Furnance of Plagues`, `Arch Contaminator`, and `Revolting Regeneration`.
+    ```

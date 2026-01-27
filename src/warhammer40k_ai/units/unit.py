@@ -7769,7 +7769,14 @@ class Unit:
         return True
 
     # ---------------- Ability helpers (best-effort parsing) ----------------
-    _LEADING_ABILITY_PREFIX_RE = re.compile(r"^\W*while this model is leading a unit\b", re.IGNORECASE)
+    _LEADING_ABILITY_PREFIX_RE = re.compile(
+        r"^\W*while this model is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        re.IGNORECASE,
+    )
+    _LEADING_ABILITY_RE = re.compile(
+        r"\bwhile this model is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        re.IGNORECASE,
+    )
     _NOT_LEADING_ABILITY_RE = re.compile(r"\bif this model is not leading a unit\b", re.IGNORECASE)
 
     def _ability_requires_leading(self, ability) -> bool:
@@ -7782,10 +7789,11 @@ class Unit:
                 desc = getattr(ability, "description", "") or ""
         except Exception:
             desc = ""
+        desc = self._strip_eligibility_prefix(desc)
         text = self._normalize_rules_text(desc)
         if not text:
             return False
-        return bool(self._LEADING_ABILITY_PREFIX_RE.match(text))
+        return bool(self._LEADING_ABILITY_RE.search(text))
 
     def _ability_requires_not_leading(self, ability) -> bool:
         """Return True if the ability text requires the model to NOT be leading a unit."""
@@ -7797,6 +7805,7 @@ class Unit:
                 desc = getattr(ability, "description", "") or ""
         except Exception:
             desc = ""
+        desc = self._strip_eligibility_prefix(desc)
         text = self._normalize_rules_text(desc)
         if not text:
             return False
@@ -17910,6 +17919,101 @@ class Unit:
             self._firing_deck_virtual_wargear.append(vwg)
             self._firing_deck_virtual_sources[pclone.id] = [src_model]
     
+    def _attached_leader_grants_fight_first_to_unit(self) -> bool:
+        """Return True if any attached leader grants Fight First to the whole unit."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "attached_leader_unit_fight_first"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            if not isinstance(cache, dict):
+                cache = {}
+            cache[cache_key] = False
+            root._ability_cache = cache
+            return False
+
+        disallowed_tokens = (
+            "until the end of",
+            "at the start of",
+            "start of the",
+            "end of the",
+            "once per battle",
+            "each time",
+            "battle round",
+        )
+        leading_start_re = re.compile(r"\bwhile this model is leading(?:s)?\b", re.IGNORECASE)
+        unit_grant_re = re.compile(
+            r"^(?:models in (?:that|this|the bearers) unit|(?:that|this|the bearers) unit)\s+"
+            r"(?:has|have)\s+(?:the\s+)?fights?\s+first(?:\s+ability)?$",
+            re.IGNORECASE,
+        )
+
+        def _normalize_sentence(value: str) -> str:
+            cleaned = leader._normalize_rules_text(value or "")
+            cleaned = cleaned.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            cleaned = cleaned.replace("bearer's", "bearers")
+            cleaned = re.sub(r"[^a-z0-9\s]+", " ", cleaned)
+            return re.sub(r"\s+", " ", cleaned).strip()
+
+        def _strip_leading_clause(norm: str) -> str:
+            m = leading_start_re.search(norm or "")
+            if not m:
+                return norm
+            tail = norm[m.start():]
+            unit_pos = tail.find(" unit")
+            if unit_pos == -1:
+                return norm
+            clause_len = unit_pos + len(" unit")
+            stripped = (norm[:m.start()] + tail[clause_len:]).strip()
+            return stripped
+
+        found = False
+        for leader in leaders:
+            if leader is None:
+                continue
+            try:
+                abilities = list(leader._iter_active_abilities())
+            except Exception:
+                abilities = []
+            for ab in abilities:
+                try:
+                    desc = ab if isinstance(ab, str) else (
+                        getattr(ab, "description", "") or getattr(ab, "name", "")
+                    )
+                except Exception:
+                    desc = ""
+                text_src = leader._strip_eligibility_prefix(desc or "")
+                text = leader._normalize_rules_text(text_src or "")
+                if not text:
+                    continue
+                sentences = [part.strip() for part in re.split(r"[.;]\s*", text) if part.strip()]
+                for sentence in sentences:
+                    norm = _normalize_sentence(sentence)
+                    if not norm:
+                        continue
+                    if any(tok in norm for tok in disallowed_tokens):
+                        continue
+                    norm = _strip_leading_clause(norm)
+                    if unit_grant_re.fullmatch(norm):
+                        found = True
+                        break
+                if found:
+                    break
+            if found:
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = bool(found)
+        root._ability_cache = cache
+        return bool(found)
+
     def has_fight_first(self) -> bool:
         """Check if the unit has Fight First ability.
         
@@ -17943,11 +18047,7 @@ class Unit:
         ]
         found, _ = self._find_ability_with_patterns(patterns)
         if not found:
-            for t in self._iter_attached_leader_ability_texts():
-                s = str(t or "").lower()
-                if any(p in s for p in patterns):
-                    found = True
-                    break
+            found = self._attached_leader_grants_fight_first_to_unit()
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):
