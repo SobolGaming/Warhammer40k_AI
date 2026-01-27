@@ -49,6 +49,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "THE FOE FORESEEN",
     "CUT DOWN THE WEAK",
     "UNBOUND ARROGANCE",
+    "UNLEASH THE LIONS",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "MERCILESS RECLAMATION",
@@ -1651,6 +1652,20 @@ class StratagemManager:
                     result["reason"] = "Target cannot be selected"
                     return result
 
+        # Adeptus Custodes (Lions of the Emperor): UNLEASH THE LIONS
+        if name_u == "UNLEASH THE LIONS":
+            if self._unleash_lions_detachment_manager() is None:
+                result["reason"] = "Wrong detachment"
+                return result
+            if target is not None:
+                if not self._unleash_lions_is_valid_target(target):
+                    result["reason"] = "Requires Allarus or Aquilon unit on battlefield"
+                    return result
+            else:
+                if not self._unleash_lions_candidates():
+                    result["reason"] = "Requires valid target"
+                    return result
+
         # Last pass: delegate to stratagem conditions
         try:
             if name_u in ("BLOOD OFFERING", "A GRIM WARNING"):
@@ -2294,6 +2309,85 @@ class StratagemManager:
         if not mgr.is_lions_of_the_emperor():
             return None
         return mgr
+
+    def _unleash_lions_detachment_manager(self):
+        return self._gilded_champion_detachment_manager()
+
+    @staticmethod
+    def _unleash_lions_normalize_name(name: str) -> str:
+        name = str(name or "").lower()
+        name = re.sub(r"[^a-z0-9]+", " ", name).strip()
+        return " ".join(name.split())
+
+    def _unleash_lions_is_allarus_or_aquilon(self, unit) -> bool:
+        if unit is None:
+            return False
+        name = self._unleash_lions_normalize_name(getattr(unit, "name", ""))
+        tokens = set(name.split())
+        if ("allarus" in tokens) and ("custodian" in tokens or "custodians" in tokens):
+            return True
+        if ("aquilon" in tokens) and ("custodian" in tokens or "custodians" in tokens):
+            return True
+        return False
+
+    def _unleash_lions_on_battlefield(self, unit) -> bool:
+        if unit is None:
+            return False
+        active_fn = getattr(unit, "is_active_for_rules", None)
+        if callable(active_fn):
+            return bool(active_fn())
+        try:
+            if not bool(getattr(unit, "deployed", False)):
+                return False
+            if str(getattr(unit, "reserve_status", "deployed")) != "deployed":
+                return False
+            if bool(getattr(unit, "is_embarked", False)) or getattr(unit, "embarked_in", None) is not None:
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _unleash_lions_is_valid_target(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return False
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return False
+        try:
+            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
+                return False
+        except Exception:
+            return False
+        if not self._unleash_lions_is_allarus_or_aquilon(root):
+            return False
+        if not self._unleash_lions_on_battlefield(root):
+            return False
+        return True
+
+    def _unleash_lions_candidates(self) -> List[Any]:
+        mgr = self._unleash_lions_detachment_manager()
+        if mgr is None:
+            return []
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return []
+        seen: set[str] = set()
+        candidates: List[Any] = []
+        for unit in list(getattr(army, "units", []) or []):
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            if root is None:
+                continue
+            rid = get_entity_id(root)
+            if rid and rid in seen:
+                continue
+            if rid:
+                seen.add(rid)
+            if self._unleash_lions_is_valid_target(root):
+                candidates.append(root)
+        return candidates
 
     @staticmethod
     def _gilded_champion_target_root(model):
@@ -5815,6 +5909,46 @@ class StratagemManager:
             ability_label = str(prepared.get("ability_name", "") or prepared.get("ability_key", "") or "ability")
             model_name = str(getattr(model_obj, "name", "Model") or "Model")
             print(f"INFO: GILDED CHAMPION: {model_name} can use {ability_label} one additional time (not this phase).")
+            return True
+        # Adeptus Custodes (Lions of the Emperor): UNLEASH THE LIONS
+        if name_u == "UNLEASH THE LIONS":
+            target_unit = kwargs.get("target_unit") or kwargs.get("unit")
+            if target_unit is None:
+                print("ERROR: UNLEASH THE LIONS: no target unit provided")
+                return False
+            if self._unleash_lions_detachment_manager() is None:
+                print("ERROR: UNLEASH THE LIONS: wrong detachment")
+                return False
+            if not self._unleash_lions_is_valid_target(target_unit):
+                print("ERROR: UNLEASH THE LIONS: invalid target (must be Allarus/Aquilon on battlefield)")
+                return False
+            if "phase_name" not in kwargs:
+                kwargs["phase_name"] = self._current_phase_name
+            if not s.can_use(self.player, self.game, **kwargs):
+                print("ERROR: UNLEASH THE LIONS: cannot be used in current state")
+                return False
+            eff_cost = s.cp_cost
+            apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
+            if callable(apply_fn):
+                preview = apply_fn(s, target_unit=target_unit) or {}
+                eff_cost = int(preview.get("cost", s.cp_cost))
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            from ..utility.unit_split import split_unit_into_single_model_units
+
+            root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+            resulting = split_unit_into_single_model_units(root, game=self.game)
+            if not resulting:
+                print("WARN: UNLEASH THE LIONS: no units created during split")
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            self._used_stratagems_this_phase.add(name_u)
+            try:
+                count = len(resulting) if resulting is not None else 0
+                root_name = getattr(root, "name", "Unit") if root is not None else "Unit"
+                print(f"INFO: UNLEASH THE LIONS: {root_name} split into {max(1, count)} unit(s).")
+            except Exception:
+                pass
             return True
         # Core: INSANE BRAVERY (auto-pass a Battle-shock test about to be taken; once per battle)
         if s.name.upper() == "INSANE BRAVERY":

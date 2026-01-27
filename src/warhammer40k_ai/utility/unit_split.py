@@ -1,0 +1,379 @@
+from __future__ import annotations
+
+import copy
+from typing import Any, Dict, Iterable, List, Optional
+
+from ..units.status_effects import BattleShockEffect, StatusEffect
+
+
+def _clone_status_effect(effect: StatusEffect) -> Optional[StatusEffect]:
+    """Best-effort clone for duration-based status effects."""
+    if effect is None:
+        return None
+    if isinstance(effect, BattleShockEffect):
+        # Preserve the same expiration turn/phase.
+        new_effect = BattleShockEffect(current_turn=max(0, int(getattr(effect, "turn", 1)) - 1))
+        try:
+            new_effect.turn = int(getattr(effect, "turn", new_effect.turn))
+        except Exception:
+            pass
+        try:
+            new_effect.phase = int(getattr(effect, "phase", new_effect.phase))
+        except Exception:
+            pass
+        return new_effect
+    try:
+        return copy.deepcopy(effect)
+    except Exception:
+        return None
+
+
+def _extract_expiring_special_rules(special_rules: Any) -> Dict[str, Any]:
+    """Return only time-limited/expiring special rule entries."""
+    if not isinstance(special_rules, dict):
+        return {}
+
+    expiring_suffixes = ("_expires_phase", "_expires_turn", "_expires_round")
+    expiring_keys = [k for k in special_rules.keys() if str(k).endswith(expiring_suffixes)]
+    prefixes = {str(k).rsplit("_expires_", 1)[0] for k in expiring_keys}
+
+    def _deepcopy(value: Any) -> Any:
+        try:
+            return copy.deepcopy(value)
+        except Exception:
+            return value
+
+    out: Dict[str, Any] = {}
+    for key, value in special_rules.items():
+        key_str = str(key)
+        if key in expiring_keys:
+            out[key] = _deepcopy(value)
+            continue
+        if any(key_str.startswith(prefix + "_") for prefix in prefixes):
+            out[key] = _deepcopy(value)
+            continue
+        if isinstance(value, list):
+            if any(
+                isinstance(entry, dict)
+                and any(k in entry for k in ("expires_phase", "expires_turn", "expires_round"))
+                for entry in value
+            ):
+                out[key] = _deepcopy(value)
+                continue
+        if isinstance(value, dict):
+            if any(str(k).endswith(expiring_suffixes) for k in value.keys()):
+                out[key] = _deepcopy(value)
+                continue
+            if any(
+                isinstance(v, dict)
+                and any(k in v for k in ("expires_phase", "expires_turn", "expires_round"))
+                for v in value.values()
+            ):
+                out[key] = _deepcopy(value)
+                continue
+    return out
+
+
+def snapshot_persistent_unit_state(unit: Any) -> Dict[str, Any]:
+    """Capture duration-based state that should persist through a unit split."""
+    if unit is None:
+        return {}
+    effects = []
+    for eff in list(getattr(unit, "status_effects", []) or []):
+        cloned = _clone_status_effect(eff)
+        if cloned is not None:
+            effects.append(cloned)
+    round_state = None
+    try:
+        round_state = copy.deepcopy(getattr(unit, "round_state", None))
+    except Exception:
+        round_state = None
+    return {
+        "status_effects": effects,
+        "special_rules": _extract_expiring_special_rules(getattr(unit, "special_rules", None)),
+        "round_state": round_state,
+        "reserve_turn_deployed": getattr(unit, "reserve_turn_deployed", None),
+        "arrived_from_reserves_this_turn": bool(getattr(unit, "arrived_from_reserves_this_turn", False)),
+        "deployed": bool(getattr(unit, "deployed", False)),
+        "reserve_status": str(getattr(unit, "reserve_status", "deployed") or "deployed"),
+        "hover_mode": bool(getattr(unit, "hover_mode", False)),
+        "hover_declared": bool(getattr(unit, "hover_declared", False)),
+    }
+
+
+def apply_persistent_unit_state(unit: Any, snapshot: Dict[str, Any], *, clear_existing: bool = True) -> None:
+    """Apply a persistent state snapshot onto a unit."""
+    if unit is None or not isinstance(snapshot, dict):
+        return
+    if clear_existing:
+        for eff in list(getattr(unit, "status_effects", []) or []):
+            try:
+                unit.remove_status_effect(eff)
+            except Exception:
+                continue
+        try:
+            unit.status_effects = []
+        except Exception:
+            pass
+
+    base_rules = dict(getattr(unit, "special_rules", {}) or {})
+    base_rules.update(dict(snapshot.get("special_rules", {}) or {}))
+    unit.special_rules = base_rules
+
+    # Apply status effects after special rule snapshot so effect hooks can adjust state.
+    for eff in list(snapshot.get("status_effects", []) or []):
+        try:
+            unit.apply_status_effect(eff)
+        except Exception:
+            continue
+
+    if snapshot.get("round_state") is not None:
+        try:
+            unit.round_state = copy.deepcopy(snapshot["round_state"])
+        except Exception:
+            pass
+
+    try:
+        unit.reserve_turn_deployed = snapshot.get("reserve_turn_deployed")
+    except Exception:
+        pass
+    try:
+        unit.arrived_from_reserves_this_turn = bool(snapshot.get("arrived_from_reserves_this_turn", False))
+    except Exception:
+        pass
+    try:
+        unit.deployed = bool(snapshot.get("deployed", False))
+    except Exception:
+        pass
+    try:
+        unit.reserve_status = str(snapshot.get("reserve_status") or "deployed")
+    except Exception:
+        pass
+    try:
+        unit.hover_mode = bool(snapshot.get("hover_mode", False))
+    except Exception:
+        pass
+    try:
+        unit.hover_declared = bool(snapshot.get("hover_declared", False))
+    except Exception:
+        pass
+
+
+def split_unit_into_single_model_units(
+    unit: Any,
+    *,
+    game: Optional[Any] = None,
+    game_map: Optional[Any] = None,
+) -> List[Any]:
+    """
+    Split an Attached unit into single-model units.
+
+    - All models in the attached group become their own unit.
+    - Duration-based status effects and expiring special rules are copied to each new unit.
+    - Leading/attached-only effects should be cleared by detaching leaders before applying snapshot.
+    """
+    if unit is None:
+        return []
+
+    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+    if root is None:
+        return []
+
+    snapshot = snapshot_persistent_unit_state(root)
+
+    army = None
+    try:
+        army = root.get_parent_army()
+    except Exception:
+        army = None
+
+    if game is None:
+        try:
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+    if game_map is None:
+        game_map = getattr(game, "map", None) if game is not None else None
+
+    leaders = list(getattr(root, "attached_leaders", []) or [])
+    bodyguard_models = [m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", True)]
+
+    # If there is only one model and no leaders, keep the unit and just reset starting strength.
+    if not leaders and len(bodyguard_models) == 1:
+        model = bodyguard_models[0]
+        try:
+            root.starting_model_count = 1
+        except Exception:
+            pass
+        try:
+            root.starting_total_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)))
+        except Exception:
+            pass
+        return [root]
+
+    for leader in leaders:
+        try:
+            leader.detach_from_unit()
+        except Exception:
+            continue
+
+    try:
+        root.attached_leaders = []
+    except Exception:
+        pass
+
+    # Remove the root unit from army/map without firing destroyed triggers.
+    try:
+        if army is not None and root in getattr(army, "units", []):
+            army.units.remove(root)
+    except Exception:
+        pass
+    try:
+        if game_map is not None and hasattr(game_map, "units") and root in game_map.units:
+            game_map.units.remove(root)
+    except Exception:
+        pass
+    try:
+        root.models = []
+        root.models_lost = []
+    except Exception:
+        pass
+
+    resulting_units: List[Any] = []
+
+    # Existing leader units become single-model units in their own right.
+    for leader in leaders:
+        try:
+            if not list(getattr(leader, "models", []) or []):
+                continue
+        except Exception:
+            continue
+        apply_persistent_unit_state(leader, snapshot, clear_existing=True)
+        try:
+            leader.attached_to = None
+            leader.attached_leaders = []
+        except Exception:
+            pass
+        try:
+            leader.starting_model_count = 1
+        except Exception:
+            pass
+        try:
+            model = leader.models[0]
+            leader.starting_total_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)))
+        except Exception:
+            pass
+        try:
+            leader.deployed = True
+            leader.reserve_status = "deployed"
+            leader.embarked_in = None
+        except Exception:
+            pass
+        try:
+            if army is not None and leader not in getattr(army, "units", []):
+                army.add_unit(leader)
+        except Exception:
+            pass
+        try:
+            if game_map is not None and hasattr(game_map, "units") and leader not in game_map.units:
+                game_map.units.append(leader)
+        except Exception:
+            pass
+        try:
+            if hasattr(leader, "_invalidate_ability_cache"):
+                leader._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            if hasattr(leader, "update_coherency"):
+                leader.update_coherency()
+        except Exception:
+            pass
+        resulting_units.append(leader)
+
+    # Create new single-model units for each bodyguard model.
+    for model in bodyguard_models:
+        try:
+            from ..units.unit import Unit as UnitClass
+        except Exception:
+            continue
+        datasheet = getattr(root, "_datasheet", None)
+        if datasheet is None:
+            continue
+        try:
+            new_unit = UnitClass(datasheet, quantity=1, enhancement=getattr(root, "enhancement", None))
+        except Exception:
+            new_unit = UnitClass(datasheet, quantity=1)
+
+        try:
+            new_unit.models = [model]
+            if hasattr(model, "set_parent_unit"):
+                model.set_parent_unit(new_unit)
+            else:
+                model.parent_unit = new_unit
+        except Exception:
+            continue
+
+        apply_persistent_unit_state(new_unit, snapshot, clear_existing=True)
+        try:
+            new_unit.attached_leaders = []
+            new_unit.attached_to = None
+        except Exception:
+            pass
+        try:
+            new_unit.models_lost = []
+        except Exception:
+            pass
+        try:
+            new_unit.starting_model_count = 1
+        except Exception:
+            pass
+        try:
+            new_unit.starting_total_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)))
+        except Exception:
+            pass
+        try:
+            new_unit.deployed = True
+            new_unit.reserve_status = "deployed"
+            new_unit.embarked_in = None
+        except Exception:
+            pass
+        try:
+            new_unit.set_parent_army(army)
+        except Exception:
+            pass
+        try:
+            if army is not None:
+                army.add_unit(new_unit)
+        except Exception:
+            pass
+        try:
+            if game_map is not None and hasattr(game_map, "units"):
+                game_map.units.append(new_unit)
+        except Exception:
+            pass
+        try:
+            if hasattr(new_unit, "_invalidate_ability_cache"):
+                new_unit._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            if hasattr(new_unit, "update_coherency"):
+                new_unit.update_coherency()
+        except Exception:
+            pass
+        resulting_units.append(new_unit)
+
+    # Rebuild entity registry to include new units.
+    try:
+        if game is not None and hasattr(game, "rebuild_entity_registry"):
+            game.rebuild_entity_registry()
+    except Exception:
+        pass
+    try:
+        if game is not None and hasattr(game, "refresh_rule_subscribers"):
+            game.refresh_rule_subscribers()
+    except Exception:
+        pass
+
+    return resulting_units
