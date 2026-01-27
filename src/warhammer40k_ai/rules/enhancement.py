@@ -184,6 +184,7 @@ class Enhancement:
         we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
         ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
         try:
             is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
         except Exception:
@@ -200,6 +201,14 @@ class Enhancement:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
+        is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
+
+        bearer_id = ""
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                bearer_id = str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
 
         if name == "berzerker glaive" or enh_id == "000008432002":
             if not is_berzerker_warband:
@@ -322,6 +331,48 @@ class Enhancement:
                 source="Revolting Regeneration",
                 tag="revolting_regeneration",
             )
+
+        if name == "superior creation" or enh_id == "000009987002":
+            if not is_lions:
+                return
+            unit.special_rules["enhancement_superior_creation"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            refresh_return = getattr(unit, "_refresh_return_on_death_flags", None)
+            if callable(refresh_return):
+                refresh_return()
+
+        if name == "praesidius" or enh_id == "000009987003":
+            if not is_lions:
+                return
+            unit.special_rules["enhancement_praesidius_lone_operative"] = True
+            unit.special_rules["enhancement_praesidius_stealth"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fierce conqueror" or enh_id == "000009987004":
+            if not is_lions:
+                return
+            unit.special_rules["enhancement_fierce_conqueror"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_fierce_conqueror_bearer_id"] = bearer_id
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "admonimortis" or enh_id == "000009987005":
+            if not is_lions:
+                return
+            unit.special_rules["enhancement_admonimortis"] = True
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + 3
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
         if callable(invalidate_fn):

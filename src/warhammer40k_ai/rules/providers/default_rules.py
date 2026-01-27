@@ -75,6 +75,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),
                 ("phase_start", "_on_phase_start_optional_abilities"),
+                ("phase_start", "_on_phase_start_custodes_enhancements"),
             ],
         )
     )

@@ -1896,16 +1896,23 @@ class Unit:
             pass
 
         specs: list[dict] = []
-        for ab in self._iter_active_abilities():
-            try:
-                if isinstance(ab, str):
-                    name = ab
-                    desc = ab
-                else:
-                    name = str(getattr(ab, "name", "") or "")
-                    desc = str(getattr(ab, "description", "") or "") or name
-            except Exception:
+        entries: list[tuple[str, str]] = []
+        entries.extend(list(self._iter_ability_entries_for_rules(model=None)))
+        for model in list(getattr(self, "models", []) or []):
+            entries.extend(list(self._iter_ability_entries_for_rules(model=model)))
+
+        enhancement = getattr(self, "enhancement", None)
+        enhancement_name = str(getattr(enhancement, "name", "") or "").strip().lower()
+        enhancement_key = re.sub(r"[^a-z0-9]+", "_", enhancement_name).strip("_") if enhancement_name else ""
+        bearer_id = self._get_enhancement_bearer_id()
+        enhancement_superior_creation = bool(isinstance(sr, dict) and sr.get("enhancement_superior_creation"))
+
+        seen_entries: set[tuple[str, str]] = set()
+        for name, desc in entries:
+            key = (str(name or "").strip().lower(), str(desc or "").strip().lower())
+            if key in seen_entries:
                 continue
+            seen_entries.add(key)
             text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or ""))
             if not text:
                 continue
@@ -1928,15 +1935,17 @@ class Unit:
             key = re.sub(r"[^a-z0-9]+", "_", str(name or "return_on_death").lower()).strip("_")
             if not key:
                 key = "return_on_death"
-            specs.append(
-                {
-                    "name": name or "Return on Death",
-                    "roll_min": roll_min,
-                    "wounds": wounds,
-                    "skip_deadly_demise": bool(skip_deadly),
-                    "key": key,
-                }
-            )
+            spec = {
+                "name": name or "Return on Death",
+                "roll_min": roll_min,
+                "wounds": wounds,
+                "skip_deadly_demise": bool(skip_deadly),
+                "key": key,
+            }
+            # Enhancement: Superior Creation is bearer-only; gate it to the bearer model.
+            if enhancement_superior_creation and bearer_id and enhancement_key and key == enhancement_key:
+                spec["bearer_model_id"] = bearer_id
+            specs.append(spec)
 
         if specs:
             seen: set[tuple] = set()
@@ -5123,6 +5132,9 @@ class Unit:
                 except Exception:
                     already = False
                 if already:
+                    continue
+                bearer_id = str(spec.get("bearer_model_id") or "").strip()
+                if bearer_id and str(getattr(model, "id", "") or "") != bearer_id:
                     continue
                 try:
                     game = self.get_parent_army().player.game
@@ -17602,12 +17614,12 @@ class Unit:
     def has_stealth(self) -> bool:
         """Check if the unit has Stealth ability."""
         # Stratagem: SMOKESCREEN grants Stealth until end of phase.
-        try:
-            sr = getattr(self, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
-                return True
-        except Exception:
-            pass
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("smokescreen_active") is True:
+            return True
+        # Enhancement: Praesidius grants Stealth to the bearer model.
+        if isinstance(sr, dict) and sr.get("enhancement_praesidius_stealth"):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['stealth']
@@ -18079,6 +18091,17 @@ class Unit:
                 continue
             return m
         return None
+
+    def _get_enhancement_bearer_id(self) -> str:
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict):
+            bearer_id = sr.get("enhancement_bearer_model_id")
+            if bearer_id:
+                return str(bearer_id)
+        bearer = self._get_enhancement_bearer_model()
+        if bearer is None:
+            return ""
+        return str(getattr(bearer, "id", getattr(bearer, "_id", "")) or "")
 
     def can_use_enhancement_fight_first(self) -> bool:
         if not self.has_enhancement_fight_first_once_per_battle():
@@ -21140,6 +21163,10 @@ class Unit:
                     return bool(root.has_lone_operative())
         except Exception:
             pass
+
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("enhancement_praesidius_lone_operative"):
+            return True
 
         # Base Lone Operative (static): use cached result if available
         if 'lone_operative' in getattr(self, '_ability_cache', {}):

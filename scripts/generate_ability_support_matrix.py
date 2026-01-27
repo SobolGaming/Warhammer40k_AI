@@ -4164,6 +4164,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010123003": "Furnace of Plagues: bearer melee weapons gain +1 Strength, +1 Attacks, and Devastating Wounds.",
         "000010123004": "Arch Contaminator: while the bearer's (attached) unit is within range of a controlled objective, attacks can re-roll Wound rolls.",
         "000010123005": "Revolting Regeneration: bearer gains Feel No Pain 5+.",
+        "000009987002": "Superior Creation: bearer-only return on a 2+ at end of phase after first destruction (full wounds).",
+        "000009987003": "Praesidius: bearer gains Lone Operative and Stealth (no Lone Operative leak while attached).",
+        "000009987004": "Fierce Conqueror: start of Fight phase, bearer gains +2 Attacks per 5 enemy models within 6\" until end of phase.",
+        "000009987005": "Admonimortis: bearer melee weapons gain +3 Strength, +1 AP, and +1 Damage.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])

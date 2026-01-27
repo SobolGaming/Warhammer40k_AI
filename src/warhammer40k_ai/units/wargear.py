@@ -279,6 +279,24 @@ class WargearProfile:
         except Exception:
             return None
 
+    def _unit_special_rules(self, attacker: 'Model') -> dict:
+        unit = getattr(attacker, "parent_unit", None)
+        sr = getattr(unit, "special_rules", None) if unit is not None else None
+        return sr if isinstance(sr, dict) else {}
+
+    def _current_phase_name(self, attacker: 'Model') -> str:
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None else None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+
+    def _attacker_is_enhancement_bearer(self, attacker: 'Model', sr: dict) -> bool:
+        bearer_id = sr.get("enhancement_fierce_conqueror_bearer_id") or sr.get("enhancement_bearer_model_id")
+        if not bearer_id:
+            return False
+        attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
+        return attacker_id == str(bearer_id)
+
     def _effective_range_max(self, attacker: Optional['Model'] = None) -> int:
         """Return range max after applying model/unit effects (e.g., leading Melta range bonus)."""
         try:
@@ -507,6 +525,14 @@ class WargearProfile:
                     ap_val -= bonus
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            sr = self._unit_special_rules(attacker)
+            unit_bonus = int(sr.get("enhancement_melee_ap_bonus", 0) or 0)
+            if unit_bonus:
+                ap_val -= unit_bonus
+            bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus", 0) or 0)
+            if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                ap_val -= bearer_bonus
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -796,6 +822,17 @@ class WargearProfile:
                     attack_result.attacks_special_modifiers.append(f"Enhancement +{bonus}A (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            sr = self._unit_special_rules(attacker)
+            bearer_bonus = int(sr.get("enhancement_bearer_melee_attacks_bonus", 0) or 0)
+            if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                exp = str(sr.get("enhancement_bearer_melee_attacks_bonus_expires_phase", "") or "").strip().upper()
+                pname = self._current_phase_name(attacker)
+                if not exp or (pname and pname == exp):
+                    atk_mods.append(
+                        Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
+                    )
+                    attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
                 bonus = int(
@@ -4703,6 +4740,14 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Enhancement (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+            sr = self._unit_special_rules(attacker)
+            bearer_s_bonus = int(sr.get("enhancement_bearer_melee_strength_bonus", 0) or 0)
+            if bearer_s_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                strength = strength + bearer_s_bonus
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
+                )
         # Aura: add Strength to weapons for nearby friendly units.
         try:
             from ..utility.aura_effects import get_aura_strength_bonus
@@ -7247,6 +7292,14 @@ class WargearProfile:
                     damage_result['special_effects'].append(f"Enhancement +{d_bonus}D (melee)")
         except Exception:
             pass
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            sr = self._unit_special_rules(attacker)
+            bearer_d_bonus = int(sr.get("enhancement_bearer_melee_damage_bonus", 0) or 0)
+            if bearer_d_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                damage_mods.append(
+                    Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
+                )
+                damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
         # Berzerker Glaive: +1 Damage to melee weapons (excluding Extra Attacks).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():

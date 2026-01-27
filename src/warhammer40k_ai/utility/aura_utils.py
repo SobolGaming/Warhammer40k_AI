@@ -237,6 +237,101 @@ def unit_within_range_of_unit(
     return False
 
 
+def _resolve_game_map_from_model(source_model, *, game=None, game_map=None):
+    if game_map is not None:
+        return game_map
+    if game is not None:
+        resolved = getattr(game, "map", None)
+        if resolved is not None:
+            return resolved
+    unit = getattr(source_model, "parent_unit", None) if source_model is not None else None
+    army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+    player = getattr(army, "player", None) if army is not None else None
+    game_obj = getattr(player, "game", None) if player is not None else None
+    return getattr(game_obj, "map", None) if game_obj is not None else None
+
+
+def count_enemy_models_within_range(
+    source_model,
+    radius: float,
+    *,
+    game=None,
+    game_map=None,
+) -> int:
+    """
+    Count enemy models whose bases/hulls are within `radius` inches of `source_model`.
+
+    - Distance is measured in 3D using base/hull closest points.
+    - Attached units are treated as a single unit to avoid double-counting leaders.
+    """
+    try:
+        r = float(radius)
+    except Exception:
+        return 0
+    if r <= 0:
+        return 0
+
+    if source_model is None:
+        return 0
+    source_unit = getattr(source_model, "parent_unit", None)
+    if source_unit is None or not hasattr(source_unit, "get_parent_army"):
+        return 0
+    source_army = source_unit.get_parent_army()
+    if source_army is None:
+        return 0
+
+    resolved_map = _resolve_game_map_from_model(source_model, game=game, game_map=game_map)
+    if resolved_map is None:
+        return 0
+
+    try:
+        all_units = list(getattr(resolved_map, "units", []) or [])
+    except Exception:
+        all_units = []
+    if not all_units:
+        return 0
+
+    # Collapse to unique enemy attached-unit roots.
+    enemy_roots: list = []
+    seen_root_ids: set[int] = set()
+    for unit in all_units:
+        if unit is None:
+            continue
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        root_id = id(root)
+        if root_id in seen_root_ids:
+            continue
+        seen_root_ids.add(root_id)
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", True):
+                continue
+        except Exception:
+            continue
+        try:
+            root_army = root.get_parent_army()
+        except Exception:
+            root_army = None
+        if root_army is None or root_army is source_army:
+            continue
+        enemy_roots.append(root)
+
+    if not enemy_roots:
+        return 0
+
+    count = 0
+    for root in enemy_roots:
+        try:
+            models = root.get_attached_unit_models()
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in models:
+            if model is None or not getattr(model, "is_alive", True):
+                continue
+            if distance_between_models_bases_3d(source_model, model) <= r + 1e-6:
+                count += 1
+    return int(count)
+
+
 def model_wholly_within_range_of_unit(
     source_unit,
     target_model,

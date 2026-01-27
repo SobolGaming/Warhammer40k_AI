@@ -1147,6 +1147,49 @@ class Game:
                 return
         return
 
+    def _on_phase_start_custodes_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Lions of the Emperor enhancements that trigger at the start of the Fight phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Custodes enhancement hooks require an army for {player.name}.")
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None or not mgr.is_lions_of_the_emperor():
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Custodes enhancement hooks require a game map.")
+
+        from ..utility.aura_utils import count_enemy_models_within_range
+
+        for unit in list(army.units):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_fierce_conqueror"):
+                continue
+            bearer_id = sr.get("enhancement_fierce_conqueror_bearer_id") or sr.get("enhancement_bearer_model_id")
+            if not bearer_id:
+                continue
+            bearer_model = None
+            for model in list(getattr(unit, "models", []) or []):
+                if str(getattr(model, "id", "") or "") != str(bearer_id):
+                    continue
+                if not getattr(model, "is_alive", True):
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                continue
+            enemy_models = count_enemy_models_within_range(bearer_model, 6.0, game=self, game_map=game_map)
+            attacks_bonus = int(enemy_models // 5) * 2
+            sr["enhancement_bearer_melee_attacks_bonus"] = int(attacks_bonus)
+            sr["enhancement_bearer_melee_attacks_bonus_expires_phase"] = "FIGHT_PHASE"
+            sr["enhancement_fierce_conqueror_enemy_models"] = int(enemy_models)
+            unit.special_rules = sr
+
     def _on_phase_end_gate_of_infinity(self, player=None, phase=None, **_kwargs) -> None:
         """Grey Knights: Gate of Infinity at the end of the opponent's Fight phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -1372,6 +1415,14 @@ class Game:
                         "enhancement_fight_first_active",
                         "enhancement_fight_first_expires_phase",
                         "enhancement_fight_first_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("enhancement_bearer_melee_attacks_bonus_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "enhancement_bearer_melee_attacks_bonus",
+                        "enhancement_bearer_melee_attacks_bonus_expires_phase",
+                        "enhancement_fierce_conqueror_enemy_models",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("seductive_gambit_expires_phase", "") or "").strip().upper()
