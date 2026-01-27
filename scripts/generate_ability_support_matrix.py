@@ -1286,6 +1286,10 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
 
 def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
     raw = {
+        "Against All Odds": (
+            "Supported",
+            "Lions of the Emperor: non-vehicle ADEPTUS CUSTODES units gain +1 to hit and +1 to wound when no other friendly units are within 6\" (3D; attached units deduplicated).",
+        ),
         "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
