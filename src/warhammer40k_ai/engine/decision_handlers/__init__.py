@@ -7,3 +7,4 @@ from . import shooting  # noqa: F401
 from . import setup  # noqa: F401
 from . import abilities  # noqa: F401
 from . import dice  # noqa: F401
+from . import stratagems  # noqa: F401

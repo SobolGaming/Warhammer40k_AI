@@ -271,6 +271,18 @@ def _serialize_model(model: Model) -> dict:
             if wg is not None
         ],
         "once_per_battle_used": sorted(list(getattr(model, "_once_per_battle_used", set()) or set())),
+        "once_per_battle_use_count": {
+            str(k): int(v)
+            for k, v in sorted(list((getattr(model, "_once_per_battle_use_count", {}) or {}).items()))
+        },
+        "once_per_battle_extra_uses": {
+            str(k): int(v)
+            for k, v in sorted(list((getattr(model, "_once_per_battle_extra_uses", {}) or {}).items()))
+        },
+        "once_per_battle_last_phase": {
+            str(k): str(v)
+            for k, v in sorted(list((getattr(model, "_once_per_battle_last_phase", {}) or {}).items()))
+        },
         "temporary_effects": encode_refs(getattr(model, "_temporary_effects", {}) or {}),
         "last_move_path": last_path,
         "shot_via_firing_deck_this_round": bool(getattr(model, "_shot_via_firing_deck_this_round", False)),
@@ -335,6 +347,23 @@ def _apply_model_state(model: Model, data: dict, unit: Unit) -> None:
 
     model.optional_wargear = list(data.get("optional_wargear", []) or [])
     model._once_per_battle_used = set(data.get("once_per_battle_used", []) or [])
+    model._once_per_battle_use_count = {
+        str(k): int(v)
+        for k, v in dict(data.get("once_per_battle_use_count", {}) or {}).items()
+        if str(k)
+    }
+    if not model._once_per_battle_use_count and model._once_per_battle_used:
+        model._once_per_battle_use_count = {str(k): 1 for k in model._once_per_battle_used}
+    model._once_per_battle_extra_uses = {
+        str(k): int(v)
+        for k, v in dict(data.get("once_per_battle_extra_uses", {}) or {}).items()
+        if str(k)
+    }
+    model._once_per_battle_last_phase = {
+        str(k): str(v)
+        for k, v in dict(data.get("once_per_battle_last_phase", {}) or {}).items()
+        if str(k)
+    }
     model._temporary_effects = dict(data.get("temporary_effects", {}) or {})
     model.last_move_path = []
     for point in data.get("last_move_path", []) or []:

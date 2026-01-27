@@ -85,6 +85,9 @@ class Model:
         self.last_move_path = []
         # Rule usage / temporary buffs
         self._once_per_battle_used: set[str] = set()
+        self._once_per_battle_use_count: dict[str, int] = {}
+        self._once_per_battle_extra_uses: dict[str, int] = {}
+        self._once_per_battle_last_phase: dict[str, str] = {}
         # Temporary effects keyed by effect id; each value is a small dict
         self._temporary_effects: dict[str, dict] = {}
         # Pending placement (e.g., reanimation/split) and model-specific tags
@@ -200,19 +203,139 @@ class Model:
 
     # ---------------- Once-per-battle / temporary rules helpers ----------------
 
-    def has_used_once_per_battle(self, key: str) -> bool:
+    @staticmethod
+    def _normalize_phase_name(phase_name: object) -> str:
+        if phase_name is None:
+            return ""
+        if hasattr(phase_name, "name"):
+            phase_name = getattr(phase_name, "name", "")
+        text = str(phase_name or "").strip()
+        if not text:
+            return ""
+        return text.upper().replace(" ", "_")
+
+    def _resolve_game(self):
+        unit = getattr(self, "parent_unit", None)
+        if unit is None or not hasattr(unit, "get_parent_army"):
+            return None
+        army = unit.get_parent_army()
+        if army is None:
+            return None
+        player = getattr(army, "player", None)
+        if player is None:
+            return None
+        return getattr(player, "game", None)
+
+    def _current_phase_info(self, phase_name: object = None) -> tuple[str, str, object]:
+        game = self._resolve_game()
+        phase_key = self._normalize_phase_name(phase_name)
+        phase_label = ""
+        if game is not None:
+            if not phase_key:
+                phase_key = self._normalize_phase_name(getattr(game, "phase", None))
+            label_fn = getattr(game, "_current_phase_label", None)
+            if callable(label_fn):
+                phase_label = str(label_fn() or "")
+        if not phase_label and phase_key:
+            phase_label = phase_key.replace("_", " ").title()
+        return phase_key, phase_label, game
+
+    def _allowed_once_per_battle_uses(self, k: str) -> int:
+        extra = int((getattr(self, "_once_per_battle_extra_uses", {}) or {}).get(k, 0) or 0)
+        if extra < 0:
+            extra = 0
+        return 1 + extra
+
+    def remaining_once_per_battle_uses(self, key: str, *, phase_name: object = None) -> int:
+        k = (key or "").strip().lower()
+        if not k:
+            return 0
+        phase_key, _, _ = self._current_phase_info(phase_name)
+        used_count = int((getattr(self, "_once_per_battle_use_count", {}) or {}).get(k, 0) or 0)
+        allowed = self._allowed_once_per_battle_uses(k)
+        remaining = max(0, allowed - used_count)
+        if remaining <= 0:
+            return 0
+        if phase_key and used_count > 0:
+            last_phase = str((getattr(self, "_once_per_battle_last_phase", {}) or {}).get(k, "") or "")
+            if last_phase and last_phase == phase_key:
+                return 0
+        return remaining
+
+    def has_used_once_per_battle(self, key: str, *, phase_name: object = None) -> bool:
+        return self.remaining_once_per_battle_uses(key, phase_name=phase_name) <= 0
+
+    def grant_once_per_battle_extra_use(self, key: str, *, uses: int = 1) -> bool:
         k = (key or "").strip().lower()
         if not k:
             return False
-        return k in (self._once_per_battle_used or set())
+        add = int(uses or 0)
+        if add <= 0:
+            return False
+        extra = getattr(self, "_once_per_battle_extra_uses", None)
+        if not isinstance(extra, dict):
+            extra = {}
+            self._once_per_battle_extra_uses = extra
+        extra[k] = int(extra.get(k, 0) or 0) + add
+        return True
 
-    def mark_used_once_per_battle(self, key: str) -> None:
+    def mark_used_once_per_battle(
+        self,
+        key: str,
+        *,
+        phase_name: object = None,
+        ability_name: str = "",
+        source: str = "datasheet",
+        publish_event: bool = True,
+    ) -> bool:
         k = (key or "").strip().lower()
         if not k:
-            return
-        if not isinstance(getattr(self, "_once_per_battle_used", None), set):
-            self._once_per_battle_used = set()
-        self._once_per_battle_used.add(k)
+            return False
+        phase_key, phase_label, game = self._current_phase_info(phase_name)
+        if self.has_used_once_per_battle(k, phase_name=phase_key):
+            return False
+        used_set = getattr(self, "_once_per_battle_used", None)
+        if not isinstance(used_set, set):
+            used_set = set()
+            self._once_per_battle_used = used_set
+        used_set.add(k)
+        counts = getattr(self, "_once_per_battle_use_count", None)
+        if not isinstance(counts, dict):
+            counts = {}
+            self._once_per_battle_use_count = counts
+        counts[k] = int(counts.get(k, 0) or 0) + 1
+        last_phase = getattr(self, "_once_per_battle_last_phase", None)
+        if not isinstance(last_phase, dict):
+            last_phase = {}
+            self._once_per_battle_last_phase = last_phase
+        if phase_key:
+            last_phase[k] = phase_key
+        if not publish_event or game is None:
+            return True
+        event_system = getattr(game, "event_system", None)
+        if event_system is None or not hasattr(event_system, "publish"):
+            return True
+        unit = getattr(self, "parent_unit", None)
+        if unit is None or not hasattr(unit, "get_parent_army"):
+            return True
+        army = unit.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return True
+        ability_label = str(ability_name or "").strip() or k.replace("_", " ").title()
+        event_system.publish(
+            "once_per_battle_ability_used",
+            player=player,
+            game=game,
+            unit=unit,
+            model=self,
+            ability_key=k,
+            ability_name=ability_label,
+            phase_key=phase_key,
+            phase_name=phase_label,
+            source=str(source or "").strip().lower() or "datasheet",
+        )
+        return True
 
     def activate_possessed_lord(self) -> bool:
         """
@@ -233,7 +356,7 @@ class Model:
             "devastating_wounds_melee": True,
             "expires_phase": "FIGHT_PHASE",
         }
-        self.mark_used_once_per_battle(key)
+        self.mark_used_once_per_battle(key, ability_name="Possessed Lord", source="datasheet")
         return True
 
     def get_temporary_melee_attacks_bonus(self) -> int:

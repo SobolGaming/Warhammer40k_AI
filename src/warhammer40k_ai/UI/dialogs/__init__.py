@@ -53,6 +53,7 @@ from .martial_katah_dialog import MartialKatahDialog
 from .cabal_of_sorcerers_dialog import CabalOfSorcerersDialog
 from .deathstrike_action_dialog import DeathstrikeActionDialog
 from .linked_fire_origin_dialog import LinkedFireOriginDialog
+from .gilded_champion_dialog import GildedChampionDialog
 
 __all__ = [
     'BaseDialog',
@@ -106,6 +107,7 @@ __all__ = [
     'VoiceOfCommandDialog',
     'DarkPactsDialog',
     'MartialKatahDialog',
+    'GildedChampionDialog',
     'CabalOfSorcerersDialog',
     'DeathstrikeActionDialog',
     'LinkedFireOriginDialog',

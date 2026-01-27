@@ -220,6 +220,7 @@ class GameView:
         self.dark_pacts_dialog = None
         self.pledge_selection_dialog = None
         self.martial_katah_dialog = None
+        self.gilded_champion_dialog = None
         self.cabal_ritual_dialog = None
         self.cabal_caster_dialog = None
         self.cabal_target_dialog = None
@@ -2121,6 +2122,7 @@ class GameView:
         self._summoned_by_slaughter_flow_active = False
         self._dark_pacts_flow_active = False
         self._martial_katah_flow_active = False
+        self._gilded_champion_flow_active = False
         self._emperors_children_pledge_flow_active = False
         self._emperors_children_exquisite_flow_active = False
         self._emperors_children_sensational_flow_active = False
@@ -2181,6 +2183,8 @@ class GameView:
         self._opponent_turn_reserves_flow_active = False
         # Adeptus Custodes: Martial Ka'tah selection queue
         self._pending_martial_katah_queue = []
+        # Adeptus Custodes: Gilded Champion prompt queue
+        self._pending_gilded_champion_queue = []
         # Emperor's Children: Pledge/Exquisite/Sensational prompt queues
         self._pending_emperors_children_pledge_queue = []
         self._pending_emperors_children_exquisite_queue = []
@@ -2314,6 +2318,8 @@ class GameView:
                 )
                 # Adeptus Custodes: Martial Ka'tah stance selection
                 event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
+                # Adeptus Custodes: Gilded Champion prompt after once-per-battle abilities
+                event_system.subscribe("gilded_champion_prompt", self._on_gilded_champion_prompt)
                 # Emperor's Children: Detachment prompts
                 event_system.subscribe("emperors_children_pledge_prompt", self._on_emperors_children_pledge_prompt)
                 event_system.subscribe("emperors_children_exquisite_prompt", self._on_emperors_children_exquisite_prompt)
@@ -2524,6 +2530,7 @@ class GameView:
                 DECISION_CHOOSE_SHADOW_FORM,
                 DECISION_CHOOSE_VOW,
                 DECISION_CHOOSE_WRATHFUL_PRESENCE,
+                DECISION_USE_GILDED_CHAMPION,
             )
         except Exception:
             return
@@ -2624,6 +2631,29 @@ class GameView:
         if decision_type == DECISION_CHOOSE_VOW:
             self._pending_templar_vows_queue.append(player)
             self._open_next_templar_vows_prompt()
+            return
+
+        if decision_type == DECISION_USE_GILDED_CHAMPION:
+            ctx = dict(getattr(request, "context", {}) or {})
+            model_id = str(ctx.get("model_id", "") or "")
+            model = None
+            registry = getattr(game, "entity_registry", None)
+            if registry is not None and hasattr(registry, "get") and model_id:
+                model = registry.get(model_id, kind="model")
+            entry = dict(ctx)
+            entry.update(
+                {
+                    "player": player,
+                    "game": game,
+                    "model": model,
+                    "decision_request": request,
+                }
+            )
+            if self._gilded_champion_flow_active:
+                self._pending_gilded_champion_queue.append(entry)
+                return
+            self._pending_gilded_champion_queue.append(entry)
+            self._open_next_gilded_champion_prompt(game)
             return
 
         if decision_type == DECISION_CHOOSE_HYPER_ADAPTATION:
@@ -4263,6 +4293,112 @@ class GameView:
         except Exception:
             self._martial_katah_flow_active = False
             self._open_next_martial_katah_prompt(game)
+
+    # ---------------- Gilded Champion prompts ----------------
+
+    def _on_gilded_champion_prompt(self, player=None, game=None, **payload):
+        if player is None:
+            return
+        if not bool(getattr(player, "has_control", lambda: False)()):
+            return
+        entry = dict(payload or {})
+        entry["player"] = player
+        entry["game"] = game or self.game
+        entry["decision_request"] = None
+        if self._gilded_champion_flow_active:
+            self._pending_gilded_champion_queue.append(entry)
+            return
+        self._pending_gilded_champion_queue.append(entry)
+        self._open_next_gilded_champion_prompt(entry.get("game"))
+
+    def _open_next_gilded_champion_prompt(self, game):
+        q = list(getattr(self, "_pending_gilded_champion_queue", []) or [])
+        if not q:
+            self._pending_gilded_champion_queue = []
+            self._gilded_champion_flow_active = False
+            return
+        entry = dict(q.pop(0) or {})
+        self._pending_gilded_champion_queue = q
+
+        player = entry.get("player")
+        game_ctx = entry.get("game") or game or self.game
+        decision_request = entry.get("decision_request")
+        model = entry.get("model")
+        if model is None and decision_request is not None and game_ctx is not None:
+            ctx = dict(getattr(decision_request, "context", {}) or {})
+            model_id = str(ctx.get("model_id", "") or "")
+            registry = getattr(game_ctx, "entity_registry", None)
+            if registry is not None and hasattr(registry, "get") and model_id:
+                model = registry.get(model_id, kind="model")
+                entry["model"] = model
+        if player is None or model is None or game_ctx is None:
+            self._open_next_gilded_champion_prompt(game_ctx)
+            return
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            self._open_next_gilded_champion_prompt(game_ctx)
+            return
+
+        if self.gilded_champion_dialog is None:
+            from .dialogs import GildedChampionDialog
+
+            sw, sh = self.screen.get_width(), self.screen.get_height()
+            self.gilded_champion_dialog = GildedChampionDialog(sw, sh)
+        dialog = self.gilded_champion_dialog
+        if dialog is None:
+            self._open_next_gilded_champion_prompt(game_ctx)
+            return
+
+        if decision_request is not None:
+            ctx = dict(getattr(decision_request, "context", {}) or {})
+            entry.update(ctx)
+        ability_name = str(entry.get("ability_name", "") or entry.get("ability_key", "") or "ability")
+        phase_name = str(entry.get("phase_name", "") or "")
+        cp_cost = int(entry.get("cp_cost", 1) or 1)
+
+        def _finish():
+            self._gilded_champion_flow_active = False
+            self._open_next_gilded_champion_prompt(game_ctx)
+
+        def _on_select(action: str):
+            if decision_request is not None:
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_payload, first_option_id
+
+                if action == "use":
+                    option_id = option_id_for_payload(decision_request, "action", "use") or first_option_id(decision_request)
+                else:
+                    option_id = option_id_for_payload(decision_request, "action", "skip") or option_id_for_payload(decision_request, "skip", True)
+                if option_id:
+                    resolve_decision_command(
+                        game_ctx,
+                        decision_request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                    )
+            elif action == "use":
+                ok = manager.use(
+                    "GILDED CHAMPION",
+                    model=model,
+                    ability_key=str(entry.get("ability_key", "") or ""),
+                    ability_name=ability_name,
+                    phase_name=phase_name,
+                    source=str(entry.get("source", "datasheet") or "datasheet"),
+                    target_unit=entry.get("target_unit"),
+                )
+                if not ok:
+                    print("Gilded Champion: could not apply stratagem.")
+            _finish()
+
+        self._gilded_champion_flow_active = True
+        dialog.show(
+            model_name=str(getattr(model, "name", "Model") or "Model"),
+            ability_name=ability_name,
+            phase_name=phase_name,
+            cp_cost=cp_cost,
+            on_select=_on_select,
+        )
+        self.dialog_manager.open(dialog, modal=True)
 
     # ---------------- Emperor's Children prompts ----------------
 

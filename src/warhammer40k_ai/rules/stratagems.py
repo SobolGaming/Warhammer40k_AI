@@ -35,6 +35,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "OVERWATCH",
     "GO TO GROUND",
     "GRENADE",
+    "GILDED CHAMPION",
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "NEW ORDERS",
@@ -77,6 +78,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "FIRE OVERWATCH",
     "OVERWATCH",
     "GO TO GROUND",
+    "GILDED CHAMPION",
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "NEW ORDERS",
@@ -776,6 +778,8 @@ class StratagemManager:
         }
         # Once-per-battle-round limits (e.g., SUMMONED BY SLAUGHTER)
         self._used_battle_round: Dict[str, int] = {}
+        # Lions of the Emperor: Gilded Champion cannot target the same model twice per battle.
+        self._gilded_champion_used_models: set[str] = set()
 
     def refresh_available(self) -> None:
         """Refresh stratagem list and subscriptions after army changes."""
@@ -783,6 +787,8 @@ class StratagemManager:
             self.game = getattr(self.player, "game", None)
         except Exception:
             raise
+        if not isinstance(getattr(self, "_gilded_champion_used_models", None), set):
+            self._gilded_champion_used_models = set(getattr(self, "_gilded_champion_used_models", []) or [])
         try:
             self._defensive_reaction_cache.clear()
             self._charge_melee_ap_cache.clear()
@@ -834,6 +840,9 @@ class StratagemManager:
 
         # Always track phase to reset per-phase usage and phase-aware reactions.
         add("phase_start", self._on_phase_start)
+
+        if "GILDED CHAMPION" in names:
+            add("once_per_battle_ability_used", self._on_once_per_battle_ability_used)
 
         if "COMMAND RE-ROLL" in names:
             add("roll_made", self._on_roll_made)
@@ -2274,6 +2283,255 @@ class StratagemManager:
                 self._heroic_intervention_units_this_phase.clear()
         except Exception:
             raise
+
+    def _gilded_champion_detachment_manager(self):
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return None
+        mgr = getattr(army, "adeptus_custodes_detachments", None)
+        if mgr is None or not hasattr(mgr, "is_lions_of_the_emperor"):
+            return None
+        if not mgr.is_lions_of_the_emperor():
+            return None
+        return mgr
+
+    @staticmethod
+    def _gilded_champion_target_root(model):
+        unit = getattr(model, "parent_unit", None) if model is not None else None
+        if unit is None:
+            return None
+        if hasattr(unit, "get_attached_unit_root"):
+            return unit.get_attached_unit_root()
+        return unit
+
+    def _resolve_gilded_champion_model(self, kwargs: Dict[str, Any]):
+        model = kwargs.get("model")
+        if model is not None:
+            return model
+        model_id = str(kwargs.get("model_id", "") or "")
+        if not model_id:
+            return None
+        game = self.game or getattr(self.player, "game", None)
+        registry = getattr(game, "entity_registry", None) if game is not None else None
+        if registry is None or not hasattr(registry, "get"):
+            return None
+        return registry.get(model_id, kind="model")
+
+    def _gilded_champion_resolve_phase_name(self, phase_name: str, game) -> str:
+        text = str(phase_name or "").strip()
+        if text:
+            return text
+        if self._current_phase_name:
+            return str(self._current_phase_name)
+        label_fn = getattr(game, "_current_phase_label", None) if game is not None else None
+        if callable(label_fn):
+            return str(label_fn() or "")
+        return ""
+
+    def _gilded_champion_prepare(
+        self,
+        *,
+        model,
+        ability_key: str,
+        ability_name: str,
+        phase_name: str,
+        source: str,
+        game=None,
+    ) -> Optional[Dict[str, Any]]:
+        if model is None:
+            return None
+        source_key = str(source or "").strip().lower()
+        if source_key != "datasheet":
+            return None
+        ability_key_norm = str(ability_key or "").strip().lower()
+        if not ability_key_norm:
+            return None
+        detachment_mgr = self._gilded_champion_detachment_manager()
+        if detachment_mgr is None:
+            return None
+        stratagem = self.get_by_name("GILDED CHAMPION")
+        if stratagem is None:
+            return None
+        if game is None:
+            game = getattr(self.player, "game", None)
+        if game is None:
+            return None
+        if self.game is None:
+            self.game = game
+        root = self._gilded_champion_target_root(model)
+        if root is None:
+            return None
+        army = getattr(self.player, "army", None)
+        if army is None or not hasattr(root, "get_parent_army"):
+            return None
+        if root.get_parent_army() is not army:
+            return None
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        has_custodes_kw = bool(has_any_kw("ADEPTUS CUSTODES")) if callable(has_any_kw) else False
+        root_faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
+        if not has_custodes_kw and root_faction_id != "AC":
+            return None
+        is_character = bool(getattr(model, "is_character", False))
+        if not is_character and callable(has_any_kw):
+            is_character = bool(has_any_kw("CHARACTER"))
+        if not is_character:
+            return None
+        model_id = get_entity_id(model)
+        if not model_id or model_id in self._gilded_champion_used_models:
+            return None
+        resolved_phase_name = self._gilded_champion_resolve_phase_name(phase_name, game)
+        active_player = getattr(game, "get_current_player", lambda: None)()
+        is_active_turn = active_player is self.player
+        context = {
+            "phase_name": resolved_phase_name,
+            "target_unit": root,
+            "unit": root,
+            "model": model,
+            "model_id": model_id,
+        }
+        availability = self._evaluate_availability(stratagem, context, is_active_turn=is_active_turn)
+        if not availability.get("available", False):
+            return None
+        ability_label = str(ability_name or "").strip() or ability_key_norm.replace("_", " ").title()
+        return {
+            "stratagem": stratagem,
+            "model": model,
+            "model_id": model_id,
+            "target_unit": root,
+            "phase_name": resolved_phase_name,
+            "ability_key": ability_key_norm,
+            "ability_name": ability_label,
+            "source": source_key,
+            "cp_cost": int(availability.get("cp_cost", stratagem.cp_cost) or stratagem.cp_cost),
+        }
+
+    def _gilded_champion_has_pending_decision(self, game, *, model_id: str, ability_key: str) -> bool:
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_USE_GILDED_CHAMPION
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_USE_GILDED_CHAMPION:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("model_id", "") or "") != str(model_id):
+                continue
+            if str(ctx.get("ability_key", "") or "") != str(ability_key):
+                continue
+            return True
+        return False
+
+    def _queue_gilded_champion_decision(self, game, prepared: Dict[str, Any]) -> None:
+        if self._gilded_champion_has_pending_decision(
+            game,
+            model_id=str(prepared.get("model_id", "") or ""),
+            ability_key=str(prepared.get("ability_key", "") or ""),
+        ):
+            return
+        from ..engine.decision_kinds import DECISION_USE_GILDED_CHAMPION
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        model_id = str(prepared.get("model_id", "") or "")
+        ability_key = str(prepared.get("ability_key", "") or "")
+        ability_name = str(prepared.get("ability_name", "") or ability_key)
+        phase_name = str(prepared.get("phase_name", "") or "")
+        unit = prepared.get("target_unit")
+        unit_id = get_entity_id(unit) if unit is not None else ""
+        army = getattr(self.player, "army", None)
+        army_id = get_entity_id(army) if army is not None else ""
+        base_payload = {
+            "stratagem_name": "GILDED CHAMPION",
+            "model_id": model_id,
+            "unit_id": unit_id,
+            "army_id": army_id,
+            "ability_key": ability_key,
+            "ability_name": ability_name,
+            "phase_name": phase_name,
+            "source": str(prepared.get("source", "datasheet") or "datasheet"),
+        }
+        options = [
+            DecisionOption.create(
+                f"Use Gilded Champion ({ability_name})",
+                payload=dict(base_payload, action="use"),
+            ),
+            DecisionOption.create("None", payload=dict(base_payload, action="skip", skip=True)),
+        ]
+        req = DecisionRequest.create(
+            DECISION_USE_GILDED_CHAMPION,
+            f"Gilded Champion: {ability_name}",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context=base_payload,
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+            return
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(req)
+
+    def _publish_gilded_champion_prompt(self, game, prepared: Dict[str, Any]) -> bool:
+        event_system = getattr(game, "event_system", None)
+        if event_system is None or not hasattr(event_system, "publish"):
+            return False
+        has_control = bool(getattr(self.player, "has_control", lambda: False)())
+        if not has_control:
+            return False
+        payload = dict(prepared)
+        payload.update({"player": self.player, "game": game})
+        event_system.publish("gilded_champion_prompt", **payload)
+        return True
+
+    def _on_once_per_battle_ability_used(
+        self,
+        player=None,
+        model=None,
+        ability_key: str = "",
+        ability_name: str = "",
+        phase_name: str = "",
+        source: str = "",
+        game=None,
+        **_kwargs,
+    ):
+        if player is not self.player:
+            return
+        if game is None:
+            game = getattr(self.player, "game", None)
+        prepared = self._gilded_champion_prepare(
+            model=model,
+            ability_key=ability_key,
+            ability_name=ability_name,
+            phase_name=phase_name,
+            source=source,
+            game=game,
+        )
+        if prepared is None or game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            self._queue_gilded_champion_decision(game, prepared)
+            return
+        if self._publish_gilded_champion_prompt(game, prepared):
+            return
+        ctx = {
+            "ability_name": prepared.get("ability_name", ""),
+            "phase": prepared.get("phase_name", ""),
+            "model": getattr(prepared.get("model"), "name", ""),
+        }
+        should_fn = getattr(self.player, "_should_use_optional_ability", None)
+        should_use = bool(should_fn("GILDED_CHAMPION", ctx)) if callable(should_fn) else False
+        if not should_use:
+            return
+        self.use(
+            "GILDED CHAMPION",
+            model=prepared.get("model"),
+            ability_key=prepared.get("ability_key", ""),
+            ability_name=prepared.get("ability_name", ""),
+            phase_name=prepared.get("phase_name", ""),
+            source=prepared.get("source", "datasheet"),
+            target_unit=prepared.get("target_unit"),
+        )
+
     def _on_phase_end(self, player, phase, **kwargs):
         # Queue NEW ORDERS at end of your Command phase
         try:
@@ -5459,6 +5717,18 @@ class StratagemManager:
         if not s:
             return False
 
+        name_u = (s.name or "").strip().upper()
+        if name_u == "GILDED CHAMPION":
+            model = self._resolve_gilded_champion_model(kwargs)
+            if model is not None:
+                kwargs["model"] = model
+                root = self._gilded_champion_target_root(model)
+                if root is not None:
+                    kwargs.setdefault("target_unit", root)
+                    kwargs.setdefault("unit", root)
+            if "phase_name" not in kwargs:
+                kwargs["phase_name"] = self._gilded_champion_resolve_phase_name("", self.game)
+
         # Core restriction: a player cannot use the same Stratagem more than once in the same phase.
         # Applies to all stratagems (including ones usable in "Any phase"), unless an ability explicitly
         # names the stratagem (not implemented as a generic bypass).
@@ -5512,6 +5782,40 @@ class StratagemManager:
                     return False
         except Exception:
             raise
+        # Adeptus Custodes (Lions of the Emperor): GILDED CHAMPION
+        if name_u == "GILDED CHAMPION":
+            model = kwargs.get("model") or self._resolve_gilded_champion_model(kwargs)
+            prepared = self._gilded_champion_prepare(
+                model=model,
+                ability_key=str(kwargs.get("ability_key", "") or ""),
+                ability_name=str(kwargs.get("ability_name", "") or ""),
+                phase_name=str(kwargs.get("phase_name", "") or ""),
+                source=str(kwargs.get("source", "datasheet") or "datasheet"),
+                game=self.game,
+            )
+            if prepared is None:
+                print("ERROR: GILDED CHAMPION: invalid target or context")
+                return False
+            target_unit = prepared.get("target_unit")
+            eff_cost = s.cp_cost
+            apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
+            if callable(apply_fn):
+                preview = apply_fn(s, target_unit=target_unit) or {}
+                eff_cost = int(preview.get("cost", s.cp_cost))
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            model_obj = prepared.get("model")
+            if model_obj is None or not hasattr(model_obj, "grant_once_per_battle_extra_use"):
+                return False
+            model_obj.grant_once_per_battle_extra_use(prepared.get("ability_key", ""), uses=1)
+            self._gilded_champion_used_models.add(str(prepared.get("model_id", "") or ""))
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            self._used_stratagems_this_phase.add(name_u)
+            ability_label = str(prepared.get("ability_name", "") or prepared.get("ability_key", "") or "ability")
+            model_name = str(getattr(model_obj, "name", "Model") or "Model")
+            print(f"INFO: GILDED CHAMPION: {model_name} can use {ability_label} one additional time (not this phase).")
+            return True
         # Core: INSANE BRAVERY (auto-pass a Battle-shock test about to be taken; once per battle)
         if s.name.upper() == "INSANE BRAVERY":
             if self._used_once_per_battle.get("INSANE BRAVERY", False):

@@ -5172,10 +5172,12 @@ class Unit:
                         print(f"{label}: {model.name} will attempt to return at end of phase.")
                     except Exception:
                         pass
-                try:
-                    model.mark_used_once_per_battle(once_key)
-                except Exception:
-                    pass
+                model.mark_used_once_per_battle(
+                    once_key,
+                    phase_name=phase_name,
+                    ability_name=str(spec.get("name") or "Return on Death"),
+                    source="enhancement",
+                )
                 break
 
         # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
@@ -18144,10 +18146,11 @@ class Unit:
                 sr["enhancement_fight_first_source"] = source
         except Exception:
             pass
-        try:
-            getattr(model, "mark_used_once_per_battle", lambda _k: None)(key)
-        except Exception:
-            pass
+        getattr(model, "mark_used_once_per_battle", lambda _k, **_kw: None)(
+            key,
+            ability_name=str(getattr(getattr(self, "enhancement", None), "name", "") or "Fight First Enhancement"),
+            source="enhancement",
+        )
         root.special_rules = sr
         return True
 

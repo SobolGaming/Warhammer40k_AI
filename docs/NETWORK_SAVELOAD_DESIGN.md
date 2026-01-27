@@ -221,6 +221,7 @@ Faction / Detachment / Ability choices:
 - frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
 - harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
 - martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}
+- gilded_champion_dialog: USE_GILDED_CHAMPION {action="use" | action="skip", model_id, ability_key}
 - miracle_dice_dialog: USE_MIRACLE_DIE {die_id, roll_context}
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
