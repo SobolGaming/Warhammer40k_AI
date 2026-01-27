@@ -50,6 +50,54 @@ class DeathGuardDetachmentManager(DetachmentManagerBase):
             return False
         return True
 
+    def _attached_unit_has_arch_contaminator(self, unit) -> bool:
+        if unit is None:
+            return False
+        root = unit.get_attached_unit_root()
+        members = list(root.get_attached_unit_members() or [])
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_arch_contaminator"):
+                return True
+        return False
+
+    def _root_within_controlled_objective(self, root, game) -> bool:
+        if root is None or game is None:
+            return False
+        game_map = getattr(game, "map", None)
+        if game_map is None:
+            return False
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return False
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        for obj in objectives:
+            loc = getattr(obj, "location", None)
+            if loc is None or getattr(loc, "removed", False):
+                continue
+            loc.update_control(game)
+            if getattr(loc, "controlling_player", None) is not player:
+                continue
+            if root.is_within_objective_range(loc):
+                return True
+        return False
+
+    def arch_contaminator_reroll_wounds(self, unit, *, game=None) -> bool:
+        if not self.is_virulent_vectorium():
+            return False
+        if unit is None or game is None:
+            return False
+        root = unit.get_attached_unit_root()
+        if not self._unit_in_army(root):
+            return False
+        if not self._unit_is_death_guard(root):
+            return False
+        if not root.is_alive() or not bool(getattr(root, "deployed", False)):
+            return False
+        if not self._attached_unit_has_arch_contaminator(root):
+            return False
+        return self._root_within_controlled_objective(root, game)
+
     def on_command_phase_end(self, *, game=None, player=None) -> None:
         if not self.is_virulent_vectorium():
             return

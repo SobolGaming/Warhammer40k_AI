@@ -2214,6 +2214,14 @@ class WargearProfile:
                     attack_instance["bonus_devastating_wounds"] = True
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("enhancement_furnace_of_plagues"):
+                attack_instance["bonus_devastating_wounds"] = True
+        except Exception:
+            pass
 
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -4147,6 +4155,15 @@ class WargearProfile:
                             crit_threshold = min(int(crit_threshold), 5)
                         else:
                             empowered_sustained = True
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("enhancement_daemon_weapon_of_nurgle"):
+                crit_threshold = min(int(crit_threshold), 5)
+                crit_hit_reasons.append("Daemon Weapon of Nurgle: critical hit on 5+")
         except Exception:
             pass
 

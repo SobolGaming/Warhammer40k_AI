@@ -8780,6 +8780,13 @@ class Unit:
             reroll_wound_reasons.append(
                 "Ruthless Discipline: re-roll Wound rolls of 1 vs targets within objective range"
             )
+        dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
+        arch_fn = getattr(dg_mgr, "arch_contaminator_reroll_wounds", None) if dg_mgr is not None else None
+        if callable(arch_fn) and arch_fn(root, game=game):
+            mods["reroll_wound_full"] = True
+            reroll_wound_full_reasons.append(
+                "Arch Contaminator: re-roll Wound rolls while within a controlled objective"
+            )
 
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)

@@ -4119,6 +4119,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009749003": "Miniaturised Nebuloscope: bearer unit ranged weapons ignore cover.",
         "000009749004": "Demanding Leader: Command phase select friendly NECRONS VEHICLE/MOUNTED (non-TITANIC) within 6\" to shoot after Falling Back until next Command phase.",
         "000009749005": "Chrono-impedance Fields: Command phase select friendly NECRONS VEHICLE/MOUNTED (non-TITANIC) within 6\"; allocated damage -1 until next Command phase.",
+        "000010123002": "Daemon Weapon of Nurgle: bearer melee attacks score critical hits on unmodified 5+.",
+        "000010123003": "Furnace of Plagues: bearer melee weapons gain +1 Strength, +1 Attacks, and Devastating Wounds.",
+        "000010123004": "Arch Contaminator: while the bearer's (attached) unit is within range of a controlled objective, attacks can re-roll Wound rolls.",
+        "000010123005": "Revolting Regeneration: bearer gains Feel No Pain 5+.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])
