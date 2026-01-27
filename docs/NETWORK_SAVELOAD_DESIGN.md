@@ -213,7 +213,7 @@ Faction / Detachment / Ability choices:
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {choice_id}
 - dark_pacts_dialog: CHOOSE_DARK_PACT {choice_id}
 - doctrina_imperatives_dialog: CHOOSE_DOCTRINA {choice_id}
-- combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip}
+- combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_id | skip} (Combat Doctrines / Mastered Doctrines; availability validated by engine)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_id | skip}
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_id}
 - hyper_adaptations_dialog: CHOOSE_HYPER_ADAPTATION {choice_id}

@@ -106,7 +106,7 @@ class CombatDoctrinesDialog(BaseDialog):
 
         self.draw_title_bar(screen, self.title)
 
-        header = self.font_small.render("Select a Combat Doctrine (each once per battle):", True, TEXT_SECONDARY)
+        header = self.font_small.render("Select a Combat Doctrine to activate:", True, TEXT_SECONDARY)
         screen.blit(header, (self.x + 15, self.y + self.title_bar_height + 10))
 
         row_h = 90

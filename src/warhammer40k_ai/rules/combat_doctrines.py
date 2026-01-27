@@ -37,11 +37,18 @@ COMBAT_DOCTRINE_BY_KEY = {d.key: d for d in COMBAT_DOCTRINE_OPTIONS}
 
 class CombatDoctrinesManager:
     """
-    Space Marines detachment ability: Combat Doctrines (Gladius Task Force).
+    Space Marines detachment abilities: Combat Doctrines and Mastered Doctrines.
 
-    At the start of your Command phase, you can select one Combat Doctrine.
-    Each doctrine can only be selected once per battle. The selected doctrine
-    is active until the start of your next Command phase.
+    Gladius Task Force (Combat Doctrines):
+    - At the start of your Command phase, you can select one Combat Doctrine.
+    - Each doctrine can only be selected once per battle.
+
+    Blade of Ultramar (Mastered Doctrines):
+    - At the start of up to three Command phases, you can select one doctrine.
+    - Doctrines cannot be re-selected unless a friendly Marneus Calgar model
+      is on the battlefield.
+
+    The selected doctrine is active until the start of your next Command phase.
     """
 
     def __init__(self, army=None):
@@ -49,6 +56,31 @@ class CombatDoctrinesManager:
         self.active_doctrine_key: Optional[str] = None
         self.active_round: Optional[int] = None
         self.used_doctrine_keys: list[str] = []
+        self.selection_count: int = 0
+        self.selection_rounds: list[int] = []
+
+    def _space_marines_mgr(self):
+        if self.army is None:
+            return None
+        return getattr(self.army, "space_marines_detachments", None)
+
+    def _is_gladius_task_force(self) -> bool:
+        mgr = self._space_marines_mgr()
+        if mgr is not None:
+            is_gladius = getattr(mgr, "is_gladius_task_force", None)
+            if callable(is_gladius) and is_gladius():
+                return True
+        det = str(getattr(self.army, "detachment_type", "") or "").strip().lower()
+        return "gladius" in det and "task force" in det
+
+    def _is_mastered_doctrines(self) -> bool:
+        mgr = self._space_marines_mgr()
+        if mgr is not None:
+            is_blade = getattr(mgr, "is_blade_of_ultramar", None)
+            if callable(is_blade) and is_blade():
+                return True
+        det = str(getattr(self.army, "detachment_type", "") or "").strip().lower()
+        return "blade of ultramar" in det
 
     def _army_has_combat_doctrines(self) -> bool:
         if self.army is None:
@@ -59,15 +91,7 @@ class CombatDoctrinesManager:
             faction_id = ""
         if faction_id and faction_id != "SM":
             return False
-        try:
-            mgr = getattr(self.army, "space_marines_detachments", None)
-            if mgr is not None and getattr(mgr, "is_gladius_task_force", None):
-                if mgr.is_gladius_task_force():
-                    return True
-        except Exception:
-            pass
-        det = str(getattr(self.army, "detachment_type", "") or "").strip().lower()
-        if "gladius" in det and "task force" in det:
+        if self._is_gladius_task_force() or self._is_mastered_doctrines():
             return True
         if not faction_id:
             try:
@@ -110,14 +134,42 @@ class CombatDoctrinesManager:
             return None
         return self.get_active_doctrine(game=game)
 
+    def _doctrine_selection_limit(self) -> Optional[int]:
+        if self._is_mastered_doctrines():
+            return 3
+        return None
+
+    def _selection_limit_reached(self) -> bool:
+        limit = self._doctrine_selection_limit()
+        if limit is None:
+            return False
+        return int(self.selection_count) >= int(limit)
+
+    def _doctrine_reuse_allowed(self) -> bool:
+        if not self._is_mastered_doctrines():
+            return False
+        mgr = self._space_marines_mgr()
+        if mgr is None:
+            return False
+        has_calgar = getattr(mgr, "has_marneus_calgar_on_battlefield", None)
+        if not callable(has_calgar):
+            return False
+        return bool(has_calgar())
+
     def get_available_doctrines(self) -> list[CombatDoctrine]:
         if not self._army_has_combat_doctrines():
             return []
+        if self._selection_limit_reached():
+            return []
+        if self._doctrine_reuse_allowed():
+            return list(COMBAT_DOCTRINE_OPTIONS)
         used = {str(k or "").strip().upper() for k in (self.used_doctrine_keys or []) if str(k or "").strip()}
         return [d for d in COMBAT_DOCTRINE_OPTIONS if d.key not in used]
 
     def can_select_now(self, *, game=None) -> bool:
         if not self._army_has_combat_doctrines():
+            return False
+        if self._selection_limit_reached():
             return False
         if self.active_round is not None and self._is_active_round(game=game) and self.active_doctrine_key:
             return False
@@ -126,12 +178,20 @@ class CombatDoctrinesManager:
     def select_doctrine(self, doctrine, *, battle_round: Optional[int] = None) -> bool:
         if not self._army_has_combat_doctrines():
             return False
+        if self._selection_limit_reached():
+            return False
         key = getattr(doctrine, "key", doctrine)
         key = str(key or "").strip().upper()
         if key not in COMBAT_DOCTRINE_BY_KEY:
             return False
+        if battle_round is not None and self.active_round is not None and self.active_doctrine_key:
+            try:
+                if int(battle_round) == int(self.active_round):
+                    return False
+            except Exception:
+                return False
         used = {str(k or "").strip().upper() for k in (self.used_doctrine_keys or []) if str(k or "").strip()}
-        if key in used:
+        if key in used and not self._doctrine_reuse_allowed():
             return False
         self.active_doctrine_key = key
         if battle_round is not None:
@@ -139,7 +199,14 @@ class CombatDoctrinesManager:
                 self.active_round = int(battle_round)
             except Exception:
                 pass
-        self.used_doctrine_keys.append(key)
+        if key not in used:
+            self.used_doctrine_keys.append(key)
+        self.selection_count = int(self.selection_count) + 1
+        if battle_round is not None:
+            try:
+                self.selection_rounds.append(int(battle_round))
+            except Exception:
+                pass
         return True
 
     def can_shoot_after_advance(self, unit, profile=None, *, game=None) -> bool:

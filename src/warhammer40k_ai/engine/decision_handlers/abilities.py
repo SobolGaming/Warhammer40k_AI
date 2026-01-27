@@ -452,6 +452,16 @@ def _validate_choose_combat_doctrine(game: object, request: DecisionRequest, res
     army = _resolve_army(game, request, payload)
     if army is None or getattr(army, "combat_doctrines", None) is None:
         return ("Combat Doctrines manager not found.",)
+    mgr = getattr(army, "combat_doctrines", None)
+    if mgr is None:
+        return ("Combat Doctrines manager not found.",)
+    if not bool(getattr(mgr, "can_select_now", lambda **_k: False)(game=game)):
+        return ("Combat Doctrines cannot be selected right now.",)
+    available = list(getattr(mgr, "get_available_doctrines", lambda: [])() or [])
+    available_keys = {str(getattr(opt, "key", "") or "").strip().upper() for opt in available}
+    choice_key = str(choice or "").strip().upper()
+    if available_keys and choice_key not in available_keys:
+        return (f"Combat Doctrine '{choice}' is not currently available.",)
     return ()
 
 

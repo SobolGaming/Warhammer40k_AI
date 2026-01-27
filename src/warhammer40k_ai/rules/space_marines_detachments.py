@@ -168,6 +168,11 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Gladius Task Force")
 
+    def is_blade_of_ultramar(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Blade of Ultramar")
+
     def is_rage_cursed_onslaught(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
             return False
@@ -215,4 +220,39 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
                         return True
                 except Exception:
                     continue
+        return False
+
+    def has_marneus_calgar_on_battlefield(self) -> bool:
+        army = self.army
+        if army is None:
+            return False
+
+        def _unit_matches(unit) -> bool:
+            if unit is None:
+                return False
+            name = str(getattr(unit, "name", "") or "").strip().upper()
+            if "MARNEUS CALGAR" not in name:
+                return False
+            reserve_status = str(getattr(unit, "reserve_status", "") or "").strip().lower()
+            if reserve_status in {"reserves", "strategic_reserves"}:
+                return False
+            models = getattr(unit, "models", None)
+            if isinstance(models, list) and len(models) > 0:
+                return True
+            is_alive_fn = getattr(unit, "is_alive", None)
+            if callable(is_alive_fn):
+                return bool(is_alive_fn())
+            return False
+
+        units = list(getattr(army, "units", []) or [])
+        for unit in units:
+            if _unit_matches(unit):
+                return True
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            members = root.get_attached_unit_members() if hasattr(root, "get_attached_unit_members") else [root]
+            for member in members:
+                if member is unit:
+                    continue
+                if _unit_matches(member):
+                    return True
         return False

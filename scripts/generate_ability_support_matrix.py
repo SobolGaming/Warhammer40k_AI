@@ -321,6 +321,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"this unit is eligible to shoot and declare a charge in a turn in which it fell back",
             r"this unit is eligible to declare a charge in a turn in which it advanced",
         ),
+        "Mastered Doctrines": (
+            r"at the start of up to three of your command phases you can select one of the combat doctrines listed below",
+            r"until the start of your next command phase that combat doctrine is active and its effects apply to all adeptus astartes units from your army",
+            r"you cannot select a combat doctrine you have already selected this battle unless a friendly marneus calgar model is on the battlefield",
+            r"this unit is eligible to shoot in a turn in which it advanced",
+            r"this unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            r"this unit is eligible to declare a charge in a turn in which it advanced",
+            r"your army can include ultramarines units but it cannot include any adeptus astartes units drawn from any other chapter",
+        ),
         "Maddened Ferocity": (
             r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
             r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
@@ -1294,6 +1303,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
+        "Mastered Doctrines": (
+            "Supported",
+            "Blade of Ultramar: up to three Command phase doctrine selections; doctrine reuse requires Marneus Calgar on the battlefield; doctrine effects and Ultramarines-only chapter restriction enforced.",
+        ),
         "Combat Drugs": (
             "Supported",
             "Spectacle of Spite: select one Combat Drug (once per drug per battle) or roll 2D6 to apply two; "

@@ -21,7 +21,16 @@ class _DummyArmy:
 
 
 class _DummyUnit:
-    def __init__(self, name, army, *, keywords=None, faction_keywords=None):
+    def __init__(
+        self,
+        name,
+        army,
+        *,
+        keywords=None,
+        faction_keywords=None,
+        model_count: int = 0,
+        reserve_status: str = "battlefield",
+    ):
         self.name = name
         self.keywords = list(keywords or [])
         self.faction_keywords = list(faction_keywords or [])
@@ -31,6 +40,9 @@ class _DummyUnit:
         self.special_rules = {}
         self.round_state = SimpleNamespace(remained_stationary_this_round=False)
         self._army = army
+        self.reserve_status = reserve_status
+        for i in range(max(int(model_count), 0)):
+            self.models.append(SimpleNamespace(name=f"{name} #{i + 1}", parent_unit=self))
 
     def get_parent_army(self):
         return self._army
@@ -147,6 +159,70 @@ class TestSpaceMarinesCombatDoctrines(unittest.TestCase):
 
         self.assertTrue(mgr.select_doctrine(ASSAULT_DOCTRINE, battle_round=3))
         self.assertTrue(Unit.can_charge_after_advance(unit))
+
+    def test_mastered_doctrines_disallow_reuse_without_calgar(self):
+        from warhammer40k_ai.rules.combat_doctrines import CombatDoctrinesManager, DEVASTATOR_DOCTRINE
+        from warhammer40k_ai.rules.space_marines_detachments import SpaceMarinesDetachmentManager
+
+        army = _DummyArmy(detachment_type="Blade of Ultramar")
+        army.space_marines_detachments = SpaceMarinesDetachmentManager(army)
+        mgr = CombatDoctrinesManager(army)
+        army.combat_doctrines = mgr
+        army.player.game = SimpleNamespace(turn=1)
+
+        self.assertTrue(mgr.select_doctrine(DEVASTATOR_DOCTRINE, battle_round=1))
+        army.player.game.turn = 2
+        self.assertFalse(mgr.select_doctrine(DEVASTATOR_DOCTRINE, battle_round=2))
+        available = [d.key for d in mgr.get_available_doctrines()]
+        self.assertNotIn(DEVASTATOR_DOCTRINE.key, available)
+
+    def test_mastered_doctrines_allow_reuse_with_calgar_and_limit_three_selections(self):
+        from warhammer40k_ai.rules.combat_doctrines import (
+            CombatDoctrinesManager,
+            ASSAULT_DOCTRINE,
+            DEVASTATOR_DOCTRINE,
+            TACTICAL_DOCTRINE,
+        )
+        from warhammer40k_ai.rules.space_marines_detachments import SpaceMarinesDetachmentManager
+
+        army = _DummyArmy(detachment_type="Blade of Ultramar")
+        army.space_marines_detachments = SpaceMarinesDetachmentManager(army)
+        calgar = _DummyUnit("Marneus Calgar", army, keywords=["ADEPTUS ASTARTES"], model_count=1)
+        army.units = [calgar]
+
+        mgr = CombatDoctrinesManager(army)
+        army.combat_doctrines = mgr
+
+        army.player.game = SimpleNamespace(turn=1)
+        self.assertTrue(mgr.can_select_now(game=army.player.game))
+        self.assertTrue(mgr.select_doctrine(DEVASTATOR_DOCTRINE, battle_round=1))
+
+        army.player.game.turn = 2
+        self.assertTrue(mgr.select_doctrine(DEVASTATOR_DOCTRINE, battle_round=2))
+
+        army.player.game.turn = 3
+        self.assertTrue(mgr.select_doctrine(TACTICAL_DOCTRINE, battle_round=3))
+
+        army.player.game.turn = 4
+        self.assertFalse(mgr.can_select_now(game=army.player.game))
+        self.assertFalse(mgr.select_doctrine(ASSAULT_DOCTRINE, battle_round=4))
+
+    def test_mastered_doctrines_effects_apply_in_blade_of_ultramar(self):
+        from warhammer40k_ai.rules.combat_doctrines import CombatDoctrinesManager, DEVASTATOR_DOCTRINE
+        from warhammer40k_ai.rules.space_marines_detachments import SpaceMarinesDetachmentManager
+        from warhammer40k_ai.units.unit import Unit
+
+        army = _DummyArmy(detachment_type="Blade of Ultramar")
+        army.space_marines_detachments = SpaceMarinesDetachmentManager(army)
+        mgr = CombatDoctrinesManager(army)
+        army.combat_doctrines = mgr
+        army.player.game = SimpleNamespace(turn=1)
+
+        unit = _DummyUnit("Intercessors", army, keywords=["ADEPTUS ASTARTES"])
+        profile = self._make_profile(weapon_type="Ranged")
+
+        self.assertTrue(mgr.select_doctrine(DEVASTATOR_DOCTRINE, battle_round=1))
+        self.assertTrue(Unit.can_shoot_after_advance(unit, profile))
 
 
 if __name__ == "__main__":

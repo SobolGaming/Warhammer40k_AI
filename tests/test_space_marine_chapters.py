@@ -77,6 +77,18 @@ class TestSpaceMarineChapters(unittest.TestCase):
         army = self._make_army(units)
         army.validate_space_marine_chapters()
 
+    def test_blade_of_ultramar_commits_ultramarines_chapter(self):
+        army = Army(faction="Space Marines", detachment_type="Blade of Ultramar")
+        army.faction_id = "SM"
+        army.units = [
+            StubUnit(
+                "Salamanders Unit",
+                faction_keywords=["ADEPTUS ASTARTES", "SALAMANDERS"],
+            )
+        ]
+        with self.assertRaises(ArmyValidationError):
+            army.validate_space_marine_chapters()
+
 
 if __name__ == "__main__":
     unittest.main()
