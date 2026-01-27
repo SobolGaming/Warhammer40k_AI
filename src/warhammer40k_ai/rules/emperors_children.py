@@ -6,6 +6,9 @@ from ..utility.aura_utils import unit_within_range_of_unit
 from ..utility.entity_ids import get_entity_id
 from .detachment_manager import DetachmentManagerBase
 
+PLEDGES_TO_THE_DARK_PRINCE_NAME = "Pledges to the Dark Prince"
+INTERNAL_RIVALRIES_NAME = "Internal Rivalries"
+
 
 class EmperorsChildrenDetachmentManager(DetachmentManagerBase):
     """
@@ -267,6 +270,28 @@ class EmperorsChildrenDetachmentManager(DetachmentManagerBase):
         self.pledge_target = new_val
         return new_val
 
+    def _attached_unit_has_character(self, unit) -> bool:
+        """
+        Return True when any member of the attached unit aggregate is a CHARACTER.
+        """
+        if unit is None:
+            return False
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        members = (
+            list(root.get_attached_unit_members() or [])
+            if hasattr(root, "get_attached_unit_members")
+            else [root]
+        )
+        if not members:
+            members = [root]
+        for member in members:
+            is_character = getattr(member, "is_character", False)
+            if callable(is_character):
+                is_character = is_character()
+            if bool(is_character):
+                return True
+        return False
+
     def record_enemy_unit_destroyed(self, destroyed_unit, destroyed_by_unit, *, game=None) -> None:
         if destroyed_by_unit is None:
             return
@@ -288,10 +313,7 @@ class EmperorsChildrenDetachmentManager(DetachmentManagerBase):
             return
         if game is None:
             return
-        try:
-            if not getattr(destroyed_by_unit, "is_character", False):
-                return
-        except Exception:
+        if not self._attached_unit_has_character(destroyed_by_unit):
             return
         if not self.is_emperors_children_unit(destroyed_by_unit):
             return
@@ -456,10 +478,7 @@ class EmperorsChildrenDetachmentManager(DetachmentManagerBase):
             return False
         if not self.is_slaaneshs_chosen():
             return False
-        try:
-            if not bool(getattr(unit, "is_character", False)):
-                return False
-        except Exception:
+        if not self._attached_unit_has_character(unit):
             return False
         return self.is_emperors_children_unit(unit)
 

@@ -25,6 +25,7 @@ from .command_kinds import (
 from .decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from .decision_kinds import (
     DECISION_CHOOSE_MISSION,
+    DECISION_CHOOSE_PLEDGE,
     DECISION_CONFIRM_YES_NO,
     DECISION_DISEMBARK,
     DECISION_DECLARE_SHOTS,
@@ -42,6 +43,10 @@ from .ref_codec import encode_refs
 from ..rules.lifecycle import AbilityLifecycle
 from ..rules.registry import RuleRegistry
 from ..rules.providers.default_rules import build_default_rule_providers
+from ..rules.emperors_children import (
+    INTERNAL_RIVALRIES_NAME,
+    PLEDGES_TO_THE_DARK_PRINCE_NAME,
+)
 from ..utility.calcs import get_dist, clear_enemy_model_cache
 from ..utility.charge_roll import ChargeRollResult, ChargeRollSpec
 from ..utility.dice import DiceCollection, get_roll
@@ -4477,6 +4482,142 @@ class Game:
         trigger_fn = getattr(root, "maybe_trigger_dark_pacts", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="fight")
+
+    def _get_emperors_children_manager(self, army):
+        if army is None:
+            return None
+        mgr = getattr(army, "emperors_children", None)
+        if mgr is not None:
+            return mgr
+        return getattr(army, "emperors_children_detachments", None)
+
+    def _on_battle_round_started_emperors_children(self, game=None, battle_round: int = 0, **_kwargs) -> None:
+        br = int(battle_round or getattr(self, "turn", 0) or 0)
+        if br <= 0:
+            return
+        for player in list(getattr(self, "players", []) or []):
+            army = self._get_player_army(player)
+            mgr = self._get_emperors_children_manager(army)
+            if mgr is None:
+                continue
+            mgr.on_battle_round_start(self)
+            if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+                continue
+            if not getattr(mgr, "warlord_on_battlefield", lambda: False)():
+                continue
+            if not bool(getattr(self, "is_authoritative", True)):
+                continue
+
+            army_id = get_entity_id(army)
+            existing = [
+                req
+                for req in self.decision_queue.list()
+                if req.decision_type == DECISION_CHOOSE_PLEDGE
+                and str(req.context.get("army_id", "") or "") == army_id
+            ]
+            if existing:
+                continue
+
+            alive_enemies = [
+                u
+                for u in self.get_enemy_units(player)
+                if hasattr(u, "is_alive") and bool(u.is_alive())
+            ]
+            max_value = max(1, len(alive_enemies))
+            default_value = int(getattr(mgr, "pledge_target", 0) or 0)
+            if default_value <= 0 or default_value > max_value:
+                default_value = 1
+
+            options = [
+                DecisionOption.create(
+                    label=str(value),
+                    payload={"pledge_value": int(value), "army_id": army_id},
+                )
+                for value in range(1, max_value + 1)
+            ]
+            context = {
+                "army_id": army_id,
+                "battle_round": br,
+                "max_value": max_value,
+                "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+            }
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_PLEDGE,
+                "Pledges to the Dark Prince: select your pledge value.",
+                player_id=player.id,
+                options=options,
+                context=context,
+            )
+            self.request_decision(request)
+            if getattr(self, "event_system", None) is not None:
+                self.event_system.publish(
+                    "emperors_children_pledge_prompt",
+                    player=player,
+                    game=self,
+                    battle_round=br,
+                    max_value=max_value,
+                    default_value=default_value,
+                    manager=mgr,
+                )
+
+    def _on_unit_destroyed_emperors_children(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        attacker_army = destroyed_by_unit.get_parent_army() if hasattr(destroyed_by_unit, "get_parent_army") else None
+        mgr = self._get_emperors_children_manager(attacker_army)
+        if mgr is None:
+            return
+        mgr.record_enemy_unit_destroyed(unit, destroyed_by_unit, game=self)
+
+    def _on_unit_shooting_resolved_emperors_children(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        mgr = self._get_emperors_children_manager(army)
+        if mgr is None:
+            return
+        if not mgr.resolve_pending_favoured_champions(root, game=self):
+            return
+        from ..utility.event_bus import append_action
+
+        message = f"{INTERNAL_RIVALRIES_NAME}: {getattr(root, 'name', 'Unit')} are now Favoured Champions."
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            append_action(player, message)
+        if getattr(self, "event_system", None) is not None:
+            self.event_system.publish(
+                "emperors_children_favoured_champions_updated",
+                game=self,
+                manager=mgr,
+                unit=root,
+            )
+
+    def _on_fight_attacks_resolved_emperors_children(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+        mgr = self._get_emperors_children_manager(army)
+        if mgr is None:
+            return
+        if not mgr.resolve_pending_favoured_champions(root, game=self):
+            return
+        from ..utility.event_bus import append_action
+
+        message = f"{INTERNAL_RIVALRIES_NAME}: {getattr(root, 'name', 'Unit')} are now Favoured Champions."
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            append_action(player, message)
+        if getattr(self, "event_system", None) is not None:
+            self.event_system.publish(
+                "emperors_children_favoured_champions_updated",
+                game=self,
+                manager=mgr,
+                unit=root,
+            )
 
     def _on_fight_unit_selected_emperors_children(self, unit=None, **_kwargs) -> None:
         if unit is None:

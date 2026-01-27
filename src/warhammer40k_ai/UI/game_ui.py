@@ -4332,29 +4332,56 @@ class GameView:
         from ..engine.decisions import DecisionOption, DecisionRequest
         from ..utility.decision_utils import resolve_decision_value
         from ..utility.entity_ids import get_entity_id
+        from ..rules.emperors_children import PLEDGES_TO_THE_DARK_PRINCE_NAME
         from .decision_ui_utils import option_id_for_payload
 
-        army_id = get_entity_id(player.get_army()) if player is not None else ""
-        options = []
-        for value in range(1, max_value + 1):
-            options.append(
-                DecisionOption.create(
-                    f"{value}",
-                    payload={"pledge_value": int(value), "army_id": army_id},
+        army = getattr(mgr, "army", None) or player.get_army()
+        if army is None:
+            self._emperors_children_pledge_flow_active = False
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+            return
+        army_id = get_entity_id(army)
+
+        req = None
+        queue = getattr(game_ctx, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_PLEDGE:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id):
+                    req = pending
+                    break
+
+        if req is None and bool(getattr(game_ctx, "is_authoritative", True)):
+            options = []
+            for value in range(1, max_value + 1):
+                options.append(
+                    DecisionOption.create(
+                        f"{value}",
+                        payload={"pledge_value": int(value), "army_id": army_id},
+                    )
                 )
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_PLEDGE,
+                "Select pledge value.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "army_id": army_id,
+                    "battle_round": int(battle_round or 0),
+                    "max_value": max_value,
+                    "ability_name": PLEDGES_TO_THE_DARK_PRINCE_NAME,
+                },
             )
-        req = DecisionRequest.create(
-            DECISION_CHOOSE_PLEDGE,
-            "Select pledge value.",
-            player_id=getattr(player, "id", None),
-            options=options,
-            context={"army_id": army_id, "battle_round": int(battle_round or 0), "max_value": max_value},
-        )
-        if self.game is not None:
-            self.game.request_decision(req)
+            game_ctx.request_decision(req)
+        if req is None:
+            self._emperors_children_pledge_flow_active = False
+            self._open_next_emperors_children_pledge_prompt(game_ctx)
+            return
 
         def _on_confirm(option_id: str):
-            resolve_decision_value(self.game, req, option_id)
+            resolve_decision_value(game_ctx, req, option_id)
             self._emperors_children_pledge_flow_active = False
             try:
                 if self.rule_detail_panel and self.rule_detail_panel.visible and isinstance(self._rule_panel_state, dict):
@@ -4367,7 +4394,7 @@ class GameView:
         def _on_cancel():
             default_id = option_id_for_payload(req, "pledge_value", int(default_value))
             if default_id:
-                resolve_decision_value(self.game, req, default_id)
+                resolve_decision_value(game_ctx, req, default_id)
             self._emperors_children_pledge_flow_active = False
             self._open_next_emperors_children_pledge_prompt(game_ctx)
 

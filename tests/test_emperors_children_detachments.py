@@ -490,9 +490,10 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
         finally:
             wargear_mod.get_roll = old_get_roll
 
-    def test_internal_rivalries_filters_negative_roll_modifiers(self):
+    def test_internal_rivalries_roll_modifier_choice(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE, CHOICE_KEEP_ALL
 
         army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
         army.faction_id = "EC"
@@ -500,8 +501,202 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         unit = _StubUnit("Champion", army, is_character=True)
         mods = [(-2, "Debuff"), (1, "Buff")]
-        filtered = Unit._filter_internal_rivalries_roll_modifiers(unit, mods, kind="advance")
-        self.assertEqual(filtered, [(1, "Buff")])
+
+        unit.round_state.advance_modifier_choice = CHOICE_IGNORE_NEGATIVE
+        filtered_ignore_neg = Unit._filter_internal_rivalries_roll_modifiers(unit, mods, kind="advance")
+        self.assertEqual(filtered_ignore_neg, [(1, "Buff")])
+
+        unit.round_state.advance_modifier_choice = CHOICE_KEEP_ALL
+        filtered_keep_all = Unit._filter_internal_rivalries_roll_modifiers(unit, mods, kind="advance")
+        self.assertEqual(filtered_keep_all, mods)
+
+    def test_internal_rivalries_move_modifier_choice_applies(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.units.unit import Unit
+        from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
+        from warhammer40k_ai.utility.modifier_choice import CHOICE_IGNORE_NEGATIVE, CHOICE_KEEP_ALL
+
+        army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        army.faction_id = "EC"
+        army.player = SimpleNamespace(name="P1", id="P1")
+
+        unit = _make_unit("Champion", keywords=["Character"])
+        unit.set_parent_army(army)
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        unit.embarked_in = None
+        army.units.append(unit)
+
+        unit.add_characteristic_modifier("movement", Modifier(ModifierOp.ADD, -2, source="Slow"))
+        unit.add_characteristic_modifier("movement", Modifier(ModifierOp.ADD, 1, source="Fast"))
+        model = unit.models[0]
+
+        unit.round_state.move_modifier_choice = CHOICE_KEEP_ALL
+        keep_all_val = Unit.get_effective_model_characteristic(unit, model, "movement")
+
+        unit.round_state.move_modifier_choice = CHOICE_IGNORE_NEGATIVE
+        ignore_neg_val = Unit.get_effective_model_characteristic(unit, model, "movement")
+
+        self.assertLess(int(keep_all_val), int(ignore_neg_val))
+
+    def test_pledges_to_dark_prince_decision_and_tracking(self):
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLEDGE
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ec_army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
+        ec_army.faction_id = "EC"
+        enemy_army = Army("Opponent", detachment_type="Other")
+
+        ec_player = Player("EC_Pledge", PlayerControl.REMOTE, army=ec_army)
+        enemy_player = Player("Enemy_Pledge", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        game.add_player(ec_player)
+        game.add_player(enemy_player)
+        game.turn = 1
+        game.current_player_index = 0
+
+        warlord = _StubUnit("Warlord", ec_army, is_character=True)
+        warlord.is_warlord = True
+        warlord.deployed = True
+        warlord.reserve_status = "deployed"
+        warlord.is_embarked = False
+        warlord.embarked_in = None
+        ec_army.units.append(warlord)
+        ec_army.warlord = warlord
+
+        attacker = _StubUnit("Attacker", ec_army, is_character=True)
+        attacker.deployed = True
+        attacker.reserve_status = "deployed"
+        attacker.is_embarked = False
+        attacker.embarked_in = None
+        ec_army.units.append(attacker)
+
+        enemy_one = _StubUnit("Enemy One", enemy_army)
+        enemy_two = _StubUnit("Enemy Two", enemy_army)
+        enemy_army.units.extend([enemy_one, enemy_two])
+
+        game.rebuild_entity_registry()
+        game.event_system.publish("battle_round_started", game=game, battle_round=1)
+
+        army_id = get_entity_id(ec_army)
+        pledge_req = next(
+            req
+            for req in game.decision_queue.list()
+            if req.decision_type == DECISION_CHOOSE_PLEDGE and str(req.context.get("army_id", "")) == army_id
+        )
+        option_id = next(
+            opt.option_id for opt in pledge_req.options if int(opt.payload.get("pledge_value", 0) or 0) == 2
+        )
+        value, apply_result = resolve_decision_value(game, pledge_req, option_id)
+        self.assertEqual(int(value or 0), 2)
+        self.assertTrue(getattr(apply_result, "ok", False))
+
+        game.event_system.publish("unit_destroyed", unit=enemy_one, destroyed_by_unit=attacker)
+        game.event_system.publish("unit_destroyed", unit=enemy_two, destroyed_by_unit=attacker)
+        game.end_of_battle_round_scoring()
+
+        self.assertEqual(int(ec_army.emperors_children.pact_points or 0), 2)
+
+    def test_choose_pledge_requires_warlord_on_battlefield(self):
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_PLEDGE
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        ec_army = Army("Emperor's Children", detachment_type="Coterie of the Conceited")
+        ec_army.faction_id = "EC"
+        player = Player("EC_InvalidPledge", PlayerControl.REMOTE, army=ec_army)
+        enemy = Player("Enemy_InvalidPledge", PlayerControl.REMOTE, army=Army("Opponent", detachment_type="Other"))
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        game.add_player(player)
+        game.add_player(enemy)
+        game.turn = 1
+        game.current_player_index = 0
+
+        warlord = _StubUnit("Warlord Off Board", ec_army, is_character=True)
+        warlord.is_warlord = True
+        warlord.deployed = False
+        warlord.reserve_status = "reserves"
+        ec_army.units.append(warlord)
+        ec_army.warlord = warlord
+
+        game.rebuild_entity_registry()
+        army_id = get_entity_id(ec_army)
+        option = DecisionOption.create("1", payload={"pledge_value": 1, "army_id": army_id})
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_PLEDGE,
+            "Select pledge value.",
+            player_id=player.id,
+            options=[option],
+            context={"army_id": army_id, "battle_round": 1, "max_value": 1},
+        )
+        result = DecisionResult(
+            decision_id=request.decision_id,
+            player_id=player.id,
+            option_id=option.option_id,
+            payload={},
+        )
+        apply_result = dispatch_decision(game, request, result)
+        self.assertFalse(apply_result.ok)
+        self.assertTrue(any("warlord" in err.lower() for err in apply_result.errors))
+
+    def test_internal_rivalries_favoured_champions_switch_after_attacks_resolve(self):
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        ec_army = Army("Emperor's Children", detachment_type="Slaanesh's Chosen")
+        ec_army.faction_id = "EC"
+        enemy_army = Army("Opponent", detachment_type="Other")
+
+        ec_player = Player("EC_Favoured", PlayerControl.REMOTE, army=ec_army)
+        enemy_player = Player("Enemy_Favoured", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        game.add_player(ec_player)
+        game.add_player(enemy_player)
+        game.turn = 1
+        game.current_player_index = 0
+
+        warlord = _StubUnit("Warlord Unit", ec_army, is_character=True)
+        warlord.is_warlord = True
+        warlord.deployed = True
+        warlord.reserve_status = "deployed"
+        warlord.is_embarked = False
+        warlord.embarked_in = None
+        ec_army.units.append(warlord)
+        ec_army.warlord = warlord
+
+        challenger = _StubUnit("Challenger", ec_army, is_character=True)
+        challenger.deployed = True
+        challenger.reserve_status = "deployed"
+        challenger.is_embarked = False
+        challenger.embarked_in = None
+        ec_army.units.append(challenger)
+
+        enemy_unit = _StubUnit("Enemy", enemy_army)
+        enemy_army.units.append(enemy_unit)
+
+        game.rebuild_entity_registry()
+        game.event_system.publish("battle_round_started", game=game, battle_round=1)
+
+        mgr = ec_army.emperors_children
+        self.assertTrue(mgr.is_favoured_champions(warlord))
+
+        game.event_system.publish("unit_destroyed", unit=enemy_unit, destroyed_by_unit=challenger)
+        self.assertFalse(mgr.is_favoured_champions(challenger))
+
+        game.event_system.publish("unit_shooting_resolved", attacker_unit=challenger)
+        self.assertTrue(mgr.is_favoured_champions(challenger))
 
     def test_sensational_performance_restriction_only_attack_targets(self):
         from warhammer40k_ai.units.unit import Unit

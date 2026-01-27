@@ -28,7 +28,7 @@ class TestDetachmentSupportClassification(unittest.TestCase):
         )
         self.assertEqual(status, "Supported")
 
-    def test_pledges_to_the_dark_prince_is_partial(self):
+    def test_pledges_to_the_dark_prince_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Pledges to the Dark Prince")
         status, notes = gsm._classify_ability(
@@ -37,10 +37,10 @@ class TestDetachmentSupportClassification(unittest.TestCase):
             ability_id=row.get("id", ""),
             faction_id=row.get("faction_id", ""),
         )
-        self.assertEqual(status, "Partial")
-        self.assertIn("pledge selection", notes.lower())
+        self.assertEqual(status, "Supported")
+        self.assertIn("pledge", notes.lower())
 
-    def test_internal_rivalries_is_partial(self):
+    def test_internal_rivalries_is_supported(self):
         gsm, detachment_abilities = self._seed_support_maps()
         row = next(r for r in detachment_abilities if str(r.get("name", "") or "") == "Internal Rivalries")
         status, notes = gsm._classify_ability(
@@ -49,10 +49,9 @@ class TestDetachmentSupportClassification(unittest.TestCase):
             ability_id=row.get("id", ""),
             faction_id=row.get("faction_id", ""),
         )
-        self.assertEqual(status, "Partial")
+        self.assertEqual(status, "Supported")
         self.assertIn("favoured champions", notes.lower())
 
 
 if __name__ == "__main__":
     unittest.main()
-

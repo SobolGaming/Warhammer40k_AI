@@ -57,34 +57,42 @@ def handle_advance_roll(game: object, state: DiceRollState):
     roll_val = int(state.total or 0)
     try:
         from ..rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+        from ..rules.emperors_children import INTERNAL_RIVALRIES_NAME
         from ..utility.modifier_choice import CHOICE_LABELS, options_for_signed_pairs
         from ..engine.decision_kinds import DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES
         from ..engine.decisions import DecisionOption, DecisionRequest
     except Exception:
         driven_by_ultimate_rage_applies = None
         DRIVEN_BY_ULTIMATE_RAGE_NAME = ""
+        INTERNAL_RIVALRIES_NAME = ""
         DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES = None
         DecisionOption = None
         DecisionRequest = None
         options_for_signed_pairs = None
         CHOICE_LABELS = {}
 
-    if (
+    army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+    mgr = None
+    if army is not None:
+        mgr = getattr(army, "emperors_children", None)
+        if mgr is None:
+            mgr = getattr(army, "emperors_children_detachments", None)
+    internal_rivalries = bool(mgr and getattr(mgr, "internal_rivalries_applies", lambda _u: False)(unit))
+    driven_by_rage = bool(
         callable(driven_by_ultimate_rage_applies)
-        and bool(getattr(game, "is_authoritative", True))
         and driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None))
+    )
+    ability_name = INTERNAL_RIVALRIES_NAME if internal_rivalries else DRIVEN_BY_ULTIMATE_RAGE_NAME
+
+    if (
+        bool(getattr(game, "is_authoritative", True))
+        and (internal_rivalries or driven_by_rage)
         and options_for_signed_pairs is not None
     ):
         try:
             mods = list(unit._collect_advance_roll_modifiers() or [])
         except Exception:
             mods = []
-        try:
-            filt = getattr(unit, "_filter_internal_rivalries_roll_modifiers", None)
-            if callable(filt):
-                mods = filt(mods, kind="advance")
-        except Exception:
-            pass
         options = options_for_signed_pairs(mods)
         if options and DecisionRequest is not None and DecisionOption is not None and DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES:
             queue = getattr(game, "decision_queue", None)
@@ -107,7 +115,7 @@ def handle_advance_roll(game: object, state: DiceRollState):
                     "Choose which modifiers to ignore.",
                     player_id=getattr(getattr(unit.get_parent_army(), "player", None), "id", None),
                     options=req_options,
-                    context={"unit_id": unit_id, "ability_name": DRIVEN_BY_ULTIMATE_RAGE_NAME},
+                    context={"unit_id": unit_id, "ability_name": ability_name},
                 )
                 if hasattr(game, "request_decision"):
                     game.request_decision(request)
@@ -162,22 +170,36 @@ def handle_charge_roll(game: object, state: DiceRollState):
         pass
     try:
         from ..rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+        from ..rules.emperors_children import INTERNAL_RIVALRIES_NAME
         from ..utility.modifier_choice import CHOICE_LABELS, options_for_signed_pairs
         from ..engine.decision_kinds import DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES
         from ..engine.decisions import DecisionOption, DecisionRequest
     except Exception:
         driven_by_ultimate_rage_applies = None
         DRIVEN_BY_ULTIMATE_RAGE_NAME = ""
+        INTERNAL_RIVALRIES_NAME = ""
         DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES = None
         DecisionOption = None
         DecisionRequest = None
         options_for_signed_pairs = None
         CHOICE_LABELS = {}
 
-    if (
+    army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+    mgr = None
+    if army is not None:
+        mgr = getattr(army, "emperors_children", None)
+        if mgr is None:
+            mgr = getattr(army, "emperors_children_detachments", None)
+    internal_rivalries = bool(mgr and getattr(mgr, "internal_rivalries_applies", lambda _u: False)(unit))
+    driven_by_rage = bool(
         callable(driven_by_ultimate_rage_applies)
-        and bool(getattr(game, "is_authoritative", True))
         and driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None))
+    )
+    ability_name = INTERNAL_RIVALRIES_NAME if internal_rivalries else DRIVEN_BY_ULTIMATE_RAGE_NAME
+
+    if (
+        bool(getattr(game, "is_authoritative", True))
+        and (internal_rivalries or driven_by_rage)
         and options_for_signed_pairs is not None
     ):
         target_ids = list(spec.get("target_unit_ids", []) or [])
@@ -224,7 +246,7 @@ def handle_charge_roll(game: object, state: DiceRollState):
                     options=req_options,
                     context={
                         "unit_id": unit_id,
-                        "ability_name": DRIVEN_BY_ULTIMATE_RAGE_NAME,
+                        "ability_name": ability_name,
                         "target_unit_ids": list(target_ids or []),
                     },
                 )

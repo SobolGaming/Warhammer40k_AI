@@ -784,6 +784,15 @@ def _apply_choose_plague(game: object, request: DecisionRequest, result: Decisio
     return str(choice)
 
 
+def _resolve_emperors_children_manager(army: object):
+    if army is None:
+        return None
+    mgr = getattr(army, "emperors_children", None)
+    if mgr is not None:
+        return mgr
+    return getattr(army, "emperors_children_detachments", None)
+
+
 def _validate_choose_pledge(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -795,8 +804,13 @@ def _validate_choose_pledge(game: object, request: DecisionRequest, result: Deci
     if value is None:
         return ("Pledge selection requires value.",)
     army = _resolve_army(game, request, payload)
-    if army is None or getattr(army, "detachment_manager", None) is None:
+    mgr = _resolve_emperors_children_manager(army)
+    if mgr is None:
         return ("Emperor's Children manager not found.",)
+    if not getattr(mgr, "is_coterie_of_conceited", lambda: False)():
+        return ("Pledges to the Dark Prince requires Coterie of the Conceited.",)
+    if not getattr(mgr, "warlord_on_battlefield", lambda: False)():
+        return ("Pledges to the Dark Prince requires your warlord on the battlefield.",)
     return ()
 
 
@@ -807,7 +821,7 @@ def _apply_choose_pledge(game: object, request: DecisionRequest, result: Decisio
     army = _resolve_army(game, request, payload)
     if army is None:
         raise RuntimeError("Emperor's Children army not found.")
-    mgr = getattr(army, "detachment_manager", None)
+    mgr = _resolve_emperors_children_manager(army)
     if mgr is None:
         raise RuntimeError("Emperor's Children manager not found.")
     value = payload.get("pledge_value", payload.get("value"))
@@ -1332,6 +1346,10 @@ def _apply_choose_advance_modifier_ignores(game: object, request: DecisionReques
     unit = resolve_unit(game, unit_id)
     if unit is None:
         return choice
+    try:
+        unit.round_state.advance_modifier_choice = choice
+    except Exception:
+        pass
     base_roll = None
     try:
         base_roll = int(getattr(unit.round_state, "advance_roll_unmodified", 0) or 0)

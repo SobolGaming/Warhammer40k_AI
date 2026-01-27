@@ -55,14 +55,21 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
         from ..decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
         from ..decisions import DecisionOption, DecisionRequest
         from ...rules.wrathful_presence import driven_by_ultimate_rage_applies, DRIVEN_BY_ULTIMATE_RAGE_NAME
+        from ...rules.emperors_children import INTERNAL_RIVALRIES_NAME
         from ...utility.modifier_choice import CHOICE_LABELS, options_for_numeric_modifiers
     except Exception:
         return
-    try:
-        if not driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None)):
-            return
-    except Exception:
+    army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+    mgr = None
+    if army is not None:
+        mgr = getattr(army, "emperors_children", None)
+        if mgr is None:
+            mgr = getattr(army, "emperors_children_detachments", None)
+    internal_rivalries = bool(mgr and getattr(mgr, "internal_rivalries_applies", lambda _u: False)(unit))
+    driven_by_rage = bool(driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None)))
+    if not internal_rivalries and not driven_by_rage:
         return
+    ability_name = INTERNAL_RIVALRIES_NAME if internal_rivalries else DRIVEN_BY_ULTIMATE_RAGE_NAME
     try:
         if getattr(unit.round_state, "move_modifier_choice", None):
             return
@@ -109,7 +116,7 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
         context={
             "unit_id": get_entity_id(unit),
             "action_type": str(action_type or ""),
-            "ability_name": DRIVEN_BY_ULTIMATE_RAGE_NAME,
+            "ability_name": ability_name,
         },
     )
     if hasattr(game, "request_decision"):
