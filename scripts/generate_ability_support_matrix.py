@@ -350,6 +350,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"onslaught up to \d+ pts",
             r"no blood legions model from your army can be your warlord",
         ),
+        "The Blood of Martyrs": (
+            r"each time an adepta sororitas model from your army makes an attack add 1 to the hit roll if that models unit is below its starting strength and add 1 to the wound roll(?: as well)? if that models unit is below half strength",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -1317,6 +1320,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Ruthless Discipline": (
             "Supported",
             "Grizzled Company: OFFICERs issue +1 order; ordered units re-roll Hit rolls of 1 and re-roll Wound rolls of 1 vs targets within objective range.",
+        ),
+        "The Blood of Martyrs": (
+            "Supported",
+            "Hallowed Martyrs: ADEPTA SORORITAS models gain +1 to hit below Starting Strength and +1 to wound below Half-strength.",
         ),
         "Maddened Ferocity": (
             "Supported",

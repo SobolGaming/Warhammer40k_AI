@@ -2568,6 +2568,19 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).
+        unit = getattr(attacker, "parent_unit", None)
+        army = (
+            unit.get_parent_army()
+            if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army")
+            else None
+        )
+        mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "blood_of_martyrs_hit_bonus", None) if mgr is not None else None
+        if callable(bonus_fn):
+            bonus, reason = bonus_fn(attacker, unit)
+            if bonus:
+                _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from The Blood of Martyrs")
         # Adeptus Custodes: Against All Odds (+1 to hit when isolated).
         unit = getattr(attacker, "parent_unit", None)
         army = None
@@ -4971,6 +4984,22 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{bonus} to wound from Psychic Maelstrom")
         except Exception:
             pass
+        # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).
+        unit = getattr(attacker, "parent_unit", None)
+        army = (
+            unit.get_parent_army()
+            if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army")
+            else None
+        )
+        mgr = getattr(army, "adepta_sororitas_detachments", None) if army is not None else None
+        bonus_fn = getattr(mgr, "blood_of_martyrs_wound_bonus", None) if mgr is not None else None
+        if callable(bonus_fn):
+            bonus, reason = bonus_fn(attacker, unit)
+            if bonus:
+                dice_modifier += int(bonus)
+                wound_result['modifiers'].append(
+                    reason or f"+{int(bonus)} to wound from The Blood of Martyrs"
+                )
         # Adeptus Custodes: Against All Odds (+1 to wound when isolated).
         unit = getattr(attacker, "parent_unit", None)
         army = None
