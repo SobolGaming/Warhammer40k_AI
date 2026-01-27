@@ -60,6 +60,7 @@ Top-level:
 - map: terrain, objectives, boundaries, mission metadata
 - units: state, positions, attachment relationships, embarked status
 - units.round_state: includes declared charge targets (`charge_target_ids`) for multi-target charges
+- units.models_cost: numeric bucket keys are normalized back to integers on load so point totals remain stable after snapshot/resync
 - models: wounds, alive, position, base, wargear state
 - effects: aura effects, temporary modifiers, timers
 - decisions: pending DecisionRequests

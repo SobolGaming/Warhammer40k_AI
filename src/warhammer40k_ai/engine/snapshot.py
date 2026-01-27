@@ -424,6 +424,20 @@ def _apply_unit_state(unit: Unit, data: dict, registry: EntityRegistry) -> None:
             continue
         setattr(unit, key, value)
 
+    # Snapshot encoding stringifies dict keys. Units store points buckets in
+    # `models_cost` with integer keys, so convert numeric string keys back.
+    models_cost = getattr(unit, "models_cost", None)
+    if isinstance(models_cost, dict):
+        fixed_models_cost: dict = {}
+        for raw_key, raw_val in models_cost.items():
+            key = raw_key
+            if isinstance(raw_key, str):
+                txt = raw_key.strip()
+                if txt.isdigit():
+                    key = int(txt)
+            fixed_models_cost[key] = raw_val
+        unit.models_cost = fixed_models_cost
+
     modifiers = {}
     for char_name, mods in (data.get("characteristic_modifiers", {}) or {}).items():
         modifiers[char_name] = [deserialize_modifier(m) for m in list(mods or [])]

@@ -10,7 +10,7 @@ from warhammer40k_ai.engine.mission_cards import MarkedForDeathSecondary, TakeAn
 from warhammer40k_ai.engine.missions import CutoutType, DeploymentZone, DeploymentZoneType, ZoneCutout
 from warhammer40k_ai.engine.phase import BattleRoundPhases, SetupPhase
 from warhammer40k_ai.engine.snapshot import ANGLE_SCALE, POSITION_SCALE, load_game_snapshot, snapshot_game
-from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.army import Army, parse_army_list
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from warhammer40k_ai.units.status_effects import BattleShockEffect
 from warhammer40k_ai.units.unit import Unit, UnitRoundState
@@ -240,3 +240,23 @@ def test_snapshot_fixed_point_coordinates():
     assert model_data["position"]["x"] == int(round(3.333 * POSITION_SCALE))
     assert model_data["position"]["y"] == int(round(4.444 * POSITION_SCALE))
     assert model_data["position"]["facing"] == int(round(0.9876 * ANGLE_SCALE))
+
+
+def test_snapshot_preserves_army_points_totals():
+    waha = WahaHelper()
+    army_one = parse_army_list("army_lists/warhammer_app_dump.txt", waha)
+    army_two = parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha)
+    army_one.validate()
+    army_two.validate()
+    before_points = [army_one.get_total_points(), army_two.get_total_points()]
+
+    player_one = Player("Player One", control=PlayerControl.LOCAL, army=army_one)
+    player_two = Player("Player Two", control=PlayerControl.LOCAL, army=army_two)
+    game = Game(Battlefield(width=60, height=44), players=[player_one, player_two])
+    game.turn = 1  # snapshots require battle round >= 1
+
+    snapshot = snapshot_game(game)
+    loaded = load_game_snapshot(snapshot)
+    after_points = [pl.army.get_total_points() for pl in loaded.players]
+
+    assert after_points == before_points
