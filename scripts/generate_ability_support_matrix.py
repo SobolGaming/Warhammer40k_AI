@@ -362,6 +362,31 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "The Blood of Martyrs": (
             r"each time an adepta sororitas model from your army makes an attack add 1 to the hit roll if that models unit is below its starting strength and add 1 to the wound roll(?: as well)? if that models unit is below half strength",
         ),
+        "Against All Odds": (
+            r"each time a model in an adeptus custodes unit from your army excluding vehicles makes an attack if there are no other friendly units within \d+ of that unit add 1 to the hit roll and add 1 to the wound roll",
+        ),
+        "Kindred Sorcery": (
+            r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
+            r"you can only select each of these abilities once per battle",
+            r"add \d+ to the range characteristic of ranged psychic weapons equipped by thousand sons models from your army",
+            r"each time a thousand sons model from your army makes an attack with a psychic weapon add \d+ to the wound roll",
+            r"psychic weapons equipped by thousand sons models from your army have the devastating wounds ability",
+        ),
+        "All is Dust": (
+            r"each time an attack with an unmodified damage characteristic of \d+ is allocated to a rubricae model from your army add \d+ to any armour saving throw made against that attack",
+        ),
+        "Methodical Annihilation": (
+            r"each time a leagues of votann model from your army makes an attack with a weapon that targets the closest eligible target or a target that is within engagement range of that models unit",
+            r"reroll a wound roll of \d+",
+            r"if your unit is a k hl einhyr hearthguard or thar the destined unit improve the armour penetration characteristic of that attack by \d+",
+        ),
+        "Martial Leverage": (
+            r"each time an enemy unit is destroyed you gain \d+yp",
+        ),
+        "Worldblight": (
+            r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
+            r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -1286,6 +1311,30 @@ def _ability_id_support_by_name() -> Dict[str, Tuple[str, str]]:
 
 def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
     raw = {
+        "Against All Odds": (
+            "Supported",
+            "Lions of the Emperor: non-vehicle ADEPTUS CUSTODES units gain +1 to hit and +1 to wound when no other friendly units are within 6\" (3D; attached units deduplicated).",
+        ),
+        "Kindred Sorcery": (
+            "Supported",
+            "Grand Coven: Command-phase selection (once per battle per option) with Imbued Manifestation (+6\" Psychic ranged weapons), Psychic Maelstrom (+1 to wound with Psychic weapons), and Wrath of the Immaterium ([Devastating Wounds] on Psychic weapons).",
+        ),
+        "All is Dust": (
+            "Supported",
+            "Rubricae Phalanx: Rubricae models gain +1 to armour saves against attacks with unmodified Damage 1.",
+        ),
+        "Methodical Annihilation": (
+            "Supported",
+            "Hearthband: re-roll Wound rolls of 1 when targeting the closest eligible target or a target within Engagement Range; Kahl/Einhyr Hearthguard/Uthar units also improve AP by 1 (attached units inherit this bonus).",
+        ),
+        "Martial Leverage": (
+            "Supported",
+            "Needgaârd Oathband: gain 1 Yield Point each time an enemy unit is destroyed (integrates with Prioritised Efficiency).",
+        ),
+        "Worldblight": (
+            "Supported",
+            "Virulent Vectorium: qualifying objectives become sticky until opponent OC is greater at end of a phase, and remain Nurgle's Gift contagion sources while controlled.",
+        ),
         "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
@@ -1397,7 +1446,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AC", "Daughters of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Martial Inspiration"): ("Partial", "Advance-and-charge eligibility applied without once-per-battle restriction."),
         ("AC", "Strike from the Skies"): ("Supported", "Shoot and charge after Falling Back."),
-        ("AC", "Tactical Perception"): ("Partial", "Fights First applied without leading restriction."),
+        ("AC", "Tactical Perception"): ("Supported", "Leading: unit gains Fights First."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity or leading restriction."),
@@ -1429,7 +1478,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Within 12\" of friendly AELDARI PSYKER: Leadership set to 6+; Wraithlord improves BS/WS by 1; Wraithguard/Wraithblades add +1 to hit.",
         ),
-        ("AE", "Way of the Blade"): ("Partial", "Fights First applied without leader restriction."),
+        ("AE", "Way of the Blade"): ("Supported", "Leading: unit gains Fights First."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
         ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
@@ -1472,15 +1521,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DG", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("DG", "Blinding Spray"): ("Partial", "Fights First applied without selection/once-per-battle restriction."),
         ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
-        ("DRU", "Blur of Blades"): ("Partial", "Fights First applied without leading restriction."),
+        ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
-        ("GC", "Sudden Assault"): ("Partial", "Fights First applied without leading restriction."),
+        ("GC", "Sudden Assault"): ("Supported", "Leading: unit gains Fights First."),
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
         ("LOV", "Brōkhyr Guild Support"): ("Partial", "Lone Operative applied without 3\" Vehicle/Ironkin proximity or attached-unit restriction."),
         ("LOV", "Science Guild Support"): ("Partial", "Lone Operative applied without 3\" Infantry proximity or exclusion of Lone Operative units."),
         ("LOV", "Teleport Crest"): ("Partial", "Deep Strike granted; leading restriction not enforced where applicable."),
         ("NEC", "Adaptive Strategy"): ("Supported", "Shoot and charge after Falling Back."),
-        ("NEC", "Ghostwalk Mantle"): ("Partial", "Fights First applied without leading restriction."),
+        ("NEC", "Ghostwalk Mantle"): ("Supported", "Leading: unit gains Fights First."),
         ("NEC", "Illuminor"): ("Partial", "Lone Operative applied without 3\" proximity to friendly Necrons."),
         ("NEC", "Protective Disciples"): ("Partial", "Lone Operative applied without 3\" proximity to Destroyer Cult units."),
         ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
@@ -1648,6 +1697,7 @@ def _classify_ability_base(
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
+    advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
@@ -1743,6 +1793,8 @@ def _classify_ability_base(
         return aura_adv_charge_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
+    if advance_no_roll_support:
+        return advance_no_roll_support
     if charge_move_devastating_support:
         return charge_move_devastating_support
     if phase_move_support:
@@ -2825,9 +2877,14 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     if not text:
         return None
     low = text.lower()
-    if "leading a unit" not in low:
+    if not re.search(r"while this model is leading(?:s)?(?: a)? .*? unit", low, flags=re.IGNORECASE):
         return None
-    if "model in that unit" not in low and "models in that unit" not in low:
+    if (
+        "model in that unit" not in low
+        and "models in that unit" not in low
+        and "that unit has" not in low
+        and "that unit have" not in low
+    ):
         return None
     notes: List[str] = []
     lethal_melee = re.search(
@@ -2851,6 +2908,14 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append("Leading: unit ranged weapons gain Lethal Hits.")
     elif lethal_any:
         notes.append("Leading: unit weapons gain Lethal Hits.")
+
+    fight_first_match = re.search(
+        r"(?:models in that unit|that unit)\s+(?:has|have)\s+(?:the\s+)?fights?\s+first\s+ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if fight_first_match:
+        notes.append("Leading: unit gains Fights First.")
 
     invuln_match = re.search(
         r"models in that unit have (?:a|the)?\s*(\d)\+\s*invulnerable save",
@@ -2929,11 +2994,12 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         if norm_sentence:
             normalized_sentences.append(norm_sentence)
 
-    lead_prefix = r"(?:while this model is leading a unit )?"
+    lead_prefix = r"(?:while this model is leading(?:s)?(?: a)? .*? unit )?"
     patterns = [
         rf"{lead_prefix}melee weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}ranged weapons equipped by models in that unit have the lethal hits ability",
         rf"{lead_prefix}weapons equipped by models in that unit have the lethal hits ability",
+        rf"{lead_prefix}(?:models in that unit|that unit) (?:has|have) (?:the )?fights? first ability",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack(?:s)? add \d+ to the hit roll if that unit is below (?:its )?starting strength and add \d+ to the wound roll(?: as well)? if that unit is below (?:its )?half strength",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the hit roll",
         rf"{lead_prefix}each time a model in that unit makes (?:a|an)?(?: melee| ranged)? attack add \d+ to the wound roll",
@@ -3782,6 +3848,30 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
     return ("Supported", " ".join(notes))
 
 
+def _advance_no_roll_fixed_distance_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this unit|this models unit|this model s unit|that unit) advances "
+        r"do not make an advance roll(?: for it)? "
+        r"instead until the end of the phase add (?P<dist>\d+) to the move characteristic "
+        r"of models in (?:this unit|this models unit|that unit)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        dist = int(m.group("dist"))
+    except Exception:
+        dist = 0
+    if dist <= 0:
+        return None
+    return ("Supported", f"Advance: fixed +{dist}\" Move instead of rolling.")
+
+
 def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -4070,6 +4160,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009749003": "Miniaturised Nebuloscope: bearer unit ranged weapons ignore cover.",
         "000009749004": "Demanding Leader: Command phase select friendly NECRONS VEHICLE/MOUNTED (non-TITANIC) within 6\" to shoot after Falling Back until next Command phase.",
         "000009749005": "Chrono-impedance Fields: Command phase select friendly NECRONS VEHICLE/MOUNTED (non-TITANIC) within 6\"; allocated damage -1 until next Command phase.",
+        "000010123002": "Daemon Weapon of Nurgle: bearer melee attacks score critical hits on unmodified 5+.",
+        "000010123003": "Furnace of Plagues: bearer melee weapons gain +1 Strength, +1 Attacks, and Devastating Wounds.",
+        "000010123004": "Arch Contaminator: while the bearer's (attached) unit is within range of a controlled objective, attacks can re-roll Wound rolls.",
+        "000010123005": "Revolting Regeneration: bearer gains Feel No Pain 5+.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])

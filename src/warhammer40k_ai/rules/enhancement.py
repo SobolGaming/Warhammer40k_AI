@@ -183,6 +183,7 @@ class Enhancement:
             army = None
         we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
         ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         try:
             is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
         except Exception:
@@ -195,6 +196,10 @@ class Enhancement:
             is_warhost = bool(ae_mgr and ae_mgr.is_warhost_detachment())
         except Exception:
             is_warhost = False
+        try:
+            is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
+        except Exception:
+            is_virulent_vectorium = False
 
         if name == "berzerker glaive" or enh_id == "000008432002":
             if not is_berzerker_warband:
@@ -284,6 +289,38 @@ class Enhancement:
                 5,
                 source="Adaptive Biology",
                 tag="adaptive_biology_base",
+            )
+
+        if name == "daemon weapon of nurgle" or enh_id == "000010123002":
+            if not is_virulent_vectorium:
+                return
+            unit.special_rules["enhancement_daemon_weapon_of_nurgle"] = True
+
+        if name == "furnace of plagues" or enh_id == "000010123003":
+            if not is_virulent_vectorium:
+                return
+            unit.special_rules["enhancement_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_melee_strength_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_melee_attacks_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_furnace_of_plagues"] = True
+
+        if name == "arch contaminator" or enh_id == "000010123004":
+            if not is_virulent_vectorium:
+                return
+            unit.special_rules["enhancement_arch_contaminator"] = True
+
+        if name == "revolting regeneration" or enh_id == "000010123005":
+            if not is_virulent_vectorium:
+                return
+            unit.special_rules["enhancement_revolting_regeneration"] = True
+            _ensure_enhancement_fnp_entry(
+                unit,
+                5,
+                source="Revolting Regeneration",
+                tag="revolting_regeneration",
             )
 
         invalidate_fn = getattr(unit, "_invalidate_ability_cache", None)
