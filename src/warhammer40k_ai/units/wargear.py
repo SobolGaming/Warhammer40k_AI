@@ -2272,6 +2272,15 @@ class WargearProfile:
                 attack_instance["bonus_devastating_wounds"] = True
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("enhancement_headwoppas_killchoppa"):
+                if not self.is_extra_attacks() and self._attacker_is_enhancement_bearer(attacker, sr):
+                    attack_instance["bonus_devastating_wounds"] = True
+        except Exception:
+            pass
 
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)

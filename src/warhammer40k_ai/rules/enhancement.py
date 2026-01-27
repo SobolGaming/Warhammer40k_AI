@@ -185,6 +185,7 @@ class Enhancement:
         ae_mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         try:
             is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
         except Exception:
@@ -202,6 +203,10 @@ class Enhancement:
         except Exception:
             is_virulent_vectorium = False
         is_lions = bool(ac_mgr and ac_mgr.is_lions_of_the_emperor())
+        try:
+            is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
+        except Exception:
+            is_war_horde = False
 
         bearer_id = ""
         get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
@@ -371,6 +376,40 @@ class Enhancement:
             unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
             ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "follow me ladz" or enh_id == "000008367002":
+            if not is_war_horde:
+                return
+            unit.special_rules["enhancement_follow_me_ladz"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "headwoppa's killchoppa" or enh_id == "000008367003":
+            if not is_war_horde:
+                return
+            unit.special_rules["enhancement_headwoppas_killchoppa"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "kunnin' but brutal" or enh_id == "000008367004":
+            if not is_war_horde:
+                return
+            unit.special_rules["enhancement_kunnin_but_brutal"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "supa-cybork body" or enh_id == "000008367005":
+            if not is_war_horde:
+                return
+            unit.special_rules["enhancement_supa_cybork_body"] = True
+            _ensure_enhancement_fnp_entry(
+                unit,
+                4,
+                source="Supa-Cybork Body",
+                tag="supa_cybork_body",
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

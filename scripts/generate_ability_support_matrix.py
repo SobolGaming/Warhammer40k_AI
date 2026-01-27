@@ -4168,6 +4168,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009987003": "Praesidius: bearer gains Lone Operative and Stealth (no Lone Operative leak while attached).",
         "000009987004": "Fierce Conqueror: start of Fight phase, bearer gains +2 Attacks per 5 enemy models within 6\" until end of phase.",
         "000009987005": "Admonimortis: bearer melee weapons gain +3 Strength, +1 AP, and +1 Damage.",
+        "000008367002": "Follow Me Ladz: while leading, bearer unit gains +2\" Move.",
+        "000008367003": "Headwoppa's Killchoppa: bearer melee weapons (excluding Extra Attacks) gain Devastating Wounds.",
+        "000008367004": "Kunnin' But Brutal: while leading, bearer unit can shoot and charge after Falling Back.",
+        "000008367005": "Supa-Cybork Body: bearer gains Feel No Pain 4+.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])

@@ -2156,6 +2156,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                u.remove_characteristic_modifiers_by_source("enhancement:follow_me_ladz")
+            except Exception:
+                pass
+            try:
                 u.remove_characteristic_modifiers_by_source("ability:bearer_unit_objective_control")
             except Exception:
                 pass
@@ -2202,6 +2206,7 @@ class Unit:
                     "bearer_unit_phase_move_terrain_only_types",
                     "bearer_unit_phase_move_engagement_types",
                     "bearer_unit_auto_pass_desperate_escape",
+                    "enhancement_kunnin_but_brutal_active",
                 ):
                     if key in sr:
                         del sr[key]
@@ -2224,6 +2229,7 @@ class Unit:
         advance_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
         movement_sets: list[tuple[int, str]] = []
+        movement_bonus_mods: list[tuple[int, str]] = []
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
@@ -2238,6 +2244,7 @@ class Unit:
         phase_engagement_types: set[str] = set()
         auto_pass_desperate_escape = False
         grant_deep_strike = False
+        kunnin_but_brutal_active = False
 
         def _iter_sentences(text: str) -> list[str]:
             if not text:
@@ -2424,6 +2431,16 @@ class Unit:
                         if "desperate escape" in sentence_lower and "automatic" in sentence_lower and "pass" in sentence_lower:
                             auto_pass_desperate_escape = True
 
+            try:
+                sr = getattr(u, "special_rules", None)
+            except Exception:
+                sr = None
+            if isinstance(sr, dict) and getattr(u, "is_attached_leader", False):
+                if sr.get("enhancement_follow_me_ladz"):
+                    movement_bonus_mods.append((2, "Follow Me Ladz"))
+                if sr.get("enhancement_kunnin_but_brutal"):
+                    kunnin_but_brutal_active = True
+
         if charge_mods:
             for u in members:
                 sr = getattr(u, "special_rules", None)
@@ -2472,6 +2489,20 @@ class Unit:
                     u.add_characteristic_modifier(
                         "movement",
                         Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_movement_set:{source}"),
+                    )
+
+        if movement_bonus_mods:
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            values = [int(val) for val, _ in movement_bonus_mods if int(val) > 0]
+            if values:
+                best_val = max(values)
+                sources = sorted({src for val, src in movement_bonus_mods if int(val) == best_val})
+                source_label = ", ".join(sources) if sources else "Follow Me Ladz"
+                for u in members:
+                    u.add_characteristic_modifier(
+                        "movement",
+                        Modifier(ModifierOp.ADD, int(best_val), source=f"enhancement:follow_me_ladz:{source_label}"),
                     )
 
         if oc_mods:
@@ -2602,6 +2633,14 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_auto_pass_desperate_escape"] = True
+                u.special_rules = sr
+
+        if kunnin_but_brutal_active:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["enhancement_kunnin_but_brutal_active"] = True
                 u.special_rules = sr
 
     def _parse_advance_no_roll_distance(self, text: str) -> Optional[int]:
@@ -11895,6 +11934,12 @@ class Unit:
                 return True
         except Exception:
             pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_kunnin_but_brutal_active"):
+                return True
+        except Exception:
+            pass
         # Use cached result if available
         if 'fell_back_and_shoot' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['fell_back_and_shoot']
@@ -12076,6 +12121,12 @@ class Unit:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_kunnin_but_brutal_active"):
+                return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
