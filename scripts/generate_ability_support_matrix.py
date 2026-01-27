@@ -362,6 +362,31 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "The Blood of Martyrs": (
             r"each time an adepta sororitas model from your army makes an attack add 1 to the hit roll if that models unit is below its starting strength and add 1 to the wound roll(?: as well)? if that models unit is below half strength",
         ),
+        "Against All Odds": (
+            r"each time a model in an adeptus custodes unit from your army excluding vehicles makes an attack if there are no other friendly units within \d+ of that unit add 1 to the hit roll and add 1 to the wound roll",
+        ),
+        "Kindred Sorcery": (
+            r"in your command phase you can select one of the abilities listed below to take effect until the start of your next command phase",
+            r"you can only select each of these abilities once per battle",
+            r"add \d+ to the range characteristic of ranged psychic weapons equipped by thousand sons models from your army",
+            r"each time a thousand sons model from your army makes an attack with a psychic weapon add \d+ to the wound roll",
+            r"psychic weapons equipped by thousand sons models from your army have the devastating wounds ability",
+        ),
+        "All is Dust": (
+            r"each time an attack with an unmodified damage characteristic of \d+ is allocated to a rubricae model from your army add \d+ to any armour saving throw made against that attack",
+        ),
+        "Methodical Annihilation": (
+            r"each time a leagues of votann model from your army makes an attack with a weapon that targets the closest eligible target or a target that is within engagement range of that models unit",
+            r"reroll a wound roll of \d+",
+            r"if your unit is a k hl einhyr hearthguard or thar the destined unit improve the armour penetration characteristic of that attack by \d+",
+        ),
+        "Martial Leverage": (
+            r"each time an enemy unit is destroyed you gain \d+yp",
+        ),
+        "Worldblight": (
+            r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
+            r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -1289,6 +1314,26 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Against All Odds": (
             "Supported",
             "Lions of the Emperor: non-vehicle ADEPTUS CUSTODES units gain +1 to hit and +1 to wound when no other friendly units are within 6\" (3D; attached units deduplicated).",
+        ),
+        "Kindred Sorcery": (
+            "Supported",
+            "Grand Coven: Command-phase selection (once per battle per option) with Imbued Manifestation (+6\" Psychic ranged weapons), Psychic Maelstrom (+1 to wound with Psychic weapons), and Wrath of the Immaterium ([Devastating Wounds] on Psychic weapons).",
+        ),
+        "All is Dust": (
+            "Supported",
+            "Rubricae Phalanx: Rubricae models gain +1 to armour saves against attacks with unmodified Damage 1.",
+        ),
+        "Methodical Annihilation": (
+            "Supported",
+            "Hearthband: re-roll Wound rolls of 1 when targeting the closest eligible target or a target within Engagement Range; Kahl/Einhyr Hearthguard/Uthar units also improve AP by 1 (attached units inherit this bonus).",
+        ),
+        "Martial Leverage": (
+            "Supported",
+            "Needgaârd Oathband: gain 1 Yield Point each time an enemy unit is destroyed (integrates with Prioritised Efficiency).",
+        ),
+        "Worldblight": (
+            "Supported",
+            "Virulent Vectorium: qualifying objectives become sticky until opponent OC is greater at end of a phase, and remain Nurgle's Gift contagion sources while controlled.",
         ),
         "Quicksilver Grace": ("Supported", "Mercurial Host: reroll Advance rolls for eligible units."),
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
