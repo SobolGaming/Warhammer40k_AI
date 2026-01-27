@@ -19,6 +19,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "BLOOD OFFERING",
     "DAEMONIC FURY",
     "DAEMONTIDE",
+    "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
@@ -38,12 +39,15 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "GILDED CHAMPION",
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
+    "MANOEUVRE AND FIRE",
     "NEW ORDERS",
+    "PEERLESS WARRIOR",
     "RAPID INGRESS",
     "SKYBORNE SANCTUARY",
     "SMOKESCREEN",
     "SKULLS FOR THE SKULL THRONE!",
     "SUMMONED BY SLAUGHTER",
+    "SWIFT AS THE EAGLE",
     "TERRIFYING SPECTACLE",
     "TANK SHOCK",
     "THE FOE FORESEEN",
@@ -70,6 +74,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "BLESSING OF BURNING BLOOD",
     "BLOOD OFFERING",
     "CUT DOWN THE WEAK",
+    "DEFIANT TO THE LAST",
     "DEATHLESS DUTY",
     "DEATH ECSTASY",
     "FRENZIED RESILIENCE",
@@ -83,6 +88,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "HEROIC INTERVENTION",
     "INSANE BRAVERY",
     "NEW ORDERS",
+    "PEERLESS WARRIOR",
     "RAPID INGRESS",
     "FIRE AND FADE",
     "MURDER-CALL",
@@ -93,6 +99,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SUMMONED BY SLAUGHTER",
     "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
+    "SWIFT AS THE EAGLE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "ENDLESS SERVITUDE",
@@ -858,7 +865,7 @@ class StratagemManager:
         if "COUNTER-OFFENSIVE" in names:
             add("fight_sequence_complete", self._on_fight_sequence_complete)
 
-        if "EPIC CHALLENGE" in names:
+        if names & {"EPIC CHALLENGE", "PEERLESS WARRIOR"}:
             add("fight_unit_selected", self._on_fight_unit_selected)
 
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY"}:
@@ -880,6 +887,8 @@ class StratagemManager:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
         if "REACTIVE REPOSITION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_reactive_reposition)
+        if "SWIFT AS THE EAGLE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
 
         has_consolidate_spec = False
         has_charge_melee_ap_spec = False
@@ -919,6 +928,7 @@ class StratagemManager:
             "UNYIELDING FORMS",
         }
         fight_reaction_names = {
+            "DEFIANT TO THE LAST",
             "DEATHLESS DUTY",
             "DEATH ECSTASY",
             "FRENZIED RESILIENCE",
@@ -977,6 +987,8 @@ class StratagemManager:
             "DAEMONIC FURY",
             "HACK AND SLASH",
             "FRENZIED RESILIENCE",
+            "DEFIANT TO THE LAST",
+            "PEERLESS WARRIOR",
             "UNYIELDING FORMS",
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
@@ -1666,6 +1678,15 @@ class StratagemManager:
                     result["reason"] = "Requires valid target"
                     return result
 
+        # Adeptus Custodes (Lions of the Emperor): MANOEUVRE AND FIRE
+        if name_u == "MANOEUVRE AND FIRE":
+            if self._gilded_champion_detachment_manager() is None:
+                result["reason"] = "Wrong detachment"
+                return result
+            if target is not None and not self._is_adeptus_custodes_unit(target):
+                result["reason"] = "Requires ADEPTUS CUSTODES unit"
+                return result
+
         # Last pass: delegate to stratagem conditions
         try:
             if name_u in ("BLOOD OFFERING", "A GRIM WARNING"):
@@ -2310,6 +2331,30 @@ class StratagemManager:
             return None
         return mgr
 
+    def _is_adeptus_custodes_unit(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return False
+        try:
+            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
+                return False
+        except Exception:
+            return False
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        has_custodes_kw = bool(has_any_kw("ADEPTUS CUSTODES")) if callable(has_any_kw) else False
+        root_faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
+        if not has_custodes_kw and root_faction_id != "AC":
+            return False
+        return True
+
     def _unleash_lions_detachment_manager(self):
         return self._gilded_champion_detachment_manager()
 
@@ -2724,6 +2769,10 @@ class StratagemManager:
                             sr.pop("deathless_duty_active", None)
                             sr.pop("deathless_duty_expires_phase", None)
                             sr.pop("deathless_duty_source", None)
+                        if isinstance(sr, dict) and sr.get("defiant_to_last_active") is True:
+                            sr.pop("defiant_to_last_active", None)
+                            sr.pop("defiant_to_last_expires_phase", None)
+                            sr.pop("defiant_to_last_source", None)
                         u.special_rules = sr
                     except Exception:
                         raise
@@ -2820,6 +2869,10 @@ class StratagemManager:
                             sr.pop("limb_from_limb_melee_ap_bonus", None)
                             sr.pop("limb_from_limb_expires_phase", None)
                             sr.pop("limb_from_limb_source", None)
+                        if sr.get("peerless_warrior_melee_attacks_bonus", 0):
+                            sr.pop("peerless_warrior_melee_attacks_bonus", None)
+                            sr.pop("peerless_warrior_expires_phase", None)
+                            sr.pop("peerless_warrior_source", None)
                         if (
                             "stratagem_consolidate_distance_override" in sr
                             or sr.get("stratagem_consolidate_requires_engagement")
@@ -3552,6 +3605,101 @@ class StratagemManager:
             self._queue_reaction(payload)
         except Exception:
             raise
+    def _on_unit_shooting_resolved_swift_as_the_eagle(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        """
+        Reaction window for SWIFT AS THE EAGLE:
+        Opponent's Shooting phase, just after an enemy unit has shot and targeted an ADEPTUS CUSTODES unit.
+        """
+        try:
+            if attacker_unit is None or self.game is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is self.player:
+                return
+            if self._gilded_champion_detachment_manager() is None:
+                return
+            s = self.get_by_name("SWIFT AS THE EAGLE")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            targets = []
+            atk_key = self._attacker_unit_key(attacker_unit)
+            if atk_key:
+                targets = list(self._recent_shooting_targets.get(atk_key) or [])
+            if not targets and isinstance(hits_by_target, dict):
+                targets = list(hits_by_target.keys())
+            if atk_key:
+                self._recent_shooting_targets.pop(atk_key, None)
+            candidates = []
+            seen = set()
+            for t in list(targets or []):
+                try:
+                    root = t.get_attached_unit_root()
+                except Exception:
+                    raise
+                if root is None:
+                    continue
+                try:
+                    uid = get_entity_id(root)
+                except Exception:
+                    raise
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                try:
+                    if not root.is_alive():
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                except Exception:
+                    raise
+                if not self._is_adeptus_custodes_unit(root):
+                    continue
+                try:
+                    if not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    raise
+                candidates.append(root)
+            if not candidates:
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "unit_shooting_resolved" and r.get("stratagem") == s.name and r.get("enemy_unit") is attacker_unit:
+                        return
+                except Exception:
+                    raise
+            payload = {
+                "event": "unit_shooting_resolved",
+                "phase_name": "Shooting phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "enemy_unit": attacker_unit,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
+        except Exception:
+            raise
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -4121,14 +4269,15 @@ class StratagemManager:
         Fight phase, when a CHARACTER unit from your army that is within Engagement Range of one or more
         Attached units is selected to fight.
         """
-        try:
-            if unit is None:
-                return
-            if (self._current_phase_name or "").strip().lower() != "fight phase":
-                return
-            # Offer only to the player selecting the unit
-            if selecting_player is not self.player:
-                return
+        if unit is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "fight phase":
+            return
+        # Offer only to the player selecting the unit
+        if selecting_player is not self.player:
+            return
+
+        def _queue_epic_challenge() -> None:
             s = self.get_by_name("EPIC CHALLENGE")
             if not s:
                 return
@@ -4205,6 +4354,84 @@ class StratagemManager:
                 "cp_cost": s.cp_cost,
                 "unit": unit,
                 "eligible_models": models,
+            })
+
+        def _queue_peerless_warrior() -> None:
+            s = self.get_by_name("PEERLESS WARRIOR")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._gilded_champion_detachment_manager() is None:
+                return
+            if not self._is_adeptus_custodes_unit(unit):
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                return
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or "Fight phase"
+            phase_label = str(phase_name or "").replace("_", " ").title()
+            if not s.can_use(self.player, self.game, target_unit=unit, unit=unit, phase_name=phase_label):
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "fight_unit_selected" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                        return
+                except Exception:
+                    raise
+            self._queue_reaction({
+                "event": "fight_unit_selected",
+                "phase_name": "Fight phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "target_unit": unit,
+            })
+
+        try:
+            _queue_peerless_warrior()
+            _queue_epic_challenge()
+        except Exception:
+            raise
+        # Adeptus Custodes: PEERLESS WARRIOR
+        try:
+            s = self.get_by_name("PEERLESS WARRIOR")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            if self._gilded_champion_detachment_manager() is None:
+                return
+            if unit is None or not self._is_adeptus_custodes_unit(unit):
+                return
+            if _unit_cannot_be_target_of_stratagem(unit):
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                return
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or "Fight phase"
+            phase_label = str(phase_name or "").replace("_", " ").title()
+            if not s.can_use(self.player, self.game, target_unit=unit, unit=unit, phase_name=phase_label):
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "fight_unit_selected" and r.get("stratagem") == s.name and r.get("unit") is unit:
+                        return
+                except Exception:
+                    raise
+            self._queue_reaction({
+                "event": "fight_unit_selected",
+                "phase_name": "Fight phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "unit": unit,
+                "target_unit": unit,
             })
         except Exception:
             raise
@@ -4343,6 +4570,66 @@ class StratagemManager:
                             candidates.append(unit)
                         except Exception:
                             raise
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
+        # Adeptus Custodes: DEFIANT TO THE LAST
+        try:
+            s = self.get_by_name("DEFIANT TO THE LAST")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                if self._gilded_champion_detachment_manager() is not None:
+                    candidates = []
+                    seen = set()
+                    for unit in list(target_units or []):
+                        try:
+                            if unit is None or not unit.is_alive():
+                                continue
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if not self._is_adeptus_custodes_unit(root):
+                            continue
+                        candidates.append(root)
                     if candidates:
                         already = False
                         for r in self._pending_reactions:
@@ -5949,6 +6236,342 @@ class StratagemManager:
                 print(f"INFO: UNLEASH THE LIONS: {root_name} split into {max(1, count)} unit(s).")
             except Exception:
                 pass
+            return True
+        # Adeptus Custodes (Lions of the Emperor): DEFIANT TO THE LAST
+        if name_u == "DEFIANT TO THE LAST":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+            candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DEFIANT TO THE LAST":
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit") or r.get("enemy_unit")
+                        if not candidates:
+                            candidates = list(r.get("candidates") or r.get("target_units") or [])
+                        break
+            if unit is None:
+                print("ERROR: DEFIANT TO THE LAST: missing target unit context")
+                return False
+            if self._gilded_champion_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_adeptus_custodes_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: DEFIANT TO THE LAST: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: DEFIANT TO THE LAST: not opponent's Fight phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: DEFIANT TO THE LAST: target was not selected by attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    print("ERROR: DEFIANT TO THE LAST: attacker is not enemy")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: DEFIANT TO THE LAST: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["defiant_to_last_active"] = True
+                sr["defiant_to_last_expires_phase"] = "FIGHT_PHASE"
+                sr["defiant_to_last_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DEFIANT TO THE LAST: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            return True
+        # Adeptus Custodes (Lions of the Emperor): MANOEUVRE AND FIRE
+        if name_u == "MANOEUVRE AND FIRE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: MANOEUVRE AND FIRE: no target unit provided")
+                return False
+            if self._gilded_champion_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_adeptus_custodes_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: MANOEUVRE AND FIRE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: MANOEUVRE AND FIRE: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: MANOEUVRE AND FIRE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["manoeuvre_and_fire_active"] = True
+                sr["manoeuvre_and_fire_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["manoeuvre_and_fire_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                sr["manoeuvre_and_fire_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: MANOEUVRE AND FIRE: {getattr(root, 'name', 'Unit')} can shoot after falling back this turn.")
+            return True
+        # Adeptus Custodes (Lions of the Emperor): PEERLESS WARRIOR
+        if name_u == "PEERLESS WARRIOR":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "PEERLESS WARRIOR":
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        if not candidates:
+                            candidates = list(r.get("candidates") or r.get("target_units") or [])
+                        break
+            if unit is None:
+                print("ERROR: PEERLESS WARRIOR: missing target unit context")
+                return False
+            if self._gilded_champion_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_adeptus_custodes_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: PEERLESS WARRIOR: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: PEERLESS WARRIOR: not your Fight phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: PEERLESS WARRIOR: target was not selected to fight")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: PEERLESS WARRIOR: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["peerless_warrior_melee_attacks_bonus"] = 1
+                sr["peerless_warrior_expires_phase"] = "FIGHT_PHASE"
+                sr["peerless_warrior_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: PEERLESS WARRIOR: {getattr(root, 'name', 'Unit')} gains +1 Attacks on melee weapons until end of phase.")
+            return True
+        # Adeptus Custodes (Lions of the Emperor): SWIFT AS THE EAGLE
+        if name_u == "SWIFT AS THE EAGLE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacker_unit")
+            candidates = list(kwargs.get("candidates") or [])
+            if unit is None:
+                if candidates and len(candidates) == 1:
+                    unit = candidates[0]
+                if unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "SWIFT AS THE EAGLE":
+                            unit = unit or r.get("unit") or r.get("target_unit")
+                            enemy_unit = enemy_unit or r.get("enemy_unit")
+                            candidates = candidates or list(r.get("candidates") or [])
+                            if unit is None and candidates and len(candidates) == 1:
+                                unit = candidates[0]
+                            break
+            if unit is None:
+                print("ERROR: SWIFT AS THE EAGLE: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if self._gilded_champion_detachment_manager() is None:
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: SWIFT AS THE EAGLE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: SWIFT AS THE EAGLE: not opponent's Shooting phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: SWIFT AS THE EAGLE: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: SWIFT AS THE EAGLE: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: SWIFT AS THE EAGLE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not self._is_adeptus_custodes_unit(root):
+                    return False
+            except Exception:
+                raise
+            if enemy_unit is not None:
+                try:
+                    if enemy_unit.get_parent_army().player is self.player:
+                        print("ERROR: SWIFT AS THE EAGLE: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                print("ERROR: SWIFT AS THE EAGLE: no map context")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            move_max = 6
+            req = None
+            try:
+                if self.game is not None:
+                    req = self.game._queue_reactive_move_movement_decision(
+                        player=self.player,
+                        unit=root,
+                        max_distance=int(move_max),
+                        kind="swift_as_the_eagle",
+                        movement_type="reactive",
+                        source=s.name,
+                        attacker_unit=enemy_unit,
+                        allow_engagement_range=True,
+                    )
+            except Exception:
+                raise
+            try:
+                if req is not None and self.game is not None and hasattr(self.game, "event_system"):
+                    self.game.event_system.publish(
+                        "swift_as_the_eagle_move",
+                        player=self.player,
+                        unit=root,
+                        max_distance=int(move_max),
+                        decision_request=req,
+                    )
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: SWIFT AS THE EAGLE: {getattr(root, 'name', 'Unit')} can move {int(move_max)}\".")
             return True
         # Core: INSANE BRAVERY (auto-pass a Battle-shock test about to be taken; once per battle)
         if s.name.upper() == "INSANE BRAVERY":

@@ -4228,6 +4228,12 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "CHRONOSHIFT": "Movement phase: NECRONS VEHICLE/MOUNTED (non-TITANIC) not yet moved treats Advance roll as 6 this phase.",
         "ENDLESS SERVITUDE": "End of Fight phase: NECRONS (non-TITANIC) within controlled objective triggers Reanimation Protocols (D3).",
         "REACTIVE REPOSITION": "Opponent Shooting phase: NECRONS (non-TITANIC) targeted unit makes a Normal move (D6\").",
+        "DEFIANT TO THE LAST": "Opponent Fight phase: targeted ADEPTUS CUSTODES unit fights on death on 4+ (add 2 if Character) after attacker finishes; then removed.",
+        "GILDED CHAMPION": "After a CHARACTER uses a datasheet once-per-battle ability, spend 1CP to grant one extra use (not same phase); once per model.",
+        "MANOEUVRE AND FIRE": "Movement phase: ADEPTUS CUSTODES unit can shoot after falling back this turn.",
+        "PEERLESS WARRIOR": "Fight phase: selected ADEPTUS CUSTODES unit gains +1 Attacks on melee weapons until end of phase.",
+        "SWIFT AS THE EAGLE": "Opponent Shooting phase: targeted ADEPTUS CUSTODES unit makes a Normal move up to 6\" and can move within Engagement Range.",
+        "UNLEASH THE LIONS": "Command phase: split Allarus/Aquilon unit on battlefield into 1-model units (leaders split too); Starting Strength 1.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:

@@ -888,6 +888,19 @@ class WargearProfile:
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", {}) or {}
+                bonus = int(sr.get("peerless_warrior_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    exp = str(sr.get("peerless_warrior_expires_phase", "") or "").strip().upper()
+                    pname = self._current_phase_name(attacker)
+                    if not exp or (pname and pname == exp):
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="stratagem:peerless_warrior_attacks"))
+                        attack_result.attacks_special_modifiers.append(f"Peerless Warrior +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_bonus", 0) or 0)
                 if bonus:
                     atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="power_from_pain:melee_attacks_add"))

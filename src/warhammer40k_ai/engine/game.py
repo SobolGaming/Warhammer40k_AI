@@ -1597,6 +1597,14 @@ class Game:
                     if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_id:
                         for k in ("feigned_retreat_active", "feigned_retreat_turn_owner", "feigned_retreat_turn"):
                             sr.pop(k, None)
+                    if str(sr.get("manoeuvre_and_fire_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "manoeuvre_and_fire_active",
+                            "manoeuvre_and_fire_turn_owner",
+                            "manoeuvre_and_fire_turn",
+                            "manoeuvre_and_fire_source",
+                        ):
+                            sr.pop(k, None)
                     if str(sr.get("fire_and_fade_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("fire_and_fade_no_charge_turn_owner", "fire_and_fade_no_charge_turn"):
                             sr.pop(k, None)
@@ -1875,6 +1883,7 @@ class Game:
         moving_unit_id: str | None = None,
         attacker_unit_id: str | None = None,
         range_value: int | None = None,
+        allow_engagement_range: bool | None = None,
     ) -> dict:
         ctx = {
             "reactive_move_kind": str(kind or "").strip(),
@@ -1888,6 +1897,8 @@ class Game:
             ctx["reactive_move_attacker_unit_id"] = attacker_unit_id
         if range_value is not None:
             ctx["reactive_move_range"] = int(range_value)
+        if allow_engagement_range is not None:
+            ctx["reactive_move_allow_engagement_range"] = bool(allow_engagement_range)
         return ctx
 
     def _queue_reactive_move_confirmation(
@@ -1954,6 +1965,7 @@ class Game:
         moving_unit=None,
         attacker_unit=None,
         range_value: int | None = None,
+        allow_engagement_range: bool | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -1981,6 +1993,7 @@ class Game:
             moving_unit_id=moving_unit_id,
             attacker_unit_id=attacker_unit_id,
             range_value=range_value,
+            allow_engagement_range=allow_engagement_range,
         )
         ctx["unit_id"] = unit_id
         ctx["movement_type"] = movement_type

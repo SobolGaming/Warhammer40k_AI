@@ -5274,6 +5274,49 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # Adeptus Custodes: Defiant to the Last (defer fight-on-death on 4+ after attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("defiant_to_last_active"):
+                        exp = str(sr.get("defiant_to_last_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    from ..utility.damage_allocation import _is_character_model
+                                    roll = int(get_roll("D6"))
+                                    is_char = bool(_is_character_model(model))
+                                    total = roll + (2 if is_char else 0)
+                                    try:
+                                        from ..utility.event_bus import append_dice
+                                        pn = self.get_parent_army().player
+                                        label = "Defiant to the Last roll"
+                                        bonus_label = f"+2={total}" if is_char else f"={total}"
+                                        append_dice(pn, f"{label}: {roll}{bonus_label} for {self.name}")
+                                    except Exception:
+                                        pass
+                                    if total >= 4:
+                                        pending = getattr(root, "_defiant_to_last_pending_models", None)
+                                        if not isinstance(pending, list):
+                                            pending = []
+                                        if model not in pending:
+                                            pending.append(model)
+                                        root._defiant_to_last_pending_models = pending
+                                        return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # MELEE fight-on-death after attacker finishes attacks (e.g., Malevolent Souls).
         rule = None
         try:
@@ -11835,6 +11878,19 @@ class Unit:
             pass
         try:
             sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("manoeuvre_and_fire_active"):
+                owner = str(sr.get("manoeuvre_and_fire_turn_owner", "") or "")
+                turn = int(sr.get("manoeuvre_and_fire_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("command_phase_fell_back_and_shoot_active"):
                 return True
         except Exception:
@@ -15495,6 +15551,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                root._resolve_defiant_to_last_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_melee_fight_on_death_queue(game_map=game_map)
             except Exception:
                 pass
@@ -15527,6 +15587,10 @@ class Unit:
     def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_deathless_duty_pending_models", game_map=game_map)
+
+    def _resolve_defiant_to_last_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Defiant to the Last fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_defiant_to_last_pending_models", game_map=game_map)
 
     def _resolve_melee_fight_on_death_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred melee fight-on-death fights after an attacker finishes its attacks."""
