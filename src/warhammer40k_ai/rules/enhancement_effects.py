@@ -20,6 +20,26 @@ def _normalize(text: str) -> str:
     return t
 
 
+def _normalize_rules_tokens(text: str) -> str:
+    """
+    Normalize enhancement rules text into a token string suitable for strict
+    full-consumption matching.
+
+    This intentionally removes punctuation/formatting while preserving the
+    meaningful rule clauses.
+    """
+    t = _normalize(_strip_html(text))
+    if not t:
+        return ""
+    # Normalize possessives and common variants.
+    t = t.replace("re-roll", "reroll").replace("re roll", "reroll")
+    t = re.sub(r"'s\b", "s", t)
+    # Collapse to alphanumeric tokens.
+    t = re.sub(r"[^A-Za-z0-9]+", " ", t).strip().lower()
+    t = re.sub(r"\s+", " ", t)
+    return t
+
+
 def normalize_enhancement_token(text: str) -> str:
     return _normalize(_strip_html(text)).lower()
 
@@ -373,6 +393,43 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
     return out
 
 
+def _enhancement_rules_fully_consumed(description: str) -> bool:
+    """
+    Return True only when the enhancement rules text is fully matched by one of
+    the supported full-consumption patterns.
+    """
+    rules = _strip_eligibility_prefix(description)
+    tokens = _normalize_rules_tokens(rules)
+    if not tokens:
+        return False
+
+    fullmatch_patterns = (
+        # Add X" to Move.
+        r"add \d+ to the bearers move characteristic",
+        # Add X to Wounds.
+        r"add \d+ to the bearers wounds characteristic",
+        # Improve A/S/D of bearer melee weapons by X.
+        r"improve the attacks strength and damage characteristics of melee weapons equipped by the bearer by \d+",
+        # Add X to A/S/D of bearer melee weapons.
+        r"add \d+ to the attacks strength and damage characteristics of the bearers melee weapons",
+        # Add/Improve X to A/D of bearer melee weapons.
+        r"add \d+ to the attacks and damage characteristics of (?:the bearers melee weapons|melee weapons equipped by the bearer)",
+        r"improve the attacks and damage characteristics of (?:the bearers melee weapons|melee weapons equipped by the bearer) by \d+",
+        # Set Save characteristic.
+        r"(?:the )?bearer has a save characteristic of \d+",
+        # Unconditional damage reduction.
+        r"each time an attack is allocated to the bearer subtract \d+ from the damage characteristic of that attack",
+        # Charge/Advance rerolls.
+        r"(?:you can )?reroll advance and charge rolls made for (?:this model|the bearers unit|that unit)",
+        r"(?:you can )?reroll charge rolls made for (?:this model|the bearers unit|that unit)",
+        r"(?:you can )?reroll charge rolls made for (?:the bearers unit|that unit) in a turn in which it was set up on the battlefield",
+        r"each time the bearers unit declares a charge if one or more targets of that charge are within range of an objective marker you can reroll the charge roll",
+        # Once per battle: Fights First in Fight phase.
+        r"once per battle at the start of the fight phase the bearer can use this enhancement if it does until the end of the phase models in the bearers unit have the fights first ability",
+    )
+    return any(re.fullmatch(pat, tokens) for pat in fullmatch_patterns)
+
+
 def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> None:
     """
     Apply parsed enhancement effects onto a unit/model in a simple, engine-native way.
@@ -466,9 +523,13 @@ def classify_enhancement_support(description: str) -> Tuple[str, str]:
     """
     effects = parse_enhancement_effects(description)
     supported = [e for e in effects if e.supported]
-    if supported:
+    fully_consumed = _enhancement_rules_fully_consumed(description)
+    if supported and fully_consumed:
         notes = "; ".join(e.notes for e in supported)
         return "Supported", notes
+    if supported:
+        notes = "; ".join(e.notes for e in supported)
+        return "Partial", f"{notes} Additional clauses not fully supported."
     if effects:
         # Recognized, but conditional/partial parsing.
         notes = "; ".join(e.notes for e in effects)

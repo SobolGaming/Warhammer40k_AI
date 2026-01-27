@@ -52,6 +52,7 @@ ABILITY_SUPPORT_BY_NAME_FACTION: Dict[Tuple[str, str], Tuple[str, str]] = {}
 ABILITY_SUPPORT_BY_NAME_FACTION_DS: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
 OPTION_SUPPORT_CACHE: Dict[str, Tuple[str, str]] = {}
 WARGEAR_KEYWORD_SUPPORT_CACHE: Dict[Tuple[str, Tuple[str, ...]], Tuple[str, str]] = {}
+DETACHMENT_ABILITY_IDS: set[str] = set()
 
 
 def _read_json(path: str) -> Any:
@@ -80,6 +81,287 @@ def _norm_rules_text(text: str) -> str:
 
 def _fullmatch_tokens(pattern: str, text: str) -> bool:
     return bool(re.fullmatch(pattern, _norm_rules_text(text)))
+
+
+_RULE_CLAUSE_MARKERS: tuple[str, ...] = (
+    "each time",
+    "first time",
+    "at the start",
+    "at the end",
+    "once per",
+    "add",
+    "improve",
+    "reroll",
+    "re roll",
+    "re-roll",
+    "eligible",
+    "cannot",
+    "must",
+    "gain",
+    "gains",
+    "has",
+    "have",
+    "roll",
+    "suffer",
+    "suffers",
+    "choose",
+    "select",
+    "spend",
+    "while",
+    "until",
+    "no ",
+    "warlord",
+    "points",
+    "pts",
+    "within",
+    "destroy",
+    "destroys",
+    "becomes",
+    "replace",
+    "replacing",
+    "issue",
+    "orders",
+)
+
+
+def _strip_fluff_blocks(text: str) -> str:
+    if not text:
+        return ""
+    # Remove explicit fluff blocks when they are marked as such in Wahapedia HTML.
+    return re.sub(
+        r"<p[^>]*class=\"[^\"]*(?:showfluff|legend)[^\"]*\"[^>]*>.*?</p>",
+        " ",
+        str(text),
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+
+
+def _rules_text_for_clauses(text: str) -> str:
+    """
+    Convert rich HTML rules text into a sentence-like plain text string suitable
+    for clause splitting and strict consumption checks.
+    """
+    if not text:
+        return ""
+    t = html.unescape(str(text))
+    t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+    t = _strip_fluff_blocks(t)
+
+    # Insert separators before removing tags to preserve clause boundaries.
+    for pat in (
+        r"<br\s*/?>",
+        r"</li>",
+        r"</tr>",
+        r"</td>",
+        r"</p>",
+        r"</div>",
+        r"</ul>",
+        r"</ol>",
+    ):
+        t = re.sub(pat, ". ", t, flags=re.IGNORECASE)
+    t = re.sub(r"<li[^>]*>", " ", t, flags=re.IGNORECASE)
+
+    # Remove remaining tags and normalize punctuation/spacing.
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = re.sub(r"[;:]+", ". ", t)
+    t = re.sub(r"\s+", " ", t).strip()
+    t = re.sub(r"\s*\.\s*", ". ", t)
+    t = re.sub(r"(?:\.\s*)+", ". ", t)
+    return t.strip(" .")
+
+
+def _is_rule_clause(clause_tokens: str) -> bool:
+    if not clause_tokens:
+        return False
+    for marker in _RULE_CLAUSE_MARKERS:
+        if marker in clause_tokens:
+            return True
+    return False
+
+
+def _extract_points_cap_clauses(text: str) -> list[str]:
+    """
+    Extract battle-size points caps as explicit clauses so full-consumption
+    checks can account for them deterministically.
+    """
+    if not text:
+        return []
+    plain = _strip_html(text or "")
+    caps: list[str] = []
+    for label, value in re.findall(
+        r"(incursion|strike force|onslaught)\s*(?:[:\-]\s*)?(?:up to\s*)?(\d+)\s*pts",
+        plain,
+        flags=re.IGNORECASE,
+    ):
+        caps.append(_norm_rules_text(f"{label} up to {value} pts"))
+    return caps
+
+
+def _detachment_rule_clauses(description: str) -> list[str]:
+    text = _rules_text_for_clauses(description)
+    if not text:
+        return []
+    raw_parts = [p.strip() for p in re.split(r"\.\s*", text) if p and p.strip()]
+    clauses: list[str] = []
+    for part in raw_parts:
+        tokens = _norm_rules_text(part)
+        if not tokens:
+            continue
+        # Ignore intermediate cap fragments; explicit cap clauses are added separately.
+        if re.fullmatch(r"up to \d+ pts", tokens):
+            continue
+        if _is_rule_clause(tokens):
+            clauses.append(tokens)
+
+    # Include explicit points cap clauses when present.
+    for cap_clause in _extract_points_cap_clauses(description):
+        if cap_clause and cap_clause not in clauses:
+            clauses.append(cap_clause)
+    return clauses
+
+
+def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
+    """
+    Clause-level full-consumption patterns for detachment abilities that we
+    consider fully supported.
+    """
+    raw: Dict[str, Tuple[str, ...]] = {
+        "Martial Grace": (
+            r"at the start of the battle round you receive \d+ additional battle focus token",
+            r"each time a unit from your army performs the swift as the wind agile manoeuvre until the end of the phase add an additional \d+ to the move characteristic of models in that unit",
+            r"each time a unit from your army performs an agile manoeuvre that involves rolling a d6 add \d+ to the result",
+        ),
+        "Ruthless Discipline": (
+            r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
+            r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
+            r"if the target of that attack is within range of an objective marker reroll a wound roll of \d+ as well",
+        ),
+        "Warp Rifts": (
+            r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
+        ),
+        "Combat Drugs": (
+            r"at the start of your command phase select which combat drugs will be active for your army until the start of your next command phase",
+            r"to do so either select one from the list below you cannot select the same combat drug more than once per battle or randomly select two by rolling two d6",
+            r"when doing so randomly combat drugs you have previously selected can become active again but if you randomly select one that is already active for your army it has no additional effect",
+            r"add \d+ to the attacks characteristic of melee weapons equipped by wych cult models from your army",
+            r"add \d+ to the move characteristic of wych cult models from your army",
+            r"improve the weapon skill characteristic of melee weapons equipped by wych cult models from your army by \d+",
+            r"add \d+ to the toughness characteristic of wych cult models from your army",
+            r"add \d+ to the strength characteristic of melee weapons equipped by wych cult models from your army",
+            r"improve the leadership characteristic of wych cult models from your army by \d+ and improve the ballistic skill characteristic of ranged weapons equipped by wych cult models from your army by \d+",
+        ),
+        "Quicksilver Grace": (
+            r"you can reroll advance rolls made for emperors children units from your army",
+        ),
+        "Exquisite Swordsmanship": (
+            r"each time an emperors children unit from your army is selected to fight if it made a charge move this turn select one of the abilities below",
+            r"while resolving those attacks melee weapons equipped by models in that unit have that ability",
+        ),
+        "Mechanised Murder": (
+            r"each time an emperors children model from your army makes an attack if it is a transport model or disembarked from a transport this turn reroll a hit roll of \d+ and reroll a wound roll of \d+",
+        ),
+        "Daemonic Empowerment": (
+            r"while an emperors children unit from your army is within 6 of one or more friendly legions of excess units it is empowered",
+            r"while a legions of excess unit from your army is within 6 of one or more friendly emperor ?s children units it is empowered",
+            r"while a unit from your army is empowered weapons equipped by models in that unit have the sustained hits \d+ ability",
+            r"if such a weapon already has that ability each time an attack is made with that weapon an unmodified hit roll of 5 scores a critical hit",
+            r"you can include legions of excess units in your army even though they do not have the emperor ?s children faction keyword",
+            r"the combined points cost of such units you can include in your army is",
+            r"incursion up to \d+ pts",
+            r"strike force up to \d+ pts",
+            r"onslaught up to \d+ pts",
+            r"no legions of excess models from your army can be your warlord",
+        ),
+        "Sensational Performance": (
+            r"emperors children units from your army have the following ability",
+            r"each time this unit is selected to fight if this unit made a charge move this turn it can use this ability",
+            r"if it does until the end of the phase",
+            r"this unit cannot target a unit it was within engagement range of at the start of the turn",
+            r"this unit cannot target a unit that was the target of another units attack this phase",
+            r"improve the strength and armour penetration characteristics of this units melee weapons by \d+",
+        ),
+        "Master of the Pageant": (
+            r"once per battle round when you target a fulgrim unit from your army with the sinuous breach or prideful superiority stratagem you can reduce the cp cost of that use of that stratagem by \d+cp",
+        ),
+        "Fury of Titan": (
+            r"each time a unit from your army is set up using the deep strike ability until the end of the turn each time a model in that unit makes an attack reroll a hit roll of \d+ and reroll a wound roll of \d+",
+        ),
+        "Duty Before All": (
+            r"grey knights terminator units from your army are eligible to shoot and declare a charge in a turn in which they fell back",
+        ),
+        "Relentless Onslaught": (
+            r"each time a necrons model from your army makes an attack that targets a unit within range of one or more objective markers add \d+ to the hit roll",
+            r"in addition ranged weapons equipped by necrons vehicle and necrons mounted models excluding titanic models from your army have the assault ability",
+        ),
+        "Get Stuck In": (
+            r"melee weapons equipped by orks models from your army have the sustained hits \d+ ability",
+        ),
+        "Combat Doctrines": (
+            r"at the start of your command phase you can select one of the combat doctrines listed below",
+            r"until the start of your next command phase that combat doctrine is active and its effects apply to all adeptus astartes units from your army",
+            r"you can only select each combat doctrine once per battle",
+            r"this unit is eligible to shoot in a turn in which it advanced",
+            r"this unit is eligible to shoot and declare a charge in a turn in which it fell back",
+            r"this unit is eligible to declare a charge in a turn in which it advanced",
+        ),
+        "Maddened Ferocity": (
+            r"each time an adeptus astartes model from your army makes a melee attack reroll a wound roll of \d+",
+            r"each time an adeptus astartes unit from your army is selected to fight if that unit made a charge move this turn until the end of the phase add \d+ to the attacks characteristic of melee weapons equipped by models in that unit",
+            r"if your unit is battle shocked add \d+ to the attacks characteristic of melee weapons equipped by models in that unit instead",
+            r"your army can include blood angels units but it cannot include adeptus astartes units drawn from any other chapter",
+        ),
+        "Hyper-adaptations": (
+            r"at the start of the first battle round select one of the following hyper adaptations to be active for tyranids units from your army until the end of the battle",
+            r"each time a tyranids model with this hyper adaptation makes an attack that targets an infantry or swarm unit that attack has the sustained hits \d+ ability",
+            r"each time a tyranids model with this hyper adaptation makes an attack that targets a monster or vehicle unit that attack has the lethal hits ability",
+            r"each time a tyranids model with this hyper adaptation makes an attack that targets a character unit on a critical hit that attack has the precision ability",
+        ),
+        "Relentless Rage": (
+            r"each time a world eaters unit from your army makes a charge move until the end of the turn add \d+ to the attacks characteristic and add \d+ to the strength characteristic of melee weapons equipped by models in that unit",
+        ),
+        "Blood Tithe": (
+            r"each time a blood legions or world eaters unit from your army destroys an enemy unit roll one d6",
+            r"on a 3 you gain 1 blood tithe point btp",
+            r"at the start of the command phase you can spend one or more of your btp to activate one of the following abilities until the end of the battle",
+            r"blood legions and world eaters models from your army have the feel no pain 5 ability against psychic attacks and mortal wounds",
+            r"melee weapons equipped by blood legions units from your army have the lance ability",
+            r"blood legions units from your army have a 4 invulnerable save",
+            r"blood legions units from your army gain the blessings of khorne ability",
+            r"the combined points cost of such units you can include in your army is",
+            r"incursion up to \d+ pts",
+            r"strike force up to \d+ pts",
+            r"onslaught up to \d+ pts",
+            r"no blood legions model from your army can be your warlord",
+        ),
+    }
+    return {_norm(name): tuple(pats) for name, pats in raw.items()}
+
+
+def _detachment_ability_fully_consumed(name: str, description: str) -> bool:
+    name_norm = _norm(name)
+    patterns = _detachment_full_consumption_patterns().get(name_norm)
+    if not patterns:
+        return False
+    clauses = _detachment_rule_clauses(description)
+    if not clauses:
+        return False
+    unmatched = [
+        clause
+        for clause in clauses
+        if not any(re.fullmatch(pat, clause) for pat in patterns)
+    ]
+    return not unmatched
+
+
+def _enforce_detachment_full_consumption(status: str, notes: str, *, name: str, description: str) -> Tuple[str, str]:
+    if not _status_is_supported(status):
+        return status, notes
+    if _detachment_ability_fully_consumed(name, description):
+        return status, notes
+    extra = "Full support requires consuming all rule clauses; some clauses are not fully matched."
+    if notes:
+        return "Partial", f"{notes} {extra}".strip()
+    return "Partial", extra
 
 
 def _split_attack_roll_chunks(text: str) -> tuple[list[str], list[str]]:
@@ -979,8 +1261,14 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
-        "Pledges to the Dark Prince": ("Supported", "Coterie pledges tracked per round; pact points unlock bonuses."),
-        "Internal Rivalries": ("Supported", "Slaanesh's Chosen: ignore negative Move/Advance/Charge; Favoured reroll Wounds."),
+        "Pledges to the Dark Prince": (
+            "Partial",
+            "End-of-round resolution and pact point bonuses are implemented, but start-of-round pledge selection and destroyed-unit tracking are not fully wired.",
+        ),
+        "Internal Rivalries": (
+            "Partial",
+            "Negative Move/Advance/Charge modifiers are ignored, but favoured champions switching and full \"ignore any modifiers\" choice handling are not fully wired.",
+        ),
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
@@ -1292,7 +1580,7 @@ def _seed_ability_support_maps(abilities: List[dict], det_abilities_rows: List[d
         ABILITY_SUPPORT_BY_NAME_FACTION_DS[key] = val
 
 
-def _classify_ability(
+def _classify_ability_base(
     name: str,
     description: str,
     *,
@@ -1530,6 +1818,32 @@ def _classify_ability(
     if allocated_damage_reduction_support:
         return allocated_damage_reduction_support
     return ("Not implemented", "")
+
+
+def _classify_ability(
+    name: str,
+    description: str,
+    *,
+    ability_id: str = "",
+    faction_id: str = "",
+    datasheet_id: str = "",
+) -> Tuple[str, str]:
+    status, notes = _classify_ability_base(
+        name,
+        description,
+        ability_id=ability_id,
+        faction_id=faction_id,
+        datasheet_id=datasheet_id,
+    )
+    ab_id = str(ability_id or "").strip()
+    if ab_id and ab_id in DETACHMENT_ABILITY_IDS:
+        status, notes = _enforce_detachment_full_consumption(
+            status,
+            notes,
+            name=name,
+            description=description,
+        )
+    return status, notes
 
 
 def _warlord_enhancement_restriction_support(description: str) -> Optional[Tuple[str, str]]:
@@ -4506,6 +4820,13 @@ def _build_matrix() -> str:
     virtual_datasheet_ids = {dsid for dsid, ds in ds_map.items() if _is_virtual_datasheet(ds)}
     virtual_unit_names = {ds.get("name", "") or "" for dsid, ds in ds_map.items() if dsid in virtual_datasheet_ids}
 
+    global DETACHMENT_ABILITY_IDS
+    DETACHMENT_ABILITY_IDS = {
+        str(row.get("id", "") or "").strip()
+        for row in det_abilities_rows
+        if str(row.get("id", "") or "").strip()
+    }
+
     _seed_ability_support_maps(abilities, det_abilities_rows)
 
     abilities_by_id = {str(a.get("id", "") or ""): a for a in abilities if a.get("id")}
@@ -4702,6 +5023,7 @@ def _build_matrix() -> str:
     lines.append("# Ability support matrix (Wahapedia)")
     lines.append("")
     lines.append("Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.")
+    lines.append("Enhancements and detachment abilities are only marked Supported when all rule clauses are consumed by implemented patterns.")
     lines.append("")
     lines.append("## Legend")
     legend_rows = [

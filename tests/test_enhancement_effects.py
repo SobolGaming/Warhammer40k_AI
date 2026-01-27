@@ -3,6 +3,27 @@ from types import SimpleNamespace
 
 
 class TestEnhancementEffects(unittest.TestCase):
+    def test_classify_requires_full_consumption_for_conditionals(self):
+        from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
+
+        status, notes = classify_enhancement_support(
+            "ADEPTA SORORITAS model only. Add 1 to the Attacks, Strength and Damage characteristics of the bearer's melee weapons. "
+            "If the bearer has lost one or more wounds, add 2 to the Attacks, Strength and Damage characteristics of the bearer's melee weapons instead."
+        )
+
+        self.assertEqual(status, "Partial")
+        self.assertIn("Improve melee weapons' A/S/D by 1", notes)
+
+    def test_classify_supported_when_fully_consumed(self):
+        from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
+
+        status, notes = classify_enhancement_support(
+            "Add 1 to the Attacks, Strength and Damage characteristics of the bearer's melee weapons."
+        )
+
+        self.assertEqual(status, "Supported")
+        self.assertIn("Improve melee weapons' A/S/D by 1", notes)
+
     def test_move_add_uses_modifier_pipeline(self):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType

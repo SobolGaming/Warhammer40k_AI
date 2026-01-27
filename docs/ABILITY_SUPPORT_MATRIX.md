@@ -1,6 +1,7 @@
 # Ability support matrix (Wahapedia)
 
 Generated from `wahapedia_data/*.json` using `scripts/generate_ability_support_matrix.py`.
+Enhancements and detachment abilities are only marked Supported when all rule clauses are consumed by implemented patterns.
 
 ## Legend
 <table><thead><tr><th>Status</th><th>Meaning</th></tr></thead><tbody><tr><td>:green_square:</td><td>Implemented in engine.</td></tr><tr><td>:yellow_square:</td><td>Partially implemented in engine.</td></tr><tr><td>:red_square:</td><td>Not implemented.</td></tr></tbody></table>
