@@ -46,25 +46,22 @@ def test_poll_messages_yields_when_queue_empty() -> None:
     async def run() -> None:
         client = _FakeClient()
         session = NetworkGameSession(client)
-        background_ran = {"ran": False}
+        queued = {"ran": False}
+        loop = asyncio.get_running_loop()
 
-        async def _enqueue_next_loop() -> None:
-            await asyncio.sleep(0)
-            background_ran["ran"] = True
-            await client._incoming.put(_lobby_state_event())
+        def _enqueue_next_loop() -> None:
+            queued["ran"] = True
+            client._incoming.put_nowait(_lobby_state_event())
 
-        task = asyncio.create_task(_enqueue_next_loop())
+        loop.call_soon(_enqueue_next_loop)
 
         # The first poll sees an empty queue. It should still yield once so the
         # background receive task can enqueue work.
         await session.poll_messages()
-        assert background_ran["ran"] is True
+        assert queued["ran"] is True
 
         # A subsequent poll should then process the enqueued message.
         await session.poll_messages()
         assert ("control", "lobby_state") in client.handled
 
-        await task
-
     asyncio.run(run())
-

@@ -105,6 +105,11 @@ class NetworkClient:
     async def next_message(self, *, timeout: Optional[float] = None):
         if self._pending_messages:
             return self._pending_messages.pop(0)
+        if timeout == 0.0:
+            event = self.transport.try_next_message()
+            if event is None:
+                raise asyncio.TimeoutError
+            return event
         return await self.transport.next_message(timeout=timeout)
 
     def handle_message(self, event) -> None:

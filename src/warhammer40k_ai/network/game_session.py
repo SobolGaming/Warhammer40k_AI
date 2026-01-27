@@ -400,10 +400,6 @@ class NetworkGameSession:
             # complete without yielding control. Yield once so the background
             # receiver task can enqueue newly arrived messages.
             await asyncio.sleep(0)
-            # On Windows/ProactorEventLoop, a single sleep(0) may not run
-            # tasks that themselves yield once; yield a second time to ensure
-            # receiver tasks get CPU time.
-            await asyncio.sleep(0)
 
     def current_event_id(self) -> int:
         if self.game is None:

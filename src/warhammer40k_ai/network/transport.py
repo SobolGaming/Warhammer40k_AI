@@ -347,6 +347,12 @@ class TransportClient:
             return await self._incoming.get()
         return await asyncio.wait_for(self._incoming.get(), timeout=timeout)
 
+    def try_next_message(self) -> Optional[TransportEvent]:
+        try:
+            return self._incoming.get_nowait()
+        except asyncio.QueueEmpty:
+            return None
+
     async def next_connection_event(self, *, timeout: Optional[float] = None) -> ConnectionEvent:
         if timeout is None:
             return await self._connection_events.get()

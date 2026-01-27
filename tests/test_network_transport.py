@@ -5,6 +5,7 @@ import pytest
 from warhammer40k_ai.network.messages import PROTOCOL_VERSION, SnapshotMessage
 from warhammer40k_ai.network.transport import (
     CONTROL_MESSAGE_TYPES,
+    TransportEvent,
     TransportClient,
     TransportServer,
     decode_message,
@@ -74,3 +75,16 @@ def test_transport_server_client_roundtrip():
         await server.stop()
 
     asyncio.run(run_roundtrip())
+
+
+def test_transport_client_try_next_message():
+    client = TransportClient(uri="ws://example", ssl_context=None)
+    event = TransportEvent(
+        connection_id="client",
+        category="control",
+        message_type="hello",
+        message={"type": "hello", "protocol_version": PROTOCOL_VERSION, "payload": {"display_name": "Test"}},
+    )
+    client._incoming.put_nowait(event)
+    assert client.try_next_message() == event
+    assert client.try_next_message() is None

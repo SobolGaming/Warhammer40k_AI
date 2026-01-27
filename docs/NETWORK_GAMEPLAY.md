@@ -35,7 +35,7 @@ Status: Implemented (transport, lobby, army submission, start flow, spectator ga
 - Game state updates flow as: Client Command -> Server validation -> Command broadcast + Event broadcast.
 - Clients keep a local game state by replaying accepted commands from the server.
 - Spectators receive snapshots/events only; commands from spectators are rejected.
-- The pygame UI pumps networking each frame via `NetworkGameSession.poll_messages()`, which yields once when the inbound queue is empty so the background receiver task can enqueue newly arrived messages.
+- The pygame UI pumps networking each frame via `NetworkGameSession.poll_messages()`, which uses non-blocking queue reads and yields when empty so the background receiver task can enqueue newly arrived messages.
 
 ## Transport and Security
 
