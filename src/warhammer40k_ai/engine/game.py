@@ -1378,6 +1378,21 @@ class Game:
                 if exp and exp == pname:
                     for k in ("seductive_gambit_active", "seductive_gambit_expires_phase"):
                         sr.pop(k, None)
+                effects = sr.get("advance_no_roll_effects")
+                if isinstance(effects, list) and effects:
+                    kept = []
+                    for eff in effects:
+                        if not isinstance(eff, dict):
+                            kept.append(eff)
+                            continue
+                        exp = str(eff.get("expires_phase", "") or "").strip().upper()
+                        if exp and exp == pname:
+                            continue
+                        kept.append(eff)
+                    if kept:
+                        sr["advance_no_roll_effects"] = kept
+                    else:
+                        sr.pop("advance_no_roll_effects", None)
                 exp = str(sr.get("pain_empowered_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

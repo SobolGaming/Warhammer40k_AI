@@ -722,8 +722,18 @@ class PowerFromPainManager:
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
-        sr["pain_advance_no_roll"] = True
-        sr["pain_advance_fixed_bonus"] = 8
+        tag = "pain:matchless_swiftness"
+        effects = list(sr.get("advance_no_roll_effects", []) or [])
+        effects = [e for e in effects if not (isinstance(e, dict) and e.get("tag") == tag)]
+        effects.append(
+            {
+                "distance": 8,
+                "source": "Matchless Swiftness (Pain)",
+                "expires_phase": "MOVEMENT_PHASE",
+                "tag": tag,
+            }
+        )
+        sr["advance_no_roll_effects"] = effects
         unit.special_rules = sr
 
     def _apply_mindless_killing_machines(self, unit) -> None:

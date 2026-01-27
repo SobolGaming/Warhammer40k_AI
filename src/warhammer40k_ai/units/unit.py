@@ -237,6 +237,11 @@ class Unit:
         except Exception:
             # Defensive: never block unit construction due to unsupported/unknown text patterns.
             pass
+        # Parse fixed Advance distance rules that replace the Advance roll.
+        try:
+            self._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
         # Parse bearer-only keyword additions (e.g., SMOKE).
         try:
             self._refresh_bearer_keyword_flags()
@@ -862,6 +867,10 @@ class Unit:
     )
     _BEARER_UNIT_ADVANCE_AND_CHARGE_BONUS_RE = re.compile(
         r"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        re.IGNORECASE,
+    )
+    _ADVANCE_NO_ROLL_MOVE_RE = re.compile(
+        r"do\s+not\s+make\s+an?\s+advance\s+roll.*?add\s+(\d+)\s*(?:\"|inches)?\s+to\s+the\s+move\s+characteristic",
         re.IGNORECASE,
     )
     _ENEMY_FALLBACK_DESPERATE_ESCAPE_RE = re.compile(
@@ -2586,6 +2595,130 @@ class Unit:
                 sr["bearer_unit_auto_pass_desperate_escape"] = True
                 u.special_rules = sr
 
+    def _parse_advance_no_roll_distance(self, text: str) -> Optional[int]:
+        if not text:
+            return None
+        low = str(text).lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "advance" not in low:
+            return None
+        if "do not make an advance roll" not in low:
+            return None
+        if "move characteristic" not in low:
+            return None
+        m = self._ADVANCE_NO_ROLL_MOVE_RE.search(low)
+        if not m:
+            return None
+        try:
+            dist = int(m.group(1))
+        except Exception:
+            return None
+        if dist <= 0:
+            return None
+        return int(dist)
+
+    def _refresh_advance_no_roll_flags(self) -> None:
+        """Parse fixed Advance distance rules that replace the Advance roll."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        ability_tag = "ability:advance_no_roll"
+
+        # Clear previous ability-derived entries while preserving other sources (e.g., stratagems).
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            effects = list(sr.get("advance_no_roll_effects", []) or [])
+            kept = [e for e in effects if not (isinstance(e, dict) and e.get("tag") == ability_tag)]
+            if kept:
+                sr["advance_no_roll_effects"] = kept
+            else:
+                sr.pop("advance_no_roll_effects", None)
+            u.special_rules = sr
+
+        parsed: list[tuple[int, str]] = []
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = u._strip_eligibility_prefix(desc or name or "")
+                text = u._normalize_rules_text(text_src or "")
+                dist = u._parse_advance_no_roll_distance(text)
+                if not dist:
+                    continue
+                source = str(name or "Advance no-roll ability").strip() or "Advance no-roll ability"
+                parsed.append((int(dist), source))
+
+        if not parsed:
+            return
+
+        best_dist = max(dist for dist, _src in parsed)
+        sources = sorted({src for dist, src in parsed if dist == best_dist})
+        source_label = ", ".join(sources) if sources else "Advance no-roll ability"
+        entry = {
+            "distance": int(best_dist),
+            "source": source_label,
+            "tag": ability_tag,
+        }
+
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            effects = list(sr.get("advance_no_roll_effects", []) or [])
+            effects.append(dict(entry))
+            sr["advance_no_roll_effects"] = effects
+            u.special_rules = sr
+
+    def _get_advance_no_roll_effect(self) -> Optional[dict]:
+        """Return the best active fixed-Advance effect that replaces the Advance roll."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        effects = sr.get("advance_no_roll_effects") if isinstance(sr, dict) else None
+        if not isinstance(effects, list) or not effects:
+            return None
+
+        phase_name = ""
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+
+        best: Optional[dict] = None
+        best_dist = -1
+        for effect in effects:
+            if not isinstance(effect, dict):
+                continue
+            try:
+                dist = int(effect.get("distance", 0) or 0)
+            except Exception:
+                continue
+            if dist <= 0:
+                continue
+            exp = str(effect.get("expires_phase", "") or "").strip().upper()
+            if exp and phase_name and exp != phase_name:
+                continue
+            if dist > best_dist:
+                best_dist = dist
+                best = {
+                    "distance": int(dist),
+                    "source": str(effect.get("source", "") or "").strip(),
+                    "tag": str(effect.get("tag", "") or "").strip(),
+                    "expires_phase": exp,
+                }
+        return best
+
     def _refresh_bearer_keyword_flags(self) -> None:
         """Parse bearer-only keyword additions (e.g., SMOKE) into special_rules."""
         try:
@@ -3383,6 +3516,10 @@ class Unit:
             pass
         try:
             self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_advance_no_roll_flags()
         except Exception:
             pass
         try:
@@ -4432,6 +4569,10 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_bearer_keyword_flags()
         except Exception:
             pass
@@ -4888,6 +5029,10 @@ class Unit:
         self._maybe_swap_horrors_datasheet()
         try:
             self._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_advance_no_roll_flags()
         except Exception:
             pass
         try:
@@ -6737,6 +6882,14 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_bearer_keyword_flags()
         except Exception:
             pass
@@ -6834,6 +6987,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_bearer_unit_common_modifiers()
+        except Exception:
+            pass
+        try:
+            self._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_advance_no_roll_flags()
         except Exception:
             pass
         try:
@@ -9214,6 +9376,14 @@ class Unit:
         return mods
 
     def _apply_advance_roll_modifiers(self, roll: int) -> int:
+        effect = self._get_advance_no_roll_effect()
+        if isinstance(effect, dict):
+            try:
+                dist = int(effect.get("distance", 0) or 0)
+            except Exception:
+                dist = 0
+            if dist > 0:
+                return int(dist)
         mods = self._collect_advance_roll_modifiers()
         mods = self._filter_internal_rivalries_roll_modifiers(mods, kind="advance")
         mods = self._filter_driven_by_ultimate_rage_roll_modifiers(mods, kind="advance")
@@ -9853,30 +10023,34 @@ class Unit:
             army = None
             player = None
             game = None
+            no_roll_effect = self._get_advance_no_roll_effect()
+            if isinstance(no_roll_effect, dict):
+                try:
+                    fixed_roll = int(no_roll_effect.get("distance", 0) or 0)
+                except Exception:
+                    fixed_roll = None
+                if fixed_roll is not None and fixed_roll > 0:
+                    fixed_source = "no_roll"
+                else:
+                    fixed_roll = None
             try:
-                sr = getattr(self, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("chronoshift_active"):
-                    exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
-                    apply_bonus = True
-                    if exp:
-                        try:
-                            army = self.get_parent_army()
-                            game = getattr(getattr(army, "player", None), "game", None)
-                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
-                        except Exception:
-                            pname = ""
-                        if pname and pname != exp:
-                            apply_bonus = False
-                    if apply_bonus and (not exp or exp == "MOVEMENT_PHASE"):
-                        fixed_roll = 6
-                        fixed_source = "rule"
-            except Exception:
-                pass
-            try:
-                sr = getattr(self, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
-                    fixed_roll = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
-                    fixed_source = "rule"
+                if fixed_roll is None:
+                    sr = getattr(self, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("chronoshift_active"):
+                        exp = str(sr.get("chronoshift_expires_phase", "") or "").strip().upper()
+                        apply_bonus = True
+                        if exp:
+                            try:
+                                army = self.get_parent_army()
+                                game = getattr(getattr(army, "player", None), "game", None)
+                                pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                            except Exception:
+                                pname = ""
+                            if pname and pname != exp:
+                                apply_bonus = False
+                        if apply_bonus and (not exp or exp == "MOVEMENT_PHASE"):
+                            fixed_roll = 6
+                            fixed_source = "rule"
             except Exception:
                 pass
             try:
@@ -10406,6 +10580,15 @@ class Unit:
 
         # If advancing, use stored advance roll or roll new one
         if advance:
+            no_roll_distance = None
+            effect = self._get_advance_no_roll_effect()
+            if isinstance(effect, dict):
+                try:
+                    no_roll_distance = int(effect.get("distance", 0) or 0)
+                except Exception:
+                    no_roll_distance = None
+                if no_roll_distance is not None and no_roll_distance <= 0:
+                    no_roll_distance = None
             chronoshift_fixed = None
             try:
                 sr = getattr(self, "special_rules", None)
@@ -10425,16 +10608,18 @@ class Unit:
                         chronoshift_fixed = 6
             except Exception:
                 chronoshift_fixed = None
-            pain_fixed = None
-            try:
-                sr = getattr(self, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("pain_advance_no_roll"):
-                    pain_fixed = int(sr.get("pain_advance_fixed_bonus", 0) or 0)
-            except Exception:
-                pain_fixed = None
 
             # Use stored advance roll if available, otherwise roll new one
-            if chronoshift_fixed is not None:
+            if no_roll_distance is not None:
+                advance_roll = int(no_roll_distance)
+                self.round_state.advance_roll = advance_roll
+                try:
+                    from ..utility.event_bus import append_dice
+                    pn = self.get_parent_army().player
+                    append_dice(pn, f"Advance distance fixed: {advance_roll} for {self.name}")
+                except Exception:
+                    pass
+            elif chronoshift_fixed is not None:
                 advance_roll = int(chronoshift_fixed)
                 try:
                     advance_roll = self._apply_advance_roll_modifiers(int(advance_roll))
@@ -10445,15 +10630,6 @@ class Unit:
                     from ..utility.event_bus import append_dice
                     pn = self.get_parent_army().player
                     append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name} (Chronoshift)")
-                except Exception:
-                    pass
-            elif pain_fixed is not None:
-                advance_roll = pain_fixed
-                self.round_state.advance_roll = advance_roll
-                try:
-                    from ..utility.event_bus import append_dice
-                    pn = self.get_parent_army().player
-                    append_dice(pn, f"Advance roll fixed: {advance_roll} for {self.name}")
                 except Exception:
                     pass
             elif not hasattr(self.round_state, 'advance_roll') or self.round_state.advance_roll is None:

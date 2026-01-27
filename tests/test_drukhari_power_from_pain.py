@@ -181,11 +181,23 @@ class TestDrukhariPowerFromPain(unittest.TestCase):
             def __init__(self):
                 self.name = "Scourges"
                 self.round_state = _RoundState()
-                self.special_rules = {"pain_advance_no_roll": True, "pain_advance_fixed_bonus": 8}
+                self.special_rules = {
+                    "advance_no_roll_effects": [
+                        {
+                            "distance": 8,
+                            "source": "Matchless Swiftness (Pain)",
+                            "expires_phase": "MOVEMENT_PHASE",
+                            "tag": "pain:matchless_swiftness",
+                        }
+                    ]
+                }
                 self._army = SimpleNamespace(player=SimpleNamespace(name="P1", id="P1"))
 
             def get_parent_army(self):
                 return self._army
+
+            def _get_advance_no_roll_effect(self):
+                return self.special_rules["advance_no_roll_effects"][0]
 
             def _apply_advance_roll_modifiers(self, roll):
                 return roll

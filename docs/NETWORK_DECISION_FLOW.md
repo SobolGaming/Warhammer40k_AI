@@ -152,6 +152,7 @@ Battle-round-specific:
    - Active player submits movement decisions (`SELECT_MOVEMENT_ACTION`,
      `MOVE_UNIT`, etc).
    - Advance rolls are server-originated dice roll decisions; movement prompts open after the roll resolves.
+   - Fixed-Advance rules that say "do not make an Advance roll; add X\" to Move" still use a server roll request with fixed dice, but do not apply advance-roll modifiers or reroll decisions.
    - Some opponent reactions can interrupt (e.g., reactive moves) and are handled
      as sequential DecisionRequests.
 3. SHOOTING_PHASE

@@ -1697,6 +1697,7 @@ def _classify_ability_base(
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
+    advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
     phase_move_support = _leading_unit_phase_move_support(description)
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
@@ -1792,6 +1793,8 @@ def _classify_ability_base(
         return aura_adv_charge_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
+    if advance_no_roll_support:
+        return advance_no_roll_support
     if charge_move_devastating_support:
         return charge_move_devastating_support
     if phase_move_support:
@@ -3829,6 +3832,30 @@ def _fall_back_shoot_support(description: str) -> Optional[Tuple[str, str]]:
         else:
             notes.append("Charge-after-Fall-Back eligibility.")
     return ("Supported", " ".join(notes))
+
+
+def _advance_no_roll_fixed_distance_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this unit|this models unit|this model s unit|that unit) advances "
+        r"do not make an advance roll(?: for it)? "
+        r"instead until the end of the phase add (?P<dist>\d+) to the move characteristic "
+        r"of models in (?:this unit|this models unit|that unit)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        dist = int(m.group("dist"))
+    except Exception:
+        dist = 0
+    if dist <= 0:
+        return None
+    return ("Supported", f"Advance: fixed +{dist}\" Move instead of rolling.")
 
 
 def _charge_move_devastating_wounds_support(description: str) -> Optional[Tuple[str, str]]:
