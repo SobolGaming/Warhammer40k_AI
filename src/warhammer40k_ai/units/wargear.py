@@ -2568,6 +2568,20 @@ class WargearProfile:
                     _add_hit_mod(int(bonus), reason)
         except Exception:
             pass
+        # Adeptus Custodes: Against All Odds (+1 to hit when isolated).
+        unit = getattr(attacker, "parent_unit", None)
+        army = None
+        if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army"):
+            army = unit.get_parent_army()
+        mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        if mgr is not None and callable(getattr(mgr, "against_all_odds_hit_bonus", None)):
+            game = getattr(getattr(army, "player", None), "game", None)
+            game_map = getattr(game, "map", None) if game is not None else None
+            if game_map is None:
+                game_map = self._get_game_map_from_model(attacker)
+            bonus = int(mgr.against_all_odds_hit_bonus(attacker, target, game=game, game_map=game_map) or 0)
+            if bonus:
+                _add_hit_mod(bonus, f"+{bonus} to hit from Against All Odds")
         # Harbingers of Dread: Darkness (-1 to hit against Chaos Knights).
         try:
             target_army = target.get_parent_army()
@@ -4957,6 +4971,21 @@ class WargearProfile:
                     wound_result['modifiers'].append(f"+{bonus} to wound from Psychic Maelstrom")
         except Exception:
             pass
+        # Adeptus Custodes: Against All Odds (+1 to wound when isolated).
+        unit = getattr(attacker, "parent_unit", None)
+        army = None
+        if unit is not None and hasattr(unit, "get_parent_army") and hasattr(unit, "parent_army"):
+            army = unit.get_parent_army()
+        mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
+        if mgr is not None and callable(getattr(mgr, "against_all_odds_wound_bonus", None)):
+            game = getattr(getattr(army, "player", None), "game", None)
+            game_map = getattr(game, "map", None) if game is not None else None
+            if game_map is None:
+                game_map = self._get_game_map_from_model(attacker)
+            bonus = int(mgr.against_all_odds_wound_bonus(attacker, target, game=game, game_map=game_map) or 0)
+            if bonus:
+                dice_modifier += bonus
+                wound_result['modifiers'].append(f"+{bonus} to wound from Against All Odds")
         # Drukhari: Power from Pain (Sculptor of Torments).
         try:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
