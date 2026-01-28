@@ -3523,35 +3523,8 @@ class GameView:
             if army is None:
                 return
 
-            # Build queue of optional activations at the start of the Fight phase.
+            # Possessed Lord prompts are handled via DecisionRequest (engine-driven).
             queue = []
-            for unit in list(getattr(army, "units", []) or []):
-                try:
-                    if not unit.is_alive():
-                        continue
-                except Exception:
-                    continue
-                has_possessed_lord = False
-                for ab in (getattr(unit, "possible_abilities", []) or []):
-                    nm = str(getattr(ab, "name", "") or "").strip().lower()
-                    if nm == "possessed lord":
-                        has_possessed_lord = True
-                        break
-                if not has_possessed_lord:
-                    continue
-                for m in list(getattr(unit, "models", []) or []):
-                    try:
-                        if not getattr(m, "is_alive", True):
-                            continue
-                    except Exception:
-                        continue
-                    try:
-                        if getattr(m, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
-                            continue
-                    except Exception:
-                        pass
-                    queue.append({"kind": "possessed_lord", "unit": unit, "model": m})
-                    break  # typical character: prompt once per unit
 
             # Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
             for unit in list(getattr(army, "units", []) or []):

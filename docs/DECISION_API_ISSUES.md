@@ -54,10 +54,10 @@ Each of the following uses `_choose_optional_value` directly instead of a Decisi
 
 Each of the following uses `_should_use_optional_ability` directly instead of a DecisionRequest:
 
-- [ ] DEC-YESNO-001 SHADOW_IN_THE_WARP → use DECISION_CONFIRM_YES_NO with context ability_name. File: `src/warhammer40k_ai/engine/game.py:571`
-- [ ] DEC-YESNO-002 WAAAGH → use DECISION_CONFIRM_YES_NO with context ability_name. File: `src/warhammer40k_ai/engine/game.py:601`
+- [x] DEC-YESNO-001 SHADOW_IN_THE_WARP → use DECISION_CONFIRM_YES_NO with context ability_name. File: `src/warhammer40k_ai/engine/game.py:571`
+- [x] DEC-YESNO-002 WAAAGH → use DECISION_CONFIRM_YES_NO with context ability_name. File: `src/warhammer40k_ai/engine/game.py:601`
 - [ ] DEC-YESNO-003 POWER_FROM_PAIN (army rule activation) → use DECISION_CONFIRM_YES_NO. Files: `src/warhammer40k_ai/engine/game.py:790`, `src/warhammer40k_ai/rules/power_from_pain.py:1200`
-- [ ] DEC-YESNO-004 POSSESSED_LORD activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:843`
+- [x] DEC-YESNO-004 POSSESSED_LORD activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:843`
 - [ ] DEC-YESNO-005 ENHANCEMENT_FIGHT_FIRST activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:862`
 - [ ] DEC-YESNO-006 RETURN_BODYGUARD_MODEL → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:914`
 - [ ] DEC-YESNO-007 OPPONENT_TURN_STRATEGIC_RESERVES → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:1315`

@@ -153,6 +153,10 @@ Deployment / Pre-battle:
 - deployment_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="deployment"`, engine finalizes deployment + advances deployment turn)
 - reserves_arrival_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="reserves_arrival"`, `allow_skip`, `battle_round`, `reserve_status`)
 
+Command phase:
+- shadow_in_the_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="shadow_in_the_warp"`)
+- waaagh_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="waaagh"`)
+
 Movement:
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
 - individual_model_movement_dialog: MOVE_UNIT {unit_id, model_positions} (context may include `allowed_model_ids`, `placement_kind`, `allow_skip` for placement-only flows)
@@ -196,6 +200,7 @@ Fight:
 - fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
 - exploding_horrors_model_selection_dialog: SELECT_EXPLODING_HORRORS_MODELS {model_ids[]} (context `unit_id`, `target_unit_id`, `allowed_model_ids`)
 - fight_within_3_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_within_3"`, `unit_id`, `target_unit_id`)
+- possessed_lord_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="possessed_lord"`, `unit_id`, `model_id`)
 - melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
 - melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {bundle_id, target_unit_id}
 - melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}

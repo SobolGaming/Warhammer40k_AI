@@ -542,13 +542,6 @@ class Game:
                     model.wounds = min(base_wounds, current_wounds + amount)
 
     def _maybe_prompt_shadow_in_the_warp(self) -> None:
-        es = getattr(self, "event_system", None)
-        if es is None or not hasattr(es, "subscribers"):
-            raise RuntimeError("Event system missing for Shadow in the Warp prompt.")
-        subs = getattr(es, "subscribers", {})
-        if not isinstance(subs, dict):
-            raise RuntimeError("Event system subscribers not configured.")
-
         for player in list(getattr(self, "players", []) or []):
             if player is None:
                 continue
@@ -560,25 +553,20 @@ class Game:
                 continue
             if not mgr.can_use_now(game=self, player=player):
                 continue
-            is_human = bool(getattr(player, "has_control", lambda: False)())
-            if is_human and subs.get("shadow_in_the_warp_prompt"):
-                es.publish("shadow_in_the_warp_prompt", player=player, game=self)
-                continue
             ctx = {
                 "ability_name": "Shadow in the Warp",
                 "phase": "Command phase",
             }
-            if player._should_use_optional_ability("SHADOW_IN_THE_WARP", ctx):
-                mgr.activate(game=self, player=player)
+            message = "Use Shadow in the Warp? (Once per battle)"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="shadow_in_the_warp",
+                ability_name="Shadow in the Warp",
+                message=message,
+                context=ctx,
+            )
 
     def _maybe_prompt_waaagh(self) -> None:
-        es = getattr(self, "event_system", None)
-        if es is None or not hasattr(es, "subscribers"):
-            raise RuntimeError("Event system missing for Waaagh prompt.")
-        subs = getattr(es, "subscribers", {})
-        if not isinstance(subs, dict):
-            raise RuntimeError("Event system subscribers not configured.")
-
         player = self.get_current_player()
         if player is None:
             raise RuntimeError("Waaagh prompt requires current player.")
@@ -590,16 +578,18 @@ class Game:
             return
         if not mgr.can_call_now(game=self, player=player):
             return
-        is_human = bool(getattr(player, "has_control", lambda: False)())
-        if is_human and subs.get("waaagh_prompt"):
-            es.publish("waaagh_prompt", player=player, game=self)
-            return
         ctx = {
             "ability_name": "Waaagh!",
             "phase": "Command phase",
         }
-        if player._should_use_optional_ability("WAAAGH", ctx):
-            mgr.call_waaagh(game=self, player=player)
+        message = "Call Waaagh!? (Once per battle)"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="waaagh",
+            ability_name="Waaagh!",
+            message=message,
+            context=ctx,
+        )
 
     def _maybe_prompt_combat_doctrines(self) -> None:
         es = getattr(self, "event_system", None)
@@ -833,17 +823,28 @@ class Game:
                     if m.has_used_once_per_battle("possessed_lord"):
                         break
 
-                    # Decision hook
+                    unit_id = maybe_entity_id(unit)
+                    model_id = maybe_entity_id(m)
                     ctx = {
                         "ability_name": "Possessed Lord",
                         "unit": getattr(unit, "name", "") or "",
                         "model": getattr(m, "name", "") or "",
                         "phase": "Fight phase",
+                        "unit_id": unit_id,
+                        "model_id": model_id,
                     }
-                    should = bool(player._should_use_optional_ability("POSSESSED_LORD", ctx))
-
-                    if should:
-                        m.activate_possessed_lord()
+                    message = (
+                        f"Activate Possessed Lord for {getattr(m, 'name', 'Model')} "
+                        f"({getattr(unit, 'name', 'Unit')})?"
+                    )
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="possessed_lord",
+                        ability_name="Possessed Lord",
+                        message=message,
+                        context=ctx,
+                        payload={"unit_id": unit_id, "model_id": model_id},
+                    )
                     break
             # Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
             for unit in list(army.units):
@@ -1904,6 +1905,56 @@ class Game:
             ctx["reactive_move_allow_engagement_range"] = bool(allow_engagement_range)
         return ctx
 
+    def _queue_optional_ability_confirmation(
+        self,
+        *,
+        player,
+        ability_key: str,
+        ability_name: str,
+        message: str | None = None,
+        context: dict | None = None,
+        payload: dict | None = None,
+    ) -> DecisionRequest | None:
+        if player is None:
+            return None
+        key = str(ability_key or "").strip().lower()
+        if not key:
+            return None
+        existing = None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None:
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                req_key = str(ctx.get("ability", "") or ctx.get("ability_key", "") or "").strip().lower()
+                if req_key != key:
+                    continue
+                if getattr(req, "player_id", None) == getattr(player, "id", None):
+                    existing = req
+                    break
+        if existing is not None:
+            return existing
+        ctx = dict(context or {})
+        ctx["ability"] = key
+        ctx["ability_name"] = str(ability_name or "").strip() or key.replace("_", " ").title()
+        if message:
+            ctx["message"] = message
+        payload = dict(payload or {})
+        options = [
+            DecisionOption.create("Use", payload=dict(payload, choice=True)),
+            DecisionOption.create("Skip", payload=dict(payload, choice=False)),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            ctx["ability_name"],
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_reactive_move_confirmation(
         self,
         *,
@@ -2234,6 +2285,87 @@ class Game:
                 return
             unit.resolve_careen_deadly_demise(game_map=getattr(self, "map", None), use_move=not skipped)
         return
+
+    def _maybe_apply_optional_ability_confirmation(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        if decision_type != DECISION_CONFIRM_YES_NO:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        ability_key = str(ctx.get("ability", "") or ctx.get("ability_key", "") or "").strip().lower()
+        if ability_key not in ("shadow_in_the_warp", "waaagh", "possessed_lord"):
+            return
+        selected = None
+        for opt in list(getattr(request, "options", []) or []):
+            if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
+                selected = opt
+                break
+        payload = dict(getattr(selected, "payload", {}) or {}) if selected is not None else {}
+        choice = None
+        if "choice" in payload:
+            choice = bool(payload.get("choice"))
+        elif "choice" in getattr(result, "payload", {}):
+            choice = bool(result.payload.get("choice"))
+        if not choice:
+            return
+
+        if ability_key == "shadow_in_the_warp":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            army = player.get_army()
+            mgr = getattr(army, "shadow_in_the_warp", None) if army is not None else None
+            if mgr is None:
+                return
+            if not mgr.can_use_now(game=self, player=player):
+                return
+            mgr.activate(game=self, player=player)
+            return
+
+        if ability_key == "waaagh":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            army = player.get_army()
+            mgr = getattr(army, "waaagh", None) if army is not None else None
+            if mgr is None:
+                return
+            if not mgr.can_call_now(game=self, player=player):
+                return
+            mgr.call_waaagh(game=self, player=player)
+            return
+
+        if ability_key == "possessed_lord":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = None
+            registry = getattr(self, "entity_registry", None)
+            if registry is not None:
+                model = registry.get(str(model_id), kind="model")
+            if model is None:
+                for p in list(self.players or []):
+                    army = p.get_army()
+                    if army is None:
+                        continue
+                    for unit in list(getattr(army, "units", []) or []):
+                        for candidate in list(getattr(unit, "models", []) or []):
+                            if str(getattr(candidate, "_id", "")) == str(model_id):
+                                model = candidate
+                                break
+                        if model is not None:
+                            break
+                    if model is not None:
+                        break
+            if model is None:
+                return
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            model.activate_possessed_lord()
+            return
 
     def _setup_reactive_can_shoot_target(self, unit, target_unit) -> bool:
         if unit is None or target_unit is None:
@@ -5641,6 +5773,7 @@ class Game:
             self._maybe_queue_reactive_move_followup(request, result)
             self._maybe_queue_setup_reactive_followup(request, result)
             self._maybe_queue_reverberating_summons_followup(request, result)
+            self._maybe_apply_optional_ability_confirmation(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:
