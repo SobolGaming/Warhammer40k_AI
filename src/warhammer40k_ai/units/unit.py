@@ -922,6 +922,12 @@ class Unit:
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_BENEFIT_OF_COVER_RE = re.compile(
+        r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),?\s*models\s+in\s+"
+        r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_DEEP_STRIKE_RE = re.compile(
         r"models\s+in\s+(?:the\s+bearer'?s|that)\s+unit\s+have\s+the\s+deep\s+strike\s+ability",
         re.IGNORECASE,
@@ -2213,6 +2219,7 @@ class Unit:
                     "bearer_unit_sustained_hits_value_melee",
                     "bearer_unit_sustained_hits_value_ranged",
                     "bearer_unit_ignores_cover",
+                    "bearer_unit_benefit_of_cover",
                     "bearer_unit_target_hit_penalties",
                     "bearer_unit_deep_strike",
                     "bearer_unit_phase_move_types",
@@ -2251,6 +2258,8 @@ class Unit:
         sustained_hits_value_melee = 0
         sustained_hits_value_ranged = 0
         ignores_cover_sources: set[str] = set()
+        benefit_of_cover_entries: list[dict] = []
+        benefit_of_cover_seen: set[tuple[str, str]] = set()
         hit_penalties: list[dict] = []
         phase_move_types: set[str] = set()
         phase_move_terrain_only_types: set[str] = set()
@@ -2417,6 +2426,15 @@ class Unit:
                     if self._BEARER_UNIT_IGNORES_COVER_RE.search(sentence):
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                         ignores_cover_sources.add(source)
+
+                    m = self._BEARER_UNIT_BENEFIT_OF_COVER_RE.search(sentence)
+                    if m:
+                        atype = (m.group("atype") or "any").strip().lower()
+                        source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                        key = (atype, source.lower())
+                        if key not in benefit_of_cover_seen:
+                            benefit_of_cover_seen.add(key)
+                            benefit_of_cover_entries.append({"attack_type": atype, "source": source})
 
                     m = self._BEARER_UNIT_TARGET_HIT_PENALTY_RE.search(sentence)
                     if m:
@@ -2595,6 +2613,14 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_ignores_cover"] = True
+                u.special_rules = sr
+
+        if benefit_of_cover_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_benefit_of_cover"] = list(benefit_of_cover_entries)
                 u.special_rules = sr
 
         if hit_penalties:

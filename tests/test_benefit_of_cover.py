@@ -8,11 +8,25 @@ from warhammer40k_ai.units.wargear import WargearProfile
 
 
 class MockDatasheet:
-    def __init__(self, name: str, movement=6, model_count=1, base_size="32mm", save="4"):
+    def __init__(
+        self,
+        name: str,
+        movement=6,
+        model_count=1,
+        base_size="32mm",
+        save="4",
+        *,
+        datasheet_id: str | None = None,
+        attached_to=None,
+        abilities=None,
+        keywords=None,
+        faction_keywords=None,
+    ):
         self.name = name
+        self.id = datasheet_id or name
         self.faction_data = {"name": "Test Faction"}
-        self.keywords = []
-        self.faction_keywords = []
+        self.keywords = list(keywords or [])
+        self.faction_keywords = list(faction_keywords or [])
         self.datasheets_unit_composition = [
             {"description": f"{model_count} Test Models"}
         ]
@@ -26,12 +40,32 @@ class MockDatasheet:
         }]
         self.datasheets_wargear = []
         self.datasheets_options = [{"description": "none"}]
-        self.datasheets_abilities = []
+        self.datasheets_abilities = list(abilities or [])
+        self.attached_to = list(attached_to or [])
+        self.attached_to_names = []
         self.loadout = "This model is equipped with: nothing"
 
 
-def create_unit(name: str, x: float, y: float, faction: str = "A", model_count: int = 1, save: str = "4") -> Unit:
-    ds = MockDatasheet(name, model_count=model_count, save=save)
+def create_unit(
+    name: str,
+    x: float,
+    y: float,
+    faction: str = "A",
+    model_count: int = 1,
+    save: str = "4",
+    *,
+    datasheet_id: str | None = None,
+    abilities=None,
+    attached_to=None,
+) -> Unit:
+    ds = MockDatasheet(
+        name,
+        model_count=model_count,
+        save=save,
+        datasheet_id=datasheet_id,
+        abilities=abilities,
+        attached_to=attached_to,
+    )
     unit = Unit(ds)
     # Place each model with small spacing along X so bases don't overlap
     for i, m in enumerate(unit.models):
@@ -150,3 +184,47 @@ class TestBenefitOfCover:
         hit2 = wp2._hit_target_with_tracking(target, attacker.models[0], {"indirect_fire_no_visible": True})
         assert hit2["hit"] is False
 
+    def test_leading_unit_benefit_of_cover_applies_to_ranged_only(self, monkeypatch):
+        import warhammer40k_ai.units.wargear as wargear_mod
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 3)
+
+        ability_text = (
+            "While this model is leading a unit, each time a ranged attack targets that unit, "
+            "models in it have the Benefit of Cover against that attack."
+        )
+        leader_ability = [{
+            "name": "Shielded Command",
+            "description": ability_text,
+            "type": "Ability",
+            "parameter": "",
+        }]
+
+        bodyguard = create_unit("Bodyguard", 10.0, 10.0, faction="A", model_count=1, save="4", datasheet_id="BG1")
+        leader = create_unit(
+            "Leader",
+            12.0,
+            10.0,
+            faction="A",
+            model_count=1,
+            save="4",
+            datasheet_id="L1",
+            abilities=leader_ability,
+            attached_to=["BG1"],
+        )
+        game_map = Map(width=48, height=72)
+        attach_to_armies(game_map, [bodyguard, leader], [])
+        leader.attach_to_unit(bodyguard)
+
+        target_no_leader = create_unit("NoLeader", 20.0, 10.0, faction="B", model_count=1, save="4", datasheet_id="BG2")
+
+        ranged_wp = WargearProfile("ranged", {"range": "24", "A": "1", "BS_WS": "3", "S": "4", "AP": "0", "D": "1", "description": ""})
+        melee_wp = WargearProfile("melee", {"range": "Melee", "A": "1", "BS_WS": "3", "S": "4", "AP": "0", "D": "1", "description": ""})
+
+        res_no = ranged_wp._save_with_tracking(target_no_leader.models[0], {"mortal_wound": False}, ap=0)
+        assert res_no["saved"] is False
+
+        res_ranged = ranged_wp._save_with_tracking(bodyguard.models[0], {"mortal_wound": False}, ap=0)
+        assert res_ranged["saved"] is True
+
+        res_melee = melee_wp._save_with_tracking(bodyguard.models[0], {"mortal_wound": False}, ap=0)
+        assert res_melee["saved"] is False

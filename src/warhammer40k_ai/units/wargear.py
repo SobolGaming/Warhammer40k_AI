@@ -6688,6 +6688,54 @@ class WargearProfile:
                 attack_instance.setdefault("benefit_of_cover_source", "SMOKESCREEN")
         except Exception:
             pass
+        # Bearer/leading-unit abilities: Benefit of Cover against ranged attacks that target the unit.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+            entries = sr.get("bearer_unit_benefit_of_cover") if isinstance(sr, dict) else None
+            if entries:
+                is_melee = False
+                is_ranged = False
+                try:
+                    if self.parent_wargear is not None:
+                        is_melee = bool(self.parent_wargear.is_melee())
+                        is_ranged = bool(self.parent_wargear.is_ranged())
+                except Exception:
+                    is_melee = False
+                    is_ranged = False
+                if not is_melee and not is_ranged:
+                    try:
+                        is_ranged = bool(getattr(self, "range", None) and int(getattr(self.range, "max", 0) or 0) > 0)
+                    except Exception:
+                        is_ranged = False
+                if is_ranged:
+                    sources = []
+                    for entry in entries:
+                        if isinstance(entry, dict):
+                            atype = str(entry.get("attack_type") or "any").strip().lower()
+                            src = str(entry.get("source") or "Bearer unit ability").strip() or "Bearer unit ability"
+                        elif isinstance(entry, (tuple, list)):
+                            atype = str(entry[0] if entry else "any").strip().lower()
+                            src = str(entry[1]) if len(entry) > 1 else "Bearer unit ability"
+                        else:
+                            continue
+                        if atype not in ("any", "ranged"):
+                            continue
+                        sources.append(src)
+                    if sources:
+                        attack_instance.setdefault("benefit_of_cover", True)
+                        if "benefit_of_cover_source" not in attack_instance:
+                            uniq = []
+                            seen = set()
+                            for src in sources:
+                                key = src.lower()
+                                if key in seen:
+                                    continue
+                                seen.add(key)
+                                uniq.append(src)
+                            attack_instance["benefit_of_cover_source"] = ", ".join(uniq) if uniq else "Bearer unit ability"
+        except Exception:
+            pass
         # Orks: Waaagh! (5+ invulnerable save while active).
         try:
             t_unit = getattr(target_model, "parent_unit", None)
