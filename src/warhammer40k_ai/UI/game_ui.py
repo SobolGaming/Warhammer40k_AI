@@ -2694,6 +2694,169 @@ class GameView:
                 pass
             return
 
+        try:
+            from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE, DECISION_SELECT_PRECISION_TARGET
+        except Exception:
+            DECISION_ALLOCATE_DAMAGE = ""
+            DECISION_SELECT_PRECISION_TARGET = ""
+
+        if decision_type in (DECISION_ALLOCATE_DAMAGE, DECISION_SELECT_PRECISION_TARGET):
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            try:
+                if not player.has_control():
+                    return
+            except Exception:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id, option_id_for_payload
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            registry = getattr(game, "entity_registry", None)
+
+            if decision_type == DECISION_ALLOCATE_DAMAGE:
+                unit_id = str(ctx.get("unit_id") or ctx.get("target_unit_id") or "")
+                unit = self._resolve_unit_by_id(unit_id)
+                allowed_ids = [str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None]
+                eligible_models = []
+                if registry is not None and allowed_ids:
+                    for mid in allowed_ids:
+                        try:
+                            model = registry.get(str(mid), kind="model")
+                        except Exception:
+                            model = None
+                        if model is not None:
+                            eligible_models.append(model)
+                if registry is not None and not eligible_models:
+                    for opt in list(getattr(request, "options", []) or []):
+                        payload = dict(getattr(opt, "payload", {}) or {})
+                        mid = payload.get("model_id", payload.get("model"))
+                        if mid in (None, ""):
+                            continue
+                        try:
+                            model = registry.get(str(mid), kind="model")
+                        except Exception:
+                            model = None
+                        if model is not None and model not in eligible_models:
+                            eligible_models.append(model)
+                title = str(ctx.get("reason", "") or "Allocate Damage")
+                attacker = str(ctx.get("attacker_name", "") or "")
+                weapon = str(ctx.get("weapon_name", "") or "")
+                subtitle = getattr(unit, "name", "Unit") if unit is not None else "Unit"
+                if attacker and weapon:
+                    subtitle = f"{subtitle} (from {attacker} - {weapon})"
+                selection_kind = str(ctx.get("selection_kind", "") or "")
+                if selection_kind == "hazardous":
+                    instruction = "HAZARDOUS priority: wounded eligible model; otherwise non-Character; otherwise Character."
+                else:
+                    instruction = "If a model is already wounded, you must continue allocating to a wounded eligible model."
+
+                if not hasattr(self, "damage_allocation_dialog") or self.damage_allocation_dialog is None:
+                    try:
+                        from .dialogs import DamageAllocationDialog
+                        self.damage_allocation_dialog = DamageAllocationDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.damage_allocation_dialog = None
+                dlg = self.damage_allocation_dialog
+                default_id = first_option_id(request)
+                if dlg is None or unit is None:
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    return
+
+                def _on_choice(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    unit,
+                    list(eligible_models or []),
+                    title=title,
+                    subtitle=subtitle,
+                    instruction=instruction,
+                    on_choice=_on_choice,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if decision_type == DECISION_SELECT_PRECISION_TARGET:
+                attacker_model = None
+                target_unit = None
+                attacker_id = str(ctx.get("attacker_model_id", "") or "")
+                target_id = str(ctx.get("target_unit_id", "") or ctx.get("unit_id") or "")
+                if registry is not None and attacker_id:
+                    try:
+                        attacker_model = registry.get(attacker_id, kind="model")
+                    except Exception:
+                        attacker_model = None
+                if target_id:
+                    target_unit = self._resolve_unit_by_id(target_id)
+                allowed_ids = [str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None]
+                character_models = []
+                if registry is not None and allowed_ids:
+                    for mid in allowed_ids:
+                        try:
+                            model = registry.get(str(mid), kind="model")
+                        except Exception:
+                            model = None
+                        if model is not None:
+                            character_models.append(model)
+                if registry is not None and not character_models:
+                    for opt in list(getattr(request, "options", []) or []):
+                        payload = dict(getattr(opt, "payload", {}) or {})
+                        mid = payload.get("model_id", payload.get("model"))
+                        if mid in (None, ""):
+                            continue
+                        try:
+                            model = registry.get(str(mid), kind="model")
+                        except Exception:
+                            model = None
+                        if model is not None and model not in character_models:
+                            character_models.append(model)
+                weapon_name = str(ctx.get("weapon_name", "") or "PRECISION weapon")
+
+                if not hasattr(self, "precision_allocation_dialog") or self.precision_allocation_dialog is None:
+                    try:
+                        from .dialogs import PrecisionAllocationDialog
+                        self.precision_allocation_dialog = PrecisionAllocationDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.precision_allocation_dialog = None
+                dlg = self.precision_allocation_dialog
+                default_id = option_id_for_payload(request, "action", "bodyguard") or first_option_id(request)
+                if dlg is None or attacker_model is None or target_unit is None:
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    return
+
+                def _on_choice(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    attacker_model,
+                    target_unit,
+                    weapon_name,
+                    list(character_models or []),
+                    on_choice=_on_choice,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
         if bool(getattr(game, "is_authoritative", True)):
             return
 

@@ -5,8 +5,10 @@ from typing import Any, Dict, List, Optional
 
 from ..utility.entity_ids import get_entity_id
 from .decision_kinds import (
+    DECISION_ALLOCATE_DAMAGE,
     DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
     DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+    DECISION_SELECT_PRECISION_TARGET,
 )
 from .decisions import DecisionOption, DecisionRequest
 
@@ -141,6 +143,26 @@ class AttackResolutionManager:
             return None
         profiles = getattr(wargear, "profiles", {}) or {}
         return profiles.get(str(profile_name))
+
+    def _weapon_display_name(self, profile) -> str:
+        if profile is None:
+            return "Weapon"
+        name = getattr(profile, "name", "Weapon")
+        parent = getattr(profile, "parent_wargear", None)
+        if parent is not None:
+            parent_name = getattr(parent, "name", "Weapon")
+            if name == "default":
+                return parent_name
+            return f"{parent_name} - {name}"
+        return str(name or "Weapon")
+
+    def _sorted_models(self, models: list) -> list:
+        ordered = [m for m in list(models or []) if m is not None]
+        try:
+            ordered.sort(key=lambda m: str(get_entity_id(m)))
+        except Exception:
+            return ordered
+        return ordered
 
     def _maybe_clear_selected_to_shoot_rerolls(self, game: object, unit_id: str) -> None:
         if not unit_id:
@@ -731,6 +753,47 @@ class AttackResolutionManager:
             return
         self._begin_hits(game, seq)
 
+    def resume_after_precision_choice(self, game: object, seq: AttackSequence, save_index: int, model_id: Optional[str]) -> None:
+        if seq is None:
+            return
+        try:
+            idx = int(save_index)
+        except Exception:
+            return
+        choices = dict(seq.context.get("precision_choice_by_save_index", {}) or {})
+        choices[idx] = str(model_id) if model_id not in (None, "") else None
+        seq.context["precision_choice_by_save_index"] = choices
+        if model_id not in (None, "") and 0 <= idx < len(seq.wound_instances or []):
+            try:
+                seq.wound_instances[idx]["_allocated_model_id"] = str(model_id)
+            except Exception:
+                pass
+        try:
+            seq.step = "save_roll"
+            seq.save_index = idx
+        except Exception:
+            pass
+        self._request_next_save_roll(game, seq)
+
+    def resume_after_damage_allocation(self, game: object, seq: AttackSequence, save_index: int, model_id: Optional[str]) -> None:
+        if seq is None:
+            return
+        try:
+            idx = int(save_index)
+        except Exception:
+            return
+        if model_id not in (None, "") and 0 <= idx < len(seq.wound_instances or []):
+            try:
+                seq.wound_instances[idx]["_allocated_model_id"] = str(model_id)
+            except Exception:
+                pass
+        try:
+            seq.step = "save_roll"
+            seq.save_index = idx
+        except Exception:
+            pass
+        self._request_next_save_roll(game, seq)
+
     def _begin_hits(self, game: object, seq: AttackSequence) -> None:
         if not seq.attack_instances:
             self._mark_sequence_done(game, seq)
@@ -1150,7 +1213,8 @@ class AttackResolutionManager:
 
     def _request_next_save_roll(self, game: object, seq: AttackSequence) -> None:
         if seq.save_index >= len(seq.wound_instances or []):
-            self._resolve_pending_mortals(game, seq)
+            if self._resolve_pending_mortals(game, seq):
+                return
             if self._request_hazardous_roll(game, seq):
                 return
             self._mark_sequence_done(game, seq)
@@ -1164,95 +1228,177 @@ class AttackResolutionManager:
             self._request_next_save_roll(game, seq)
             return
         game_map = getattr(game, "map", None)
-        # Allocate target model (precision)
         target_model = None
-        try:
-            precision_from_epic_challenge = False
+
+        allocated_id = wound_instance.get("_allocated_model_id")
+        if allocated_id:
+            target_model = self._resolve_model(game, allocated_id)
+
+        precision_choices = dict(seq.context.get("precision_choice_by_save_index", {}) or {})
+        if target_model is None and seq.save_index in precision_choices:
+            chosen_id = precision_choices.get(seq.save_index)
+            if chosen_id:
+                target_model = self._resolve_model(game, chosen_id)
+
+        if target_model is None and seq.save_index not in precision_choices:
             try:
-                sr = getattr(attacker, "special_rules", None)
-                if isinstance(sr, dict) and sr.get("epic_challenge_precision_active") is True:
+                precision_from_epic_challenge = False
+                try:
+                    sr = getattr(attacker, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("epic_challenge_precision_active") is True:
+                        parent = getattr(profile, "parent_wargear", None)
+                        if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
+                            precision_from_epic_challenge = True
+                except Exception:
+                    precision_from_epic_challenge = False
+
+                precision_from_templar_vows = False
+                try:
                     parent = getattr(profile, "parent_wargear", None)
                     if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
-                        precision_from_epic_challenge = True
-            except Exception:
-                precision_from_epic_challenge = False
+                        army = attacker.parent_unit.get_parent_army()
+                        mgr = getattr(army, "templar_vows", None) if army is not None else None
+                        if mgr is not None and mgr.melee_precision_against(attacker.parent_unit, target):
+                            precision_from_templar_vows = True
+                except Exception:
+                    precision_from_templar_vows = False
 
-            precision_from_templar_vows = False
-            try:
-                parent = getattr(profile, "parent_wargear", None)
-                if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
-                    army = attacker.parent_unit.get_parent_army()
-                    mgr = getattr(army, "templar_vows", None) if army is not None else None
-                    if mgr is not None and mgr.melee_precision_against(attacker.parent_unit, target):
-                        precision_from_templar_vows = True
-            except Exception:
-                precision_from_templar_vows = False
-
-            precision_from_assassins = False
-            try:
-                precision_from_assassins = bool(profile._assassins_poisons_applies(attacker))
-            except Exception:
                 precision_from_assassins = False
+                try:
+                    precision_from_assassins = bool(profile._assassins_poisons_applies(attacker))
+                except Exception:
+                    precision_from_assassins = False
 
-            bonus_precision = bool(wound_instance.get("bonus_precision"))
-            precision_allowed = bool(
-                profile.is_precision()
-                or precision_from_epic_challenge
-                or precision_from_templar_vows
-                or precision_from_assassins
-                or bonus_precision
-            )
-            if precision_allowed and game_map is not None:
-                try:
-                    root = target.get_attached_unit_root()
-                except Exception:
-                    root = target
-                try:
-                    has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
-                except Exception:
-                    has_attached_leaders = False
-                if has_attached_leaders:
+                bonus_precision = bool(wound_instance.get("bonus_precision"))
+                precision_allowed = bool(
+                    profile.is_precision()
+                    or precision_from_epic_challenge
+                    or precision_from_templar_vows
+                    or precision_from_assassins
+                    or bonus_precision
+                )
+                if precision_allowed and game_map is not None:
                     try:
-                        all_models = root.get_models_for_collision()
+                        root = target.get_attached_unit_root()
                     except Exception:
-                        all_models = list(getattr(root, "models", []) or [])
-                    char_models = []
-                    for m in all_models:
+                        root = target
+                    try:
+                        has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
+                    except Exception:
+                        has_attached_leaders = False
+                    if has_attached_leaders:
                         try:
-                            if not getattr(m, "is_alive", True):
-                                continue
-                            if not bool(getattr(m, "is_character", False)):
-                                continue
-                            if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
-                                if not game_map.can_model_see_model(attacker, m):
-                                    continue
-                            char_models.append(m)
+                            all_models = root.get_models_for_collision()
                         except Exception:
-                            continue
-                    if char_models:
-                        provider = getattr(game_map, "precision_allocation_provider", None)
-                        if callable(provider):
+                            all_models = list(getattr(root, "models", []) or [])
+                        char_models = []
+                        for m in all_models:
                             try:
-                                precision_choice_model = provider(attacker, root, char_models, profile)
+                                if not getattr(m, "is_alive", True):
+                                    continue
+                                if not bool(getattr(m, "is_character", False)):
+                                    continue
+                                if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
+                                    if not game_map.can_model_see_model(attacker, m):
+                                        continue
+                                char_models.append(m)
                             except Exception:
-                                precision_choice_model = None
-                        else:
-                            precision_choice_model = None
-                        if precision_choice_model is not None:
+                                continue
+                        if char_models:
+                            if not bool(getattr(game, "is_authoritative", True)):
+                                return
+                            ordered = self._sorted_models(char_models)
+                            options = [DecisionOption.create("Bodyguard (normal allocation)", payload={"model_id": None, "action": "bodyguard"})]
+                            allowed_ids: list[str] = []
+                            for model in ordered:
+                                mid = get_entity_id(model)
+                                allowed_ids.append(mid)
+                                options.append(DecisionOption.create(getattr(model, "name", "CHARACTER"), payload={"model_id": mid}))
+                            player_id = None
                             try:
-                                if getattr(precision_choice_model, "is_alive", True):
-                                    if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
-                                        if game_map.can_model_see_model(attacker, precision_choice_model):
-                                            target_model = precision_choice_model
-                                    else:
-                                        target_model = precision_choice_model
+                                player_id = attacker.parent_unit.get_parent_army().player.id
                             except Exception:
-                                target_model = None
-        except Exception:
-            target_model = None
+                                player_id = None
+                            request = DecisionRequest.create(
+                                DECISION_SELECT_PRECISION_TARGET,
+                                "Select PRECISION allocation target.",
+                                player_id=player_id,
+                                options=options,
+                                context={
+                                    "sequence_id": int(seq.sequence_id),
+                                    "save_index": int(seq.save_index),
+                                    "selection_kind": "precision",
+                                    "attacker_model_id": wound_instance.get("attacker_model_id"),
+                                    "target_unit_id": seq.target_unit_id,
+                                    "unit_id": seq.target_unit_id,
+                                    "wargear_id": seq.wargear_id,
+                                    "profile_name": seq.profile_name,
+                                    "allowed_model_ids": list(allowed_ids),
+                                    "weapon_name": self._weapon_display_name(profile),
+                                },
+                            )
+                            seq.step = "precision_choice"
+                            game.request_decision(request)
+                            return
+            except Exception:
+                target_model = None
 
         if target_model is None:
-            target_model = profile.opponent_wound_allocation(target, attacker=attacker, game_map=game_map)
+            try:
+                candidates = target.get_models_for_wound_allocation()
+            except Exception:
+                candidates = [m for m in (getattr(target, "models", []) or []) if getattr(m, "is_alive", True)]
+            from ..utility.damage_allocation import DamageAllocationCtx, damage_allocation_choice
+            choice = damage_allocation_choice(candidates)
+            if choice.forced_model is not None:
+                target_model = choice.forced_model
+            elif choice.choice_models:
+                if not bool(getattr(game, "is_authoritative", True)):
+                    return
+                ordered = self._sorted_models(choice.choice_models)
+                options = []
+                allowed_ids = []
+                for model in ordered:
+                    mid = get_entity_id(model)
+                    allowed_ids.append(mid)
+                    options.append(DecisionOption.create(getattr(model, "name", "Model"), payload={"model_id": mid}))
+                if not options:
+                    return
+                player_id = None
+                try:
+                    player_id = target.get_parent_army().player.id
+                except Exception:
+                    player_id = None
+                alloc_ctx = DamageAllocationCtx(
+                    reason="Allocate wound",
+                    damage_source="attack",
+                    weapon_name=self._weapon_display_name(profile),
+                    attacker_name=str(getattr(attacker, "name", "") or ""),
+                )
+                request = DecisionRequest.create(
+                    DECISION_ALLOCATE_DAMAGE,
+                    alloc_ctx.reason or "Allocate wound",
+                    player_id=player_id,
+                    options=options,
+                    context={
+                        "sequence_id": int(seq.sequence_id),
+                        "save_index": int(seq.save_index),
+                        "selection_kind": "wound_allocation",
+                        "unit_id": seq.target_unit_id,
+                        "target_unit_id": seq.target_unit_id,
+                        "attacker_model_id": wound_instance.get("attacker_model_id"),
+                        "wargear_id": seq.wargear_id,
+                        "profile_name": seq.profile_name,
+                        "allowed_model_ids": list(allowed_ids),
+                        "reason": alloc_ctx.reason,
+                        "damage_source": alloc_ctx.damage_source,
+                        "weapon_name": alloc_ctx.weapon_name,
+                        "attacker_name": alloc_ctx.attacker_name,
+                    },
+                )
+                seq.step = "damage_allocation_choice"
+                game.request_decision(request)
+                return
         if target_model is None:
             seq.save_index += 1
             self._request_next_save_roll(game, seq)
@@ -1362,49 +1508,229 @@ class AttackResolutionManager:
         req = game.request_dice_roll(player_id=player_id, spec=spec, prompt=spec["reason"])
         seq.current_roll_id = getattr(req, "context", {}).get("roll_id")
 
-    def _resolve_pending_mortals(self, game: object, seq: AttackSequence) -> None:
-        try:
-            profile = self._resolve_profile(game, seq.wargear_id, seq.profile_name)
-            target = self._resolve_unit(game, seq.target_unit_id)
-            if profile is None or target is None:
-                return
-            resolved_pending: dict[str, list] = {}
-            for tkey, entries in (seq.pending_mortals or {}).items():
-                resolved_entries = []
+    def _resolve_pending_mortals(self, game: object, seq: AttackSequence) -> bool:
+        """Resolve queued mortal wounds. Returns True if a decision was requested."""
+        pending = dict(seq.pending_mortals or {})
+        if not pending:
+            return False
+
+        if "mortal_queue" not in seq.context:
+            queue: list[dict] = []
+            for entries in list(pending.values()):
                 for entry in list(entries or []):
-                    wp = self._resolve_profile(
-                        game,
-                        entry.get("wargear_id"),
-                        entry.get("profile_name"),
-                    )
-                    attacker = self._resolve_model(game, entry.get("attacker_model_id"))
-                    t_unit = self._resolve_unit(game, entry.get("target_unit_id"))
-                    t_model = self._resolve_model(game, entry.get("target_model_id"))
-                    if wp is None or attacker is None or t_unit is None:
+                    no_spill = bool(entry.get("no_spill", False))
+                    amount = int(entry.get("mortal_wound_amount", 0) or 0)
+                    if no_spill:
+                        target_model = self._resolve_model(game, entry.get("target_model_id"))
+                        self._apply_mortal_wound_instance(game, entry, target_model)
                         continue
-                    resolved_entries.append(
+                    if amount <= 0:
+                        continue
+                    queue.append(
                         {
-                            "weapon_profile": wp,
-                            "attacker": attacker,
-                            "target_unit": t_unit,
-                            "target_model": t_model,
+                            "target_unit_id": str(entry.get("target_unit_id", "") or ""),
+                            "wargear_id": str(entry.get("wargear_id", "") or ""),
+                            "profile_name": str(entry.get("profile_name", "") or ""),
+                            "attacker_model_id": str(entry.get("attacker_model_id", "") or ""),
                             "attack_instance": dict(entry.get("attack_instance", {}) or {}),
-                            "attack_result": None,
-                            "no_spill": bool(entry.get("no_spill", False)),
-                            "mortal_wound_amount": int(entry.get("mortal_wound_amount", 0) or 0),
+                            "remaining": int(amount),
+                            "initial_model_id": str(entry.get("target_model_id", "") or ""),
+                            "current_model_id": None,
+                            "allow_initial_model_outside_candidates": bool(entry.get("target_model_id")),
                         }
                     )
-                if resolved_entries:
-                    resolved_pending[str(tkey)] = resolved_entries
-            if resolved_pending:
-                profile.resolve_pending_mortal_wounds_for_target(
-                    resolved_pending,
-                    target,
-                    game_map=getattr(game, "map", None),
-                )
             seq.pending_mortals = {}
+            seq.context["mortal_queue"] = queue
+            seq.context["mortal_queue_index"] = 0
+
+        return self._process_mortal_queue(game, seq)
+
+    def _process_mortal_queue(self, game: object, seq: AttackSequence) -> bool:
+        queue = list(seq.context.get("mortal_queue", []) or [])
+        if not queue:
+            seq.context.pop("mortal_queue", None)
+            seq.context.pop("mortal_queue_index", None)
+            return False
+        try:
+            start_idx = int(seq.context.get("mortal_queue_index", 0) or 0)
+        except Exception:
+            start_idx = 0
+        idx = max(0, start_idx)
+        game_map = getattr(game, "map", None)
+        from ..utility.damage_allocation import DamageAllocationCtx, damage_allocation_choice
+
+        while idx < len(queue):
+            entry = queue[idx]
+            remaining = int(entry.get("remaining", 0) or 0)
+            if remaining <= 0:
+                idx += 1
+                continue
+            target_unit = self._resolve_unit(game, entry.get("target_unit_id"))
+            if target_unit is None:
+                idx += 1
+                continue
+            current_model_id = entry.get("current_model_id") or entry.get("initial_model_id")
+            allow_initial_outside = bool(entry.get("allow_initial_model_outside_candidates", False))
+
+            while remaining > 0:
+                if not target_unit.is_alive():
+                    remaining = 0
+                    break
+                try:
+                    candidates = target_unit.get_models_for_wound_allocation()
+                except Exception:
+                    candidates = [m for m in (getattr(target_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+                if not candidates:
+                    remaining = 0
+                    break
+
+                current_model = None
+                if current_model_id:
+                    current_model = self._resolve_model(game, current_model_id)
+                    if current_model is not None:
+                        if not getattr(current_model, "is_alive", True):
+                            current_model = None
+                        elif current_model not in candidates:
+                            if allow_initial_outside:
+                                try:
+                                    all_models = target_unit.get_models_for_collision()
+                                except Exception:
+                                    all_models = list(candidates)
+                                if current_model not in all_models:
+                                    current_model = None
+                            else:
+                                current_model = None
+                if current_model is None:
+                    choice = damage_allocation_choice(candidates)
+                    if choice.forced_model is not None:
+                        current_model = choice.forced_model
+                    elif choice.choice_models:
+                        if not bool(getattr(game, "is_authoritative", True)):
+                            return True
+                        ordered = self._sorted_models(choice.choice_models)
+                        options = []
+                        allowed_ids = []
+                        for model in ordered:
+                            mid = get_entity_id(model)
+                            allowed_ids.append(mid)
+                            options.append(DecisionOption.create(getattr(model, "name", "Model"), payload={"model_id": mid}))
+                        if not options:
+                            return False
+                        weapon_name = self._weapon_display_name(self._resolve_profile(game, entry.get("wargear_id"), entry.get("profile_name")))
+                        attacker_name = ""
+                        try:
+                            attacker_name = getattr(self._resolve_model(game, entry.get("attacker_model_id")), "name", "") or ""
+                        except Exception:
+                            attacker_name = ""
+                        alloc_ctx = DamageAllocationCtx(
+                            reason="Allocate mortal wound",
+                            damage_source="attack",
+                            weapon_name=weapon_name,
+                            attacker_name=attacker_name,
+                        )
+                        player_id = None
+                        try:
+                            player_id = target_unit.get_parent_army().player.id
+                        except Exception:
+                            player_id = None
+                        request = DecisionRequest.create(
+                            DECISION_ALLOCATE_DAMAGE,
+                            alloc_ctx.reason or "Allocate mortal wound",
+                            player_id=player_id,
+                            options=options,
+                            context={
+                                "sequence_id": int(seq.sequence_id),
+                                "mortal_entry_index": int(idx),
+                                "selection_kind": "mortal_wound",
+                                "unit_id": entry.get("target_unit_id"),
+                                "allowed_model_ids": list(allowed_ids),
+                                "remaining_wounds": int(remaining),
+                                "reason": alloc_ctx.reason,
+                                "damage_source": alloc_ctx.damage_source,
+                                "weapon_name": alloc_ctx.weapon_name,
+                                "attacker_name": alloc_ctx.attacker_name,
+                            },
+                        )
+                        seq.step = "mortal_allocation_choice"
+                        seq.context["mortal_queue_index"] = idx
+                        game.request_decision(request)
+                        return True
+                    else:
+                        remaining = 0
+                        break
+
+                self._apply_mortal_wound_instance(game, entry, current_model)
+                remaining -= 1
+                current_model_id = get_entity_id(current_model)
+                if not getattr(current_model, "is_alive", True):
+                    current_model_id = None
+
+            entry["remaining"] = int(remaining)
+            entry["current_model_id"] = current_model_id
+            idx += 1
+            seq.context["mortal_queue_index"] = idx
+
+        seq.context.pop("mortal_queue", None)
+        seq.context.pop("mortal_queue_index", None)
+        return False
+
+    def _apply_mortal_wound_instance(self, game: object, entry: dict, target_model) -> None:
+        if target_model is None or not getattr(target_model, "is_alive", True):
+            return
+        profile = self._resolve_profile(game, entry.get("wargear_id"), entry.get("profile_name"))
+        attacker = self._resolve_model(game, entry.get("attacker_model_id"))
+        attack_instance = dict(entry.get("attack_instance", {}) or {})
+        game_map = getattr(game, "map", None)
+        if profile is not None and attacker is not None:
+            try:
+                profile._apply_single_mortal_wound_with_tracking(
+                    target_model,
+                    attacker,
+                    attack_instance,
+                    game_map=game_map,
+                )
+                return
+            except Exception:
+                pass
+        try:
+            target_model.take_damage(
+                1,
+                is_mortal=True,
+                weapon_profile=profile,
+                game_map=game_map,
+                damage_source="mortal",
+            )
         except Exception:
             pass
+
+    def resume_after_mortal_allocation(self, game: object, seq: AttackSequence, entry_index: int, model_id: str | None) -> None:
+        if seq is None:
+            return
+        queue = list(seq.context.get("mortal_queue", []) or [])
+        if not queue:
+            return
+        try:
+            idx = int(entry_index)
+        except Exception:
+            idx = None
+        if idx is None or idx < 0 or idx >= len(queue):
+            return
+        entry = queue[idx]
+        if model_id:
+            entry["current_model_id"] = str(model_id)
+            model = self._resolve_model(game, model_id)
+            if model is not None:
+                self._apply_mortal_wound_instance(game, entry, model)
+                entry["remaining"] = max(0, int(entry.get("remaining", 0) or 0) - 1)
+                if not getattr(model, "is_alive", True):
+                    entry["current_model_id"] = None
+        seq.context["mortal_queue"] = queue
+        seq.context["mortal_queue_index"] = idx
+        if self._process_mortal_queue(game, seq):
+            return
+        if self._request_hazardous_roll(game, seq):
+            return
+        self._mark_sequence_done(game, seq)
 
     def _request_hazardous_roll(self, game: object, seq: AttackSequence) -> bool:
         if seq.context.get("hazardous_done"):
@@ -1488,14 +1814,8 @@ class AttackResolutionManager:
             seq.context["hazardous_done"] = True
             self._mark_sequence_done(game, seq)
             return
-        game_map = getattr(game, "map", None)
-        try:
-            root_unit = attacker_unit.get_attached_unit_root()
-        except Exception:
-            root_unit = attacker_unit
-        pain_hazardous = bool(seq.context.get("hazardous_pain_melee_non_character", False))
-        from ..utility.damage_allocation import DamageAllocationCtx, choose_hazardous_failure_model
         from ..utility.hazardous import is_hazardous_failure
+        failures = 0
         for die in list(roll_state.dice or []):
             if bool(die.get("is_derived", False)):
                 continue
@@ -1504,8 +1824,42 @@ class AttackResolutionManager:
                     continue
             except Exception:
                 continue
+            failures += 1
+
+        if failures <= 0:
+            seq.context["hazardous_done"] = True
+            self._mark_sequence_done(game, seq)
+            return
+
+        seq.context["hazardous_failures_remaining"] = int(failures)
+        seq.step = "hazardous_allocation"
+        if self._process_hazardous_failures(game, seq):
+            return
+        self._mark_sequence_done(game, seq)
+        return
+
+    def _process_hazardous_failures(self, game: object, seq: AttackSequence) -> bool:
+        remaining = int(seq.context.get("hazardous_failures_remaining", 0) or 0)
+        if remaining <= 0:
+            seq.context["hazardous_done"] = True
+            return False
+        profile = self._resolve_profile(game, seq.wargear_id, seq.profile_name)
+        attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
+        if profile is None or attacker_unit is None:
+            seq.context["hazardous_done"] = True
+            return False
+        try:
+            root_unit = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root_unit = attacker_unit
+        pain_hazardous = bool(seq.context.get("hazardous_pain_melee_non_character", False))
+        from ..utility.hazardous import collect_hazardous_eligible_models
+        from ..utility.damage_allocation import DamageAllocationCtx, hazardous_allocation_choice
+        game_map = getattr(game, "map", None)
+
+        while remaining > 0:
+            eligible = []
             try:
-                from ..utility.hazardous import collect_hazardous_eligible_models
                 eligible = collect_hazardous_eligible_models(
                     root_unit,
                     include_melee_non_character=pain_hazardous,
@@ -1513,36 +1867,103 @@ class AttackResolutionManager:
             except Exception:
                 eligible = []
             if not eligible:
-                fallback = None
                 for model_id in list(seq.model_ids or []):
                     model = self._resolve_model(game, model_id)
                     if model is not None and getattr(model, "is_alive", False):
-                        fallback = model
+                        eligible = [model]
                         break
-                if fallback is not None:
-                    eligible = [fallback]
             if not eligible:
+                remaining = 0
+                break
+            choice = hazardous_allocation_choice(eligible)
+            if choice.forced_model is not None:
+                try:
+                    choice.forced_model.take_damage(
+                        3,
+                        is_mortal=True,
+                        weapon_profile=profile,
+                        game_map=game_map,
+                        damage_source="hazardous",
+                    )
+                except Exception:
+                    pass
+                remaining -= 1
                 continue
+            if choice.choice_models:
+                if not bool(getattr(game, "is_authoritative", True)):
+                    return True
+                ordered = self._sorted_models(choice.choice_models)
+                options = []
+                allowed_ids = []
+                for model in ordered:
+                    mid = get_entity_id(model)
+                    allowed_ids.append(mid)
+                    options.append(DecisionOption.create(getattr(model, "name", "Model"), payload={"model_id": mid}))
+                if not options:
+                    return False
+                player_id = None
+                try:
+                    player_id = root_unit.get_parent_army().player.id
+                except Exception:
+                    player_id = None
+                alloc_ctx = DamageAllocationCtx(reason="HAZARDOUS failed test - select model", damage_source="hazardous")
+                request = DecisionRequest.create(
+                    DECISION_ALLOCATE_DAMAGE,
+                    alloc_ctx.reason or "HAZARDOUS - Select Model",
+                    player_id=player_id,
+                    options=options,
+                    context={
+                        "sequence_id": int(seq.sequence_id),
+                        "selection_kind": "hazardous",
+                        "unit_id": seq.attacker_unit_id,
+                        "allowed_model_ids": list(allowed_ids),
+                        "remaining_wounds": int(remaining),
+                        "reason": alloc_ctx.reason,
+                        "damage_source": alloc_ctx.damage_source,
+                    },
+                )
+                seq.step = "hazardous_allocation"
+                game.request_decision(request)
+                seq.context["hazardous_failures_remaining"] = int(remaining)
+                return True
+            remaining = 0
+            break
+
+        seq.context["hazardous_failures_remaining"] = int(remaining)
+        if remaining <= 0:
+            seq.context["hazardous_done"] = True
+        return False
+
+    def resume_after_hazardous_allocation(self, game: object, seq: AttackSequence, model_id: str | None) -> None:
+        if seq is None:
+            return
+        remaining = int(seq.context.get("hazardous_failures_remaining", 0) or 0)
+        if remaining <= 0:
+            seq.context["hazardous_done"] = True
+            self._mark_sequence_done(game, seq)
+            return
+        profile = self._resolve_profile(game, seq.wargear_id, seq.profile_name)
+        game_map = getattr(game, "map", None)
+        if profile is None:
+            seq.context["hazardous_done"] = True
+            self._mark_sequence_done(game, seq)
+            return
+        model = self._resolve_model(game, model_id) if model_id else None
+        if model is not None:
             try:
-                owning_player = root_unit.get_parent_army().player
-                is_human = bool(getattr(owning_player, "has_control", lambda: False)())
-            except Exception:
-                is_human = False
-            provider = getattr(game_map, "hazardous_allocation_provider", None) if game_map is not None else None
-            chosen = choose_hazardous_failure_model(
-                root_unit,
-                eligible,
-                is_human=is_human,
-                provider=provider,
-                ctx=DamageAllocationCtx(reason="HAZARDOUS failed test - select model", damage_source="hazardous"),
-            )
-            if chosen is None:
-                chosen = eligible[0]
-            try:
-                chosen.take_damage(3, is_mortal=True, weapon_profile=profile, game_map=game_map, damage_source="hazardous")
+                model.take_damage(
+                    3,
+                    is_mortal=True,
+                    weapon_profile=profile,
+                    game_map=game_map,
+                    damage_source="hazardous",
+                )
             except Exception:
                 pass
-        seq.context["hazardous_done"] = True
+            remaining -= 1
+            seq.context["hazardous_failures_remaining"] = int(max(0, remaining))
+        if self._process_hazardous_failures(game, seq):
+            return
         self._mark_sequence_done(game, seq)
 
     def handle_save_roll(self, game: object, roll_state) -> None:

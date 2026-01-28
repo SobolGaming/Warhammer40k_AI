@@ -1565,25 +1565,17 @@ class WargearProfile:
                             continue
 
                     if char_models:
-                        # In 10e, the attacker may make this choice each time a wound is allocated.
-                        provider = getattr(game_map, "precision_allocation_provider", None)
-                        if callable(provider):
-                            try:
-                                precision_choice_model = provider(attacker, root, char_models, self)
-                            except Exception:
-                                precision_choice_model = None
-                        else:
-                            precision_choice_model = None
-
-                        # If player chose a character model, allocate there (only if still alive/visible)
-                        if precision_choice_model is not None:
-                            try:
-                                if getattr(precision_choice_model, "is_alive", True):
-                                    if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
-                                        if game_map.can_model_see_model(attacker, precision_choice_model):
-                                            target_model = precision_choice_model
-                            except Exception:
-                                target_model = None
+                        # Deterministic default: pick the first visible CHARACTER model.
+                        precision_choice_model = char_models[0]
+                        try:
+                            if getattr(precision_choice_model, "is_alive", True):
+                                if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
+                                    if game_map.can_model_see_model(attacker, precision_choice_model):
+                                        target_model = precision_choice_model
+                                else:
+                                    target_model = precision_choice_model
+                        except Exception:
+                            target_model = None
 
             # Default allocation if precision didn't override it
             if target_model is None:
@@ -1739,17 +1731,9 @@ class WargearProfile:
                 if not eligible:
                     eligible = [attacker]
 
-                try:
-                    owning_player = root_unit.get_parent_army().player
-                    is_human = bool(getattr(owning_player, "has_control", lambda: False)())
-                except Exception:
-                    is_human = False
-                provider = getattr(game_map, "hazardous_allocation_provider", None) if game_map is not None else None
                 chosen = choose_hazardous_failure_model(
                     root_unit,
                     eligible,
-                    is_human=is_human,
-                    provider=provider,
                     ctx=DamageAllocationCtx(reason="HAZARDOUS failed test - select model", damage_source="hazardous"),
                 )
                 if chosen is None:
@@ -8062,12 +8046,6 @@ class WargearProfile:
 
         from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
         try:
-            defender_player = target.get_parent_army().player
-            is_human = bool(getattr(defender_player, "has_control", lambda: False)())
-        except Exception:
-            is_human = False
-        provider = getattr(game_map, "damage_allocation_provider", None) if game_map is not None else None
-        try:
             wname = getattr(getattr(self, "parent_wargear", None), "name", None) or getattr(self, "name", "")
         except Exception:
             wname = ""
@@ -8079,8 +8057,6 @@ class WargearProfile:
         return choose_damage_allocation_model(
             target,
             candidates,
-            is_human=is_human,
-            provider=provider,
             ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="attack", weapon_name=str(wname or ""), attacker_name=str(aname or "")),
         )
 

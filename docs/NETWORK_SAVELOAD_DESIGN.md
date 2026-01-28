@@ -199,12 +199,13 @@ Fight:
 - melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}
 - melee_attack_split_dialog: SPLIT_ATTACKS {bundle_id, split_plan[]}
 - target_model_selection_dialog: SELECT_TARGET_MODEL {unit_id, target_model_id}
-- precision_allocation_dialog: SELECT_PRECISION_TARGET {unit_id, target_model_id}
+- precision_allocation_dialog: SELECT_PRECISION_TARGET {unit_id, target_model_id | bodyguard} (context `sequence_id`, `save_index`, `allowed_model_ids`)
 
 Dice Rolls:
 - dice_roll_dialog: REQUEST_DICE_ROLL {roll_id, action_id="roll"}
 - dice_roll_dialog (reroll): SELECT_DICE_REROLL {roll_id, action_id, selected_die_ids[]}
-- damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id, amount}
+- damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind`, `allowed_model_ids`, `remaining_wounds`, `sequence_id`/`save_index` when tied to attack resolution)
+  Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reverberating_summons_return`.
 - overwatch_shooter_dialog: SELECT_RISE_TO_CHALLENGE {unit_id | skip}
 
 Faction / Detachment / Ability choices:

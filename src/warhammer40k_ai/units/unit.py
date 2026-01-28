@@ -5929,6 +5929,12 @@ class Unit:
         """
         models_destroyed = 0
         current_model = None
+        remaining = int(mortal_wound_amount or 0)
+
+        if remaining <= 0:
+            return 0
+
+        from ..utility.damage_allocation import DamageAllocationCtx
 
         try:
             if initial_model is not None and getattr(initial_model, "is_alive", True):
@@ -5936,8 +5942,24 @@ class Unit:
         except Exception:
             current_model = None
 
+        game = None
+        try:
+            army = target_unit.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        except Exception:
+            game = None
+
+        can_request_decision = bool(game is not None and getattr(game, "is_authoritative", False) and apply_fn is None)
+        ctx = allocation_ctx or DamageAllocationCtx(reason="Allocate mortal wound", damage_source="mortal")
+        ctx_dict = {
+            "reason": ctx.reason,
+            "damage_source": ctx.damage_source,
+            "weapon_name": ctx.weapon_name,
+            "attacker_name": ctx.attacker_name,
+        }
+
         # Apply mortal wounds one at a time to models in the unit
-        for _ in range(mortal_wound_amount):
+        while remaining > 0:
             if not target_unit.is_alive():
                 break  # Unit is destroyed, stop applying wounds
 
@@ -5968,24 +5990,58 @@ class Unit:
                     current_model = None
 
             if current_model is None:
-                # Human UI may choose among eligible models only when rules allow (i.e., no wounded eligible model)
-                from ..utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
-                try:
-                    player = target_unit.get_parent_army().player
-                    is_human = self._player_has_local_control(player)
-                except Exception:
-                    is_human = False
-                provider = getattr(game_map, "damage_allocation_provider", None) if game_map is not None else None
-                ctx = allocation_ctx or DamageAllocationCtx(reason="Allocate mortal wound", damage_source="mortal")
-                current_model = choose_damage_allocation_model(
-                    target_unit,
-                    candidates,
-                    is_human=is_human,
-                    provider=provider,
-                    ctx=ctx,
-                )
-                if current_model is None:
-                    break
+                from ..utility.damage_allocation import damage_allocation_choice
+                choice = damage_allocation_choice(candidates)
+                if choice.forced_model is not None:
+                    current_model = choice.forced_model
+                elif choice.choice_models:
+                    if not can_request_decision:
+                        current_model = choice.choice_models[0]
+                    else:
+                        try:
+                            from ..engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+                            from ..engine.decisions import DecisionOption, DecisionRequest
+                            from ..utility.entity_ids import get_entity_id
+                        except Exception:
+                            return models_destroyed
+
+                        ordered = list(choice.choice_models or [])
+                        ordered.sort(key=lambda m: str(get_entity_id(m)))
+                        options = []
+                        allowed_ids = []
+                        for model in ordered:
+                            try:
+                                mid = get_entity_id(model)
+                            except Exception:
+                                continue
+                            allowed_ids.append(mid)
+                            options.append(DecisionOption.create(getattr(model, "name", "Model"), payload={"model_id": mid}))
+                        if not options:
+                            return models_destroyed
+                        player_id = None
+                        try:
+                            player_id = target_unit.get_parent_army().player.id
+                        except Exception:
+                            player_id = None
+                        req = DecisionRequest.create(
+                            DECISION_ALLOCATE_DAMAGE,
+                            ctx.reason or "Allocate mortal wound",
+                            player_id=player_id,
+                            options=options,
+                            context={
+                                "selection_kind": "unit_mortal_wound",
+                                "unit_id": get_entity_id(target_unit),
+                                "remaining_wounds": int(remaining),
+                                "is_psychic_attack": bool(is_psychic_attack),
+                                "allowed_model_ids": list(allowed_ids),
+                                **ctx_dict,
+                            },
+                        )
+                        if hasattr(game, "request_decision"):
+                            game.request_decision(req)
+                        return models_destroyed
+                else:
+                    return models_destroyed
 
             # Apply the mortal wound
             if callable(apply_fn):
@@ -5997,7 +6053,10 @@ class Unit:
                     weapon_profile=None,
                     game_map=game_map,
                     is_psychic_attack=is_psychic_attack,
+                    damage_source=ctx.damage_source or "mortal",
                 )
+
+            remaining -= 1
 
             # Check if the model was destroyed
             if not current_model.is_alive:

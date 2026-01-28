@@ -3485,21 +3485,13 @@ class BattlePhaseHandler(BasePhaseHandler):
         if not candidates:
             return None
 
-        # Human defender may choose only when rules allow; otherwise wounded models are forced.
-        from ...utility.damage_allocation import DamageAllocationCtx, choose_damage_allocation_model
-        try:
-            defender_player = target_unit.get_parent_army().player
-            is_human = bool(getattr(defender_player, "has_control", lambda: False)())
-        except Exception:
-            is_human = False
-        provider = getattr(self.game.map, "damage_allocation_provider", None) if getattr(self, "game", None) is not None else None
-        return choose_damage_allocation_model(
-            target_unit,
-            candidates,
-            is_human=is_human,
-            provider=provider,
-            ctx=DamageAllocationCtx(reason="Allocate wound", damage_source="melee"),
-        )
+        from ...utility.damage_allocation import damage_allocation_choice
+        choice = damage_allocation_choice(candidates)
+        if choice.forced_model is not None:
+            return choice.forced_model
+        if choice.choice_models:
+            return choice.choice_models[0]
+        return None
     
     def _choose_precision_allocation_target(self, attacking_model, target_unit: Unit, weapon_profile):
         """
@@ -3546,20 +3538,6 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         gm = getattr(self, "game", None)
         game_map = getattr(gm, "map", None) if gm is not None else None
-        provider = getattr(game_map, "precision_allocation_provider", None) if game_map is not None else None
-
-        # Local modal prompt; remote/default falls back to first available CHARACTER.
-        try:
-            attacker_player = attacking_model.parent_unit.get_parent_army().player
-            is_human = bool(getattr(attacker_player, "has_control", lambda: False)())
-        except Exception:
-            is_human = False
-
-        if callable(provider) and is_human:
-            try:
-                return provider(attacking_model, root, char_models, weapon_profile)
-            except Exception:
-                return None
         return char_models[0]
 
     def _resolve_single_attack(self, attacking_model, weapon_profile, target_model, target_unit, *, precision_choice_model=None) -> bool:
