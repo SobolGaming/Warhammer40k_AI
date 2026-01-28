@@ -249,3 +249,67 @@ def test_move_over_mortal_wounds_requires_fly(monkeypatch):
 
     assert applied == {}
     assert not list(game.decision_queue.list() or [])
+
+
+def test_move_over_mortal_wounds_fly_bonus_d3(monkeypatch):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+    ability = (
+        "Each time this model ends a Normal move, you can select one enemy unit that it moved over during that move "
+        "and roll two D6, adding 1 to each result if that enemy unit can FLY: for each 4+, that enemy unit suffers "
+        "D3 mortal wounds."
+    )
+    unit = _make_unit("Heldrake", ability_desc=ability, model_count=1, keywords=["Fly"])
+    enemy = _make_unit("Enemy", keywords=["Fly"])
+    unit.deployed = True
+    enemy.deployed = True
+
+    player, enemy_player = _setup_players(unit, [enemy], human=False)
+
+    mover = unit.models[0]
+    target = enemy.models[0]
+    mover.set_location(0.0, 0.0, 0.0, 0.0)
+    target.set_location(5.0, 0.0, 0.0, 0.0)
+    mover.last_move_path = [(0.0, 0.0, 0.0), (10.0, 0.0, 0.0)]
+
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    game.players = [player, enemy_player]
+    game.map = _MapStub([unit, enemy], [enemy])
+
+    applied = {}
+
+    def _apply(self, target_unit, amount, game_map=None):
+        applied["amount"] = applied.get("amount", 0) + int(amount or 0)
+        applied["target"] = target_unit
+        return 0
+
+    unit._apply_mortal_wounds_to_unit = types.MethodType(_apply, unit)
+
+    rolls = {"D6": [3, 2], "D3": [2]}
+
+    def _fake_get_roll(die):
+        return rolls[die].pop(0)
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fake_get_roll)
+
+    game._on_unit_move_ended_move_over_mortal_wounds(unit=unit, action="move")
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+    assert req.context.get("mortal_wounds_kind") == "move_over"
+    target_id = get_entity_id(enemy)
+    option_id = None
+    for opt in list(req.options or []):
+        if opt.payload.get("target_unit_id") == target_id:
+            option_id = opt.option_id
+            break
+    assert option_id is not None
+    resolve_decision_command(game, req, option_id, player_id=player.id)
+
+    assert applied["amount"] == 2
+    assert applied["target"] is enemy

@@ -4046,24 +4046,61 @@ class Game:
         dice_count = int(spec.get("dice", 0) or 0)
         threshold = int(spec.get("threshold", 0) or 0)
         mortal_per = int(spec.get("mortal_per_success", 1) or 0)
-        if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
+        mortal_die = str(spec.get("mortal_per_success_die", "") or "").strip().upper()
+        fly_bonus = int(spec.get("fly_bonus", 0) or 0)
+        if dice_count <= 0 or threshold <= 0 or (mortal_per <= 0 and not mortal_die):
             return
 
         from ..utility.dice import get_roll
 
+        def _target_has_fly(target) -> bool:
+            if target is None:
+                return False
+            try:
+                if bool(getattr(target, "is_flying", False)):
+                    return True
+            except Exception:
+                pass
+            try:
+                has_kw = getattr(target, "has_keyword", None)
+                if callable(has_kw) and has_kw("FLY"):
+                    return True
+            except Exception:
+                pass
+            try:
+                has_any_kw = getattr(target, "has_any_keyword", None)
+                if callable(has_any_kw) and has_any_kw("FLY"):
+                    return True
+            except Exception:
+                pass
+            return False
+
+        apply_fly_bonus = int(fly_bonus) if (fly_bonus and _target_has_fly(target_unit)) else 0
+
         rolls = []
+        mod_rolls = []
         successes = 0
         for _ in range(dice_count):
             r = int(get_roll("D6") or 0)
             rolls.append(r)
-            if r >= threshold:
+            mr = r + apply_fly_bonus
+            mod_rolls.append(mr)
+            if mr >= threshold:
                 successes += 1
-        total_mw = int(successes * mortal_per)
+        if mortal_die:
+            total_mw = 0
+            for _ in range(successes):
+                total_mw += int(get_roll(mortal_die) or 0)
+        else:
+            total_mw = int(successes * mortal_per)
 
         ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
+        roll_note = f"rolls={rolls}"
+        if apply_fly_bonus:
+            roll_note = f"{roll_note} (modified={mod_rolls}, +{apply_fly_bonus} vs FLY)"
         print(
             f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
-            f"(rolls={rolls}) => {total_mw} mortal wounds"
+            f"({roll_note}) => {total_mw} mortal wounds"
         )
 
         if total_mw > 0:

@@ -1087,7 +1087,8 @@ class Unit:
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
-        r"for each (?P<threshold>\d)\+ that (?:enemy )?unit suffers (?P<mw>\d+) mortal wounds?",
+        r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
+        r"for each (?P<threshold>\d)\+ that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
         re.IGNORECASE,
     )
     _CHARGE_PHASE_BODYGUARD_LOSS_RE = re.compile(
@@ -20586,22 +20587,35 @@ class Unit:
                 threshold = int(m.group("threshold") or 0)
             except Exception:
                 threshold = 0
-            try:
-                mortal_per = int(m.group("mw") or 0)
-            except Exception:
-                mortal_per = 0
-            if threshold <= 0 or mortal_per <= 0:
+            mw_token = str(m.group("mw") or "").strip().lower()
+            mortal_per = 0
+            mortal_die = ""
+            if mw_token.startswith("d"):
+                mortal_die = mw_token.upper()
+            else:
+                try:
+                    mortal_per = int(mw_token or 0)
+                except Exception:
+                    mortal_per = 0
+            if threshold <= 0 or (mortal_per <= 0 and not mortal_die):
                 continue
 
             exclude_mv = "excluding monsters and vehicles" in normalized or "excluding monster and vehicle" in normalized
+            fly_bonus = 0
+            try:
+                fly_bonus = int(m.group("fly_bonus") or 0)
+            except Exception:
+                fly_bonus = 0
             source = str(name or "Move-over mortals").strip() or "Move-over mortals"
             key = (
                 source.lower(),
                 int(dice_count),
                 int(threshold),
+                str(mortal_die or ""),
                 int(mortal_per),
                 tuple(sorted(move_types)),
                 bool(exclude_mv),
+                int(fly_bonus or 0),
             )
             if key in seen:
                 continue
@@ -20612,8 +20626,10 @@ class Unit:
                     "dice": int(dice_count),
                     "threshold": int(threshold),
                     "mortal_per_success": int(mortal_per),
+                    "mortal_per_success_die": str(mortal_die),
                     "move_types": sorted(move_types),
                     "exclude_monster_vehicle": bool(exclude_mv),
+                    "fly_bonus": int(fly_bonus or 0),
                 }
             )
 

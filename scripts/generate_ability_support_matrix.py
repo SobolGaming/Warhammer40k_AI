@@ -4077,7 +4077,8 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
-        r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>\d+) mortal wounds?"
+        r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
+        r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -4109,11 +4110,25 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     if dice_count <= 0:
         return None
     threshold = int(m.group("threshold") or 0)
-    mortal_per = int(m.group("mw") or 0)
-    if threshold <= 0 or mortal_per <= 0:
+    mw_token = str(m.group("mw") or "").strip().lower()
+    if not mw_token:
         return None
+    if threshold <= 0:
+        return None
+    mortal_text = mw_token.upper()
+    if not mw_token.startswith("d"):
+        try:
+            if int(mw_token) <= 0:
+                return None
+        except Exception:
+            return None
     type_label = "/".join(move_types)
-    return ("Supported", f"{type_label}: select a moved-over enemy; roll {dice_count}D6, each {threshold}+ inflicts {mortal_per} mortal wound(s).")
+    fly_bonus = int(m.group("fly_bonus") or 0) if m.group("fly_bonus") else 0
+    fly_note = " (+{0} vs FLY)".format(fly_bonus) if fly_bonus else ""
+    return (
+        "Supported",
+        f"{type_label}: select a moved-over enemy; roll {dice_count}D6{fly_note}, each {threshold}+ inflicts {mortal_text} mortal wounds.",
+    )
 
 
 def _battlesuit_support_system_support(name: str, description: str) -> Optional[Tuple[str, str]]:
