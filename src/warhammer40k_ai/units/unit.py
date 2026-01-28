@@ -993,6 +993,12 @@ class Unit:
         r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?targets?\s+of\s+that\s+charge.*?within\s+range\s+of\s+an?\s+objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
         re.IGNORECASE,
     )
+    _SELECTED_TO_SHOOT_CHARGE_REROLL_RE = re.compile(
+        r"in your shooting phase each time this unit is selected to shoot if it makes one or more ranged attacks "
+        r"and all of those attacks target the same enemy unit until the end of the turn each time this unit declares "
+        r"a charge if that enemy unit is a target of that charge you can reroll the charge roll",
+        re.IGNORECASE,
+    )
     _ATTACK_TARGET_OBJECTIVE_KEYWORD_RE = re.compile(
         r"each\s+time\s+this\s+(?:model|unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
         r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+that\s+is\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+"
@@ -9868,6 +9874,173 @@ class Unit:
             return False
         return target_dist <= closest + 1e-6
 
+    def get_selected_to_shoot_charge_reroll_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "In your Shooting phase, each time this unit is selected to shoot, if it makes one or more ranged attacks
+        and all of those attacks target the same enemy unit, until the end of the turn, each time this unit declares
+        a charge, if that enemy unit is a target of that charge, you can re-roll the Charge roll."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "selected_to_shoot_charge_reroll_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            for u in members:
+                for name, desc in u._iter_ability_entries_for_rules(model=None):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    text_src = self._strip_eligibility_prefix(text_src)
+                    normalized = self._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    normalized = re.sub(r"\bre roll\b", "reroll", normalized)
+                    normalized = re.sub(r"\bre rolls\b", "reroll", normalized)
+                    if not normalized:
+                        continue
+                    if self._SELECTED_TO_SHOOT_CHARGE_REROLL_RE.fullmatch(normalized):
+                        source = str(name or "Selected to shoot charge reroll").strip() or "Selected to shoot charge reroll"
+                        rule = {"source": source}
+                        break
+                if rule:
+                    break
+        except Exception:
+            rule = None
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _selected_to_shoot_charge_reroll_target_ids(self, *, game=None) -> set[str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return set()
+        raw = sr.get("selected_to_shoot_charge_reroll_target_ids")
+        if not raw:
+            return set()
+        if game is not None:
+            owner = str(sr.get("selected_to_shoot_charge_reroll_turn_owner", "") or "")
+            turn = int(sr.get("selected_to_shoot_charge_reroll_turn", 0) or 0)
+            if owner or turn:
+                try:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    cur_player = None
+                cur_owner = ""
+                if cur_player is not None:
+                    try:
+                        cur_owner = get_entity_id(cur_player)
+                    except Exception:
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                cur_turn = int(getattr(game, "turn", 0) or 0)
+                if owner and cur_owner and owner != cur_owner:
+                    return set()
+                if turn and cur_turn and turn != cur_turn:
+                    return set()
+
+        if isinstance(raw, dict):
+            return {str(k) for k in raw.keys() if k}
+        if isinstance(raw, (list, tuple, set)):
+            return {str(v) for v in raw if v}
+        return {str(raw)}
+
+    def _record_selected_to_shoot_charge_reroll_target(self, target_unit, *, game=None, source: str = "") -> bool:
+        if target_unit is None:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+            root.special_rules = sr
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+        try:
+            target_id = get_entity_id(target_root)
+        except Exception:
+            return False
+
+        owner_id = ""
+        turn = 0
+        if game is not None:
+            try:
+                cur_player = getattr(game, "get_current_player", lambda: None)()
+            except Exception:
+                cur_player = None
+            if cur_player is not None:
+                try:
+                    owner_id = get_entity_id(cur_player)
+                except Exception:
+                    owner_id = str(getattr(cur_player, "id", "") or "")
+            turn = int(getattr(game, "turn", 0) or 0)
+        if not owner_id:
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+            except Exception:
+                player = None
+            if player is not None:
+                try:
+                    owner_id = get_entity_id(player)
+                except Exception:
+                    owner_id = str(getattr(player, "id", "") or "")
+        if not turn and game is None:
+            try:
+                turn = int(getattr(getattr(root.get_parent_army(), "player", None), "game", None).turn or 0)
+            except Exception:
+                turn = 0
+
+        existing_owner = str(sr.get("selected_to_shoot_charge_reroll_turn_owner", "") or "")
+        existing_turn = int(sr.get("selected_to_shoot_charge_reroll_turn", 0) or 0)
+        targets = set()
+        if existing_owner and owner_id and existing_owner != owner_id:
+            targets = set()
+        elif existing_turn and turn and existing_turn != turn:
+            targets = set()
+        else:
+            raw = sr.get("selected_to_shoot_charge_reroll_target_ids")
+            if isinstance(raw, dict):
+                targets = {str(k) for k in raw.keys() if k}
+            elif isinstance(raw, (list, tuple, set)):
+                targets = {str(v) for v in raw if v}
+            elif raw:
+                targets = {str(raw)}
+
+        targets.add(str(target_id))
+        sr["selected_to_shoot_charge_reroll_target_ids"] = sorted(targets)
+        if owner_id:
+            sr["selected_to_shoot_charge_reroll_turn_owner"] = owner_id
+        if turn:
+            sr["selected_to_shoot_charge_reroll_turn"] = int(turn)
+        if source:
+            sr["selected_to_shoot_charge_reroll_source"] = str(source)
+        root.special_rules = sr
+        return True
+
     def can_reroll_charge_roll(self, *, target_unit=None, game_map=None, game=None) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
@@ -9904,7 +10077,52 @@ class Unit:
                 return True
         except Exception:
             pass
+        target_units: list = []
+        try:
+            if target_unit is None:
+                target_units = []
+            elif isinstance(target_unit, (list, tuple, set)):
+                target_units = [t for t in list(target_unit or []) if t is not None]
+            else:
+                target_units = [target_unit]
+        except Exception:
+            target_units = [target_unit] if target_unit is not None else []
+        if target_units:
+            deduped = []
+            seen = set()
+            for t in target_units:
+                try:
+                    root = t.get_attached_unit_root()
+                except Exception:
+                    root = t
+                if root is None:
+                    continue
+                try:
+                    rid = get_entity_id(root)
+                except Exception:
+                    rid = None
+                if rid and rid in seen:
+                    continue
+                if rid:
+                    seen.add(rid)
+                deduped.append(root)
+            target_units = deduped
         conditional_found = False
+        try:
+            rule = self.get_selected_to_shoot_charge_reroll_rule()
+            if rule:
+                conditional_found = True
+                active_targets = self._selected_to_shoot_charge_reroll_target_ids(game=game)
+                if active_targets and target_units:
+                    for t in target_units:
+                        try:
+                            tid = get_entity_id(t)
+                        except Exception:
+                            continue
+                        if tid in active_targets:
+                            return True
+        except Exception:
+            pass
         try:
             for u in list(self.get_attached_unit_members() or []):
                 sr = getattr(u, "special_rules", None)
@@ -9918,7 +10136,7 @@ class Unit:
                         return True
                 if sr.get("enhancement_charge_reroll_if_target_on_objective"):
                     conditional_found = True
-                    if self._target_within_objective_range(target_unit, game_map):
+                    if any(self._target_within_objective_range(t, game_map) for t in (target_units or [])):
                         return True
         except Exception:
             pass
@@ -9930,7 +10148,7 @@ class Unit:
                     low = text.lower()
                     if self._REROLL_CHARGE_OBJECTIVE_RE.search(low):
                         conditional_found = True
-                        if self._target_within_objective_range(target_unit, game_map):
+                        if any(self._target_within_objective_range(t, game_map) for t in (target_units or [])):
                             return True
                         continue
                     if self._REROLL_CHARGE_SETUP_TURN_RE.search(low):
@@ -9940,12 +10158,14 @@ class Unit:
                         continue
                     if self._REROLL_CHARGE_CLOSEST_ELIGIBLE_RE.search(low):
                         conditional_found = True
-                        if self._is_charge_target_closest_eligible(
-                            target_unit,
-                            game_map=game_map,
-                            game=game,
-                        ):
-                            return True
+                        if target_units:
+                            for t in target_units:
+                                if self._is_charge_target_closest_eligible(
+                                    t,
+                                    game_map=game_map,
+                                    game=game,
+                                ):
+                                    return True
                         continue
                     if self._REROLL_ADVANCE_CHARGE_RE.search(low):
                         return True
@@ -13079,6 +13299,21 @@ class Unit:
         successful_attacks = 0
         hit_tracker = {}
         hit_models_by_target = {}
+        attack_tracker = {}
+        touched_targets = []
+        try:
+            seen_targets = set()
+            for decl in weapon_declarations:
+                t = decl.get("target_unit")
+                if t is None:
+                    continue
+                tid = get_entity_id(t)
+                if tid in seen_targets:
+                    continue
+                seen_targets.add(tid)
+                touched_targets.append(t)
+        except Exception:
+            touched_targets = []
         
         # Begin attack resolution window(s) for targets (so attached leaders don't separate mid-sequence)
         # Publish a reaction window for defensive stratagems (e.g. GO TO GROUND) right after targets are selected.
@@ -13086,23 +13321,23 @@ class Unit:
             if weapon_declarations and hasattr(self, "get_parent_army") and self.get_parent_army() is not None:
                 game = getattr(self.get_parent_army().player, "game", None)
                 if game is not None and hasattr(game, "event_system"):
-                    touched_targets = []
-                    seen_targets = set()
-                    for decl in weapon_declarations:
-                        t = decl.get("target_unit")
-                        if t is None:
-                            continue
-                        tid = get_entity_id(t)
-                        if tid in seen_targets:
-                            continue
-                        seen_targets.add(tid)
-                        touched_targets.append(t)
                     if touched_targets:
                         game.event_system.publish(
                             "shooting_targets_selected",
                             attacking_unit=self,
                             target_units=list(touched_targets),
                         )
+        except Exception:
+            pass
+
+        selected_to_shoot_charge_reroll_source = ""
+        can_apply_selected_to_shoot_charge_reroll = False
+        try:
+            if (not out_of_phase) and self._is_controlling_players_shooting_phase():
+                rule = self.get_selected_to_shoot_charge_reroll_rule()
+                if rule:
+                    can_apply_selected_to_shoot_charge_reroll = True
+                    selected_to_shoot_charge_reroll_source = str(rule.get("source", "") or "")
         except Exception:
             pass
 
@@ -13124,23 +13359,12 @@ class Unit:
         except Exception:
             pass
 
-        touched_targets = []
         try:
-            seen_targets = set()
-            for decl in weapon_declarations:
-                t = decl.get("target_unit")
-                if t is None:
-                    continue
-                tid = get_entity_id(t)
-                if tid in seen_targets:
-                    continue
-                seen_targets.add(tid)
-                touched_targets.append(t)
-            for t in touched_targets:
+            for t in list(touched_targets or []):
                 if hasattr(t, "begin_attack_resolution"):
                     t.begin_attack_resolution()
         except Exception:
-            touched_targets = []
+            touched_targets = list(touched_targets or [])
 
         # Interactive dice roll mode: queue attack sequences after bookkeeping and return.
         if interactive_mode:
@@ -13148,6 +13372,15 @@ class Unit:
                 mgr = getattr(game, "attack_manager", None)
                 if mgr is not None:
                     queued = mgr.queue_attack_declarations(game, weapon_declarations, out_of_phase=out_of_phase)
+                    if queued and can_apply_selected_to_shoot_charge_reroll and len(touched_targets or []) == 1:
+                        try:
+                            self._record_selected_to_shoot_charge_reroll_target(
+                                touched_targets[0],
+                                game=game,
+                                source=selected_to_shoot_charge_reroll_source,
+                            )
+                        except Exception:
+                            pass
                     return bool(queued)
             except Exception:
                 return False
@@ -13179,6 +13412,7 @@ class Unit:
                     game_map,
                     hit_tracker=hit_tracker,
                     hit_models_by_target=hit_models_by_target,
+                    attack_tracker=attack_tracker,
                     attack_context=attack_context,
                     out_of_phase=out_of_phase,
                     weapon_instance=weapon_instance,
@@ -13201,6 +13435,7 @@ class Unit:
                     weapon_instance,
                     hit_tracker=hit_tracker,
                     hit_models_by_target=hit_models_by_target,
+                    attack_tracker=attack_tracker,
                     attack_context=attack_context,
                     linked_fire_origin_unit=linked_fire_origin_unit,
                 )
@@ -13213,6 +13448,23 @@ class Unit:
                         entry["count"] = int(entry.get("count", 0) or 0) - 1
                         if entry["count"] <= 0:
                             self._resolve_pending_attack_mortal_wounds(attack_context, entry["unit"], game_map=game_map)
+
+        try:
+            game_for_effect = None
+            try:
+                game_for_effect = self.get_parent_army().player.game
+            except Exception:
+                game_for_effect = None
+            if can_apply_selected_to_shoot_charge_reroll and successful_attacks > 0:
+                actual_targets = [t for t, c in (attack_tracker or {}).items() if int(c or 0) > 0]
+                if len(actual_targets) == 1:
+                    self._record_selected_to_shoot_charge_reroll_target(
+                        actual_targets[0],
+                        game=game_for_effect,
+                        source=selected_to_shoot_charge_reroll_source,
+                    )
+        except Exception:
+            pass
 
         try:
             game = self.get_parent_army().player.game
@@ -13342,6 +13594,7 @@ class Unit:
         *,
         hit_tracker=None,
         hit_models_by_target=None,
+        attack_tracker: Optional[dict] = None,
         attack_context: Optional[dict] = None,
         out_of_phase: bool = False,
         weapon_instance=None,
@@ -13416,6 +13669,7 @@ class Unit:
                 weapon_instance=weapon_instance,
                 hit_tracker=hit_tracker,
                 hit_models_by_target=hit_models_by_target,
+                attack_tracker=attack_tracker,
                 attack_context=attack_context,
                 skip_one_shot=True,
                 skip_target_checks=True,
@@ -13972,6 +14226,7 @@ class Unit:
         weapon_instance=None,
         hit_tracker=None,
         hit_models_by_target=None,
+        attack_tracker: Optional[dict] = None,
         attack_context: Optional[dict] = None,
         linked_fire_origin_unit=None,
         skip_one_shot: bool = False,
@@ -14073,6 +14328,15 @@ class Unit:
                                 hit_models_by_target.setdefault(target_unit, set()).add(model)
                             except Exception:
                                 pass
+                if attack_tracker is not None and target_unit is not None:
+                    try:
+                        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+                    except Exception:
+                        target_root = target_unit
+                    try:
+                        attack_tracker[target_root] = int(attack_tracker.get(target_root, 0) or 0) + 1
+                    except Exception:
+                        pass
                 # Count successful execution of the attack (not damage dealt)
                 successful_attacks += 1
 

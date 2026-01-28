@@ -222,6 +222,84 @@ class TestChargeRerollAbilities(unittest.TestCase):
             )
         )
 
+    def test_charge_reroll_requires_same_target_shooting(self):
+        ability = {
+            "name": "Lethal Obsession",
+            "description": (
+                "In your Shooting phase, each time this unit is selected to shoot, if it makes one or more ranged attacks "
+                "and all of those attacks target the same enemy unit, until the end of the turn, each time this unit "
+                "declares a charge, if that enemy unit is a target of that charge, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        charger = _make_unit("Charger", abilities=[ability])
+        target = _make_unit("Target")
+        self.assertFalse(charger.can_reroll_charge_roll(target_unit=target))
+
+    def test_charge_reroll_same_target_after_shooting(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        ability = {
+            "name": "Lethal Obsession",
+            "description": (
+                "In your Shooting phase, each time this unit is selected to shoot, if it makes one or more ranged attacks "
+                "and all of those attacks target the same enemy unit, until the end of the turn, each time this unit "
+                "declares a charge, if that enemy unit is a target of that charge, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        army1 = Army("Test", "Det")
+        army1.faction_id = "EC"
+        army2 = Army("Enemy", "Det")
+        army2.faction_id = "EN"
+
+        p1 = Player("P1", control=PlayerControl.LOCAL, army=army1)
+        p2 = Player("P2", control=PlayerControl.REMOTE, army=army2)
+        game.add_player(p1)
+        game.add_player(p2)
+
+        charger = _make_unit("Charger", abilities=[ability])
+        target = _make_unit("Target")
+        other = _make_unit("Other")
+
+        army1.add_unit(charger)
+        army2.add_unit(target)
+        army2.add_unit(other)
+
+        charger.deployed = True
+        target.deployed = True
+        other.deployed = True
+
+        charger._record_selected_to_shoot_charge_reroll_target(target, game=game, source="Lethal Obsession")
+
+        self.assertTrue(
+            charger.can_reroll_charge_roll(
+                target_unit=target,
+                game_map=game.map,
+                game=game,
+            )
+        )
+        self.assertFalse(
+            charger.can_reroll_charge_roll(
+                target_unit=other,
+                game_map=game.map,
+                game=game,
+            )
+        )
+        self.assertTrue(
+            charger.can_reroll_charge_roll(
+                target_unit=[other, target],
+                game_map=game.map,
+                game=game,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

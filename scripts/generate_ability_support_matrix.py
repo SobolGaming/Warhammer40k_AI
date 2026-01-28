@@ -1513,7 +1513,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("EC", "Duellist's Hubris"): ("Supported", "Fights First when not leading a unit."),
         ("EC", "Lord of Excess"): ("Partial", "Lone Operative applied without 3\" Slaanesh Infantry proximity requirement."),
         ("EC", "LORD OF THE HOST"): ("Partial", "Infiltrators/Scouts 6\" detected; attachment restriction not enforced."),
-        ("EC", "Lethal Obsession"): ("Partial", "Charge reroll always available; requires prior same-target shooting not enforced."),
+        ("EC", "Lethal Obsession"): ("Supported", "Same-target shooting requirement tracked; charge reroll applies vs that target until end of turn."),
         ("EC", "No Prey Can Evade"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("EC", "Unholy Speed"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("EC", "Monarch of the Hunt"): ("Supported", "Quarry selection + melee reroll hooks vs quarry."),

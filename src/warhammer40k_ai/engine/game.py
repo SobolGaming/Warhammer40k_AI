@@ -7789,6 +7789,22 @@ class Game:
                     sr.pop("red_wrath_turn", None)
                     sr.pop("red_wrath_source", None)
                     unit.special_rules = sr
+                if sr.get("selected_to_shoot_charge_reroll_target_ids"):
+                    owner = str(sr.get("selected_to_shoot_charge_reroll_turn_owner", "") or "")
+                    current_owner = ""
+                    try:
+                        current_owner = get_entity_id(turn_ending_player)
+                    except Exception:
+                        current_owner = str(getattr(turn_ending_player, "id", "") or "")
+                    if (not owner) or (current_owner and owner == current_owner):
+                        for key in (
+                            "selected_to_shoot_charge_reroll_target_ids",
+                            "selected_to_shoot_charge_reroll_turn_owner",
+                            "selected_to_shoot_charge_reroll_turn",
+                            "selected_to_shoot_charge_reroll_source",
+                        ):
+                            sr.pop(key, None)
+                        unit.special_rules = sr
 
         # Imperial Knights: Code Chivalric deed completion at end of turn.
         for p in list(getattr(self, "players", []) or []):
@@ -8806,7 +8822,7 @@ class Game:
         reroll_rules = []
         try:
             can_rule_reroll = bool(
-                charging_unit.can_reroll_charge_roll(target_unit=targets[0], game_map=self.map, game=self)
+                charging_unit.can_reroll_charge_roll(target_unit=list(targets), game_map=self.map, game=self)
             )
             mgr = getattr(army, "templar_vows", None) if army is not None else None
             if mgr is not None and mgr.can_reroll_charge_against(charging_unit, targets[0]):
