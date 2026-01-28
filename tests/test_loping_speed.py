@@ -207,6 +207,82 @@ class TestLopingSpeed(unittest.TestCase):
         self.assertEqual(ctx.get("reactive_move_unit_id"), get_entity_id(reacting_unit))
         self.assertEqual(ctx.get("reactive_move_moving_unit_id"), get_entity_id(moving_unit))
 
+    def test_loping_speed_remote_does_not_auto_confirm_with_decision_hook(self):
+        game, _moving_player, reacting_player, army_move, army_react = self._build_game(
+            reacting_control=PlayerControl.REMOTE,
+        )
+
+        reacting_player.decision_hook = lambda *_args, **_kwargs: True
+
+        moving_unit = self._make_unit("Enemy Movers", army_move)
+        reacting_unit = self._make_unit("Trail Shaper", army_react, ability_text=LOPING_SPEED_TEXT)
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy Model", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Trail Model", reacting_unit, 8.0, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+
+        game.map.units = [moving_unit, reacting_unit]
+
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="move",
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].decision_type, DECISION_CONFIRM_YES_NO)
+
+    def test_loping_speed_move_decision_not_auto_resolved_by_position_hook(self):
+        game, _moving_player, reacting_player, army_move, army_react = self._build_game(
+            reacting_control=PlayerControl.REMOTE,
+        )
+
+        moving_unit = self._make_unit("Enemy Movers", army_move)
+        reacting_unit = self._make_unit("Trail Shaper", army_react, ability_text=LOPING_SPEED_TEXT)
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy Model", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Trail Model", reacting_unit, 8.0, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+
+        def _positions_hook(_player, _ctx):
+            return [
+                {
+                    "model_id": get_entity_id(reacting_model),
+                    "position": [8.0, 0.0, 0.0],
+                    "facing": 0.0,
+                }
+            ]
+
+        reacting_player.reactive_move_position_hook = _positions_hook
+
+        game.map.units = [moving_unit, reacting_unit]
+
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="move",
+        )
+
+        request = game.decision_queue.peek()
+        yes_option = None
+        for opt in list(request.options or []):
+            if bool((opt.payload or {}).get("choice", False)):
+                yes_option = opt
+                break
+        self.assertIsNotNone(yes_option)
+        resolve_decision_command(game, request, yes_option.option_id, player_id=reacting_player.id)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].decision_type, DECISION_MOVE_UNIT)
+
     def test_loping_speed_confirm_yes_queues_move(self):
         game, _moving_player, reacting_player, army_move, army_react = self._build_game(
             reacting_control=PlayerControl.REMOTE,

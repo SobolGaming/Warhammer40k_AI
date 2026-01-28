@@ -268,6 +268,38 @@ class TestBloodSurge(unittest.TestCase):
         self.assertEqual(ctx.get("reactive_move_unit_id"), get_entity_id(target))
         self.assertEqual(ctx.get("reactive_move_attacker_unit_id"), get_entity_id(attacker))
 
+    def test_blood_surge_remote_does_not_auto_confirm_with_decision_hook(self):
+        game, _p1, p2, army1, army2 = self._build_game()
+        p2.decision_hook = lambda *_args, **_kwargs: True
+
+        attacker = self._make_unit("Shooter", army1, blood_surge=False, faction="A")
+        target = self._make_unit("Berzerkers", army2, blood_surge=True, faction="B")
+        army1.units = [attacker]
+        army2.units = [target]
+
+        attacker_model = self._make_model("Shooter", attacker, 0.0, 0.0)
+        target_model_a = self._make_model("Target A", target, 10.0, 0.0)
+        target_model_b = self._make_model("Target B", target, 12.0, 0.0)
+        attacker.models = [attacker_model]
+        target.models = [target_model_a, target_model_b]
+        game.map.units = [attacker, target]
+
+        game.event_system.publish(
+            "shooting_targets_selected",
+            attacking_unit=attacker,
+            target_units=[target],
+        )
+        target_model_a.wounds = 0
+        game.event_system.publish(
+            "unit_shooting_resolved",
+            attacker_unit=attacker,
+            hits_by_target={target: 1},
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].decision_type, DECISION_CONFIRM_YES_NO)
+
     def test_blood_surge_confirm_yes_queues_move(self):
         game, _p1, p2, army1, army2 = self._build_game()
 

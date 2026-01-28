@@ -2012,22 +2012,6 @@ class Game:
             context=ctx,
         )
         self.request_decision(request)
-
-        positions = None
-        if callable(getattr(player, "choose_reactive_move_positions", None)):
-            positions = player.choose_reactive_move_positions(ctx)
-        if isinstance(positions, list) and positions:
-            from ..utility.decision_utils import resolve_decision_command
-
-            option_id = self._option_id_for_payload(request, "action", "confirm")
-            if option_id:
-                resolve_decision_command(
-                    self,
-                    request,
-                    option_id,
-                    result_payload={"model_positions": positions},
-                    player_id=getattr(player, "id", None),
-                )
         return request
 
     def _queue_battle_focus_reactive_selection(
@@ -2100,32 +2084,6 @@ class Game:
             context=ctx,
         )
         self.request_decision(request)
-
-        try:
-            chooser = getattr(manager, "_choose_from_options", None)
-            if callable(chooser):
-                key = f"BATTLE_FOCUS_{maneuver_key.upper()}"
-                choice = chooser(player, key, list(sorted_candidates), dict(ctx))
-            else:
-                choice = None
-        except Exception:
-            choice = None
-        if choice is not None:
-            try:
-                choice_id = get_entity_id(choice)
-            except Exception:
-                choice_id = None
-            if choice_id:
-                option_id = self._option_id_for_payload(request, "unit_id", choice_id)
-                if option_id:
-                    from ..utility.decision_utils import resolve_decision_command
-
-                    resolve_decision_command(
-                        self,
-                        request,
-                        option_id,
-                        player_id=getattr(player, "id", None),
-                    )
         return request
 
     def _maybe_queue_reactive_move_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
@@ -2701,19 +2659,6 @@ class Game:
                 )
                 if request is None:
                     continue
-                if self._player_has_optional_decision_hook(p, "LOPING_SPEED"):
-                    ctx = dict(getattr(request, "context", {}) or {})
-                    choice = bool(p._should_use_optional_ability("LOPING_SPEED", ctx))
-                    option_id = self._option_id_for_payload(request, "choice", bool(choice))
-                    if option_id:
-                        from ..utility.decision_utils import resolve_decision_command
-
-                        resolve_decision_command(
-                            self,
-                            request,
-                            option_id,
-                            player_id=getattr(p, "id", None),
-                        )
 
     def _on_fight_unit_selected_battle_focus(self, unit=None, selecting_player=None, **_kwargs) -> None:
         if unit is None or selecting_player is None:
@@ -3899,20 +3844,6 @@ class Game:
             )
             self.request_decision(request)
             requests.append(request)
-
-            if self._player_has_optional_decision_hook(player, "TRANSPORT_REACTIVE_DISEMBARK"):
-                choice = bool(player._should_use_optional_ability("TRANSPORT_REACTIVE_DISEMBARK", dict(ctx)))
-                desired_transport = transport_id if choice else None
-                option_id = self._option_id_for_payload(request, "transport_id", desired_transport)
-                if option_id:
-                    from ..utility.decision_utils import resolve_decision_command
-
-                    resolve_decision_command(
-                        self,
-                        request,
-                        option_id,
-                        player_id=getattr(player, "id", None),
-                    )
         return requests
 
     def _maybe_prompt_transport_reactive_disembark(self, unit=None, *, trigger: str | None = None) -> None:
@@ -5011,19 +4942,6 @@ class Game:
                     message=msg,
                     attacker_unit=attacker_unit,
                 )
-                if request is not None and self._player_has_optional_decision_hook(player, "BLOOD_SURGE"):
-                    ctx = dict(getattr(request, "context", {}) or {})
-                    choice = bool(player._should_use_optional_ability("BLOOD_SURGE", ctx))
-                    option_id = self._option_id_for_payload(request, "choice", bool(choice))
-                    if option_id:
-                        from ..utility.decision_utils import resolve_decision_command
-
-                        resolve_decision_command(
-                            self,
-                            request,
-                            option_id,
-                            player_id=getattr(player, "id", None),
-                        )
                 continue
             move_fn = getattr(target, "auto_blood_surge_move", None)
             if callable(move_fn):

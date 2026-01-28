@@ -83,11 +83,11 @@ Each of the following uses `_should_use_optional_ability` directly instead of a 
 
 These create a DecisionRequest but immediately resolve it inside the engine based on hooks. They should be emitted and **left pending** for the controller (human UI, remote client, or AI) to resolve deterministically.
 
-- [ ] DEC-AUTO-001 Reactive move positions auto-resolve DECISION_MOVE_UNIT using `choose_reactive_move_positions`. File: `src/warhammer40k_ai/engine/game.py:2024`
-- [ ] DEC-AUTO-002 Battle Focus reactive selection auto-resolves DECISION_SELECT_OVERWATCH_SHOOTER. File: `src/warhammer40k_ai/engine/game.py:2123`
-- [ ] DEC-AUTO-003 Loping Speed confirmation auto-resolves DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:2711`
-- [ ] DEC-AUTO-004 Transport reactive disembark auto-resolves DECISION_DISEMBARK. File: `src/warhammer40k_ai/engine/game.py:3910`
-- [ ] DEC-AUTO-005 Blood Surge confirmation auto-resolves DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:5021`
+- [x] DEC-AUTO-001 Reactive move positions auto-resolve DECISION_MOVE_UNIT using `choose_reactive_move_positions`. File: `src/warhammer40k_ai/engine/game.py:2024`
+- [x] DEC-AUTO-002 Battle Focus reactive selection auto-resolves DECISION_SELECT_OVERWATCH_SHOOTER. File: `src/warhammer40k_ai/engine/game.py:2123`
+- [x] DEC-AUTO-003 Loping Speed confirmation auto-resolves DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:2711`
+- [x] DEC-AUTO-004 Transport reactive disembark auto-resolves DECISION_DISEMBARK. File: `src/warhammer40k_ai/engine/game.py:3910`
+- [x] DEC-AUTO-005 Blood Surge confirmation auto-resolves DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:5021`
 
 ## Notes
 

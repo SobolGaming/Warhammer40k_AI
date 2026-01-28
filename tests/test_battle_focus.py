@@ -364,6 +364,40 @@ class TestBattleFocusRemoteDecisions(unittest.TestCase):
         self.assertEqual(move_ctx.get("movement_type"), "reactive")
         self.assertGreater(int(move_ctx.get("max_distance") or 0), 0)
 
+    def test_battle_focus_opportunity_does_not_auto_select_with_optional_choice(self):
+        game, moving_player, reacting_player, army_move, army_react = self._build_game()
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+
+        moving_unit = self._make_unit("Falling Back", army_move)
+        reacting_unit = self._make_unit("Defenders", army_react, keywords=["ASURYANI"])
+        army_move.units = [moving_unit]
+        army_react.units = [reacting_unit]
+
+        moving_model = self._make_model("Enemy", moving_unit, 0.0, 0.0)
+        reacting_model = self._make_model("Aeldari", reacting_unit, 0.5, 0.0)
+        moving_unit.models = [moving_model]
+        reacting_unit.models = [reacting_model]
+        game.map.units = [moving_unit, reacting_unit]
+        game.rebuild_entity_registry()
+
+        army_react.battle_focus.tokens = 1
+        reacting_player.set_next_optional_selection("BATTLE_FOCUS_OPPORTUNITY", reacting_unit)
+
+        game.event_system.publish(
+            "unit_move_started",
+            unit=moving_unit,
+            action="fall_back",
+        )
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=moving_unit,
+            action="fall_back",
+        )
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        self.assertEqual(pending[0].decision_type, DECISION_SELECT_OVERWATCH_SHOOTER)
+
     def test_battle_focus_fade_back_remote_queues_move(self):
         game, moving_player, reacting_player, army_move, army_react = self._build_game()
         game.phase = BattleRoundPhases.SHOOTING_PHASE

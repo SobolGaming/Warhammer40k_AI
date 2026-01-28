@@ -110,6 +110,53 @@ class TestTransportReactiveDisembark(unittest.TestCase):
             self.assertEqual(ctx.get("transport_id"), get_entity_id(transport))
             self.assertEqual(ctx.get("reactive_disembark_enemy_unit_id"), get_entity_id(enemy))
 
+    def test_transport_reactive_disembark_does_not_auto_resolve_with_decision_hook(self):
+        army_move = Army("Attackers", detachment_type="Other")
+        army_move.faction_id = "ATK"
+        army_react = Army("Defenders", detachment_type="Other")
+        army_react.faction_id = "DEF"
+
+        moving_player = Player("Mover", PlayerControl.LOCAL, army=army_move)
+        reacting_player = Player("Reactor", PlayerControl.REMOTE, army=army_react)
+        reacting_player.decision_hook = lambda *_args, **_kwargs: True
+
+        battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
+        game = Game(battlefield, players=[moving_player, reacting_player])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        transport = self._make_unit(
+            "Transport",
+            army_react,
+            keywords=["Transport"],
+            abilities=[Ability("Reactive Disembark", "DEF", REACTIVE_DISEMBARK_TEXT, "")],
+        )
+        passenger_a = self._make_unit("Passengers A", army_react)
+        passenger_b = self._make_unit("Passengers B", army_react)
+        enemy = self._make_unit("Enemy", army_move)
+
+        transport.models = [self._make_model("Transport", transport, 5.0, 0.0)]
+        passenger_a.models = [self._make_model("A", passenger_a, 0.0, 0.0)]
+        passenger_b.models = [self._make_model("B", passenger_b, 0.0, 1.0)]
+        enemy.models = [self._make_model("Enemy", enemy, 0.0, 0.0)]
+
+        transport.transport_passengers = [passenger_a, passenger_b]
+        passenger_a.embarked_in = transport
+        passenger_b.embarked_in = transport
+
+        army_react.units = [transport, passenger_a, passenger_b]
+        army_move.units = [enemy]
+        game.map.units = [transport, enemy]
+
+        game.event_system.publish(
+            "unit_move_ended",
+            unit=enemy,
+            action="move",
+        )
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_DISEMBARK]
+        self.assertEqual(len(pending), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
