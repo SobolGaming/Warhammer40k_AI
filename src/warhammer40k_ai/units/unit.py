@@ -2156,6 +2156,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                u.remove_characteristic_modifiers_by_source("enhancement:follow_me_ladz")
+            except Exception:
+                pass
+            try:
                 u.remove_characteristic_modifiers_by_source("ability:bearer_unit_objective_control")
             except Exception:
                 pass
@@ -2202,6 +2206,7 @@ class Unit:
                     "bearer_unit_phase_move_terrain_only_types",
                     "bearer_unit_phase_move_engagement_types",
                     "bearer_unit_auto_pass_desperate_escape",
+                    "enhancement_kunnin_but_brutal_active",
                 ):
                     if key in sr:
                         del sr[key]
@@ -2224,6 +2229,7 @@ class Unit:
         advance_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
         movement_sets: list[tuple[int, str]] = []
+        movement_bonus_mods: list[tuple[int, str]] = []
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
@@ -2238,6 +2244,7 @@ class Unit:
         phase_engagement_types: set[str] = set()
         auto_pass_desperate_escape = False
         grant_deep_strike = False
+        kunnin_but_brutal_active = False
 
         def _iter_sentences(text: str) -> list[str]:
             if not text:
@@ -2424,6 +2431,16 @@ class Unit:
                         if "desperate escape" in sentence_lower and "automatic" in sentence_lower and "pass" in sentence_lower:
                             auto_pass_desperate_escape = True
 
+            try:
+                sr = getattr(u, "special_rules", None)
+            except Exception:
+                sr = None
+            if isinstance(sr, dict) and getattr(u, "is_attached_leader", False):
+                if sr.get("enhancement_follow_me_ladz"):
+                    movement_bonus_mods.append((2, "Follow Me Ladz"))
+                if sr.get("enhancement_kunnin_but_brutal"):
+                    kunnin_but_brutal_active = True
+
         if charge_mods:
             for u in members:
                 sr = getattr(u, "special_rules", None)
@@ -2472,6 +2489,20 @@ class Unit:
                     u.add_characteristic_modifier(
                         "movement",
                         Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_movement_set:{source}"),
+                    )
+
+        if movement_bonus_mods:
+            from ..utility.modifiers import Modifier, ModifierOp
+
+            values = [int(val) for val, _ in movement_bonus_mods if int(val) > 0]
+            if values:
+                best_val = max(values)
+                sources = sorted({src for val, src in movement_bonus_mods if int(val) == best_val})
+                source_label = ", ".join(sources) if sources else "Follow Me Ladz"
+                for u in members:
+                    u.add_characteristic_modifier(
+                        "movement",
+                        Modifier(ModifierOp.ADD, int(best_val), source=f"enhancement:follow_me_ladz:{source_label}"),
                     )
 
         if oc_mods:
@@ -2602,6 +2633,14 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_auto_pass_desperate_escape"] = True
+                u.special_rules = sr
+
+        if kunnin_but_brutal_active:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["enhancement_kunnin_but_brutal_active"] = True
                 u.special_rules = sr
 
     def _parse_advance_no_roll_distance(self, text: str) -> Optional[int]:
@@ -5268,6 +5307,79 @@ class Unit:
                                         pending.append(model)
                                     root._deathless_duty_pending_models = pending
                                     return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
+        # ORKS: Orks Is Never Beaten (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("orks_is_never_beaten_active"):
+                        exp = str(sr.get("orks_is_never_beaten_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    pending = getattr(root, "_orks_is_never_beaten_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._orks_is_never_beaten_pending_models = pending
+                                    return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
+        # Adeptus Custodes: Defiant to the Last (defer fight-on-death on 4+ after attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("defiant_to_last_active"):
+                        exp = str(sr.get("defiant_to_last_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    from ..utility.damage_allocation import _is_character_model
+                                    roll = int(get_roll("D6"))
+                                    is_char = bool(_is_character_model(model))
+                                    total = roll + (2 if is_char else 0)
+                                    try:
+                                        from ..utility.event_bus import append_dice
+                                        pn = self.get_parent_army().player
+                                        label = "Defiant to the Last roll"
+                                        bonus_label = f"+2={total}" if is_char else f"={total}"
+                                        append_dice(pn, f"{label}: {roll}{bonus_label} for {self.name}")
+                                    except Exception:
+                                        pass
+                                    if total >= 4:
+                                        pending = getattr(root, "_defiant_to_last_pending_models", None)
+                                        if not isinstance(pending, list):
+                                            pending = []
+                                        if model not in pending:
+                                            pending.append(model)
+                                        root._defiant_to_last_pending_models = pending
+                                        return
                             except Exception:
                                 pass
         except Exception:
@@ -9361,6 +9473,30 @@ class Unit:
             bonus = 0
         if bonus:
             mods.append((bonus, "Code Chivalric"))
+        if isinstance(sr, dict) and sr.get("ere_we_go_active") is True:
+            try:
+                ere_active = True
+                owner = str(sr.get("ere_we_go_turn_owner", "") or "")
+                turn = int(sr.get("ere_we_go_turn", 0) or 0)
+                if owner or turn:
+                    game = None
+                    try:
+                        army = self.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        if owner and owner != cur_owner:
+                            ere_active = False
+                        if turn and turn != cur_turn:
+                            ere_active = False
+                if ere_active:
+                    mods.append((2, "Ere We Go"))
+            except Exception:
+                pass
         if isinstance(sr, dict):
             try:
                 extra = int(sr.get("advance_roll_modifier", 0) or 0)
@@ -11835,7 +11971,26 @@ class Unit:
             pass
         try:
             sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("manoeuvre_and_fire_active"):
+                owner = str(sr.get("manoeuvre_and_fire_turn_owner", "") or "")
+                turn = int(sr.get("manoeuvre_and_fire_turn", 0) or 0)
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+                if game is None:
+                    return True
+                if owner and str(getattr(game.get_current_player(), "id", "") or "") == owner:
+                    if int(getattr(game, "turn", 0) or 0) == int(turn or 0):
+                        return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("command_phase_fell_back_and_shoot_active"):
+                return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_kunnin_but_brutal_active"):
                 return True
         except Exception:
             pass
@@ -12020,6 +12175,12 @@ class Unit:
         """Check if this unit can charge after falling back."""
         if self.has_thrill_seekers():
             return True
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_kunnin_but_brutal_active"):
+                return True
+        except Exception:
+            pass
         try:
             army = self.get_parent_army()
             mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
@@ -15495,6 +15656,14 @@ class Unit:
             except Exception:
                 pass
             try:
+                root._resolve_orks_is_never_beaten_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
+                root._resolve_defiant_to_last_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_melee_fight_on_death_queue(game_map=game_map)
             except Exception:
                 pass
@@ -15527,6 +15696,14 @@ class Unit:
     def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_deathless_duty_pending_models", game_map=game_map)
+
+    def _resolve_orks_is_never_beaten_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Orks Is Never Beaten fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_orks_is_never_beaten_pending_models", game_map=game_map)
+
+    def _resolve_defiant_to_last_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Defiant to the Last fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_defiant_to_last_pending_models", game_map=game_map)
 
     def _resolve_melee_fight_on_death_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred melee fight-on-death fights after an attacker finishes its attacks."""

@@ -1597,6 +1597,14 @@ class Game:
                     if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_id:
                         for k in ("feigned_retreat_active", "feigned_retreat_turn_owner", "feigned_retreat_turn"):
                             sr.pop(k, None)
+                    if str(sr.get("manoeuvre_and_fire_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "manoeuvre_and_fire_active",
+                            "manoeuvre_and_fire_turn_owner",
+                            "manoeuvre_and_fire_turn",
+                            "manoeuvre_and_fire_source",
+                        ):
+                            sr.pop(k, None)
                     if str(sr.get("fire_and_fade_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("fire_and_fade_no_charge_turn_owner", "fire_and_fade_no_charge_turn"):
                             sr.pop(k, None)
@@ -1605,6 +1613,9 @@ class Game:
                             sr.pop(k, None)
                     if str(sr.get("goretrack_onslaught_turn_owner", "") or "") == owner_id:
                         for k in ("goretrack_onslaught_active", "goretrack_onslaught_turn_owner", "goretrack_onslaught_turn"):
+                            sr.pop(k, None)
+                    if str(sr.get("ere_we_go_turn_owner", "") or "") == owner_id:
+                        for k in ("ere_we_go_active", "ere_we_go_turn_owner", "ere_we_go_turn", "ere_we_go_source"):
                             sr.pop(k, None)
 
         # Snapshot objective control at end of each phase for "previous phase" rules.
@@ -1875,6 +1886,7 @@ class Game:
         moving_unit_id: str | None = None,
         attacker_unit_id: str | None = None,
         range_value: int | None = None,
+        allow_engagement_range: bool | None = None,
     ) -> dict:
         ctx = {
             "reactive_move_kind": str(kind or "").strip(),
@@ -1888,6 +1900,8 @@ class Game:
             ctx["reactive_move_attacker_unit_id"] = attacker_unit_id
         if range_value is not None:
             ctx["reactive_move_range"] = int(range_value)
+        if allow_engagement_range is not None:
+            ctx["reactive_move_allow_engagement_range"] = bool(allow_engagement_range)
         return ctx
 
     def _queue_reactive_move_confirmation(
@@ -1954,6 +1968,7 @@ class Game:
         moving_unit=None,
         attacker_unit=None,
         range_value: int | None = None,
+        allow_engagement_range: bool | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -1981,6 +1996,7 @@ class Game:
             moving_unit_id=moving_unit_id,
             attacker_unit_id=attacker_unit_id,
             range_value=range_value,
+            allow_engagement_range=allow_engagement_range,
         )
         ctx["unit_id"] = unit_id
         ctx["movement_type"] = movement_type
@@ -8641,6 +8657,21 @@ class Game:
                         val = int(item or 0)
                     if val:
                         modifiers.append((val, source))
+
+            if sr.get("ere_we_go_active") is True:
+                ere_active = True
+                owner = str(sr.get("ere_we_go_turn_owner", "") or "")
+                turn = int(sr.get("ere_we_go_turn", 0) or 0)
+                if owner or turn:
+                    cur_turn = int(getattr(self, "turn", 0) or 0)
+                    cur_player = self.get_current_player()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if owner and owner != cur_owner:
+                        ere_active = False
+                    if turn and turn != cur_turn:
+                        ere_active = False
+                if ere_active:
+                    modifiers.append((2, "Ere We Go"))
 
             if sr.get("goretrack_onslaught_active") is True:
                 goretrack_active = True

@@ -1325,6 +1325,12 @@ class IndividualModelMovementDialog(BaseDialog):
         }
 
         pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
+        try:
+            ctx = dict(getattr(self.decision_request, "context", {}) or {})
+            if bool(ctx.get("reactive_move_allow_engagement_range")) and self.movement_type == "reactive":
+                pathfinding_movement_type = MovementType.CHARGE
+        except Exception:
+            pass
         #print(f" DEBUG: Mapped {self.movement_type} to {pathfinding_movement_type}")
 
         path_result = unified_pathfinding(

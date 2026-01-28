@@ -888,6 +888,19 @@ class WargearProfile:
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
+                sr = getattr(attacker.parent_unit, "special_rules", {}) or {}
+                bonus = int(sr.get("peerless_warrior_melee_attacks_bonus", 0) or 0)
+                if bonus:
+                    exp = str(sr.get("peerless_warrior_expires_phase", "") or "").strip().upper()
+                    pname = self._current_phase_name(attacker)
+                    if not exp or (pname and pname == exp):
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="stratagem:peerless_warrior_attacks"))
+                        attack_result.attacks_special_modifiers.append(f"Peerless Warrior +{bonus}A (melee)")
+        except Exception:
+            pass
+
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
                 bonus = int(getattr(attacker.parent_unit, "special_rules", {}).get("pain_melee_attacks_bonus", 0) or 0)
                 if bonus:
                     atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="power_from_pain:melee_attacks_add"))
@@ -2257,6 +2270,15 @@ class WargearProfile:
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
             if is_melee and isinstance(sr, dict) and sr.get("enhancement_furnace_of_plagues"):
                 attack_instance["bonus_devastating_wounds"] = True
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("enhancement_headwoppas_killchoppa"):
+                if not self.is_extra_attacks() and self._attacker_is_enhancement_bearer(attacker, sr):
+                    attack_instance["bonus_devastating_wounds"] = True
         except Exception:
             pass
 
@@ -4201,6 +4223,20 @@ class WargearProfile:
             if is_melee and isinstance(sr, dict) and sr.get("enhancement_daemon_weapon_of_nurgle"):
                 crit_threshold = min(int(crit_threshold), 5)
                 crit_hit_reasons.append("Daemon Weapon of Nurgle: critical hit on 5+")
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attached_unit_root"):
+                unit = unit.get_attached_unit_root()
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("unbridled_carnage_active"):
+                exp = str(sr.get("unbridled_carnage_expires_phase", "") or "").strip().upper()
+                phase_name = self._current_phase_name(attacker)
+                if not exp or exp == phase_name:
+                    crit_threshold = min(int(crit_threshold), 5)
+                    crit_hit_reasons.append("Unbridled Carnage: critical hit on 5+")
         except Exception:
             pass
 

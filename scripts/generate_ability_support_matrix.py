@@ -4168,6 +4168,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009987003": "Praesidius: bearer gains Lone Operative and Stealth (no Lone Operative leak while attached).",
         "000009987004": "Fierce Conqueror: start of Fight phase, bearer gains +2 Attacks per 5 enemy models within 6\" until end of phase.",
         "000009987005": "Admonimortis: bearer melee weapons gain +3 Strength, +1 AP, and +1 Damage.",
+        "000008367002": "Follow Me Ladz: while leading, bearer unit gains +2\" Move.",
+        "000008367003": "Headwoppa's Killchoppa: bearer melee weapons (excluding Extra Attacks) gain Devastating Wounds.",
+        "000008367004": "Kunnin' But Brutal: while leading, bearer unit can shoot and charge after Falling Back.",
+        "000008367005": "Supa-Cybork Body: bearer gains Feel No Pain 4+.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])
@@ -4228,6 +4232,17 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "CHRONOSHIFT": "Movement phase: NECRONS VEHICLE/MOUNTED (non-TITANIC) not yet moved treats Advance roll as 6 this phase.",
         "ENDLESS SERVITUDE": "End of Fight phase: NECRONS (non-TITANIC) within controlled objective triggers Reanimation Protocols (D3).",
         "REACTIVE REPOSITION": "Opponent Shooting phase: NECRONS (non-TITANIC) targeted unit makes a Normal move (D6\").",
+        "DEFIANT TO THE LAST": "Opponent Fight phase: targeted ADEPTUS CUSTODES unit fights on death on 4+ (add 2 if Character) after attacker finishes; then removed.",
+        "GILDED CHAMPION": "After a CHARACTER uses a datasheet once-per-battle ability, spend 1CP to grant one extra use (not same phase); once per model.",
+        "MANOEUVRE AND FIRE": "Movement phase: ADEPTUS CUSTODES unit can shoot after falling back this turn.",
+        "PEERLESS WARRIOR": "Fight phase: selected ADEPTUS CUSTODES unit gains +1 Attacks on melee weapons until end of phase.",
+        "SWIFT AS THE EAGLE": "Opponent Shooting phase: targeted ADEPTUS CUSTODES unit makes a Normal move up to 6\" and can move within Engagement Range.",
+        "UNLEASH THE LIONS": "Command phase: split Allarus/Aquilon unit on battlefield into 1-model units (leaders split too); Starting Strength 1.",
+        "UNBRIDLED CARNAGE": "Fight phase: ORKS unit not yet fought scores critical hits on 5+ in melee until end of phase.",
+        "ORKS IS NEVER BEATEN": "Fight phase: targeted ORKS unit fights on death after attacker finishes attacks if it has not fought; then removed.",
+        "ERE WE GO": "Movement phase start: ORKS INFANTRY unit gains +2 to Advance and Charge rolls until end of turn.",
+        "'ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
+        "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:
