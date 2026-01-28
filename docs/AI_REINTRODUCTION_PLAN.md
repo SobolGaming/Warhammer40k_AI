@@ -84,7 +84,7 @@ Human games are a first-class data source for bootstrapping and realism. The tel
 
 ### DecisionRecord Schema (Minimum)
 
-See `docs/DECISION_RECORD_SCHEMA.json` for the canonical JSON schema.
+See [docs/DECISION_RECORD_SCHEMA.json](docs/DECISION_RECORD_SCHEMA.json) for the canonical JSON schema.
 
 Each decision (human or AI) emits a DecisionRecord with:
 
