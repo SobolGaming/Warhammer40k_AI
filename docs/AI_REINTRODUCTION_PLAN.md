@@ -117,6 +117,468 @@ Humans will often select actions not present in the solver's top-K candidates. T
 
 This preserves a candidate-based dataset even for freeform UI actions.
 
+## Examples (Tiered Contracts + Telemetry)
+
+Below are four realistic examples that mirror the contracts in this document and the telemetry constraints in `DECISION_RECORD_SCHEMA.json`.
+
+Tier overview reference:
+- Tier 0 = ruleset loader + decision/candidate enumeration + action masking + time manager
+- Tier 1 = strategic Plan (explicit)
+- Tier 2 = per-unit tasks + per-unit MovementIntent + compute budgets
+- Tier 3 = micro-executor that scores/selects among candidates
+- Tier 4 = telemetry + learner consuming DecisionRecord (and HumanActionCandidate injection)
+
+### Example 1 - Start of Turn: Tier-1 Plan -> Tier-2 Tasks -> Tier-0 Budgeting
+
+Situation (high-level): Round 2, Player P1's turn, Command phase. P1 is slightly ahead on VP; wants to hold two objectives, screen a reserve lane, and avoid spending CP offensively this turn.
+
+Tier 0 -> Tier 1: PLAN_REQUEST (state summary)
+
+```yaml
+msg:
+  from: tier0.engine
+  to: tier1.strategic_planner
+  type: PLAN_REQUEST
+  payload:
+    game_id: "g_2026_01_28_0007"
+    ruleset_id: "CA2025_2026"
+    dataslate_id: "2026.01"
+    points_id: "2026.01"
+    round: 2
+    active_player: "P1"
+    phase: "COMMAND"
+    clock:
+      p1_time_remaining_ms: 3680000   # ~61.3 min left
+      p2_time_remaining_ms: 3725000
+    score:
+      vp: { P1: 18, P2: 14 }
+      primary_last_round: { P1: 5, P2: 10 }
+    resources:
+      cp: { P1: 2, P2: 3 }
+      once_per_battle_available:
+        P1: ["unit:P1_U12_teleport", "unit:P1_U3_heroic_intervention"]
+    board_summary:
+      objectives:
+        - { id: "O1_home_P1", controlled_by: "P1", contestable_next_round: false }
+        - { id: "O2_mid_left", controlled_by: "P2", contestable_next_round: true }
+        - { id: "O3_mid_right", controlled_by: "None", contestable_next_round: true }
+      opponent_threats:
+        - { unit_id: "P2_U7_melee_blob", threat_type: "charge", threat_range_in: 18 }
+        - { unit_id: "P2_U2_long_guns", threat_type: "shooting", threat_range_in: 36 }
+    notes:
+      - "Reserve denial matters: opponent has 2 units in reserves"
+```
+
+Tier 1 -> Tier 2: PLAN (explicit output)
+
+```yaml
+msg:
+  from: tier1.strategic_planner
+  to: tier2.tactical_orchestrator
+  type: PLAN
+  payload:
+    plan_id: "plan_r2_p1_t1"
+    horizon:
+      current_round: 2
+      lookahead_rounds: 2
+    primary_plan:
+      hold_objectives: ["O1_home_P1", "O3_mid_right"]
+      contest_objectives: ["O2_mid_left"]
+      deny_opponent_primary_next_round: true
+    secondary_posture:
+      mode: "TACTICAL"
+      discard_policy: "discard_if_p_success_lt_0.35"
+    resource_posture:
+      cp_budget:
+        reserve_for_defense: 2
+        max_offensive_spend_this_turn: 0
+      once_per_battle_policy:
+        "unit:P1_U12_teleport": "hold_for_turn3_or_when_flip_possible"
+    risk_posture:
+      variance: "LOW"      # ahead -> reduce variance
+      aggression: "MEDIUM" # still contest mid-left
+    unit_priority_tiers:
+      P0: ["P1_U8_fast_screeners", "P1_U4_primary_flipper"]
+      P1: ["P1_U2_mid_holder", "P1_U6_fire_support"]
+      P2: ["P1_U1_home_holder"]
+```
+
+Tier 2 -> Tier 0: TASK_ASSIGNMENTS + MovementIntents + compute budgets
+
+```yaml
+msg:
+  from: tier2.tactical_orchestrator
+  to: tier0.engine
+  type: TASK_ASSIGNMENTS
+  payload:
+    plan_id: "plan_r2_p1_t1"
+    unit_tasks:
+      P1_U8_fast_screeners:
+        task: "SCREEN"
+        subtask: "deny_reserves_lane_L3"
+        compute_tier: "P0"
+        movement_intent:
+          objective_targets: ["O3_mid_right"]
+          screen_deny_targets: ["lane_L3_backfield_gap"]
+          weights:
+            screen_coverage: 0.55
+            coherency: 0.25
+            threat_avoid: 0.15
+            obj_proximity: 0.05
+          anchors:
+            m0: "lane_L3_backfield_gap"   # lead model anchors the deny line
+          constraint_toggles:
+            avoid_threat_range_of: ["P2_U7_melee_blob"]
+            keep_in_cover: true
+
+      P1_U4_primary_flipper:
+        task: "CONTEST"
+        subtask: "flip_O2_mid_left"
+        compute_tier: "P0"
+        movement_intent:
+          objective_targets: ["O2_mid_left"]
+          screen_deny_targets: []
+          weights:
+            screen_coverage: 0.05
+            coherency: 0.20
+            threat_avoid: 0.35
+            obj_proximity: 0.40
+          anchors: {}
+          constraint_toggles:
+            avoid_los_to: ["P2_U2_long_guns"]
+
+    time_manager_policy:
+      decision_caps_ms:
+        MOVE_UNIT: 220
+        SELECT_TARGETS: 140
+        PLAY_STRATAGEM: 60
+        DECLARE_CHARGE: 120
+      tier_multipliers:
+        P0: 1.8
+        P1: 1.0
+        P2: 0.5
+```
+
+What this shows:
+- Tier 1 sets global intent (VP/deny/CP/risk posture).
+- Tier 2 turns that into unit intents and compute-tier budgets.
+- Tier 0 receives both and uses them to parameterize candidate generation and enforce time caps.
+
+### Example 2 - Movement: Tier-2 MovementIntent -> Tier-0 candidates -> Tier-3 selects -> Tier-4 logs
+
+Situation (high-level): Movement phase. Unit P1_U8_fast_screeners has oval bases and must thread a gap near ruins. The move is not a charge, so the path cannot enter Engagement Range during the move. The solver detects a tight clearance interval (orientation-sensitive) and generates candidates accordingly.
+
+Tier 0 -> Tier 3: MOVE_UNIT Decision + candidates
+
+```yaml
+msg:
+  from: tier0.engine
+  to: tier3.micro_executor
+  type: DECISION
+  payload:
+    decision_id: "d_r2_p1_move_P1_U8"
+    decision_type: "MOVE_UNIT"
+    actor_player_id: "P1"
+    context:
+      phase: "MOVEMENT"
+      plan_id: "plan_r2_p1_t1"
+      unit_id: "P1_U8_fast_screeners"
+      task: "SCREEN"
+      compute_tier: "P0"
+      time_budget_ms: 396     # 220ms cap * 1.8 P0 multiplier
+      movement_intent:
+        objective_targets: ["O3_mid_right"]
+        screen_deny_targets: ["lane_L3_backfield_gap"]
+        weights: {screen_coverage: 0.55, coherency: 0.25, threat_avoid: 0.15, obj_proximity: 0.05}
+        anchors: {m0: "lane_L3_backfield_gap"}
+        constraint_toggles: {avoid_threat_range_of: ["P2_U7_melee_blob"], keep_in_cover: true}
+
+    candidates:
+      - action_id: "move_P1_U8_cand_00_noop"
+        params:
+          unit_id: "P1_U8_fast_screeners"
+          placement_ref: "placement://noop"
+          path_witness_ref: "path://noop"
+        metadata:
+          solver_ms: 1
+          screen_coverage_cells: 42
+          coherency_min_degree: 3
+          threat_exposure_score: 0.18
+          pivot_penalty_used: 0.0
+          tight_clearance: false
+          corridor_witness_ref: "corr://none"
+
+      - action_id: "move_P1_U8_cand_01_wide_safe"
+        params:
+          unit_id: "P1_U8_fast_screeners"
+          placement_ref: "placement://P1_U8/01"
+          path_witness_ref: "path://P1_U8/01"
+        metadata:
+          solver_ms: 58
+          screen_coverage_cells: 96
+          coherency_min_degree: 2
+          threat_exposure_score: 0.22
+          pivot_penalty_used: 1.0
+          tight_clearance: false
+          corridor_witness_ref: "corr://oval_60x35/routeA"
+
+      - action_id: "move_P1_U8_cand_02_thread_ruins_gap"
+        params:
+          unit_id: "P1_U8_fast_screeners"
+          placement_ref: "placement://P1_U8/02"
+          path_witness_ref: "path://P1_U8/02"
+        metadata:
+          solver_ms: 143
+          screen_coverage_cells: 141
+          coherency_min_degree: 2
+          threat_exposure_score: 0.19
+          pivot_penalty_used: 1.0
+          tight_clearance: true
+          corridor_witness_ref: "corr://oval_60x35/routeB"
+          segment_max_in: 0.25
+
+    mask: [true, true, true]
+```
+
+Tier 3 -> Tier 0: selection (candidate scoring / chosen action)
+
+```yaml
+msg:
+  from: tier3.micro_executor
+  to: tier0.engine
+  type: CHOICE
+  payload:
+    decision_id: "d_r2_p1_move_P1_U8"
+    chosen_action_id: "move_P1_U8_cand_02_thread_ruins_gap"
+    score_breakdown:
+      move_P1_U8_cand_00_noop: {total: 0.31, screen: 0.18, coherency: 0.10, threat: 0.03}
+      move_P1_U8_cand_01_wide_safe: {total: 0.67, screen: 0.39, coherency: 0.18, threat: 0.10}
+      move_P1_U8_cand_02_thread_ruins_gap: {total: 0.79, screen: 0.55, coherency: 0.16, threat: 0.08}
+    notes:
+      - "Tight clearance true but threat exposure lowest among high-screen options"
+      - "Pivot penalty used once; acceptable under current move allowance"
+```
+
+Tier 4: emitted DecisionRecord (valid JSON per schema)
+
+```json
+{
+  "schema_version": "1.0.0",
+  "game_id": "g_2026_01_28_0007",
+  "turn_id": 2,
+  "phase": "MOVEMENT",
+  "decision_id": "d_r2_p1_move_P1_U8",
+  "decision_type": "MOVE_UNIT",
+  "ruleset_id": "CA2025_2026",
+  "dataslate_id": "2026.01",
+  "points_id": "2026.01",
+  "global_seed": 4128891,
+  "decision_seed": 99312044,
+  "omniscient_state": {
+    "round": 2,
+    "active_player": "P1",
+    "vp": { "P1": 18, "P2": 14 },
+    "cp": { "P1": 2, "P2": 3 },
+    "active_unit_id": "P1_U8_fast_screeners"
+  },
+  "player_obs_state": {
+    "P1": { "round": 2, "phase": "MOVEMENT", "my_cp": 2, "my_vp": 18 },
+    "P2": { "round": 2, "phase": "MOVEMENT", "my_cp": 3, "my_vp": 14 }
+  },
+  "candidates": [
+    {
+      "action_id": "move_P1_U8_cand_00_noop",
+      "params": {
+        "unit_id": "P1_U8_fast_screeners",
+        "placement_ref": "placement://noop",
+        "path_witness_ref": "path://noop"
+      },
+      "metadata": {
+        "solver_ms": 1,
+        "screen_coverage_cells": 42,
+        "coherency_min_degree": 3,
+        "threat_exposure_score": 0.18,
+        "pivot_penalty_used": 0.0,
+        "tight_clearance": false,
+        "corridor_witness_ref": "corr://none"
+      }
+    },
+    {
+      "action_id": "move_P1_U8_cand_01_wide_safe",
+      "params": {
+        "unit_id": "P1_U8_fast_screeners",
+        "placement_ref": "placement://P1_U8/01",
+        "path_witness_ref": "path://P1_U8/01"
+      },
+      "metadata": {
+        "solver_ms": 58,
+        "screen_coverage_cells": 96,
+        "coherency_min_degree": 2,
+        "threat_exposure_score": 0.22,
+        "pivot_penalty_used": 1.0,
+        "tight_clearance": false,
+        "corridor_witness_ref": "corr://oval_60x35/routeA"
+      }
+    },
+    {
+      "action_id": "move_P1_U8_cand_02_thread_ruins_gap",
+      "params": {
+        "unit_id": "P1_U8_fast_screeners",
+        "placement_ref": "placement://P1_U8/02",
+        "path_witness_ref": "path://P1_U8/02"
+      },
+      "metadata": {
+        "solver_ms": 143,
+        "screen_coverage_cells": 141,
+        "coherency_min_degree": 2,
+        "threat_exposure_score": 0.19,
+        "pivot_penalty_used": 1.0,
+        "tight_clearance": true,
+        "corridor_witness_ref": "corr://oval_60x35/routeB",
+        "segment_max_in": 0.25
+      }
+    }
+  ],
+  "mask": [true, true, true],
+  "chosen_action_id": "move_P1_U8_cand_02_thread_ruins_gap",
+  "wall_clock_ms": 187,
+  "time_budget_ms": 396,
+  "outcome": {
+    "immediate_deltas": {
+      "vp": { "P1": 0, "P2": 0 },
+      "cp": { "P1": 0, "P2": 0 },
+      "moved_units": ["P1_U8_fast_screeners"],
+      "notes": ["move_success=true", "path_witness_validated=true"]
+    },
+    "end_of_turn_return": 0.0
+  },
+  "human_action_injected": false,
+  "valid": true
+}
+```
+
+What this shows:
+- Tier 2's MovementIntent drives candidate generation (solver-backed).
+- Tier 3 is purely a candidate ranker/selector (no legality learning).
+- Tier 4 logs a replayable, trainable record aligned with the DecisionRecord schema.
+
+### Example 3 - Stratagem posture + shooting targets: legal vs policy-allowed separation
+
+Situation (high-level): Shooting phase. A unit can fire; there is an optional legal stratagem that improves output. Tier 1 plan says reserve 2 CP for defense, so Tier 2 sets a policy posture, but Tier 0 still enumerates all legal stratagem candidates.
+
+Tier 0 -> Tier 3: PLAY_STRATAGEM decision
+
+```yaml
+msg:
+  from: tier0.engine
+  to: tier3.micro_executor
+  type: DECISION
+  payload:
+    decision_id: "d_r2_p1_shoot_strat_P1_U6"
+    decision_type: "PLAY_STRATAGEM"
+    actor_player_id: "P1"
+    context:
+      phase: "SHOOTING"
+      plan_id: "plan_r2_p1_t1"
+      unit_id: "P1_U6_fire_support"
+      cp_available: 2
+      cp_reserved_for_defense: 2
+      note: "cp_reserved_for_defense is POLICY, not legality"
+
+    candidates:
+      - action_id: "strat_none"
+        params: { stratagem_id: "NONE" }
+        metadata: { cp_cost: 0, expected_value_delta: 0.00 }
+
+      - action_id: "strat_core_command_reroll"
+        params: { stratagem_id: "CORE_COMMAND_REROLL", when: "SHOOTING", target_roll: "hit" }
+        metadata: { cp_cost: 1, expected_value_delta: 0.08 }
+
+      - action_id: "strat_detachment_damage_boost"
+        params: { stratagem_id: "DETACHMENT_DAMAGE_BOOST", when: "SHOOTING", unit_id: "P1_U6_fire_support" }
+        metadata:
+          cp_cost: 1
+          expected_value_delta: 0.14
+          violates_cp_policy: true   # still legal; planner will penalize
+    mask: [true, true, true]
+```
+
+Tier 3 choice (reflecting CP policy)
+
+```yaml
+msg:
+  from: tier3.micro_executor
+  to: tier0.engine
+  type: CHOICE
+  payload:
+    decision_id: "d_r2_p1_shoot_strat_P1_U6"
+    chosen_action_id: "strat_none"
+    rationale:
+      - "Plan reserves 2 CP for defense; spending 1 reduces defensive coverage"
+      - "EV gain is small this phase; prefer variance reduction"
+```
+
+What this shows:
+- Tier 0 enumerates legality; Tier 1/2 impose strategy policy, not legality.
+- Tier 3 sees both and chooses accordingly (good separation of concerns).
+
+### Example 4 - HumanActionCandidate injection (freeform move becomes a candidate)
+
+Situation (high-level): Human player drags models to a legal end placement that is not in solver top-K. Engine injects it as a candidate so the dataset stays candidate-based.
+
+Tier 4: DecisionRecord showing injected human action (valid JSON per schema)
+
+```json
+{
+  "schema_version": "1.0.0",
+  "game_id": "g_2026_01_28_0012",
+  "turn_id": 1,
+  "phase": "MOVEMENT",
+  "decision_id": "d_r1_p2_move_P2_U5",
+  "decision_type": "MOVE_UNIT",
+  "ruleset_id": "CA2025_2026",
+  "dataslate_id": "2026.01",
+  "points_id": "2026.01",
+  "global_seed": 771192,
+  "decision_seed": 771200,
+  "omniscient_state": "stateblob://g_2026_01_28_0012/r1/p2/move/P2_U5/before",
+  "player_obs_state": {
+    "P1": "stateblob://g_2026_01_28_0012/r1/p1/obs",
+    "P2": "stateblob://g_2026_01_28_0012/r1/p2/obs"
+  },
+  "candidates": [
+    {
+      "action_id": "move_P2_U5_cand_00_safe",
+      "params": { "unit_id": "P2_U5", "placement_ref": "placement://P2_U5/00", "path_witness_ref": "path://P2_U5/00" },
+      "metadata": { "solver_ms": 33, "screen_coverage_cells": 60, "coherency_min_degree": 2, "threat_exposure_score": 0.11 }
+    },
+    {
+      "action_id": "move_P2_U5_cand_01_aggressive",
+      "params": { "unit_id": "P2_U5", "placement_ref": "placement://P2_U5/01", "path_witness_ref": "path://P2_U5/01" },
+      "metadata": { "solver_ms": 40, "screen_coverage_cells": 84, "coherency_min_degree": 1, "threat_exposure_score": 0.29 }
+    },
+    {
+      "action_id": "move_P2_U5_human_injected_02",
+      "params": { "unit_id": "P2_U5", "placement_ref": "placement://P2_U5/human/02", "path_witness_ref": "path://P2_U5/human/02" },
+      "metadata": { "solver_ms": 0, "human_freeform": true, "screen_coverage_cells": 78, "coherency_min_degree": 2, "threat_exposure_score": 0.14 }
+    }
+  ],
+  "mask": [true, true, true],
+  "chosen_action_id": "move_P2_U5_human_injected_02",
+  "wall_clock_ms": 6120,
+  "time_budget_ms": 220,
+  "outcome": {
+    "immediate_deltas": { "vp": { "P1": 0, "P2": 0 }, "cp": { "P1": 0, "P2": 0 } },
+    "end_of_turn_return": 0.0
+  },
+  "human_action_injected": true,
+  "valid": true
+}
+```
+
+What this shows:
+- Human play remains compatible with Tier-3 "rank candidates" training because the final action is always represented as a candidate.
+
 ### Determinism and Reproducibility
 
 - If candidate generation is stochastic, record `decision_seed` and the full candidate list.
