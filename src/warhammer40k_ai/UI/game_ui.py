@@ -645,6 +645,161 @@ class GameView:
             )
         self._request_hack_and_slash_unit = _request_hack_and_slash_unit
 
+        def _request_mob_rule_mob_unit(player, game, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = []
+            try:
+                from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
+            except Exception:
+                _unit_cannot_be_target_of_stratagem = None
+            try:
+                army = player.get_army()
+                ork_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+                if ork_mgr is None or not getattr(ork_mgr, "is_war_horde", lambda: False)():
+                    on_chosen(None)
+                    return
+            except Exception:
+                on_chosen(None)
+                return
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    pass
+                if callable(_unit_cannot_be_target_of_stratagem) and _unit_cannot_be_target_of_stratagem(root):
+                    continue
+                try:
+                    if not root.has_any_keyword("ORKS"):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not root.has_any_keyword("MOB"):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    members = list(root.get_attached_unit_members() or [])
+                except Exception:
+                    members = [root]
+                total_models = 0
+                for munit in members:
+                    try:
+                        total_models += int(len(getattr(munit, "models", []) or []))
+                    except Exception:
+                        total_models += 0
+                if total_models < 10:
+                    continue
+                try:
+                    if root.is_below_half_strength():
+                        continue
+                except Exception:
+                    continue
+                cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select a MOB unit for Mob Rule.",
+                title="Select Mob Rule Unit",
+                subtitle="ORKS MOB unit with 10+ models; not below half-strength.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+
+        self._request_mob_rule_mob_unit = _request_mob_rule_mob_unit
+
+        def _request_mob_rule_battleshocked_unit(player, game, mob_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if mob_unit is None or game is None:
+                on_chosen(None)
+                return
+            cand = []
+            game_map = getattr(game, "map", None)
+            try:
+                army = player.get_army()
+            except Exception:
+                on_chosen(None)
+                return
+            try:
+                mob_root = mob_unit.get_attached_unit_root()
+            except Exception:
+                mob_root = mob_unit
+            if mob_root is None:
+                on_chosen(None)
+                return
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not (root.has_any_keyword("ORKS") and root.has_any_keyword("INFANTRY")):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(root.is_battle_shocked()):
+                        continue
+                except Exception:
+                    continue
+                if game_map is not None:
+                    try:
+                        dist = float(game_map.get_distance_between_units(mob_root, root))
+                    except Exception:
+                        dist = None
+                    if dist is None or dist > 6.0:
+                        continue
+                cand.append(root)
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select a Battle-shocked ORKS INFANTRY unit within 6\".",
+                title="Mob Rule Target",
+                subtitle="Battle-shocked ORKS INFANTRY within 6\" of the MOB unit.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+
+        self._request_mob_rule_battleshocked_unit = _request_mob_rule_battleshocked_unit
+
         def _request_limb_from_limb_unit(player, game, on_chosen):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
@@ -783,6 +938,37 @@ class GameView:
             )
 
         self._request_red_wrath_choice = _request_red_wrath_choice
+
+        def _request_careen_choice(player, game, unit, model, allowed_modes, on_chosen):
+            from ..engine.decision_kinds import DECISION_USE_CAREEN
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            if unit is None or model is None:
+                on_chosen(None)
+                return
+            unit_id = get_entity_id(unit)
+            model_id = get_entity_id(model)
+            modes = [str(m or "") for m in list(allowed_modes or []) if str(m or "")]
+            options = []
+            if "normal" in modes:
+                options.append(DecisionOption.create("Normal move", payload={"choice": "normal", "unit_id": unit_id, "model_id": model_id}))
+            if "fall_back" in modes:
+                options.append(DecisionOption.create("Fall Back move", payload={"choice": "fall_back", "unit_id": unit_id, "model_id": model_id}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_USE_CAREEN,
+                prompt="Use CAREEN!?",
+                title="CAREEN!",
+                header=f"{getattr(unit, 'name', 'Unit')} can careen before exploding.",
+                subtitle="Choose Normal or Fall Back move (or skip).",
+                context={"ability": "careen", "unit_id": unit_id, "model_id": model_id, "stratagem_name": "CAREEN!"},
+                allow_skip=True,
+            )
+
+        self._request_careen_choice = _request_careen_choice
 
         def _request_a_grim_warning_objective(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
@@ -2185,6 +2371,9 @@ class GameView:
         self._pending_martial_katah_queue = []
         # Adeptus Custodes: Gilded Champion prompt queue
         self._pending_gilded_champion_queue = []
+        # Orks: Careen prompt queue
+        self._pending_careen_queue = []
+        self._careen_flow_active = False
         # Emperor's Children: Pledge/Exquisite/Sensational prompt queues
         self._pending_emperors_children_pledge_queue = []
         self._pending_emperors_children_exquisite_queue = []
@@ -2320,6 +2509,8 @@ class GameView:
                 event_system.subscribe("martial_katah_prompt", self._on_martial_katah_prompt)
                 # Adeptus Custodes: Gilded Champion prompt after once-per-battle abilities
                 event_system.subscribe("gilded_champion_prompt", self._on_gilded_champion_prompt)
+                # Orks: Careen prompt (Deadly Demise roll 6)
+                event_system.subscribe("careen_prompt", self._on_careen_prompt)
                 # Emperor's Children: Detachment prompts
                 event_system.subscribe("emperors_children_pledge_prompt", self._on_emperors_children_pledge_prompt)
                 event_system.subscribe("emperors_children_exquisite_prompt", self._on_emperors_children_exquisite_prompt)
@@ -2530,6 +2721,7 @@ class GameView:
                 DECISION_CHOOSE_SHADOW_FORM,
                 DECISION_CHOOSE_VOW,
                 DECISION_CHOOSE_WRATHFUL_PRESENCE,
+                DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
             )
         except Exception:
@@ -2617,6 +2809,82 @@ class GameView:
                 title="Ignore Modifiers",
                 header=header,
                 subtitle=subtitle,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+                show_cancel=True,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_USE_CAREEN:
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_payload, first_option_id
+
+            dlg = self.stratagem_choice_dialog
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    sw, sh = self.screen.get_size()
+                    self.stratagem_choice_dialog = QuarrySelectionDialog(sw, sh)
+                except Exception:
+                    self.stratagem_choice_dialog = None
+                dlg = self.stratagem_choice_dialog
+
+            skip_id = option_id_for_payload(request, "action", "skip") or option_id_for_payload(request, "skip", True)
+            default_id = skip_id or first_option_id(request)
+            if dlg is None:
+                if default_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        default_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True} if default_id == skip_id else {},
+                    )
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_name = ""
+            try:
+                unit_id = str(ctx.get("unit_id", "") or "")
+                if unit_id:
+                    reg = getattr(game, "entity_registry", None)
+                    if reg is not None:
+                        unit_obj = reg.get(unit_id, kind="unit")
+                        unit_name = getattr(unit_obj, "name", "") if unit_obj is not None else ""
+            except Exception:
+                unit_name = ""
+            header = f"{unit_name} can Careen" if unit_name else "Careen before exploding."
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if default_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        default_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True} if default_id == skip_id else {},
+                    )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title="CAREEN!",
+                header=header,
+                subtitle="Choose Normal or Fall Back move (or skip).",
                 on_confirm=_on_confirm,
                 on_cancel=_on_cancel,
                 decision_request=request,
@@ -4360,45 +4628,52 @@ class GameView:
             self._gilded_champion_flow_active = False
             self._open_next_gilded_champion_prompt(game_ctx)
 
-        def _on_select(action: str):
-            if decision_request is not None:
-                from ..utility.decision_utils import resolve_decision_command
-                from .decision_ui_utils import option_id_for_payload, first_option_id
+    # ---------------- Careen prompts ----------------
 
-                if action == "use":
-                    option_id = option_id_for_payload(decision_request, "action", "use") or first_option_id(decision_request)
-                else:
-                    option_id = option_id_for_payload(decision_request, "action", "skip") or option_id_for_payload(decision_request, "skip", True)
-                if option_id:
-                    resolve_decision_command(
-                        game_ctx,
-                        decision_request,
-                        option_id,
-                        player_id=getattr(player, "id", None),
-                    )
-            elif action == "use":
-                ok = manager.use(
-                    "GILDED CHAMPION",
-                    model=model,
-                    ability_key=str(entry.get("ability_key", "") or ""),
-                    ability_name=ability_name,
-                    phase_name=phase_name,
-                    source=str(entry.get("source", "datasheet") or "datasheet"),
-                    target_unit=entry.get("target_unit"),
-                )
-                if not ok:
-                    print("Gilded Champion: could not apply stratagem.")
-            _finish()
+    def _on_careen_prompt(self, player=None, game=None, **payload):
+        if player is None:
+            return
+        if not bool(getattr(player, "has_control", lambda: False)()):
+            return
+        entry = dict(payload or {})
+        entry["player"] = player
+        entry["game"] = game or self.game
+        if self._careen_flow_active:
+            self._pending_careen_queue.append(entry)
+            return
+        self._pending_careen_queue.append(entry)
+        self._open_next_careen_prompt(entry.get("game"))
 
-        self._gilded_champion_flow_active = True
-        dialog.show(
-            model_name=str(getattr(model, "name", "Model") or "Model"),
-            ability_name=ability_name,
-            phase_name=phase_name,
-            cp_cost=cp_cost,
-            on_select=_on_select,
-        )
-        self.dialog_manager.open(dialog, modal=True)
+    def _open_next_careen_prompt(self, game):
+        q = list(getattr(self, "_pending_careen_queue", []) or [])
+        if not q:
+            self._pending_careen_queue = []
+            self._careen_flow_active = False
+            return
+        entry = dict(q.pop(0) or {})
+        self._pending_careen_queue = q
+
+        player = entry.get("player")
+        game_ctx = entry.get("game") or game or self.game
+        unit = entry.get("unit")
+        model = entry.get("model")
+        allowed_modes = list(entry.get("allowed_modes") or [])
+        if player is None or unit is None or model is None or game_ctx is None:
+            self._open_next_careen_prompt(game_ctx)
+            return
+
+        def _finish(_choice=None):
+            self._careen_flow_active = False
+            self._open_next_careen_prompt(game_ctx)
+
+        if callable(getattr(self, "_request_careen_choice", None)):
+            self._careen_flow_active = True
+            self._request_careen_choice(player, game_ctx, unit, model, allowed_modes, _finish)
+            return
+
+        self._careen_flow_active = False
+        self._open_next_careen_prompt(game_ctx)
+        return
 
     # ---------------- Emperor's Children prompts ----------------
 
@@ -11944,6 +12219,30 @@ class GameView:
                 )
             return
 
+        if name_u == "MOB RULE" and "battle_shocked_unit" not in context:
+            if callable(getattr(self, "_request_mob_rule_battleshocked_unit", None)):
+                mob_unit = context.get("mob_unit") or context.get("unit") or context.get("target_unit")
+
+                def _after_mob(chosen_mob):
+                    if chosen_mob is None:
+                        print("Mob Rule: no MOB unit selected")
+                        return
+
+                    def _after_bs(chosen_bs):
+                        if chosen_bs is None:
+                            print("Mob Rule: no Battle-shocked unit selected")
+                            return
+                        self._finalize_mob_rule(player, name, context, chosen_mob, chosen_bs)
+
+                    self._request_mob_rule_battleshocked_unit(player, self.game, chosen_mob, _after_bs)
+
+                if mob_unit is None:
+                    if callable(getattr(self, "_request_mob_rule_mob_unit", None)):
+                        self._request_mob_rule_mob_unit(player, self.game, _after_mob)
+                else:
+                    _after_mob(mob_unit)
+            return
+
         if name_u == "LIMB FROM LIMB" and "target_unit" not in context and "unit" not in context:
             if callable(getattr(self, "_request_limb_from_limb_unit", None)):
                 def _after_unit(chosen):
@@ -12318,6 +12617,25 @@ class GameView:
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_mob_rule(self, player, name: str, context: Dict[str, Any], mob_unit, battle_shocked_unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if mob_unit is None:
+            print("Mob Rule: no MOB unit selected")
+            return
+        if battle_shocked_unit is None:
+            print("Mob Rule: no Battle-shocked unit selected")
+            return
+        ctx = dict(context)
+        ctx["mob_unit"] = mob_unit
+        ctx["battle_shocked_unit"] = battle_shocked_unit
         ok = manager.use(name, **ctx)
         if ok:
             print(f"Used stratagem: {name}")
@@ -13731,7 +14049,8 @@ class GameView:
                             'blood_surge': MovementType.BLOOD_SURGE,
                             'scout': MovementType.SCOUT,
                             'pile_in': MovementType.PILE_IN,
-                            'consolidate': MovementType.CONSOLIDATE
+                            'consolidate': MovementType.CONSOLIDATE,
+                            'careen': MovementType.CAREEN,
                         }
                         preview_movement_type = movement_type_map.get(dialog_movement_type, MovementType.MOVE)
                         #print(f"DEBUG: Using movement type {preview_movement_type} for path preview (dialog type: {dialog_movement_type})")

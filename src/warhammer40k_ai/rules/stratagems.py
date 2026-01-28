@@ -65,6 +65,8 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "RED WRATH",
     "ORKS IS NEVER BEATEN",
     "ERE WE GO",
+    "MOB RULE",
+    "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
 }
@@ -111,6 +113,7 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "REACTIVE REPOSITION",
     "RED WRATH",
     "ORKS IS NEVER BEATEN",
+    "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
 }
@@ -1769,6 +1772,8 @@ class StratagemManager:
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
             "ERE WE GO": "Target: ORKS INFANTRY unit",
+            "MOB RULE": "Target: ORKS MOB unit (10+ models)",
+            "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
         }
@@ -2737,6 +2742,301 @@ class StratagemManager:
             source=prepared.get("source", "datasheet"),
             target_unit=prepared.get("target_unit"),
         )
+
+    # ---------------- Orks: CAREEN! ----------------
+
+    def _careen_allowed_modes(self, unit, *, game_map=None) -> list[str]:
+        modes: list[str] = []
+        if unit is None:
+            return modes
+        if game_map is None:
+            game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return modes
+        # Treat the careening model as "alive" for engagement checks.
+        pending_models = []
+        try:
+            pending_models = [m for m in list(getattr(unit, "models", []) or []) if bool(getattr(m, "_careen_pending_move", False))]
+        except Exception:
+            pending_models = []
+        restore = []
+        for m in pending_models:
+            try:
+                if int(getattr(m, "_wounds", 0) or 0) <= 0:
+                    restore.append((m, getattr(m, "_wounds", 0)))
+                    m._wounds = 1
+            except Exception:
+                continue
+        try:
+            state = unit.get_engagement_state(game_map)
+        except Exception:
+            for m, w in restore:
+                try:
+                    m._wounds = w
+                except Exception:
+                    pass
+            return modes
+        for m, w in restore:
+            try:
+                m._wounds = w
+            except Exception:
+                pass
+        try:
+            actions = set(unit.get_available_move_actions(state) or [])
+        except Exception:
+            actions = set()
+        try:
+            from ..units.unit import MovementAction
+            if MovementAction.MOVE.value in actions:
+                modes.append("normal")
+            if MovementAction.FALL_BACK.value in actions:
+                modes.append("fall_back")
+        except Exception:
+            pass
+        return modes
+
+    def _careen_prepare(self, *, unit, model, move_kind: str = "", game_map=None) -> Optional[Dict[str, Any]]:
+        if unit is None or model is None:
+            return None
+        if not bool(getattr(unit, "_careen_pending_destroyed", False)):
+            return None
+        try:
+            pending_id = str(getattr(unit, "_careen_pending_model_id", "") or "")
+            if pending_id and str(get_entity_id(model)) != pending_id:
+                return None
+        except Exception:
+            pass
+        try:
+            if not bool(getattr(model, "_careen_pending_move", False)):
+                return None
+        except Exception:
+            pass
+        allowed_modes = self._careen_allowed_modes(unit, game_map=game_map)
+        if not allowed_modes:
+            return None
+        mk = str(move_kind or "").strip().lower().replace(" ", "_")
+        if mk == "move":
+            mk = "normal"
+        if mk and mk not in allowed_modes:
+            mk = ""
+        phase_name = str(getattr(unit, "_careen_pending_phase_name", "") or "")
+        if not phase_name:
+            try:
+                phase_name = str(getattr(getattr(self.game, "phase", None), "name", "") or "")
+            except Exception:
+                phase_name = ""
+        return {
+            "unit": unit,
+            "model": model,
+            "unit_id": get_entity_id(unit),
+            "model_id": get_entity_id(model),
+            "allowed_modes": allowed_modes,
+            "move_kind": mk,
+            "phase_name": phase_name,
+        }
+
+    def _careen_can_use(self, prepared: Dict[str, Any]) -> bool:
+        if not prepared:
+            return False
+        unit = prepared.get("unit")
+        model = prepared.get("model")
+        if unit is None or model is None:
+            return False
+        if not self._is_war_horde_detachment():
+            return False
+        if not self._is_orks_unit(unit):
+            return False
+        try:
+            if not unit.has_any_keyword("VEHICLE"):
+                return False
+        except Exception:
+            return False
+        if (str("CAREEN!").strip().upper()) in self._used_stratagems_this_phase:
+            return False
+        try:
+            has_deadly, _dice = unit.has_deadly_demise()
+            if not has_deadly:
+                return False
+        except Exception:
+            return False
+        stratagem = self.get_by_name("CAREEN!")
+        if stratagem is None:
+            return False
+        cost = self._effective_cp_cost(stratagem, {"unit": unit, "target_unit": unit})
+        if int(getattr(self.player, "command_points", 0) or 0) < int(cost or 0):
+            return False
+        move_kind = str(prepared.get("move_kind", "") or "")
+        allowed = set(prepared.get("allowed_modes") or [])
+        if move_kind and move_kind not in allowed:
+            return False
+        return True
+
+    def _careen_has_pending_decision(self, game, *, unit_id: str, model_id: str) -> bool:
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        from ..engine.decision_kinds import DECISION_USE_CAREEN
+
+        for req in list(queue.list() or []):
+            if str(getattr(req, "decision_type", "") or "") != DECISION_USE_CAREEN:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("unit_id", "") or "") != str(unit_id):
+                continue
+            if str(ctx.get("model_id", "") or "") != str(model_id):
+                continue
+            return True
+        return False
+
+    def _queue_careen_decision(self, game, prepared: Dict[str, Any]) -> None:
+        if prepared is None or game is None:
+            return
+        unit_id = str(prepared.get("unit_id", "") or "")
+        model_id = str(prepared.get("model_id", "") or "")
+        if self._careen_has_pending_decision(game, unit_id=unit_id, model_id=model_id):
+            return
+        from ..engine.decision_kinds import DECISION_USE_CAREEN
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        base_payload = {
+            "unit_id": unit_id,
+            "model_id": model_id,
+            "stratagem_name": "CAREEN!",
+        }
+        options = []
+        allowed = list(prepared.get("allowed_modes") or [])
+        if "normal" in allowed:
+            options.append(
+                DecisionOption.create(
+                    "Normal move",
+                    payload=dict(base_payload, action="use", choice="normal"),
+                )
+            )
+        if "fall_back" in allowed:
+            options.append(
+                DecisionOption.create(
+                    "Fall Back move",
+                    payload=dict(base_payload, action="use", choice="fall_back"),
+                )
+            )
+        options.append(DecisionOption.create("None", payload=dict(base_payload, action="skip", skip=True)))
+
+        ctx = dict(base_payload)
+        ctx.update(
+            {
+                "unit_id": unit_id,
+                "model_id": model_id,
+                "phase_name": prepared.get("phase_name", ""),
+            }
+        )
+        req = DecisionRequest.create(
+            DECISION_USE_CAREEN,
+            "CAREEN! Use now?",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+            return
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "add"):
+            queue.add(req)
+
+    def _publish_careen_prompt(self, game, prepared: Dict[str, Any]) -> bool:
+        event_system = getattr(game, "event_system", None)
+        if event_system is None or not hasattr(event_system, "publish"):
+            return False
+        has_control = bool(getattr(self.player, "has_control", lambda: False)())
+        if not has_control:
+            return False
+        payload = dict(prepared)
+        payload.update({"player": self.player, "game": game})
+        event_system.publish("careen_prompt", **payload)
+        return True
+
+    def queue_careen(self, unit, model, *, game_map=None, phase_name: str = "") -> bool:
+        if unit is None or model is None:
+            return False
+        if bool(getattr(unit, "_careen_pending_destroyed", False)):
+            return True
+        try:
+            if len(getattr(unit, "models", []) or []) != 1:
+                return False
+        except Exception:
+            return False
+        if not self._is_war_horde_detachment():
+            return False
+        if not self._is_orks_unit(unit):
+            return False
+        try:
+            if not unit.has_any_keyword("VEHICLE"):
+                return False
+        except Exception:
+            return False
+        try:
+            has_deadly, _dice = unit.has_deadly_demise()
+            if not has_deadly:
+                return False
+        except Exception:
+            return False
+        stratagem = self.get_by_name("CAREEN!")
+        if stratagem is None:
+            return False
+        if (stratagem.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return False
+        cost = self._effective_cp_cost(stratagem, {"unit": unit, "target_unit": unit})
+        if int(getattr(self.player, "command_points", 0) or 0) < int(cost or 0):
+            return False
+
+        allowed_modes = self._careen_allowed_modes(unit, game_map=game_map)
+        if not allowed_modes:
+            return False
+
+        try:
+            origin = model.get_location()
+        except Exception:
+            origin = None
+
+        game = getattr(self.player, "game", None)
+        if game is None:
+            return False
+
+        # Mark pending state for CAREEN resolution.
+        try:
+            unit._careen_pending_destroyed = True
+            unit._careen_pending_model_id = get_entity_id(model)
+            unit._careen_origin_position = origin
+            unit._careen_pending_phase_name = str(phase_name or "")
+        except Exception:
+            pass
+        try:
+            setattr(model, "_careen_pending_move", True)
+        except Exception:
+            pass
+
+        prepared = self._careen_prepare(unit=unit, model=model, move_kind="", game_map=game_map)
+        if prepared is None:
+            try:
+                unit._careen_pending_destroyed = False
+                unit._careen_pending_model_id = None
+                unit._careen_origin_position = None
+                unit._careen_pending_phase_name = None
+            except Exception:
+                pass
+            try:
+                setattr(model, "_careen_pending_move", False)
+            except Exception:
+                pass
+            return False
+        if not bool(getattr(game, "is_authoritative", True)) or not bool(getattr(self.player, "has_control", lambda: False)()):
+            self._queue_careen_decision(game, prepared)
+            return True
+        if self._publish_careen_prompt(game, prepared):
+            return True
+        # Fallback to queued decision when no local prompt is available.
+        self._queue_careen_decision(game, prepared)
+        return True
 
     def _on_phase_end(self, player, phase, **kwargs):
         # Queue NEW ORDERS at end of your Command phase
@@ -9717,6 +10017,254 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: ERE WE GO: {getattr(root, 'name', 'Unit')} gains +2 to Advance and Charge rolls this turn.")
+            return True
+
+        # War Horde: MOB RULE (clear Battle-shock within 6" of a MOB unit)
+        if s.name.upper() == "MOB RULE":
+            mob_unit = kwargs.get("mob_unit") or kwargs.get("unit") or kwargs.get("target_unit")
+            if mob_unit is None:
+                print("ERROR: MOB RULE: no MOB unit provided")
+                return False
+            try:
+                root = mob_unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_war_horde_detachment():
+                return False
+            if not self._is_orks_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                print("ERROR: MOB RULE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: MOB RULE: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: MOB RULE: MOB unit cannot be targeted")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_any_keyword("MOB"):
+                    print("ERROR: MOB RULE: target is not a MOB unit")
+                    return False
+            except Exception:
+                raise
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            total_models = 0
+            for u in members:
+                try:
+                    total_models += int(len(getattr(u, "models", []) or []))
+                except Exception:
+                    total_models += 0
+            if total_models < 10:
+                print("ERROR: MOB RULE: target has fewer than 10 models")
+                return False
+            try:
+                if root.is_below_half_strength():
+                    print("ERROR: MOB RULE: target is below half-strength")
+                    return False
+            except Exception:
+                raise
+
+            bs_unit = (
+                kwargs.get("battle_shocked_unit")
+                or kwargs.get("selected_unit")
+                or kwargs.get("secondary_unit")
+            )
+            if bs_unit is None and kwargs.get("mob_unit") is not None:
+                bs_unit = kwargs.get("target_unit")
+
+            candidates: list[Any] = []
+            game_map = getattr(self.game, "map", None)
+            try:
+                army = self.player.get_army()
+            except Exception:
+                raise
+            for unit in list(getattr(army, "units", []) or []):
+                try:
+                    cand_root = unit.get_attached_unit_root()
+                except Exception:
+                    cand_root = unit
+                if cand_root is None:
+                    continue
+                try:
+                    if not cand_root.is_alive():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not getattr(cand_root, "deployed", False):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if getattr(cand_root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not (cand_root.has_any_keyword("ORKS") and cand_root.has_any_keyword("INFANTRY")):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not bool(cand_root.is_battle_shocked()):
+                        continue
+                except Exception:
+                    continue
+                if game_map is not None:
+                    try:
+                        dist = float(game_map.get_distance_between_units(root, cand_root))
+                    except Exception:
+                        dist = None
+                    if dist is None or dist > 6.0:
+                        continue
+                candidates.append(cand_root)
+
+            if not candidates:
+                print("ERROR: MOB RULE: no eligible Battle-shocked ORKS INFANTRY units within 6\"")
+                return False
+            if bs_unit is None:
+                if len(candidates) == 1:
+                    bs_unit = candidates[0]
+                else:
+                    print("ERROR: MOB RULE: missing Battle-shocked target selection")
+                    return False
+            try:
+                bs_root = bs_unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if bs_root is None or bs_root not in candidates:
+                print("ERROR: MOB RULE: selected unit is not eligible")
+                return False
+
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                bs_root.clear_battle_shock()
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: MOB RULE: {getattr(bs_root, 'name', 'Unit')} is no longer Battle-shocked.")
+            return True
+
+        # War Horde: CAREEN! (move before Deadly Demise explosion)
+        if s.name.upper() == "CAREEN!":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            model = kwargs.get("model")
+            move_kind = kwargs.get("move_kind") or kwargs.get("choice") or kwargs.get("movement_type") or ""
+            if unit is None or model is None:
+                print("ERROR: CAREEN!: missing unit or model")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return False
+            if not self._is_war_horde_detachment():
+                return False
+            if not self._is_orks_unit(root):
+                return False
+            try:
+                if not root.has_any_keyword("VEHICLE"):
+                    print("ERROR: CAREEN!: target is not a VEHICLE")
+                    return False
+            except Exception:
+                raise
+            if not bool(getattr(root, "_careen_pending_destroyed", False)):
+                print("ERROR: CAREEN!: no pending careen state")
+                return False
+            game_map = getattr(self.game, "map", None)
+            prepared = self._careen_prepare(unit=root, model=model, move_kind=move_kind, game_map=game_map)
+            if prepared is None:
+                print("ERROR: CAREEN!: invalid pending state")
+                return False
+            allowed = list(prepared.get("allowed_modes") or [])
+            mk = str(prepared.get("move_kind", "") or "")
+            if not mk and len(allowed) == 1:
+                mk = allowed[0]
+                prepared["move_kind"] = mk
+            if not mk:
+                print("ERROR: CAREEN!: missing move choice")
+                return False
+            if not self._careen_can_use(prepared):
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            if self.game is None:
+                return False
+            try:
+                max_dist = int(getattr(model, "movement", getattr(model, "_movement", 0)) or 0)
+            except Exception:
+                max_dist = int(getattr(model, "_movement", 0) or 0)
+            if max_dist <= 0:
+                print("ERROR: CAREEN!: invalid movement distance")
+                return False
+            req = None
+            try:
+                req = self.game._queue_reactive_move_movement_decision(
+                    player=self.player,
+                    unit=root,
+                    max_distance=int(max_dist),
+                    kind="careen",
+                    movement_type="careen",
+                    source=s.name,
+                    allow_engagement_range=True,
+                    range_value=None,
+                    moving_unit=None,
+                    attacker_unit=None,
+                    # Allow only the destroyed model to move (if provided).
+                    # _queue_reactive_move_movement_decision will ignore if None.
+                    allowed_model_ids=[get_entity_id(model)],
+                )
+            except Exception:
+                raise
+            try:
+                if req is not None and self.game is not None and hasattr(self.game, "event_system"):
+                    self.game.event_system.publish(
+                        "careen_move",
+                        player=self.player,
+                        unit=root,
+                        model=model,
+                        max_distance=int(max_dist),
+                        decision_request=req,
+                    )
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: CAREEN!: {getattr(root, 'name', 'Unit')} can move {int(max_dist)}\" before exploding.")
             return True
 
         # War Horde: UNBRIDLED CARNAGE (criticals on 5+ in melee)

@@ -222,6 +222,7 @@ Faction / Detachment / Ability choices:
 - harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
 - martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}
 - gilded_champion_dialog: USE_GILDED_CHAMPION {action="use" | action="skip", model_id, ability_key}
+- careen_choice_dialog: USE_CAREEN {choice="normal" | choice="fall_back" | action="skip", unit_id, model_id}
 - miracle_dice_dialog: USE_MIRACLE_DIE {die_id, roll_context}
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
@@ -245,6 +246,8 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - example_dialog: CONFIRM_EXAMPLE {choice_id}
 - reverberating_summons_unit_dialog: SELECT_REVERBERATING_SUMMONS_UNIT {unit_id | skip}
 - reverberating_summons_return_model_dialog: ALLOCATE_DAMAGE {unit_id, model_id | skip} (context `selection_kind="reverberating_summons_return"`)
+
+Note: CAREEN! resolutions queue MOVE_UNIT with context `reactive_move_kind="careen"` and `movement_type="careen"`.
 
 Note: All decision types must be validated in the engine and return errors if
 the selected option is not currently legal.

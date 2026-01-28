@@ -1969,6 +1969,7 @@ class Game:
         attacker_unit=None,
         range_value: int | None = None,
         allow_engagement_range: bool | None = None,
+        allowed_model_ids: list[str] | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -2001,6 +2002,8 @@ class Game:
         ctx["unit_id"] = unit_id
         ctx["movement_type"] = movement_type
         ctx["max_distance"] = int(max_distance)
+        if allowed_model_ids is not None:
+            ctx["allowed_model_ids"] = list(allowed_model_ids)
         request = DecisionRequest.create(
             DECISION_MOVE_UNIT,
             f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
@@ -2255,6 +2258,23 @@ class Game:
                 movement_type="reactive",
                 source=source,
             )
+        if decision_type == DECISION_MOVE_UNIT:
+            ctx = dict(getattr(request, "context", {}) or {})
+            kind = str(ctx.get("reactive_move_kind", "") or "").strip()
+            if kind != "careen":
+                return
+            opt = None
+            for candidate in list(getattr(request, "options", []) or []):
+                if getattr(candidate, "option_id", None) == getattr(result, "option_id", None):
+                    opt = candidate
+                    break
+            payload = getattr(opt, "payload", {}) or {}
+            skipped = bool(getattr(result, "payload", {}).get("skipped", False)) or bool(payload.get("skip", False)) or str(payload.get("action", "") or "") == "skip"
+            unit_id = str(ctx.get("reactive_move_unit_id") or ctx.get("unit_id") or payload.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            unit.resolve_careen_deadly_demise(game_map=getattr(self, "map", None), use_move=not skipped)
         return
 
     def _setup_reactive_can_shoot_target(self, unit, target_unit) -> bool:
@@ -5400,6 +5420,14 @@ class Game:
             return
         if not getattr(unit, "is_transport", False):
             return
+
+        # ORKS: CAREEN! defers emergency disembark until after the move/explosion resolves.
+        try:
+            if bool(getattr(unit, "_careen_pending_destroyed", False)):
+                unit._careen_pending_transport_disembark = True
+                return
+        except Exception:
+            pass
 
         passengers = list(getattr(unit, "transport_passengers", []) or [])
         if not passengers:

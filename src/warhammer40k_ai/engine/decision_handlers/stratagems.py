@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import Sequence
 
 from ..decision_dispatcher import register_decision_handler
-from ..decision_kinds import DECISION_USE_GILDED_CHAMPION
+from ..decision_kinds import DECISION_USE_CAREEN, DECISION_USE_GILDED_CHAMPION
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
     is_skip_choice,
     resolve_model,
     resolve_player,
+    resolve_unit,
     validate_option_choice,
 )
 
@@ -90,3 +91,80 @@ register_decision_handler(
     apply=_apply_use_gilded_champion,
 )
 
+
+def _prepare_careen(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    player = resolve_player(game, payload.get("player_id") or request.player_id)
+    if player is None:
+        raise RuntimeError("Careen player not found.")
+    manager = getattr(player, "stratagems", None)
+    if manager is None:
+        raise RuntimeError("Careen stratagem manager not found.")
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit"))
+    if unit is None:
+        raise RuntimeError("Careen unit not found.")
+    model = resolve_model(game, payload.get("model_id") or payload.get("model"))
+    if model is None:
+        raise RuntimeError("Careen model not found.")
+    move_kind = str(payload.get("choice", "") or payload.get("move_kind", "") or payload.get("movement_type", "") or "")
+    prepared = manager._careen_prepare(unit=unit, model=model, move_kind=move_kind)
+    if prepared is None:
+        raise RuntimeError("Careen context is no longer valid.")
+    return manager, prepared
+
+
+def _validate_use_careen(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        try:
+            _prepare_careen(game, request, result)
+        except RuntimeError as exc:
+            return (str(exc),)
+        return ()
+    try:
+        manager, prepared = _prepare_careen(game, request, result)
+    except RuntimeError as exc:
+        return (str(exc),)
+    move_kind = str(prepared.get("move_kind", "") or "")
+    if not move_kind:
+        return ("Careen requires a move choice.",)
+    if move_kind not in set(prepared.get("allowed_modes") or []):
+        return ("Careen move choice is not allowed.",)
+    if not manager._careen_can_use(prepared):
+        return ("Careen cannot be used right now.",)
+    return ()
+
+
+def _apply_use_careen(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        manager, prepared = _prepare_careen(game, request, result)
+        unit = prepared.get("unit")
+        if unit is None:
+            raise RuntimeError("Careen unit not found.")
+        unit.resolve_careen_deadly_demise(game_map=getattr(game, "map", None), use_move=False)
+        return None
+    manager, prepared = _prepare_careen(game, request, result)
+    unit = prepared.get("unit")
+    model = prepared.get("model")
+    move_kind = str(prepared.get("move_kind", "") or "")
+    phase_name = str(prepared.get("phase_name", "") or "")
+    ok = manager.use(
+        "CAREEN!",
+        unit=unit,
+        target_unit=unit,
+        model=model,
+        move_kind=move_kind,
+        phase_name=phase_name,
+    )
+    if not ok:
+        raise RuntimeError("Careen could not be applied.")
+    return prepared.get("unit_id")
+
+
+register_decision_handler(
+    DECISION_USE_CAREEN,
+    validate=_validate_use_careen,
+    apply=_apply_use_careen,
+)

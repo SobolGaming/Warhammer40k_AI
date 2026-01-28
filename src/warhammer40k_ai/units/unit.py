@@ -5057,12 +5057,67 @@ class Unit:
                 setattr(model, "_skip_deadly_demise_once", False)
             except Exception:
                 pass
+        defer_deadly = False
         if not fleed and game_map is not None and not skip_deadly:
-            self._trigger_deadly_demise(model, game_map)
+            defer_deadly = bool(self._trigger_deadly_demise(model, game_map))
+        if defer_deadly:
+            # Record the loss now, but keep the model to allow CAREEN movement.
+            try:
+                if not bool(getattr(model, "_careen_loss_recorded", False)):
+                    self.round_state.num_lost_models_this_round += 1
+                    self.models_lost.append(model)
+                    setattr(model, "_careen_loss_recorded", True)
+            except Exception:
+                pass
+            try:
+                if not bool(getattr(self, "_careen_pending_destroyed", False)):
+                    self._careen_pending_destroyed = True
+            except Exception:
+                pass
+
+            # If this was the last model, publish unit-destroyed now (the unit is destroyed),
+            # but skip re-publishing when we finalize removal after CAREEN resolves.
+            if (not fleed) and len(self.models) == 1:
+                try:
+                    if bool(getattr(self, "is_leader", False)) and getattr(self, "attached_to", None) is not None:
+                        self.detach_from_unit()
+                except Exception:
+                    pass
+                try:
+                    if (not bool(getattr(self, "is_leader", False))) and list(getattr(self, "attached_leaders", []) or []):
+                        any_leader_alive = any(len(getattr(l, "models", []) or []) > 0 for l in (getattr(self, "attached_leaders", []) or []))
+                        if any_leader_alive:
+                            setattr(self, "_pending_leader_separation", True)
+                            return
+                except Exception:
+                    pass
+                try:
+                    setattr(self, "_skip_unit_destroyed_event_once", True)
+                except Exception:
+                    pass
+                try:
+                    game = self.get_parent_army().player.game
+                    game.event_system.publish(
+                        "unit_destroyed",
+                        unit=self,
+                        last_model=model,
+                        destroyed_by_model=getattr(self, "_last_destroyed_by_model", None),
+                        destroyed_by_unit=getattr(self, "_last_destroyed_by_unit", None),
+                        destroyed_by_weapon_profile=getattr(self, "_last_destroyed_by_weapon_profile", None),
+                        game_map=game_map,
+                    )
+                except Exception:
+                    pass
+            return
 
         # Remove model itself
-        self.round_state.num_lost_models_this_round += 1
-        self.models_lost.append(model)
+        try:
+            if not bool(getattr(model, "_careen_loss_recorded", False)):
+                self.round_state.num_lost_models_this_round += 1
+                self.models_lost.append(model)
+        except Exception:
+            self.round_state.num_lost_models_this_round += 1
+            self.models_lost.append(model)
         self.models.remove(model)
 
         # Invalidate ability cache since unit composition changed
@@ -5095,6 +5150,12 @@ class Unit:
         # Publish unit destroyed event (best-effort). Note: "destroyed" should not
         # trigger for fleeing/removal-type effects.
         if (not fleed) and len(self.models) < 1:
+            try:
+                if bool(getattr(self, "_skip_unit_destroyed_event_once", False)):
+                    setattr(self, "_skip_unit_destroyed_event_once", False)
+                    return
+            except Exception:
+                pass
             # If a Leader is destroyed while attached, immediately detach it so the bodyguard
             # no longer counts it for keyword/strength/collision purposes.
             try:
@@ -5626,20 +5687,48 @@ class Unit:
         self._resolve_pending_attack_mortal_wounds(attack_context, best_target, game_map=game_map)
         return shots_executed > 0
 
-    def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> None:
+    def _apply_deadly_demise_explosion(self, *, damage_dice: DiceCollection, position, game_map: 'Map') -> None:
+        if not position:
+            print("Cannot determine position for Deadly Demise")
+            return
+
+        # Find all units within 6 inches of the explosion
+        nearby_units = self._get_units_within_range(position, 6.0, game_map)
+        if not nearby_units:
+            print("Deadly Demise triggered but no units within 6\" - no damage dealt")
+            return
+
+        # Apply damage to each nearby unit
+        total_damage_dealt = 0
+        for target_unit in nearby_units:
+            # Roll damage independently for each unit (if it's a dice roll)
+            if damage_dice.number > 0:  # It's a dice roll like D3, D6
+                damage_amount = damage_dice.roll()
+            else:  # It's a fixed number
+                damage_amount = damage_dice.modifier
+
+            print(f"{target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
+
+            # Apply mortal wounds to the target unit
+            models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount, game_map=game_map)
+            total_damage_dealt += damage_amount
+
+            if models_destroyed > 0:
+                print(f"Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
+
+        print(f"Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
+
+    def _trigger_deadly_demise(self, dying_model: Model, game_map: 'Map') -> bool:
         """Trigger Deadly Demise ability when a model is killed.
-        
-        Args:
-            dying_model: The model that is being killed
-            game_map: The game map to find nearby units
-        """
+
+        Returns True if the explosion is deferred (e.g., CAREEN)."""
         # Check if the unit has Deadly Demise ability
         has_deadly_demise, damage_dice = self.has_deadly_demise()
         if not has_deadly_demise:
-            return
-        
+            return False
+
         print(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
-        
+
         # Roll D6 to see if Deadly Demise triggers
         trigger_roll = get_roll("D6")
         try:
@@ -5650,42 +5739,111 @@ class Unit:
             pass
         if trigger_roll != 6:
             print(f"Deadly Demise trigger roll: {trigger_roll} (needed 6) - No explosion!")
-            return
-        
+            return False
+
         print(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")
-        
-        # Get the dying model's position
+
+        # Offer CAREEN! if available (Orks War Horde).
+        try:
+            army = self.get_parent_army()
+            player = getattr(army, "player", None) if army is not None else None
+            mgr = getattr(player, "stratagems", None) if player is not None else None
+            phase_name = ""
+            try:
+                game = getattr(player, "game", None) if player is not None else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "")
+            except Exception:
+                phase_name = ""
+            if mgr is not None and bool(mgr.queue_careen(self, dying_model, game_map=game_map, phase_name=phase_name)):
+                return True
+        except Exception:
+            pass
+
+        # Resolve explosion immediately.
         model_position = dying_model.get_location()
         if not model_position:
             print(f"Cannot determine position of dying model for Deadly Demise")
+            return False
+        self._apply_deadly_demise_explosion(damage_dice=damage_dice, position=model_position, game_map=game_map)
+        return False
+
+    def resolve_careen_deadly_demise(self, game_map: Optional['Map'], *, use_move: bool = True) -> None:
+        if not bool(getattr(self, "_careen_pending_destroyed", False)):
             return
-        
-        # Find all units within 6 inches of the dying model
-        nearby_units = self._get_units_within_range(model_position, 6.0, game_map)
-        
-        if not nearby_units:
-            print(f"Deadly Demise triggered but no units within 6\" - no damage dealt")
+        if game_map is None:
+            game_map = None
+        model = None
+        try:
+            pending_id = str(getattr(self, "_careen_pending_model_id", "") or "")
+            for m in list(getattr(self, "models", []) or []):
+                if str(get_entity_id(m)) == pending_id:
+                    model = m
+                    break
+        except Exception:
+            model = None
+        if model is None:
+            try:
+                models = list(getattr(self, "models", []) or [])
+                model = models[0] if models else None
+            except Exception:
+                model = None
+        if model is None:
+            # Nothing to resolve; clear pending state.
+            try:
+                self._careen_pending_destroyed = False
+            except Exception:
+                pass
             return
-        
-        # Apply damage to each nearby unit
-        total_damage_dealt = 0
-        for target_unit in nearby_units:
-            # Roll damage independently for each unit (if it's a dice roll)
-            if damage_dice.number > 0:  # It's a dice roll like D3, D6
-                damage_amount = damage_dice.roll()
-            else:  # It's a fixed number
-                damage_amount = damage_dice.modifier
-            
-            print(f"{target_unit.name} suffers {damage_amount} mortal wounds from Deadly Demise!")
-            
-            # Apply mortal wounds to the target unit
-            models_destroyed = self._apply_mortal_wounds_to_unit(target_unit, damage_amount, game_map=game_map)
-            total_damage_dealt += damage_amount
-            
-            if models_destroyed > 0:
-                print(f"Deadly Demise destroyed {models_destroyed} model(s) in {target_unit.name}")
-        
-        print(f"Deadly Demise complete: {total_damage_dealt} total mortal wounds dealt to {len(nearby_units)} unit(s)")
+
+        # Resolve explosion at final (or original) position.
+        try:
+            position = model.get_location() if use_move else getattr(self, "_careen_origin_position", None)
+            if not position:
+                position = model.get_location()
+        except Exception:
+            position = getattr(self, "_careen_origin_position", None)
+        try:
+            has_deadly_demise, damage_dice = self.has_deadly_demise()
+        except Exception:
+            has_deadly_demise, damage_dice = (False, None)
+        if has_deadly_demise and damage_dice is not None and game_map is not None:
+            self._apply_deadly_demise_explosion(damage_dice=damage_dice, position=position, game_map=game_map)
+
+        # Clear pending state before final removal.
+        try:
+            self._careen_pending_destroyed = False
+            self._careen_origin_position = None
+            self._careen_pending_model_id = None
+            self._careen_pending_phase_name = None
+        except Exception:
+            pass
+        try:
+            setattr(model, "_careen_pending_move", False)
+        except Exception:
+            pass
+
+        # If transport disembark was deferred, resolve now at the final position.
+        try:
+            if bool(getattr(self, "_careen_pending_transport_disembark", False)):
+                game = self.get_parent_army().player.game
+                game._on_unit_destroyed_transport_rules(unit=self, last_model=model, game_map=game_map)
+                self._careen_pending_transport_disembark = False
+        except Exception:
+            pass
+
+        # Remove the model without re-triggering Deadly Demise or unit-destroyed events.
+        try:
+            setattr(model, "_skip_deadly_demise_once", True)
+        except Exception:
+            pass
+        try:
+            setattr(self, "_skip_unit_destroyed_event_once", True)
+        except Exception:
+            pass
+        try:
+            self.remove_model(model, False, game_map=game_map)
+        except Exception:
+            pass
 
     def trigger_deadly_demise_manually(self, dying_model: Model, game_map: 'Map') -> None:
         """Manually trigger Deadly Demise for testing or when game context is available.
@@ -15544,6 +15702,8 @@ class Unit:
     ### Position and Coherency
     ###########################################################################
     def is_alive(self) -> bool:
+        if bool(getattr(self, "_careen_pending_destroyed", False)):
+            return False
         # Attached unit is alive if either bodyguards or attached leaders have alive models.
         if len(self.models) > 0:
             return True

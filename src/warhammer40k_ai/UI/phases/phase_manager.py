@@ -2906,7 +2906,8 @@ class BattlePhaseHandler(BasePhaseHandler):
         for model in models:
             try:
                 if not getattr(model, "is_alive", True):
-                    continue
+                    if allowed_model_ids is None or str(get_entity_id(model)) not in allowed_model_ids or not bool(getattr(model, "_careen_pending_move", False)):
+                        continue
             except Exception:
                 pass
             if allowed_model_ids is not None and str(get_entity_id(model)) not in allowed_model_ids:

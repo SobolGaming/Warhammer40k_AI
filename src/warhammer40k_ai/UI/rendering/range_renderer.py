@@ -5,7 +5,7 @@ from ..ui_constants import TILE_SIZE
 
 def draw_individual_model_movement_range(screen: pygame.Surface, model, movement_type: str, max_distance: float, zoom_level: float, offset_x: int, offset_y: int, game_map=None) -> None:
     """Draw a visual indicator showing the movement range for an individual model"""
-    if not model or not model.is_alive or max_distance <= 0:
+    if not model or (not model.is_alive and not bool(getattr(model, "_careen_pending_move", False))) or max_distance <= 0:
         return
 
     # Get model position
@@ -32,6 +32,9 @@ def draw_individual_model_movement_range(screen: pygame.Surface, model, movement
     elif movement_type == 'fall_back':
         color = (255, 165, 0, 64)  # Orange for fall back
         border_color = (200, 130, 0)
+    elif movement_type == 'careen':
+        color = (255, 80, 0, 64)  # Orange-red for Careen
+        border_color = (220, 60, 0)
     elif movement_type == 'pile_in':
         color = (255, 0, 255, 64)  # Magenta for pile-in
         border_color = (200, 0, 200)

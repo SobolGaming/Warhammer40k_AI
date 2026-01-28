@@ -13,6 +13,7 @@ class _MockDatasheet:
         movement="5",
         toughness="5",
         wounds="4",
+        abilities=None,
     ):
         self.name = name
         self.faction_data = {"name": "Orks" if "ORKS" in [k.upper() for k in list(faction_keywords or [])] else "Enemy"}
@@ -36,11 +37,24 @@ class _MockDatasheet:
         self.datasheets_wargear = []
         self.datasheets_options = [{"description": "none"}]
         self.datasheets_abilities = []
+        for ability in list(abilities or []):
+            if isinstance(ability, dict):
+                self.datasheets_abilities.append(ability)
+            else:
+                text = str(ability)
+                self.datasheets_abilities.append(
+                    {
+                        "name": text,
+                        "description": text,
+                        "type": "",
+                        "parameter": "",
+                    }
+                )
         self.loadout = "This model is equipped with: nothing"
         self.transport = ""
 
 
-def _make_unit(name, *, keywords=None, faction_keywords=None, toughness="5"):
+def _make_unit(name, *, keywords=None, faction_keywords=None, toughness="5", abilities=None):
     from warhammer40k_ai.units.unit import Unit
 
     datasheet = _MockDatasheet(
@@ -48,6 +62,7 @@ def _make_unit(name, *, keywords=None, faction_keywords=None, toughness="5"):
         keywords=keywords,
         faction_keywords=faction_keywords,
         toughness=toughness,
+        abilities=abilities,
     )
     return Unit(datasheet)
 
@@ -287,6 +302,98 @@ class TestOrksWarHordeStratagems(unittest.TestCase):
             unit.end_attack_resolution(game_map=game.map)
         self.assertEqual(mocked.call_count, 1)
         self.assertFalse(getattr(unit, "_orks_is_never_beaten_pending_models", []))
+
+    def test_mob_rule_clears_battle_shock(self):
+        from warhammer40k_ai.units.status_effects import BattleShockEffect
+
+        game, p1, _p2, army1, _army2 = _build_game()
+        mob_unit = _make_unit("Boyz Mob", keywords=["INFANTRY", "MOB"], faction_keywords=["ORKS"])
+        mob_unit.unit_composition = {"Test Model": (10, 10)}
+        mob_unit.unit_composition_options = [mob_unit.unit_composition]
+        mob_unit.models = mob_unit._create_models(mob_unit._datasheet, quantity=10)
+        bs_unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        army1.add_unit(mob_unit)
+        army1.add_unit(bs_unit)
+        mob_unit.deployed = True
+        mob_unit.reserve_status = "deployed"
+        for idx, model in enumerate(mob_unit.models):
+            model.set_location(10.0 + (idx * 0.5), 10.0, 0.0, 0.0)
+        if mob_unit not in game.map.units:
+            game.map.units.append(mob_unit)
+        bs_unit.deployed = True
+        bs_unit.reserve_status = "deployed"
+        bs_unit.models[0].set_location(12.0, 10.0, 0.0, 0.0)
+        if bs_unit not in game.map.units:
+            game.map.units.append(bs_unit)
+
+        bs_unit.apply_status_effect(BattleShockEffect(current_turn=1))
+        self.assertTrue(bs_unit.is_battle_shocked())
+
+        game.phase = SimpleNamespace(name="COMMAND_PHASE")
+        game.current_player_index = 0
+
+        ok = p1.stratagems.use("MOB RULE", mob_unit=mob_unit, battle_shocked_unit=bs_unit, phase_name="Command phase")
+        self.assertTrue(ok)
+        self.assertFalse(bs_unit.is_battle_shocked())
+
+    def test_careen_queues_move_and_resolves_skip(self):
+        from warhammer40k_ai.engine.decision_kinds import DECISION_MOVE_UNIT, DECISION_USE_CAREEN
+        from warhammer40k_ai.engine.decisions import DecisionResult
+        from warhammer40k_ai.roster.player import PlayerControl
+
+        game, p1, _p2, army1, _army2 = _build_game()
+        p1.control = PlayerControl.REMOTE
+
+        deadly = {
+            "name": "Deadly Demise",
+            "description": "",
+            "type": "Ability",
+            "parameter": "D3",
+        }
+        vehicle = _make_unit(
+            "Trukk",
+            keywords=["VEHICLE"],
+            faction_keywords=["ORKS"],
+            abilities=[deadly],
+        )
+        army1.add_unit(vehicle)
+        _place_unit(game, vehicle, 10.0, 10.0)
+        game.rebuild_entity_registry()
+
+        model = vehicle.models[0]
+        with patch("warhammer40k_ai.units.unit.get_roll", return_value=6):
+            model._wounds = 0
+            model.die(game_map=game.map)
+
+        careen_reqs = [r for r in game.decision_queue.list() if r.decision_type == DECISION_USE_CAREEN]
+        self.assertTrue(careen_reqs)
+        careen_req = careen_reqs[0]
+        normal_opt = next(opt for opt in careen_req.options if opt.payload.get("choice") == "normal")
+        game.resolve_decision(
+            DecisionResult(
+                decision_id=careen_req.decision_id,
+                player_id=careen_req.player_id,
+                option_id=normal_opt.option_id,
+                payload={},
+            )
+        )
+
+        move_reqs = [r for r in game.decision_queue.list() if r.decision_type == DECISION_MOVE_UNIT]
+        self.assertTrue(move_reqs)
+        move_req = move_reqs[0]
+        self.assertEqual(move_req.context.get("reactive_move_kind"), "careen")
+        skip_opt = next(opt for opt in move_req.options if opt.payload.get("action") == "skip")
+        game.resolve_decision(
+            DecisionResult(
+                decision_id=move_req.decision_id,
+                player_id=move_req.player_id,
+                option_id=skip_opt.option_id,
+                payload={"skipped": True},
+            )
+        )
+
+        self.assertFalse(getattr(vehicle, "_careen_pending_destroyed", False))
+        self.assertFalse(vehicle.is_alive())
 
 
 if __name__ == "__main__":

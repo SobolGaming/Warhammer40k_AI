@@ -790,6 +790,7 @@ class MovementType(Enum):
     FALL_BACK = "fall_back"
     CHARGE = "charge"
     BLOOD_SURGE = "blood_surge"
+    CAREEN = "careen"
     PILE_IN = "pile_in"
     CONSOLIDATE = "consolidate"
     SCOUT = "scout"
@@ -1075,7 +1076,9 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # FLY over enemy models: block only enemy MONSTER/VEHICLE models for non-MONSTER/VEHICLE flyers.
     # Aircraft are ignored for this blocking rule.
     blocking_enemy_models = []
-    if _unit_is_fly_move(moving_unit, movement_type) and not _unit_can_fly_over_big_models(moving_unit, movement_type):
+    if movement_type == MovementType.CAREEN:
+        blocking_enemy_models = [shape for shape in all_enemy_big_shapes if is_within_search_area(shape)]
+    elif _unit_is_fly_move(moving_unit, movement_type) and not _unit_can_fly_over_big_models(moving_unit, movement_type):
         blocking_enemy_models = [shape for shape in all_enemy_big_shapes if is_within_search_area(shape)]
 
     # Get friendly models (cannot be cached as they change during individual model movement)
@@ -1319,6 +1322,13 @@ def get_validation_rules(
             'closest_enemy_unit_exclude_keywords': {"AIRCRAFT"},
             # Pathfinding discretization can drift a touch; allow a tiny epsilon.
             'distance_tolerance': 0.05,
+        })
+
+    elif movement_type == MovementType.CAREEN:
+        base_rules.update({
+            'can_move_through_enemy_models': True,
+            'cannot_move_within_engagement_range': False,
+            'cannot_end_in_engagement_range': True,
         })
 
     elif movement_type == MovementType.FALL_BACK:

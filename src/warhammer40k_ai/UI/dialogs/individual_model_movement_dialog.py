@@ -19,7 +19,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Dialog-specific state
         self.unit = None
-        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge', 'reactive', 'loping_speed'
+        self.movement_type = None  # 'move', 'advance', 'fall_back', 'scout', 'pile_in', 'consolidate', 'charge', 'reactive', 'loping_speed', 'careen'
         self.game_map = None
         self.max_distance = 0.0
         self.target_unit = None  # Target unit for charge movement (single)
@@ -130,7 +130,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'loping_speed'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'loping_speed', 'careen'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -180,6 +180,8 @@ class IndividualModelMovementDialog(BaseDialog):
         elif movement_type == 'reactive':
             return False
         elif movement_type == 'loping_speed':
+            return False
+        elif movement_type == 'careen':
             return False
         elif movement_type == 'deploy':
             return False
@@ -244,7 +246,7 @@ class IndividualModelMovementDialog(BaseDialog):
         for i, model in enumerate(self.unit.models):
             if self._place_only_model_indices is not None and i not in self._place_only_model_indices:
                 continue
-            if not model.is_alive:
+            if not self._is_model_move_eligible(model):
                 continue
             
             # Models already in base-to-base contact cannot Pile In or Consolidate
@@ -272,6 +274,17 @@ class IndividualModelMovementDialog(BaseDialog):
             })
             
             button_index += 1
+
+    def _is_model_move_eligible(self, model) -> bool:
+        """Return True if the model can be moved in this dialog."""
+        try:
+            if model.is_alive:
+                return True
+        except Exception:
+            pass
+        if self.movement_type == "careen" and bool(getattr(model, "_careen_pending_move", False)):
+            return True
+        return False
 
     def _truncate_text_to_width(self, text: str, font: pygame.font.Font, max_width: int) -> str:
         """Truncate text with ellipsis so it fits within max_width."""
@@ -1321,7 +1334,8 @@ class IndividualModelMovementDialog(BaseDialog):
             'pile_in': MovementType.PILE_IN,
             'consolidate': MovementType.CONSOLIDATE,
             'reactive': MovementType.MOVE,
-            'loping_speed': MovementType.MOVE
+            'loping_speed': MovementType.MOVE,
+            'careen': MovementType.CAREEN,
         }
 
         pathfinding_movement_type = movement_type_map.get(self.movement_type, MovementType.MOVE)
@@ -1421,7 +1435,7 @@ class IndividualModelMovementDialog(BaseDialog):
             if i >= len(self.unit.models):
                 continue
             model = self.unit.models[i]
-            if not model.is_alive:
+            if not self._is_model_move_eligible(model):
                 continue
             if i not in self.model_movements or not self.model_movements[i]['completed']:
                 return False
@@ -1441,7 +1455,7 @@ class IndividualModelMovementDialog(BaseDialog):
             remaining_models = [
                 idx + 1
                 for idx in remaining_indices
-                if idx < len(self.unit.models) and self.unit.models[idx].is_alive and (
+                if idx < len(self.unit.models) and self._is_model_move_eligible(self.unit.models[idx]) and (
                     idx not in self.model_movements
                     or not self.model_movements[idx]['completed']
                 )
@@ -1580,7 +1594,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move ended (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'loping_speed'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'loping_speed', 'careen'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
