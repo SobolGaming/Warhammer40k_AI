@@ -1614,6 +1614,9 @@ class Game:
                     if str(sr.get("goretrack_onslaught_turn_owner", "") or "") == owner_id:
                         for k in ("goretrack_onslaught_active", "goretrack_onslaught_turn_owner", "goretrack_onslaught_turn"):
                             sr.pop(k, None)
+                    if str(sr.get("ere_we_go_turn_owner", "") or "") == owner_id:
+                        for k in ("ere_we_go_active", "ere_we_go_turn_owner", "ere_we_go_turn", "ere_we_go_source"):
+                            sr.pop(k, None)
 
         # Snapshot objective control at end of each phase for "previous phase" rules.
         game_map = self.map
@@ -8654,6 +8657,21 @@ class Game:
                         val = int(item or 0)
                     if val:
                         modifiers.append((val, source))
+
+            if sr.get("ere_we_go_active") is True:
+                ere_active = True
+                owner = str(sr.get("ere_we_go_turn_owner", "") or "")
+                turn = int(sr.get("ere_we_go_turn", 0) or 0)
+                if owner or turn:
+                    cur_turn = int(getattr(self, "turn", 0) or 0)
+                    cur_player = self.get_current_player()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if owner and owner != cur_owner:
+                        ere_active = False
+                    if turn and turn != cur_turn:
+                        ere_active = False
+                if ere_active:
+                    modifiers.append((2, "Ere We Go"))
 
             if sr.get("goretrack_onslaught_active") is True:
                 goretrack_active = True

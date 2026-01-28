@@ -4240,6 +4240,7 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "UNLEASH THE LIONS": "Command phase: split Allarus/Aquilon unit on battlefield into 1-model units (leaders split too); Starting Strength 1.",
         "UNBRIDLED CARNAGE": "Fight phase: ORKS unit not yet fought scores critical hits on 5+ in melee until end of phase.",
         "ORKS IS NEVER BEATEN": "Fight phase: targeted ORKS unit fights on death after attacker finishes attacks if it has not fought; then removed.",
+        "ERE WE GO": "Movement phase start: ORKS INFANTRY unit gains +2 to Advance and Charge rolls until end of turn.",
         "'ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
         "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
     }

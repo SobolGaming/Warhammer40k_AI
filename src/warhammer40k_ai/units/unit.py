@@ -9473,6 +9473,30 @@ class Unit:
             bonus = 0
         if bonus:
             mods.append((bonus, "Code Chivalric"))
+        if isinstance(sr, dict) and sr.get("ere_we_go_active") is True:
+            try:
+                ere_active = True
+                owner = str(sr.get("ere_we_go_turn_owner", "") or "")
+                turn = int(sr.get("ere_we_go_turn", 0) or 0)
+                if owner or turn:
+                    game = None
+                    try:
+                        army = self.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        if owner and owner != cur_owner:
+                            ere_active = False
+                        if turn and turn != cur_turn:
+                            ere_active = False
+                if ere_active:
+                    mods.append((2, "Ere We Go"))
+            except Exception:
+                pass
         if isinstance(sr, dict):
             try:
                 extra = int(sr.get("advance_roll_modifier", 0) or 0)

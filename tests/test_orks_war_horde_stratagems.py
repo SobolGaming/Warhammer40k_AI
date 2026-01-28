@@ -225,6 +225,35 @@ class TestOrksWarHordeStratagems(unittest.TestCase):
         )
         self.assertFalse(ok)
 
+    def test_ere_we_go_adds_advance_and_charge_bonus_until_end_of_turn(self):
+        game, p1, _p2, army1, army2 = _build_game()
+        unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])
+        enemy = _make_unit("Enemy", keywords=["INFANTRY"], faction_keywords=["ENEMY"])
+        army1.add_unit(unit)
+        army2.add_unit(enemy)
+        _place_unit(game, unit, 10.0, 10.0)
+        _place_unit(game, enemy, 16.0, 10.0)
+
+        game.phase = SimpleNamespace(name="MOVEMENT_PHASE")
+        game.current_player_index = 0
+
+        ok = p1.stratagems.use("ERE WE GO", unit=unit, phase_name="Movement phase")
+        self.assertTrue(ok)
+
+        advance_mods = unit._collect_advance_roll_modifiers()
+        self.assertTrue(any(val == 2 and "ERE WE GO" in str(source).upper() for val, source in advance_mods))
+
+        charge_mods = game.get_charge_roll_modifiers(unit, target_unit=enemy)
+        self.assertTrue(any(val == 2 and "ERE WE GO" in str(source).upper() for val, source in charge_mods))
+
+        game._on_phase_end_cleanup(player=p1, phase=SimpleNamespace(name="FIGHT_PHASE"))
+
+        advance_mods_after = unit._collect_advance_roll_modifiers()
+        self.assertFalse(any(val == 2 and "ERE WE GO" in str(source).upper() for val, source in advance_mods_after))
+
+        charge_mods_after = game.get_charge_roll_modifiers(unit, target_unit=enemy)
+        self.assertFalse(any(val == 2 and "ERE WE GO" in str(source).upper() for val, source in charge_mods_after))
+
     def test_orks_is_never_beaten_defers_fight_on_death(self):
         game, p1, p2, army1, army2 = _build_game()
         unit = _make_unit("Boyz", keywords=["INFANTRY"], faction_keywords=["ORKS"])

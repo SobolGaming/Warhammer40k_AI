@@ -64,6 +64,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "REACTIVE REPOSITION",
     "RED WRATH",
     "ORKS IS NEVER BEATEN",
+    "ERE WE GO",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
 }
@@ -1767,6 +1768,7 @@ class StratagemManager:
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
             "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
             "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
+            "ERE WE GO": "Target: ORKS INFANTRY unit",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
         }
@@ -9636,6 +9638,85 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
+            return True
+
+        # War Horde: ERE WE GO (+2 Advance/Charge rolls)
+        if s.name.upper() == "ERE WE GO":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: ERE WE GO: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_war_horde_detachment():
+                return False
+            if not self._is_orks_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: ERE WE GO: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: ERE WE GO: not your turn")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: ERE WE GO: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_any_keyword("INFANTRY"):
+                    print("ERROR: ERE WE GO: target is not ORKS INFANTRY")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["ere_we_go_active"] = True
+                sr["ere_we_go_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["ere_we_go_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                sr["ere_we_go_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: ERE WE GO: {getattr(root, 'name', 'Unit')} gains +2 to Advance and Charge rolls this turn.")
             return True
 
         # War Horde: UNBRIDLED CARNAGE (criticals on 5+ in melee)
