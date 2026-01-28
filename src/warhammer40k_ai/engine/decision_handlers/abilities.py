@@ -26,6 +26,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+    DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
     DECISION_DISCARD_SECONDARY,
     DECISION_CHOOSE_SHADOW_FORM,
     DECISION_CHOOSE_VOW,
@@ -998,6 +999,21 @@ def _validate_post_shoot_suppression_target(game: object, request: DecisionReque
     return ()
 
 
+def _validate_post_shoot_leadership_debuff_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Post-shoot Leadership debuff requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Post-shoot Leadership debuff target not found.",)
+    return ()
+
+
 def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult):
     if is_skip_choice(request, result):
         return None
@@ -1050,6 +1066,61 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
         from ...utility.event_bus import append_action
         if player is not None:
             append_action(player, f"{model_name} suppressed {target_unit.name} ({ability_name})")
+    except Exception:
+        pass
+    return target_unit
+
+
+def _apply_post_shoot_leadership_debuff_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Post-shoot Leadership debuff target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = (
+        str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Post-shoot Leadership debuff").strip()
+    )
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+    owner_id = str(getattr(player, "id", "") or "")
+    current_turn = int(getattr(game, "turn", 0) or 0)
+
+    root = target_unit
+    try:
+        root = target_unit.get_attached_unit_root()
+    except Exception:
+        root = target_unit
+    try:
+        members = list(root.get_attached_unit_members() or [])
+    except Exception:
+        members = []
+    if not members:
+        members = [root]
+
+    for unit in members:
+        if unit is None:
+            continue
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["post_shoot_leadership_debuff_active"] = True
+        sr["post_shoot_leadership_debuff_owner"] = owner_id
+        sr["post_shoot_leadership_debuff_turn"] = int(current_turn)
+        sr["post_shoot_leadership_debuff_value"] = -1
+        sr["post_shoot_leadership_debuff_source"] = ability_name
+        unit.special_rules = sr
+
+    try:
+        from ...utility.event_bus import append_action
+        if player is not None:
+            append_action(player, f"{getattr(attacker_unit, 'name', 'Unit')} applied {ability_name} to {target_unit.name}")
     except Exception:
         pass
     return target_unit
@@ -1756,6 +1827,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     validate=_validate_post_shoot_suppression_target,
     apply=_apply_post_shoot_suppression_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+    validate=_validate_post_shoot_leadership_debuff_target,
+    apply=_apply_post_shoot_leadership_debuff_target,
 )
 register_decision_handler(DECISION_DISCARD_SECONDARY, validate=_validate_discard_secondary, apply=_apply_discard_secondary)
 register_decision_handler(DECISION_CHOOSE_SHADOW_FORM, validate=_validate_choose_shadow_form, apply=_apply_choose_shadow_form)

@@ -953,6 +953,31 @@ class Game:
                 remaining=amount,
             )
 
+    def _on_phase_start_post_shoot_leadership_debuff_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear post-shoot Leadership/Battle-shock debuffs at the start of the owner's Shooting phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Post-shoot debuff cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Post-shoot debuff cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("post_shoot_leadership_debuff_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("post_shoot_leadership_debuff_active"):
+                    unit.clear_post_shoot_leadership_debuff()
+
     def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -3767,6 +3792,76 @@ class Game:
                 context={
                     "attacker_unit_id": get_entity_id(attacker_unit),
                     "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_leadership_debuff(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot Leadership debuff requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        specs = attacker_unit.unit_post_shoot_leadership_debuff_specs() or []
+        if not specs:
+            return
+
+        candidates: list[Any] = []
+        for target_unit, hits in (hits_by_target or {}).items():
+            if target_unit is None:
+                continue
+            if int(hits or 0) <= 0:
+                continue
+            if not _is_enemy_unit(target_unit):
+                continue
+            candidates.append(target_unit)
+
+        if not candidates:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET
+
+        for spec in specs:
+            ability_name = (
+                str(spec.get("source", "") or "Post-shoot Leadership debuff").strip() or "Post-shoot Leadership debuff"
+            )
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+                f"{ability_name}: select a unit to suffer -1 to Leadership/Battle-shock tests.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
                     "ability_name": ability_name,
                 },
             )

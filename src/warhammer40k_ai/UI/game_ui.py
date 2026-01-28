@@ -3058,6 +3058,7 @@ class GameView:
                 DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
                 DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+                DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
                 DECISION_CHOOSE_QUARRY,
                 DECISION_CHOOSE_SHADOW_FORM,
                 DECISION_CHOOSE_VOW,
@@ -3579,6 +3580,7 @@ class GameView:
         if decision_type in (
             DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
             DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+            DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
         ):
             from ..utility.decision_utils import resolve_decision_command
             from .decision_ui_utils import first_option_id
@@ -3614,6 +3616,11 @@ class GameView:
             if decision_type == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
                 title = ability_name or "Post-shoot Battle-shock"
                 subtitle = f"{model_name or 'Model'} shot. Select a unit to take a Battle-shock test."
+            elif decision_type == DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET:
+                title = ability_name or "Leadership Debuff"
+                subtitle = (
+                    f"{model_name or 'Unit'} shot. Select a unit to suffer -1 to Leadership/Battle-shock tests."
+                )
             else:
                 title = ability_name or "Suppression"
                 subtitle = f"{model_name or 'Model'} shot. Select a unit to suppress."

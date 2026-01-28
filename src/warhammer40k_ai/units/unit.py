@@ -1066,6 +1066,12 @@ class Unit:
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,
     )
+    _POST_SHOOT_LEADERSHIP_DEBUFF_RE = re.compile(
+        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
+        r"until the start of your next shooting phase each time a battle shock or leadership test is taken for that "
+        r"(?:enemy )?unit subtract 1 from that test",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
         r"at the start of the fight phase each enemy unit within engagement range of this model must take a battle shock test "
         r"subtracting 1 from that test if that enemy unit is below half strength",
@@ -6326,6 +6332,47 @@ class Unit:
         """
         return any(isinstance(effect, BattleShockEffect) for effect in list(getattr(self, "status_effects", []) or []))
 
+    def clear_post_shoot_leadership_debuff(self) -> None:
+        """Clear post-shoot Leadership/Battle-shock debuff effects from this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "post_shoot_leadership_debuff_active",
+            "post_shoot_leadership_debuff_owner",
+            "post_shoot_leadership_debuff_turn",
+            "post_shoot_leadership_debuff_value",
+            "post_shoot_leadership_debuff_source",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+    def _post_shoot_leadership_debuff_modifier(self, game=None) -> int:
+        """Return persistent post-shoot Leadership/Battle-shock test modifier, clearing on expiry."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        if not sr.get("post_shoot_leadership_debuff_active"):
+            return 0
+        owner_id = str(sr.get("post_shoot_leadership_debuff_owner", "") or "")
+        if game is not None and owner_id:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            try:
+                current_player = game.get_current_player()
+                current_id = str(getattr(current_player, "id", "") or "")
+            except Exception:
+                current_id = ""
+            if phase_name == "SHOOTING_PHASE" and current_id == owner_id:
+                self.clear_post_shoot_leadership_debuff()
+                return 0
+        try:
+            return int(sr.get("post_shoot_leadership_debuff_value", 0) or 0)
+        except Exception:
+            return 0
+
     def pass_leadership_check(self) -> bool:
         """Perform a Leadership test by rolling 2D6 against the unit's Leadership characteristic.
         
@@ -6352,8 +6399,19 @@ class Unit:
         if roll_result is None:
             roll_result = get_roll("2D6")
         leadership_value = self.leadership
+        mod = 0
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            mod = int(self._post_shoot_leadership_debuff_modifier(game))
+        except Exception:
+            mod = 0
+        try:
+            mod_roll = int(roll_result) + int(mod)
+        except Exception:
+            mod_roll = roll_result
         # 10e: lower Leadership is better; you pass if roll <= Ld.
-        passed = roll_result <= leadership_value
+        passed = mod_roll <= leadership_value
         
         # Provide detailed feedback
         dice_note = ""
@@ -6362,10 +6420,22 @@ class Unit:
                 dice_note = f" (dice {list(dice_rolls)})"
         except Exception:
             dice_note = ""
-        if passed:
-            print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
+        if mod:
+            if passed:
+                print(
+                    f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - PASSED! "
+                )
+            else:
+                print(
+                    f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - FAILED! "
+                )
         else:
-            print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+            if passed:
+                print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
+            else:
+                print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
         
         return passed
 
@@ -6396,7 +6466,18 @@ class Unit:
             leadership_value = int(getattr(model, "leadership", self.leadership))
         except Exception:
             leadership_value = self.leadership
-        passed = roll_result <= leadership_value
+        mod = 0
+        try:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            mod = int(self._post_shoot_leadership_debuff_modifier(game))
+        except Exception:
+            mod = 0
+        try:
+            mod_roll = int(roll_result) + int(mod)
+        except Exception:
+            mod_roll = roll_result
+        passed = mod_roll <= leadership_value
 
         dice_note = ""
         try:
@@ -6405,10 +6486,22 @@ class Unit:
         except Exception:
             dice_note = ""
         model_name = getattr(model, "name", "Model")
-        if passed:
-            print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
+        if mod:
+            if passed:
+                print(
+                    f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - PASSED! "
+                )
+            else:
+                print(
+                    f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - FAILED! "
+                )
         else:
-            print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+            if passed:
+                print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
+            else:
+                print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
 
         return passed
 
@@ -14472,6 +14565,11 @@ class Unit:
                 self.special_rules = sr
         except Exception:
             extra_mod = 0
+        post_shoot_mod = 0
+        try:
+            post_shoot_mod = int(self._post_shoot_leadership_debuff_modifier(game))
+        except Exception:
+            post_shoot_mod = 0
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
         auto_passed = False
@@ -14502,7 +14600,7 @@ class Unit:
                 carmine_reroll_available = False
 
         if not auto_passed:
-            total_mod = int(shadow_mod) + int(extra_mod)
+            total_mod = int(shadow_mod) + int(extra_mod) + int(post_shoot_mod)
             dice_count = 3 if synapse_3d6 else 2
             dice_expr = "3D6" if synapse_3d6 else "2D6"
             leadership_value = None
@@ -20282,6 +20380,57 @@ class Unit:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_leadership_debuff_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit; that unit suffers -1 to
+        Battle-shock/Leadership tests until the start of your next Shooting phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_leadership_debuff_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not unit._POST_SHOOT_LEADERSHIP_DEBUFF_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Post-shoot Leadership debuff").strip() or "Post-shoot Leadership debuff"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_start_fight_phase_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:

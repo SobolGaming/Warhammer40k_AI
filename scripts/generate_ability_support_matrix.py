@@ -1730,6 +1730,7 @@ def _classify_ability_base(
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
+    post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     return_on_death_support = _return_on_death_support(description)
@@ -1860,6 +1861,8 @@ def _classify_ability_base(
         return post_shoot_battleshock_support
     if post_shoot_suppression_support:
         return post_shoot_suppression_support
+    if post_shoot_leadership_debuff_support:
+        return post_shoot_leadership_debuff_support
     if fight_phase_engagement_battleshock_support:
         return fight_phase_engagement_battleshock_support
     if fight_phase_end_mortal_support:
@@ -3600,6 +3603,25 @@ def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str
     if "excluding monsters and vehicles" in norm:
         return ("Supported", "After shooting, suppress a hit enemy unit (not MONSTER/VEHICLE) for -1 to hit until your next turn.")
     return ("Supported", "After shooting, suppress a hit enemy unit for -1 to hit until your next turn.")
+
+
+def _post_shoot_leadership_debuff_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
+        r"until the start of your next shooting phase each time a battle shock or leadership test is taken for that "
+        r"(?:enemy )?unit subtract 1 from that test"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After shooting, pick a hit enemy unit; until your next Shooting phase, it suffers -1 to Battle-shock/Leadership tests.",
+    )
 
 
 def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:

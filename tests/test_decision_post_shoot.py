@@ -106,3 +106,31 @@ class TestPostShootDecisions(unittest.TestCase):
         self.assertTrue(target.special_rules.get("post_shoot_suppressed_active"))
         self.assertEqual(target.special_rules.get("post_shoot_suppressed_owner"), player.id)
         self.assertEqual(target.special_rules.get("post_shoot_suppressed_turn"), 2)
+
+    def test_post_shoot_leadership_debuff_applies(self):
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+
+        player = SimpleNamespace(id="P1")
+        army = SimpleNamespace(player=player)
+        attacker = _UnitStub("ATK", "Attacker", army=army)
+        target = _UnitStub("TGT", "Target", army=SimpleNamespace(player=SimpleNamespace(id="P2")))
+        game = _GameStub(units=[attacker, target], models=[], turn=4)
+
+        option = DecisionOption.create("Target", payload={"unit_id": target._id})
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+            "Select leadership debuff target.",
+            player_id=player.id,
+            options=[option],
+            context={"attacker_unit_id": attacker._id, "ability_name": "Terrifying Crescendo"},
+        )
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+
+        self.assertTrue(apply_result.ok)
+        self.assertTrue(target.special_rules.get("post_shoot_leadership_debuff_active"))
+        self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_owner"), player.id)
+        self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_turn"), 4)
+        self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_value"), -1)
