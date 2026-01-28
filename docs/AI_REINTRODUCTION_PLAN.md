@@ -141,9 +141,9 @@ msg:
   type: PLAN_REQUEST
   payload:
     game_id: "g_2026_01_28_0007"
-    ruleset_id: "core_rules_24.09+updates_2025-10-22"
-    dataslate_id: "balance_dataslate_2026-01-07"
-    points_id: "mfm_2026-01-07"
+    ruleset_id: "core_rules_24.09+updates_v1.8_rc1.7"
+    dataslate_id: "balance_dataslate_v3.3"
+    points_id: "mfm_v3.8"
     round: 2
     active_player: "P1"
     phase: "COMMAND"
@@ -369,9 +369,9 @@ Tier 4: emitted DecisionRecord (valid JSON per schema)
   "phase": "MOVEMENT",
   "decision_id": "d_r2_p1_move_P1_U8",
   "decision_type": "MOVE_UNIT",
-  "ruleset_id": "core_rules_24.09+updates_2025-10-22",
-  "dataslate_id": "balance_dataslate_2026-01-07",
-  "points_id": "mfm_2026-01-07",
+  "ruleset_id": "core_rules_24.09+updates_v1.8_rc1.7",
+  "dataslate_id": "balance_dataslate_v3.3",
+  "points_id": "mfm_v3.8",
   "global_seed": 4128891,
   "decision_seed": 99312044,
   "omniscient_state": {
@@ -536,9 +536,9 @@ Tier 4: DecisionRecord showing injected human action (valid JSON per schema)
   "phase": "MOVEMENT",
   "decision_id": "d_r1_p2_move_P2_U5",
   "decision_type": "MOVE_UNIT",
-  "ruleset_id": "core_rules_24.09+updates_2025-10-22",
-  "dataslate_id": "balance_dataslate_2026-01-07",
-  "points_id": "mfm_2026-01-07",
+  "ruleset_id": "core_rules_24.09+updates_v1.8_rc1.7",
+  "dataslate_id": "balance_dataslate_v3.3",
+  "points_id": "mfm_v3.8",
   "global_seed": 771192,
   "decision_seed": 771200,
   "omniscient_state": "stateblob://g_2026_01_28_0012/r1/p2/move/P2_U5/before",
@@ -728,6 +728,15 @@ Time management is a concrete subsystem, not an open question.
 
 - Every training run is tagged with ruleset_id, dataslate_id, and points_id.
 - Patch diff classifier determines retraining scope.
+
+### ID Derivation Rule (Canonical)
+
+- Use the version string on page 1 of each official PDF as the authoritative ID.
+- If the Core Rules PDF has no explicit version string, use the date token in the filename (e.g., `core_rules_24.09`).
+- Compose:
+  - `ruleset_id = core_rules_<core_rules_version_or_date>+updates_v<errata_version>_rc<commentary_version>`
+  - `dataslate_id = balance_dataslate_v<dataslate_version>`
+  - `points_id = mfm_v<mfm_version>`
 
 ### Example Retraining Map
 
