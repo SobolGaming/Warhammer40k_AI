@@ -4238,6 +4238,10 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "PEERLESS WARRIOR": "Fight phase: selected ADEPTUS CUSTODES unit gains +1 Attacks on melee weapons until end of phase.",
         "SWIFT AS THE EAGLE": "Opponent Shooting phase: targeted ADEPTUS CUSTODES unit makes a Normal move up to 6\" and can move within Engagement Range.",
         "UNLEASH THE LIONS": "Command phase: split Allarus/Aquilon unit on battlefield into 1-model units (leaders split too); Starting Strength 1.",
+        "UNBRIDLED CARNAGE": "Fight phase: ORKS unit not yet fought scores critical hits on 5+ in melee until end of phase.",
+        "ORKS IS NEVER BEATEN": "Fight phase: targeted ORKS unit fights on death after attacker finishes attacks if it has not fought; then removed.",
+        "'ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
+        "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:

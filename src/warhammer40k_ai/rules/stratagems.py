@@ -54,6 +54,7 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CUT DOWN THE WEAK",
     "UNBOUND ARROGANCE",
     "UNLEASH THE LIONS",
+    "UNBRIDLED CARNAGE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
     "MERCILESS RECLAMATION",
@@ -62,6 +63,9 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "ENDLESS SERVITUDE",
     "REACTIVE REPOSITION",
     "RED WRATH",
+    "ORKS IS NEVER BEATEN",
+    "'ARD AS NAILS",
+    "\u2019ARD AS NAILS",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -105,6 +109,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "ENDLESS SERVITUDE",
     "REACTIVE REPOSITION",
     "RED WRATH",
+    "ORKS IS NEVER BEATEN",
+    "'ARD AS NAILS",
+    "\u2019ARD AS NAILS",
 }
 
 
@@ -926,6 +933,8 @@ class StratagemManager:
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
+            "'ARD AS NAILS",
+            "\u2019ARD AS NAILS",
         }
         fight_reaction_names = {
             "DEFIANT TO THE LAST",
@@ -937,6 +946,9 @@ class StratagemManager:
             "BLESSING OF BURNING BLOOD",
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
+            "ORKS IS NEVER BEATEN",
+            "'ARD AS NAILS",
+            "\u2019ARD AS NAILS",
         }
 
         has_generic_defensive_shooting = "shooting" in defensive_phases
@@ -1753,6 +1765,10 @@ class StratagemManager:
             "INSENSATE RAMPAGE": "Target: DEATH COMPANY unit",
             "LIMB FROM LIMB": "Target: BLOOD ANGELS unit (charged)",
             "RED WRATH": "Target: BLOOD ANGELS unit (advanced)",
+            "UNBRIDLED CARNAGE": "Target: ORKS unit (not yet fought)",
+            "ORKS IS NEVER BEATEN": "Target: ORKS unit (fight on death)",
+            "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
+            "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
         }
         return hints.get(name_u, "")
 
@@ -1768,6 +1784,55 @@ class StratagemManager:
             return bool(mgr.is_warhost_detachment())
         except Exception:
             raise
+
+    def _is_war_horde_detachment(self) -> bool:
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            return bool(mgr.is_war_horde())
+        except Exception:
+            raise
+
+    def _is_orks_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return False
+        try:
+            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
+                return False
+        except Exception:
+            return False
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        has_orks_kw = bool(has_any_kw("ORKS")) if callable(has_any_kw) else False
+        root_faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
+        if not has_orks_kw and root_faction_id != "ORK":
+            return False
+        return True
+
+    @staticmethod
+    def _unit_is_grots(unit: Any) -> bool:
+        if unit is None:
+            return False
+        try:
+            if hasattr(unit, "has_any_keyword"):
+                if unit.has_any_keyword("Grots") or unit.has_any_keyword("Grot") or unit.has_any_keyword("Gretchin"):
+                    return True
+        except Exception:
+            return False
+        return False
 
     def _get_necrons_mgr(self):
         try:
@@ -2769,6 +2834,10 @@ class StratagemManager:
                             sr.pop("deathless_duty_active", None)
                             sr.pop("deathless_duty_expires_phase", None)
                             sr.pop("deathless_duty_source", None)
+                        if isinstance(sr, dict) and sr.get("orks_is_never_beaten_active") is True:
+                            sr.pop("orks_is_never_beaten_active", None)
+                            sr.pop("orks_is_never_beaten_expires_phase", None)
+                            sr.pop("orks_is_never_beaten_source", None)
                         if isinstance(sr, dict) and sr.get("defiant_to_last_active") is True:
                             sr.pop("defiant_to_last_active", None)
                             sr.pop("defiant_to_last_expires_phase", None)
@@ -2873,6 +2942,10 @@ class StratagemManager:
                             sr.pop("peerless_warrior_melee_attacks_bonus", None)
                             sr.pop("peerless_warrior_expires_phase", None)
                             sr.pop("peerless_warrior_source", None)
+                        if sr.get("unbridled_carnage_active") is True:
+                            sr.pop("unbridled_carnage_active", None)
+                            sr.pop("unbridled_carnage_expires_phase", None)
+                            sr.pop("unbridled_carnage_source", None)
                         if (
                             "stratagem_consolidate_distance_override" in sr
                             or sr.get("stratagem_consolidate_requires_engagement")
@@ -3925,8 +3998,83 @@ class StratagemManager:
                         "stratagem": s2.name,
                         "cp_cost": s2.cp_cost,
                         "attacking_unit": attacking_unit,
-                        "candidates": smoke_candidates,
-                    })
+                            "candidates": smoke_candidates,
+                        })
+        except Exception:
+            raise
+        # ORKS: 'ARD AS NAILS (opponent Shooting phase, after targets selected).
+        try:
+            s = self.get_by_name("\u2019ARD AS NAILS") or self.get_by_name("'ARD AS NAILS")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                if self._is_war_horde_detachment():
+                    candidates = []
+                    seen = set()
+                    for u in list(target_units or []):
+                        try:
+                            root = u.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if not self._is_orks_unit(root):
+                            continue
+                        if self._unit_is_grots(root):
+                            continue
+                        try:
+                            if bool(getattr(root, "is_monster", False)) or root.has_any_keyword("MONSTER"):
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if bool(getattr(root, "is_vehicle", False)) or root.has_any_keyword("VEHICLE"):
+                                continue
+                        except Exception:
+                            pass
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "shooting_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "shooting_targets_selected",
+                                "phase_name": "Shooting phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
         except Exception:
             raise
         # ARMOUR OF CONTEMPT / THE FOE FORESEEN (opponent Shooting phase, after targets selected).
@@ -4522,6 +4670,144 @@ class StratagemManager:
                             candidates.append(unit)
                         except Exception:
                             raise
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
+        # ORKS: ORKS IS NEVER BEATEN
+        try:
+            s = self.get_by_name("ORKS IS NEVER BEATEN")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                if self._is_war_horde_detachment():
+                    candidates = []
+                    seen = set()
+                    for unit in list(target_units or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if not self._is_orks_unit(root):
+                            continue
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
+        # ORKS: 'ARD AS NAILS
+        try:
+            s = self.get_by_name("\u2019ARD AS NAILS") or self.get_by_name("'ARD AS NAILS")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                if self._is_war_horde_detachment():
+                    candidates = []
+                    seen = set()
+                    for unit in list(target_units or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if not self._is_orks_unit(root):
+                            continue
+                        if self._unit_is_grots(root):
+                            continue
+                        try:
+                            if bool(getattr(root, "is_monster", False)) or root.has_any_keyword("MONSTER"):
+                                continue
+                        except Exception:
+                            pass
+                        try:
+                            if bool(getattr(root, "is_vehicle", False)) or root.has_any_keyword("VEHICLE"):
+                                continue
+                        except Exception:
+                            pass
+                        candidates.append(root)
                     if candidates:
                         already = False
                         for r in self._pending_reactions:
@@ -7153,6 +7439,97 @@ class StratagemManager:
             print(f"INFO: DEATHLESS DUTY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
 
+        # ORKS: ORKS IS NEVER BEATEN
+        if s.name.upper() == "ORKS IS NEVER BEATEN":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = list(kwargs.get("candidates") or kwargs.get("target_units") or [])
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "ORKS IS NEVER BEATEN":
+                        unit = unit or r.get("unit") or r.get("target_unit")
+                        attacker_unit = attacker_unit or r.get("attacking_unit")
+                        if not candidates:
+                            candidates = list(r.get("candidates") or r.get("target_units") or [])
+                        break
+            if unit is None:
+                print("ERROR: ORKS IS NEVER BEATEN: missing target unit context")
+                return False
+            if not self._is_war_horde_detachment():
+                return False
+            if not self._is_orks_unit(unit):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: ORKS IS NEVER BEATEN: wrong phase")
+                return False
+            if candidates:
+                try:
+                    if unit not in list(candidates or []):
+                        print("ERROR: ORKS IS NEVER BEATEN: target was not selected by attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
+                    print("ERROR: ORKS IS NEVER BEATEN: attacker is not enemy")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(unit):
+                    print("ERROR: ORKS IS NEVER BEATEN: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not unit.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(unit, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(unit, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["orks_is_never_beaten_active"] = True
+                sr["orks_is_never_beaten_expires_phase"] = "FIGHT_PHASE"
+                sr["orks_is_never_beaten_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: ORKS IS NEVER BEATEN: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            return True
+
         # EMPEROR'S CHILDREN: DEATH ECSTASY
         if s.name.upper() == "DEATH ECSTASY":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -9261,6 +9638,80 @@ class StratagemManager:
             print(f"INFO: HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
             return True
 
+        # War Horde: UNBRIDLED CARNAGE (criticals on 5+ in melee)
+        if s.name.upper() == "UNBRIDLED CARNAGE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: UNBRIDLED CARNAGE: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_war_horde_detachment():
+                return False
+            if not self._is_orks_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: UNBRIDLED CARNAGE: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: UNBRIDLED CARNAGE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(getattr(root, "round_state", None), "fought_this_phase", False):
+                    print("ERROR: UNBRIDLED CARNAGE: target already fought this phase")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["unbridled_carnage_active"] = True
+                sr["unbridled_carnage_expires_phase"] = "FIGHT_PHASE"
+                sr["unbridled_carnage_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: UNBRIDLED CARNAGE: {getattr(root, 'name', 'Unit')} scores critical hits on 5+ in melee this phase.")
+            return True
+
         # Rage-cursed Onslaught: LIMB FROM LIMB (+1 S or +1 AP, or Red Thirst for both + Battle-shock)
         if s.name.upper() == "LIMB FROM LIMB":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
@@ -10192,6 +10643,126 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: UNYIELDING FORMS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
+            return True
+
+        # War Horde: 'ARD AS NAILS (-1 to wound)
+        if s.name.upper() in ("'ARD AS NAILS", "\u2019ARD AS NAILS"):
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            attacker_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or kwargs.get("target_units") or []
+            if unit is None:
+                if candidates:
+                    unit = candidates[0] if len(candidates) == 1 else None
+                if unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() in ("'ARD AS NAILS", "\u2019ARD AS NAILS"):
+                            unit = r.get("unit") or r.get("target_unit")
+                            attacker_unit = attacker_unit or r.get("attacking_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            if unit is None and candidates and len(candidates) == 1:
+                                unit = candidates[0]
+                            break
+            if unit is None:
+                print("ERROR: 'ARD AS NAILS: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_war_horde_detachment():
+                return False
+            if not self._is_orks_unit(root):
+                return False
+            if self._unit_is_grots(root):
+                return False
+            try:
+                if bool(getattr(root, "is_monster", False)) or root.has_any_keyword("MONSTER"):
+                    return False
+            except Exception:
+                pass
+            try:
+                if bool(getattr(root, "is_vehicle", False)) or root.has_any_keyword("VEHICLE"):
+                    return False
+            except Exception:
+                pass
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            pname = str(phase_name or "").strip().lower()
+            if pname not in ("shooting phase", "fight phase"):
+                print("ERROR: 'ARD AS NAILS: wrong phase")
+                return False
+            if pname == "shooting phase":
+                active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+                if active_player is self.player:
+                    print("ERROR: 'ARD AS NAILS: not opponent's Shooting phase")
+                    return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: 'ARD AS NAILS: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: 'ARD AS NAILS: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: 'ARD AS NAILS: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            if attacker_unit is not None:
+                try:
+                    if attacker_unit.get_parent_army().player is self.player:
+                        print("ERROR: 'ARD AS NAILS: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                entry = {
+                    "value": 1,
+                    "attack_type": "any",
+                    "expires_phase": "SHOOTING_PHASE" if pname == "shooting phase" else "FIGHT_PHASE",
+                    "source": s.name,
+                }
+                self._append_defensive_effect(root, "defensive_wound_mods", entry)
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: 'ARD AS NAILS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
             return True
 
         # Necrons: MERCILESS RECLAMATION (+1 to wound vs targets near objectives).

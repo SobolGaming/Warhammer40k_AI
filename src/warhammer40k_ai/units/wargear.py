@@ -4225,6 +4225,20 @@ class WargearProfile:
                 crit_hit_reasons.append("Daemon Weapon of Nurgle: critical hit on 5+")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attached_unit_root"):
+                unit = unit.get_attached_unit_root()
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("unbridled_carnage_active"):
+                exp = str(sr.get("unbridled_carnage_expires_phase", "") or "").strip().upper()
+                phase_name = self._current_phase_name(attacker)
+                if not exp or exp == phase_name:
+                    crit_threshold = min(int(crit_threshold), 5)
+                    crit_hit_reasons.append("Unbridled Carnage: critical hit on 5+")
+        except Exception:
+            pass
 
         hit_result["crit_threshold"] = int(crit_threshold)
 

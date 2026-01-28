@@ -5313,6 +5313,36 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # ORKS: Orks Is Never Beaten (defer fight-on-death until attacker finishes attacks).
+        try:
+            if game_map is not None:
+                army = self.get_parent_army()
+                game = army.player.game if (army is not None and getattr(army, "player", None) is not None) else None
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                if phase_name == "FIGHT_PHASE":
+                    try:
+                        root = self.get_attached_unit_root()
+                    except Exception:
+                        root = self
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("orks_is_never_beaten_active"):
+                        exp = str(sr.get("orks_is_never_beaten_expires_phase", "") or "").strip().upper()
+                        if not exp or exp == phase_name:
+                            try:
+                                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                                    pending = getattr(root, "_orks_is_never_beaten_pending_models", None)
+                                    if not isinstance(pending, list):
+                                        pending = []
+                                    if model not in pending:
+                                        pending.append(model)
+                                    root._orks_is_never_beaten_pending_models = pending
+                                    return
+                            except Exception:
+                                pass
+        except Exception:
+            # Fail-safe: don't break death processing
+            pass
+
         # Adeptus Custodes: Defiant to the Last (defer fight-on-death on 4+ after attacker finishes attacks).
         try:
             if game_map is not None:
@@ -15602,6 +15632,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                root._resolve_orks_is_never_beaten_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_defiant_to_last_queue(game_map=game_map)
             except Exception:
                 pass
@@ -15638,6 +15672,10 @@ class Unit:
     def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_deathless_duty_pending_models", game_map=game_map)
+
+    def _resolve_orks_is_never_beaten_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Orks Is Never Beaten fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_orks_is_never_beaten_pending_models", game_map=game_map)
 
     def _resolve_defiant_to_last_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Defiant to the Last fights after an attacker finishes its attacks."""
