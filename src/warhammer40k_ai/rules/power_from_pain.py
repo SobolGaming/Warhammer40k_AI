@@ -228,6 +228,7 @@ class PowerFromPainManager:
     def __init__(self, army=None):
         self.army = army
         self.tokens: int = 0
+        self._pending_empowerments: dict[str, dict] = {}
 
     def _army_has_power_from_pain(self) -> bool:
         if self.army is None:
@@ -307,6 +308,131 @@ class PowerFromPainManager:
             return str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
         except Exception:
             return ""
+
+    def _pending_empowerment_key(self, unit_id: str, trigger: str, phase_name: str) -> str:
+        return f"{unit_id}:{trigger}:{phase_name}"
+
+    def _resolve_unit_by_id(self, unit_id: str, *, game=None):
+        if not unit_id:
+            return None
+        if game is not None:
+            registry = getattr(game, "entity_registry", None)
+            if registry is not None:
+                try:
+                    unit = registry.get(str(unit_id), kind="unit")
+                except Exception:
+                    unit = None
+                if unit is not None:
+                    return unit
+        try:
+            for unit in list(getattr(self.army, "units", []) or []):
+                try:
+                    if str(get_entity_id(unit)) == str(unit_id):
+                        return unit
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
+
+    def _pending_choice_request(self, game, pending_key: str, choice_kind: str) -> bool:
+        if game is None:
+            return False
+        queue = getattr(game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return False
+        for req in list(queue.list() or []):
+            try:
+                if str(getattr(req, "decision_type", "")) != "CHOOSE_POWER_FROM_PAIN_OPTION":
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("pending_key", "")) != str(pending_key):
+                    continue
+                if str(ctx.get("choice_kind", "")) != str(choice_kind):
+                    continue
+                return True
+            except Exception:
+                continue
+        return False
+
+    def _queue_choice_request(self, *, game, player, unit_id: str, choice_kind: str, pending_key: str) -> None:
+        if game is None:
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_POWER_FROM_PAIN_OPTION
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+
+        if choice_kind == "archon_poisoned_tongue":
+            title = "Archon of the Poisoned Tongue"
+            options = [
+                DecisionOption.create("Lethal Hits", payload={"choice_key": "LETHAL", "choice_kind": choice_kind, "unit_id": unit_id}),
+                DecisionOption.create("Sustained Hits 1", payload={"choice_key": "SUSTAINED", "choice_kind": choice_kind, "unit_id": unit_id}),
+            ]
+        elif choice_kind == "experimental_enhancements":
+            title = "Experimental Enhancements"
+            options = [
+                DecisionOption.create("Attacks 3", payload={"choice_key": "ATTACKS_3", "choice_kind": choice_kind, "unit_id": unit_id}),
+                DecisionOption.create(
+                    "Attacks 4 (Hazardous)",
+                    payload={"choice_key": "ATTACKS_4_HAZARDOUS", "choice_kind": choice_kind, "unit_id": unit_id},
+                ),
+            ]
+        else:
+            return
+
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
+            f"Select {title}.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={"unit_id": unit_id, "choice_kind": choice_kind, "pending_key": pending_key},
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+
+    def record_empowerment_choice(self, *, pending_key: str, choice_kind: str, choice: str, game=None) -> bool:
+        pending = self._pending_empowerments.get(str(pending_key))
+        if not isinstance(pending, dict):
+            return False
+        choices = pending.setdefault("choices", {})
+        choices[str(choice_kind)] = str(choice)
+        required = list(pending.get("required_choices", []) or [])
+        if any(kind for kind in required if kind not in choices):
+            return False
+        return bool(self._finalize_pending_empowerment(pending_key, game=game))
+
+    def _finalize_pending_empowerment(self, pending_key: str, *, game=None) -> bool:
+        pending = self._pending_empowerments.get(str(pending_key))
+        if not isinstance(pending, dict):
+            return False
+        unit_id = str(pending.get("unit_id", "") or "")
+        trigger = str(pending.get("trigger", "") or "")
+        phase_name = str(pending.get("phase_name", "") or "")
+        spec_keys = list(pending.get("spec_keys", []) or [])
+        ability_names = list(pending.get("ability_names", []) or [])
+        choice_cache = dict(pending.get("choices", {}) or {})
+        if not unit_id or not trigger:
+            return False
+        unit = self._resolve_unit_by_id(unit_id, game=game)
+        if unit is None:
+            return False
+        if not bool(pending.get("tokens_spent", False)):
+            if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
+                return False
+            pending["tokens_spent"] = True
+        applied = self._apply_empowerment_effects(
+            unit,
+            spec_keys=spec_keys,
+            ability_names=ability_names,
+            choice_cache=choice_cache,
+            game=game,
+            phase_name=phase_name,
+        )
+        if applied:
+            self._pending_empowerments.pop(str(pending_key), None)
+        return bool(applied)
 
     def _trigger_allows(self, trigger_spec: PainTriggerSpec, *, unit, game) -> bool:
         if trigger_spec is None or game is None or unit is None:
@@ -592,25 +718,6 @@ class PowerFromPainManager:
         unit.special_rules = sr
 
     def _choose_archon_poisoned_tongue(self, unit, *, game=None) -> str:
-        player = self._unit_owner(unit)
-        options = ["LETHAL HITS", "SUSTAINED HITS 1"]
-        ctx = {
-            "ability_name": "Archon of the Poisoned Tongue",
-            "unit": getattr(unit, "name", "") or "",
-            "options": list(options),
-            "phase": self._phase_name(game),
-        }
-        choice = None
-        try:
-            if player is not None:
-                choice = player._choose_optional_value("POWER_FROM_PAIN_ARCHON_POISONED_TONGUE", options, ctx)
-        except Exception:
-            choice = None
-        if not choice:
-            return "LETHAL"
-        choice_norm = str(choice).strip().upper()
-        if "SUSTAINED" in choice_norm:
-            return "SUSTAINED"
         return "LETHAL"
 
     def _apply_archon_poisoned_tongue(self, unit, choice: Optional[str]) -> None:
@@ -669,25 +776,6 @@ class PowerFromPainManager:
         unit.special_rules = sr
 
     def _choose_experimental_enhancements(self, unit, *, game=None) -> str:
-        player = self._unit_owner(unit)
-        options = ["ATTACKS 3", "ATTACKS 4 HAZARDOUS"]
-        ctx = {
-            "ability_name": "Experimental Enhancements",
-            "unit": getattr(unit, "name", "") or "",
-            "options": list(options),
-            "phase": self._phase_name(game),
-        }
-        choice = None
-        try:
-            if player is not None:
-                choice = player._choose_optional_value("POWER_FROM_PAIN_EXPERIMENTAL_ENHANCEMENTS", options, ctx)
-        except Exception:
-            choice = None
-        if not choice:
-            return "ATTACKS_3"
-        choice_norm = str(choice).strip().upper()
-        if "4" in choice_norm:
-            return "ATTACKS_4_HAZARDOUS"
         return "ATTACKS_3"
 
     def _apply_experimental_enhancements(self, unit, choice: Optional[str]) -> None:
@@ -1057,10 +1145,109 @@ class PowerFromPainManager:
             pass
         return self._return_destroyed_bodyguard_models(unit, amount=amount, game_map=getattr(game, "map", None))
 
+    def _apply_empowerment_effects(
+        self,
+        root,
+        *,
+        spec_keys: list[str],
+        ability_names: list[str],
+        choice_cache: dict,
+        game,
+        phase_name: str,
+    ) -> bool:
+        if root is None or game is None:
+            return False
+        if phase_name and self._empowered_this_phase(root, phase_name):
+            return False
+        try:
+            members = root.get_attached_unit_members()
+        except Exception:
+            members = [root]
+        for member in list(members or []):
+            self._apply_empowered_markers(member, phase_name=phase_name, ability_names=ability_names)
+            for spec_key in list(spec_keys or []):
+                if spec_key == "HATRED_ETERNAL":
+                    self._apply_hatred_eternal(member)
+                elif spec_key == "LITHE_AGILITY":
+                    self._apply_lithe_agility(member)
+                elif spec_key == "BRIDES_OF_DEATH":
+                    self._apply_brides_of_death(member)
+                elif spec_key == "SCULPTOR_OF_TORMENTS":
+                    self._apply_sculptor_of_torments(member)
+                elif spec_key == "MASTER_OF_BLADES":
+                    self._apply_master_of_blades(member)
+                elif spec_key == "BATTLEFIELD_BUTCHERY":
+                    self._apply_battlefield_butchery(member)
+                elif spec_key == "ACROBATIC_GLADIATORS":
+                    self._apply_acrobatic_gladiators(member)
+                elif spec_key == "ARCHON_POISONED_TONGUE":
+                    self._apply_archon_poisoned_tongue(
+                        member,
+                        choice_cache.get("archon_poisoned_tongue"),
+                    )
+                elif spec_key == "ASSASSINS_POISONS":
+                    self._apply_assassins_poisons(member)
+                elif spec_key == "DEADLY_RETINUE":
+                    self._apply_deadly_retinue(member)
+                elif spec_key == "DECAPITATING_STRIKES":
+                    self._apply_decapitating_strikes(member)
+                elif spec_key == "ELECTROMAGENTIC_CASCADE":
+                    self._apply_electromagentic_cascade(member)
+                elif spec_key == "ENGINE_OF_DESTRUCTION":
+                    self._apply_engine_of_destruction(member)
+                elif spec_key == "EXPERIMENTAL_ENHANCEMENTS":
+                    self._apply_experimental_enhancements(
+                        member,
+                        choice_cache.get("experimental_enhancements"),
+                    )
+                elif spec_key == "GOADED_SAVAGERY":
+                    self._apply_goaded_savagery(member)
+                elif spec_key == "MACRO_STEROIDS":
+                    self._apply_macro_steroids(member)
+                elif spec_key == "MATCHLESS_SWIFTNESS":
+                    self._apply_matchless_swiftness(member)
+                elif spec_key == "MINDLESS_KILLING_MACHINES":
+                    self._apply_mindless_killing_machines(member)
+                elif spec_key == "NOWHERE_TO_RUN":
+                    self._apply_nowhere_to_run(member)
+                elif spec_key == "NOWHERE_TO_HIDE":
+                    self._apply_nowhere_to_hide(member)
+                elif spec_key == "AGONISING_SUPPRESSION":
+                    self._apply_agonising_suppression(member)
+                elif spec_key == "PAIN_PARASITE":
+                    self._apply_pain_parasite(member)
+                elif spec_key == "RAPID_DEPLOYMENT":
+                    self._apply_rapid_deployment(member)
+                elif spec_key == "SADISTIC_RAIDERS":
+                    self._apply_sadistic_raiders(member)
+                elif spec_key == "SHREDDING_FIRE":
+                    self._apply_shredding_fire(member)
+                elif spec_key == "SPLINTER_RACKS":
+                    self._apply_splinter_racks(member)
+                elif spec_key == "SWOOPING_DESCENT":
+                    self._apply_swooping_descent(member)
+                elif spec_key == "WINGED_STRIKE":
+                    self._apply_winged_strike(member)
+        # Fleshcraft returns models on the root unit (bodyguard only)
+        for spec_key in list(spec_keys or []):
+            if spec_key == "FLESHCRAFT":
+                try:
+                    self._apply_fleshcraft(root, game=game)
+                except Exception:
+                    pass
+            if spec_key == "FADE_AWAY":
+                try:
+                    self._apply_fade_away(root, game=game)
+                except Exception:
+                    pass
+        return True
+
     def empower_unit_for_trigger(self, unit, *, trigger: str, game) -> bool:
         if not self._army_has_power_from_pain():
             return False
         if unit is None or game is None:
+            return False
+        if not bool(getattr(game, "is_authoritative", True)):
             return False
         try:
             root = unit.get_attached_unit_root()
@@ -1081,99 +1268,68 @@ class PowerFromPainManager:
             return False
         if self._empowered_this_phase(root, phase_name):
             return False
+        required_choices = []
+        for spec in specs:
+            if spec.key == "ARCHON_POISONED_TONGUE":
+                required_choices.append("archon_poisoned_tongue")
+            elif spec.key == "EXPERIMENTAL_ENHANCEMENTS":
+                required_choices.append("experimental_enhancements")
+
+        unit_id = get_entity_id(root)
+        pending_key = self._pending_empowerment_key(unit_id, str(trigger or ""), phase_name)
+        pending = self._pending_empowerments.get(pending_key)
+
+        if required_choices:
+            if pending is None:
+                if int(self.tokens or 0) <= 0:
+                    return False
+                if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
+                    return False
+                pending = {
+                    "unit_id": unit_id,
+                    "trigger": str(trigger or ""),
+                    "phase_name": phase_name,
+                    "spec_keys": [spec.key for spec in specs],
+                    "ability_names": [spec.name for spec in specs],
+                    "required_choices": list(required_choices),
+                    "choices": {},
+                    "tokens_spent": True,
+                }
+                self._pending_empowerments[pending_key] = pending
+            else:
+                pending.setdefault("spec_keys", [spec.key for spec in specs])
+                pending.setdefault("ability_names", [spec.name for spec in specs])
+                pending.setdefault("required_choices", list(required_choices))
+
+            choices = dict(pending.get("choices", {}) or {})
+            missing = [kind for kind in required_choices if kind not in choices]
+            for kind in missing:
+                if not self._pending_choice_request(game, pending_key, kind):
+                    self._queue_choice_request(
+                        game=game,
+                        player=self._unit_owner(root),
+                        unit_id=unit_id,
+                        choice_kind=kind,
+                        pending_key=pending_key,
+                    )
+            if missing:
+                return False
+            applied = self._finalize_pending_empowerment(pending_key, game=game)
+            return bool(applied)
+
         if int(self.tokens or 0) <= 0:
             return False
         if not self.spend_tokens(1, reason=f"Empower ({trigger})"):
             return False
-        ability_names = [spec.name for spec in specs]
-        choice_cache = {}
-        for spec in specs:
-            if spec.key == "ARCHON_POISONED_TONGUE":
-                choice_cache["archon_poisoned_tongue"] = self._choose_archon_poisoned_tongue(root, game=game)
-            elif spec.key == "EXPERIMENTAL_ENHANCEMENTS":
-                choice_cache["experimental_enhancements"] = self._choose_experimental_enhancements(root, game=game)
-        try:
-            members = root.get_attached_unit_members()
-        except Exception:
-            members = [root]
-        for member in list(members or []):
-            self._apply_empowered_markers(member, phase_name=phase_name, ability_names=ability_names)
-            for spec in specs:
-                if spec.key == "HATRED_ETERNAL":
-                    self._apply_hatred_eternal(member)
-                elif spec.key == "LITHE_AGILITY":
-                    self._apply_lithe_agility(member)
-                elif spec.key == "BRIDES_OF_DEATH":
-                    self._apply_brides_of_death(member)
-                elif spec.key == "SCULPTOR_OF_TORMENTS":
-                    self._apply_sculptor_of_torments(member)
-                elif spec.key == "MASTER_OF_BLADES":
-                    self._apply_master_of_blades(member)
-                elif spec.key == "BATTLEFIELD_BUTCHERY":
-                    self._apply_battlefield_butchery(member)
-                elif spec.key == "ACROBATIC_GLADIATORS":
-                    self._apply_acrobatic_gladiators(member)
-                elif spec.key == "ARCHON_POISONED_TONGUE":
-                    self._apply_archon_poisoned_tongue(
-                        member,
-                        choice_cache.get("archon_poisoned_tongue"),
-                    )
-                elif spec.key == "ASSASSINS_POISONS":
-                    self._apply_assassins_poisons(member)
-                elif spec.key == "DEADLY_RETINUE":
-                    self._apply_deadly_retinue(member)
-                elif spec.key == "DECAPITATING_STRIKES":
-                    self._apply_decapitating_strikes(member)
-                elif spec.key == "ELECTROMAGENTIC_CASCADE":
-                    self._apply_electromagentic_cascade(member)
-                elif spec.key == "ENGINE_OF_DESTRUCTION":
-                    self._apply_engine_of_destruction(member)
-                elif spec.key == "EXPERIMENTAL_ENHANCEMENTS":
-                    self._apply_experimental_enhancements(
-                        member,
-                        choice_cache.get("experimental_enhancements"),
-                    )
-                elif spec.key == "GOADED_SAVAGERY":
-                    self._apply_goaded_savagery(member)
-                elif spec.key == "MACRO_STEROIDS":
-                    self._apply_macro_steroids(member)
-                elif spec.key == "MATCHLESS_SWIFTNESS":
-                    self._apply_matchless_swiftness(member)
-                elif spec.key == "MINDLESS_KILLING_MACHINES":
-                    self._apply_mindless_killing_machines(member)
-                elif spec.key == "NOWHERE_TO_RUN":
-                    self._apply_nowhere_to_run(member)
-                elif spec.key == "NOWHERE_TO_HIDE":
-                    self._apply_nowhere_to_hide(member)
-                elif spec.key == "AGONISING_SUPPRESSION":
-                    self._apply_agonising_suppression(member)
-                elif spec.key == "PAIN_PARASITE":
-                    self._apply_pain_parasite(member)
-                elif spec.key == "RAPID_DEPLOYMENT":
-                    self._apply_rapid_deployment(member)
-                elif spec.key == "SADISTIC_RAIDERS":
-                    self._apply_sadistic_raiders(member)
-                elif spec.key == "SHREDDING_FIRE":
-                    self._apply_shredding_fire(member)
-                elif spec.key == "SPLINTER_RACKS":
-                    self._apply_splinter_racks(member)
-                elif spec.key == "SWOOPING_DESCENT":
-                    self._apply_swooping_descent(member)
-                elif spec.key == "WINGED_STRIKE":
-                    self._apply_winged_strike(member)
-        # Fleshcraft returns models on the root unit (bodyguard only)
-        for spec in specs:
-            if spec.key == "FLESHCRAFT":
-                try:
-                    self._apply_fleshcraft(root, game=game)
-                except Exception:
-                    pass
-            if spec.key == "FADE_AWAY":
-                try:
-                    self._apply_fade_away(root, game=game)
-                except Exception:
-                    pass
-        return True
+        applied = self._apply_empowerment_effects(
+            root,
+            spec_keys=[spec.key for spec in specs],
+            ability_names=[spec.name for spec in specs],
+            choice_cache={},
+            game=game,
+            phase_name=phase_name,
+        )
+        return bool(applied)
 
     def maybe_empower_unit_for_trigger(self, unit, *, trigger: str, game) -> bool:
         if not self._army_has_power_from_pain():

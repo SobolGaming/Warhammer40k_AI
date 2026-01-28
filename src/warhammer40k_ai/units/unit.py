@@ -10370,24 +10370,68 @@ class Unit:
             return
         if not self.can_use_dark_pacts():
             return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
         try:
             player = self.get_parent_army().player
         except Exception:
             player = None
         if player is None:
             return
-        ctx = {
-            "unit": getattr(self, "name", "") or "",
-            "phase": phase_name,
-            "trigger": trigger,
-        }
-        if not player._should_use_optional_ability("DARK_PACTS", ctx):
+        try:
+            sr = getattr(self, "special_rules", None)
+            exp = ""
+            if isinstance(sr, dict):
+                exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
+                if sr.get("dark_pacts_active") and exp == str(phase_name or "").strip().upper():
+                    return
+        except Exception:
+            pass
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_DARK_PACT
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
             return
-        options = ["LETHAL HITS", "SUSTAINED HITS 1"]
-        choice = player._choose_optional_value("DARK_PACTS_CHOICE", options, ctx)
-        if not choice:
-            return
-        self.apply_dark_pacts_choice(game, choice=str(choice), phase_name=phase_name, trigger=trigger)
+
+        unit_id = get_entity_id(self)
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_DARK_PACT:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("unit_id", "")) == str(unit_id) and str(ctx.get("phase_name", "")) == str(phase_name or ""):
+                    return
+
+        decision_options = [
+            DecisionOption.create(
+                "Skip Dark Pact",
+                payload={"action": "skip", "unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+            ),
+            DecisionOption.create(
+                "Lethal Hits",
+                payload={"choice": "LETHAL HITS", "unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+            ),
+            DecisionOption.create(
+                "Sustained Hits 1",
+                payload={
+                    "choice": "SUSTAINED HITS 1",
+                    "unit_id": unit_id,
+                    "phase_name": phase_name or "",
+                    "trigger": trigger or "",
+                },
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_DARK_PACT,
+            f"Select Dark Pact for {getattr(self, 'name', 'Unit')}",
+            player_id=getattr(player, "id", None),
+            options=decision_options,
+            context={"unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
 
     def prepare_advance(self) -> Optional[int]:
         """Pre-roll advance dice for UI display. Returns the advance roll."""

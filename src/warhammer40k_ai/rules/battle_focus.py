@@ -485,39 +485,53 @@ class BattleFocusManager:
         self._sync_phase(game)
         if not self._can_use_unit_this_phase(unit):
             return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
 
         act = str(action or "").strip().lower()
-        options: list[str] = []
-        if act in ("move", "advance", "fall_back"):
-            if not self._maneuver_used_this_phase(self.MANEUVER_SWIFT):
-                options.append(self.MANEUVER_SWIFT)
-            if not self._maneuver_used_this_phase(self.MANEUVER_FLITTING):
-                options.append(self.MANEUVER_FLITTING)
-            if act == "advance" and bool(getattr(unit, "is_vehicle", False)):
-                if not self._maneuver_used_this_phase(self.MANEUVER_STAR_ENGINES):
-                    options.append(self.MANEUVER_STAR_ENGINES)
+        options = self.get_move_maneuver_options(unit, act, game)
         if not options:
             return
 
-        player = getattr(self.army, "player", None)
-        ctx = {
-            "ability_name": "Battle Focus",
-            "trigger": "move",
-            "unit": getattr(unit, "name", "") or "",
-            "action": act,
-            "options": list(options),
-            "tokens": int(self.tokens or 0),
-        }
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
 
-        chosen = None
-        if len(options) == 1:
-            key = f"BATTLE_FOCUS_{options[0]}"
-            if self._should_use(player, key, ctx):
-                chosen = options[0]
-        else:
-            chosen = self._choose_from_options(player, "BATTLE_FOCUS_MOVE_MANEUVER", options, ctx)
-        if chosen:
-            self._apply_maneuver(unit, chosen, game)
+        unit_id = get_entity_id(unit)
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("unit_id", "")) == str(unit_id) and str(ctx.get("trigger", "")) == "move":
+                    return
+
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id})]
+        for opt in options:
+            label = str(opt).replace("_", " ").title()
+            req_options.append(
+                DecisionOption.create(
+                    label,
+                    payload={"choice_key": str(opt), "unit_id": unit_id},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
+            "Select Battle Focus maneuver.",
+            player_id=getattr(getattr(self.army, "player", None), "id", None),
+            options=req_options,
+            context={
+                "unit_id": unit_id,
+                "trigger": "move",
+                "action": act,
+                "tokens": int(self.tokens or 0),
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
 
     def maybe_trigger_charge_maneuver(self, unit, target, game) -> None:
         if unit is None or game is None:

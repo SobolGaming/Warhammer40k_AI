@@ -101,34 +101,48 @@ class NurglesGiftManager:
             return
         if self.active_plague_key:
             return
-
-        player = None
+        if game is None:
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
         try:
-            player = getattr(self.army, "player", None)
+            from ..engine.decision_kinds import DECISION_CHOOSE_PLAGUE
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
         except Exception:
-            player = None
+            return
+
+        player = getattr(self.army, "player", None) if self.army is not None else None
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_PLAGUE:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id):
+                    return
 
         options = list(DEFAULT_PLAGUES)
-        ctx = {"ability": "Nurgle's Gift (Aura)", "options": [p.name for p in options]}
-        choice = None
-        try:
-            if player is not None:
-                choice = player._choose_optional_value("NURGLE_PLAGUE", [p.name for p in options], ctx)
-        except Exception:
-            choice = None
-
-        selected = None
-        if choice in options:
-            selected = choice
-        elif isinstance(choice, str):
-            choice_norm = choice.strip().lower()
-            for plague in options:
-                if plague.name.strip().lower() == choice_norm or plague.key.strip().lower() == choice_norm:
-                    selected = plague
-                    break
-
-        if selected is not None:
-            self.active_plague_key = selected.key
+        req_options = []
+        for plague in options:
+            req_options.append(
+                DecisionOption.create(
+                    plague.name,
+                    payload={"choice_key": plague.key, "summary": plague.summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_PLAGUE,
+            "Select a Nurgle's Gift Plague.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id},
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
 
     def is_unit_afflicted(self, unit, *, game=None, game_map=None) -> bool:
         return self.get_afflicted_plague_for_unit(unit, game=game, game_map=game_map) is not None

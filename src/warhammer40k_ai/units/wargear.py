@@ -1814,6 +1814,7 @@ class WargearProfile:
         game_map = None
         is_human = False
         provider = None
+        game = None
         try:
             army = root.get_parent_army()
             player = getattr(army, "player", None)
@@ -1824,6 +1825,7 @@ class WargearProfile:
         except Exception:
             player = None
             game_map = None
+            game = None
             is_human = False
             provider = None
 
@@ -1863,12 +1865,69 @@ class WargearProfile:
                 }
             except Exception:
                 ctx = {}
-            try:
-                if player is not None and player._should_use_optional_ability("ASPECT_SHRINE_TOKEN", ctx):
-                    decision = "use"
+            decision = None
+            if game is not None and player is not None:
+                try:
+                    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_ASPECT
+                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.entity_ids import get_entity_id
+                except Exception:
+                    decision = None
                 else:
-                    decision = "skip"
-            except Exception:
+                    unit_id = ""
+                    try:
+                        unit_id = get_entity_id(root)
+                    except Exception:
+                        unit_id = ""
+                    options = [
+                        DecisionOption.create("Use", payload={"choice": "use"}),
+                        DecisionOption.create("Don't Use", payload={"choice": "skip"}),
+                        DecisionOption.create("Don't Use for this Unit", payload={"choice": "suppress"}),
+                    ]
+                    req = DecisionRequest.create(
+                        DECISION_CHOOSE_ASPECT,
+                        "Aspect Shrine Token",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={"unit_id": unit_id, "roll_type": str(roll_type or ""), "roll_value": int(roll_value)},
+                    )
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
+
+                    choice = None
+                    try:
+                        overrides = getattr(player, "_next_optional_selections", None)
+                        if isinstance(overrides, dict) and "ASPECT_SHRINE_TOKEN" in overrides:
+                            choice = overrides.pop("ASPECT_SHRINE_TOKEN")
+                    except Exception:
+                        choice = None
+                    choice_norm = str(choice or "").strip().lower()
+                    if choice_norm in ("use", "yes", "true"):
+                        desired = "use"
+                    elif choice_norm in ("suppress", "dont use for this unit", "dont_use_for_this_unit", "dont_use_for_unit", "skip_unit"):
+                        desired = "suppress"
+                    else:
+                        desired = "skip"
+                    option_id = None
+                    try:
+                        for opt in list(getattr(req, "options", []) or []):
+                            payload = dict(getattr(opt, "payload", {}) or {})
+                            if str(payload.get("choice", "") or "") == desired:
+                                option_id = opt.option_id
+                                break
+                    except Exception:
+                        option_id = None
+                    if option_id:
+                        value, apply_result = resolve_decision_value(
+                            game,
+                            req,
+                            option_id,
+                            player_id=getattr(player, "id", None),
+                        )
+                        if apply_result is not None and getattr(apply_result, "ok", False):
+                            decision = value
+            if decision is None:
                 decision = "skip"
 
         decision_norm = str(decision or "").strip().lower()

@@ -318,33 +318,7 @@ class HarbingersOfDreadManager:
             if hasattr(game, "request_decision"):
                 game.request_decision(req)
             return
-
-        available = list(self.get_available_dread_abilities())
-        options = ["Roll 2D6 (randomly select two)"] + [d.name for d in available]
-        ctx = {"ability": "Harbingers of Dread", "options": list(options)}
-        choice = None
-        try:
-            if player is not None:
-                choice = player._choose_optional_value("HARBINGERS_OF_DREAD", options, ctx)
-        except Exception:
-            choice = None
-
-        selected = None
-        if choice in available:
-            selected = choice
-        elif isinstance(choice, str):
-            choice_norm = choice.strip().lower()
-            if choice_norm.startswith("roll"):
-                self.roll_dread_abilities(battle_round=br)
-                return
-            for dread in available:
-                if dread.name.strip().lower() == choice_norm or dread.key.strip().lower() == choice_norm:
-                    selected = dread
-                    break
-
-        if selected is None:
-            return
-        self.select_dread_ability(selected, battle_round=br)
+        return
 
     @staticmethod
     def leadership_auras_for_unit(unit, *, game_map=None) -> set[str]:

@@ -684,89 +684,53 @@ class CultAmbushManager:
         if not units:
             return []
 
-        # Human players are handled by UI prompts (if subscribed).
+        if not bool(getattr(game, "is_authoritative", True)):
+            return []
+
         try:
-            is_human = bool(getattr(player, "has_control", lambda: False)())
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
         except Exception:
-            is_human = False
-        es = getattr(game, "event_system", None)
-        try:
-            if is_human and es is not None:
-                subs = getattr(es, "subscribers", {})
-                if isinstance(subs, dict) and subs.get("cult_ambush_reinforcements_prompt"):
-                    es.publish("cult_ambush_reinforcements_prompt", player=player, markers=list(markers), game=game)
+            return []
+
+        unit_ids = [get_entity_id(u) for u in units]
+        marker_ids = [str(m.marker_id) for m in markers]
+        if not unit_ids or not marker_ids:
+            return []
+
+        marker_id = marker_ids[0]
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("ability", "")) == "cult_ambush_reinforcements" and str(ctx.get("marker_id", "")) == marker_id:
                     return []
-        except Exception:
-            pass
 
-        deployed = []
-        if len(units) == 1 and len(markers) == 1:
-            if self.deploy_unit_from_marker(units[0], markers[0], game=game):
-                deployed.append(units[0])
-            return deployed
-
-        choice = None
-        try:
-            if player is not None:
-                ctx = {
-                    "units": [getattr(u, "name", "") for u in units],
-                    "unit_ids": [get_entity_id(u) for u in units],
-                    "markers": [m.marker_id for m in markers],
-                }
-                choice = player._choose_optional_value("CULT_AMBUSH_REINFORCEMENTS", [], ctx)
-        except Exception:
-            choice = None
-
-        if choice is None:
-            return deployed
-
-        units_by_id = {get_entity_id(u): u for u in units}
-        units_by_name = {str(getattr(u, "name", "") or "").strip().lower(): u for u in units}
-        markers_by_id = {str(m.marker_id): m for m in markers}
-
-        def _resolve_unit(val):
-            if val in units:
-                return val
-            key = str(val or "").strip()
-            if key in units_by_id:
-                return units_by_id[key]
-            return units_by_name.get(key.lower())
-
-        def _resolve_marker(val):
-            if val in markers:
-                return val
-            key = str(val or "").strip()
-            return markers_by_id.get(key)
-
-        selections = []
-        if isinstance(choice, dict):
-            if "unit" in choice and "marker" in choice:
-                selections.append((choice.get("unit"), choice.get("marker")))
-            else:
-                for key, value in choice.items():
-                    selections.append((key, value))
-        elif isinstance(choice, (list, tuple, set)):
-            for item in choice:
-                if isinstance(item, dict) and "unit" in item and "marker" in item:
-                    selections.append((item.get("unit"), item.get("marker")))
-                elif isinstance(item, (list, tuple)) and len(item) >= 2:
-                    selections.append((item[0], item[1]))
-
-        used_units = set()
-        used_markers = set()
-        for unit_val, marker_val in selections:
-            unit = _resolve_unit(unit_val)
-            marker = _resolve_marker(marker_val)
-            if unit is None or marker is None:
-                continue
-            if unit in used_units or marker in used_markers:
-                continue
-            if self.deploy_unit_from_marker(unit, marker, game=game):
-                deployed.append(unit)
-                used_units.add(unit)
-                used_markers.add(marker)
-
-        return deployed
+        req_options = [DecisionOption.create("Skip (leave marker)", payload={"action": "skip"})]
+        for unit in units:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(unit)},
+                )
+            )
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Cult Ambush unit.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "ability": "cult_ambush_reinforcements",
+                "marker_id": marker_id,
+                "remaining_marker_ids": list(marker_ids[1:]),
+                "available_unit_ids": list(unit_ids),
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+        return []
 
     def _publish_update(self, game) -> None:
         try:

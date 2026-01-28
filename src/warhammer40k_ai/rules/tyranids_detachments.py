@@ -200,26 +200,6 @@ class TyranidsDetachmentManager(DetachmentManagerBase):
             player = None
 
         if game is None:
-            options = [opt.name for opt in self.get_available_hyper_adaptations()]
-            if not options or player is None:
-                return
-            ctx = {"ability": "Hyper-adaptations", "options": list(options)}
-            choice = None
-            try:
-                choice = player._choose_optional_value("HYPER_ADAPTATIONS", options, ctx)
-            except Exception:
-                choice = None
-            selected = None
-            if choice in self.get_available_hyper_adaptations():
-                selected = choice
-            elif isinstance(choice, str):
-                choice_norm = choice.strip().lower()
-                for opt in self.get_available_hyper_adaptations():
-                    if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
-                        selected = opt
-                        break
-            if selected is not None:
-                self.select_hyper_adaptation(selected, battle_round=br)
             return
 
         if not bool(getattr(game, "is_authoritative", True)):

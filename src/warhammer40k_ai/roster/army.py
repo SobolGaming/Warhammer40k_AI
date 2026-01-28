@@ -820,7 +820,15 @@ class Army:
             pending.append(unit)
         return pending
 
-    def resolve_daemonic_allegiances(self, *, player=None) -> None:
+    def resolve_daemonic_allegiances(self, *, player=None, game=None) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_DAEMONIC_ALLEGIANCE
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            return
         for unit in list(getattr(self, "units", []) or []):
             options_fn = getattr(unit, "get_daemonic_allegiance_options", None)
             options = list(options_fn() or []) if callable(options_fn) else []
@@ -828,24 +836,46 @@ class Army:
                 continue
             selection_fn = getattr(unit, "get_daemonic_allegiance_selection", None)
             selection = selection_fn() if callable(selection_fn) else None
-            if not selection and player is not None:
-                choice_fn = getattr(player, "_choose_optional_value", None)
-                choice = choice_fn(
-                    "DAEMONIC_ALLEGIANCE",
-                    [kw for kw, _ in options],
-                    {"unit": unit.name, "options": [kw for kw, _ in options]},
-                ) if callable(choice_fn) else None
-                if isinstance(choice, str) and choice.strip():
-                    selection = choice
-            if not selection and options:
-                selection = options[0][0]
             if selection:
-                apply_fn = getattr(unit, "apply_daemonic_allegiance_selection", None)
-                if not callable(apply_fn):
-                    raise ArmyValidationError(
-                        f"Unit '{unit.name}' cannot apply Daemonic Allegiance selections."
+                continue
+
+            unit_id = get_entity_id(unit)
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_DAEMONIC_ALLEGIANCE:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("unit_id", "")) == str(unit_id):
+                        break
+                else:
+                    req_options = []
+                    for opt in options:
+                        if isinstance(opt, (list, tuple)):
+                            keyword = str(opt[0]) if opt else ""
+                            wargear = str(opt[1]) if len(opt) > 1 else ""
+                        else:
+                            keyword = str(opt)
+                            wargear = ""
+                        if not keyword:
+                            continue
+                        req_options.append(
+                            DecisionOption.create(
+                                keyword,
+                                payload={"keyword": keyword, "wargear_name": wargear, "unit_id": unit_id},
+                            )
+                        )
+                    if not req_options:
+                        continue
+                    req = DecisionRequest.create(
+                        DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
+                        f"Select Daemonic Allegiance for {getattr(unit, 'name', 'Unit')}.",
+                        player_id=getattr(player, "id", None),
+                        options=req_options,
+                        context={"unit_id": unit_id},
                     )
-                apply_fn(selection)
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
 
     def validate_daemonic_allegiances(self) -> None:
         missing: list[str] = []

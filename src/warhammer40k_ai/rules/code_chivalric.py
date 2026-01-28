@@ -283,50 +283,94 @@ class CodeChivalricManager:
 
         if player is None:
             return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_CHIVALRIC_OATH
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            return
+
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
 
         if not self.selected_deed_key:
-            deed_options = list(CODE_CHIVALRIC_DEEDS)
-            deed_names = [d.name for d in deed_options]
-            deed_names.append("Roll D6 (random)")
-            deed_ctx = {"ability": "Code Chivalric (Deed)", "options": list(deed_names)}
-            deed_choice = None
-            try:
-                deed_choice = player._choose_optional_value("CODE_CHIVALRIC_DEED", deed_names, deed_ctx)
-            except Exception:
-                deed_choice = None
-            if deed_choice in deed_options:
-                self.select_deed(deed_choice, random=False, game=game, player=player)
-            elif isinstance(deed_choice, str):
-                deed_norm = deed_choice.strip().lower()
-                if deed_norm.startswith("roll"):
-                    self.roll_deed(game=game, player=player)
-                else:
-                    for deed in deed_options:
-                        if deed.name.strip().lower() == deed_norm or deed.key.strip().lower() == deed_norm:
-                            self.select_deed(deed, random=False, game=game, player=player)
-                            break
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_CHIVALRIC_OATH:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("oath_kind", "")) != "deed":
+                        continue
+                    if str(ctx.get("army_id", "")) == str(army_id):
+                        return
+            req_options = [
+                DecisionOption.create(
+                    "Roll D6 (random)",
+                    payload={"choice_key": "ROLL", "random": True, "oath_kind": "deed"},
+                )
+            ]
+            for deed in list(CODE_CHIVALRIC_DEEDS or []):
+                key = getattr(deed, "key", None) or getattr(deed, "choice_key", None)
+                name = getattr(deed, "name", None) or str(deed)
+                summary = getattr(deed, "summary", "") or getattr(deed, "effect", "")
+                if not key:
+                    continue
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "oath_kind": "deed", "summary": summary, "army_id": army_id},
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_CHIVALRIC_OATH,
+                "Select Code Chivalric Deed.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"oath_kind": "deed", "army_id": army_id},
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(req)
+            return
 
         if not self.selected_quality_key:
-            quality_options = list(CODE_CHIVALRIC_QUALITIES)
-            quality_names = [q.name for q in quality_options]
-            quality_names.append("Roll D6 (random)")
-            quality_ctx = {"ability": "Code Chivalric (Quality)", "options": list(quality_names)}
-            quality_choice = None
-            try:
-                quality_choice = player._choose_optional_value("CODE_CHIVALRIC_QUALITY", quality_names, quality_ctx)
-            except Exception:
-                quality_choice = None
-            if quality_choice in quality_options:
-                self.select_quality(quality_choice, random=False)
-            elif isinstance(quality_choice, str):
-                quality_norm = quality_choice.strip().lower()
-                if quality_norm.startswith("roll"):
-                    self.roll_quality()
-                else:
-                    for quality in quality_options:
-                        if quality.name.strip().lower() == quality_norm or quality.key.strip().lower() == quality_norm:
-                            self.select_quality(quality, random=False)
-                            break
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_CHIVALRIC_OATH:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("oath_kind", "")) != "quality":
+                        continue
+                    if str(ctx.get("army_id", "")) == str(army_id):
+                        return
+            req_options = [
+                DecisionOption.create(
+                    "Roll D6 (random)",
+                    payload={"choice_key": "ROLL", "random": True, "oath_kind": "quality"},
+                )
+            ]
+            for quality in list(CODE_CHIVALRIC_QUALITIES or []):
+                key = getattr(quality, "key", None) or getattr(quality, "choice_key", None)
+                name = getattr(quality, "name", None) or str(quality)
+                summary = getattr(quality, "summary", "") or getattr(quality, "effect", "")
+                if not key:
+                    continue
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "oath_kind": "quality", "summary": summary, "army_id": army_id},
+                    )
+                )
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_CHIVALRIC_OATH,
+                "Select Code Chivalric Quality.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={"oath_kind": "quality", "army_id": army_id},
+            )
+            if hasattr(game, "request_decision"):
+                game.request_decision(req)
 
     def apply_quality_effects(self) -> None:
         if self.army is None or not self.selected_quality_key:

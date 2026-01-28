@@ -6,6 +6,7 @@ from unittest.mock import patch
 class _UnitStub:
     def __init__(self, *, name, army=None, abilities=None, is_leader=False):
         self.name = name
+        self._id = name
         self._army = army
         self.possible_abilities = list(abilities or [])
         self.special_rules = {}

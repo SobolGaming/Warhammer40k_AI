@@ -20,9 +20,37 @@ class _PlayerStub:
 
 class _ArmyStub:
     def __init__(self, faction_id: str, units: list, player):
+        self._id = f"army:{faction_id}"
+        self.faction = "Black Templars"
         self.faction_id = faction_id
         self.units = units
         self.player = player
+        self.detachment_type = "Black Templars"
+
+
+class _RegistryStub:
+    def __init__(self, army, player):
+        self._armies = {str(getattr(army, "_id", "")): army}
+        self._players = {str(getattr(player, "id", "")): player}
+
+    def get(self, entity_id: str, *, kind: str):
+        if kind == "army":
+            return self._armies.get(str(entity_id))
+        if kind == "player":
+            return self._players.get(str(entity_id))
+        return None
+
+
+class _GameStub:
+    def __init__(self, army, player):
+        from warhammer40k_ai.engine.decisions import DecisionQueue
+
+        self.is_authoritative = True
+        self.decision_queue = DecisionQueue()
+        self.entity_registry = _RegistryStub(army, player)
+
+    def request_decision(self, request):
+        self.decision_queue.add(request)
 
 
 class _ModelStub:
@@ -67,6 +95,7 @@ class TestTemplarVows(unittest.TestCase):
         army = _ArmyStub("SM", units or [], player)
         player.army = army
         mgr = TemplarVowsManager(army)
+        army.templar_vows = mgr
         return mgr, player, army
 
     def test_selects_vow_for_non_human_players(self):
@@ -76,7 +105,18 @@ class TestTemplarVows(unittest.TestCase):
             control_name="REMOTE",
             choice="Accept Any Challenge, No Matter the Odds",
         )
-        mgr.on_battle_round_start(1)
+        game = _GameStub(_army, _player)
+        mgr.on_battle_round_start(1, game=game)
+
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionResult
+
+        req = game.decision_queue.peek()
+        self.assertIsNotNone(req)
+        option = next(opt for opt in req.options if opt.payload.get("choice_key") == VOW_ACCEPT.key)
+        result = DecisionResult(decision_id=req.decision_id, player_id=_player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+        self.assertTrue(apply_result.ok)
         self.assertEqual(mgr.active_vow_key, VOW_ACCEPT.key)
 
     def test_human_selection_defers_without_choice(self):

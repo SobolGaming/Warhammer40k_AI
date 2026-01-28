@@ -341,23 +341,4 @@ class TemplarVowsManager:
             if hasattr(game, "request_decision"):
                 game.request_decision(req)
             return
-        options = [VOW_ABHOR, VOW_ACCEPT, VOW_SUFFER, VOW_UPHOLD]
-        ctx = {"ability": "Templar Vows", "options": [v.name for v in options]}
-        choice = None
-        try:
-            if player is not None:
-                choice = player._choose_optional_value("TEMPLAR_VOW", [v.name for v in options], ctx)
-        except Exception:
-            choice = None
-        selected = None
-        if choice in options:
-            selected = choice
-        elif isinstance(choice, str):
-            choice_norm = choice.strip().lower()
-            for vow in options:
-                if vow.name.strip().lower() == choice_norm or vow.key.strip().lower() == choice_norm:
-                    selected = vow
-                    break
-        if selected is None:
-            return
-        self.active_vow_key = selected.key
+        return

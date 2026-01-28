@@ -13,33 +13,11 @@ This list enumerates **all known player-facing decisions** that do **not** curre
 
 Each of the following uses `_choose_optional_value` directly instead of a DecisionRequest:
 
-- [ ] DEC-OPT-001 COMBAT_DOCTRINE → use DECISION_CHOOSE_COMBAT_DOCTRINE. File: `src/warhammer40k_ai/engine/game.py:637`
-- [ ] DEC-OPT-002 GRAND_COVEN → use DECISION_CHOOSE_GRAND_COVEN. File: `src/warhammer40k_ai/engine/game.py:686`
-- [ ] DEC-OPT-003 COMBAT_DRUGS → use DECISION_CHOOSE_COMBAT_DRUGS. File: `src/warhammer40k_ai/engine/game.py:742`
-- [ ] DEC-OPT-004 BLOOD_TITHE → use DECISION_CHOOSE_BLOOD_TITHE. File: `src/warhammer40k_ai/rules/world_eaters_detachments.py:318`
-- [ ] DEC-OPT-005 HARBINGERS_OF_DREAD → use DECISION_CHOOSE_HARBINGER. File: `src/warhammer40k_ai/rules/harbingers_of_dread.py:328`
-- [ ] DEC-OPT-006 HYPER_ADAPTATIONS → use DECISION_CHOOSE_HYPER_ADAPTATION. File: `src/warhammer40k_ai/rules/tyranids_detachments.py:209`
-- [ ] DEC-OPT-007 DOCTRINA_IMPERATIVE → use DECISION_CHOOSE_DOCTRINA. File: `src/warhammer40k_ai/rules/doctrina_imperatives.py:206`
-- [ ] DEC-OPT-008 NURGLE_PLAGUE → use DECISION_CHOOSE_PLAGUE. File: `src/warhammer40k_ai/rules/nurgles_gift.py:116`
-- [ ] DEC-OPT-009 SHADOW_FORM → use DECISION_CHOOSE_SHADOW_FORM. File: `src/warhammer40k_ai/rules/shadow_form.py:320`
-- [ ] DEC-OPT-010 TEMPLAR_VOW → use DECISION_CHOOSE_VOW. File: `src/warhammer40k_ai/rules/templar_vows.py:349`
-- [ ] DEC-OPT-011 WRATHFUL_PRESENCE → use DECISION_CHOOSE_WRATHFUL_PRESENCE. File: `src/warhammer40k_ai/rules/wrathful_presence.py:338`
-- [ ] DEC-OPT-012 DARK_PACTS_CHOICE → use DECISION_CHOOSE_DARK_PACT with “Skip” option (single-dialog pattern). File: `src/warhammer40k_ai/units/unit.py:10170`
-- [ ] DEC-OPT-013 DAEMONIC_ALLEGIANCE → use DECISION_CHOOSE_DAEMONIC_ALLEGIANCE. File: `src/warhammer40k_ai/roster/army.py:834`
-- [ ] DEC-OPT-014 CODE_CHIVALRIC_DEED → use DECISION_CHOOSE_CHIVALRIC_OATH with context (deed vs quality). File: `src/warhammer40k_ai/rules/code_chivalric.py:294`
-- [ ] DEC-OPT-015 CODE_CHIVALRIC_QUALITY → use DECISION_CHOOSE_CHIVALRIC_OATH with context (deed vs quality). File: `src/warhammer40k_ai/rules/code_chivalric.py:316`
-- [ ] DEC-OPT-018 OATH_OF_MOMENT_TARGET → likely DECISION_CHOOSE_QUARRY with context ability_name. File: `src/warhammer40k_ai/rules/oath_of_moment.py:230`
-- [ ] DEC-OPT-019 BONDSMAN_TARGET → needs decision kind (new or DECISION_CHOOSE_QUARRY with context). File: `src/warhammer40k_ai/rules/bondsman.py:254`
-- [ ] DEC-OPT-020 COMMAND_PHASE_BEARER_TARGET → needs decision kind (new or DECISION_CHOOSE_QUARRY with context). File: `src/warhammer40k_ai/rules/necrons_detachments.py:528`
-- [ ] DEC-OPT-021 POWER_FROM_PAIN_ARCHON_POISONED_TONGUE → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/rules/power_from_pain.py:605`
-- [ ] DEC-OPT-022 POWER_FROM_PAIN_EXPERIMENTAL_ENHANCEMENTS → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/rules/power_from_pain.py:682`
-- [ ] DEC-OPT-023 CULT_AMBUSH_REINFORCEMENTS → needs decision kind. File: `src/warhammer40k_ai/rules/cult_ambush.py:728`
-- [ ] DEC-OPT-028 BATTLE_FOCUS_MOVE_MANEUVER / BATTLE_FOCUS_{single option} → needs decision kind (new) or DecisionRequest per maneuver. File: `src/warhammer40k_ai/rules/battle_focus.py:514`, `src/warhammer40k_ai/rules/battle_focus.py:518`
-- [ ] DEC-OPT-029 ASPECT_SHRINE_TOKEN → not YES/NO; requires multi-option choice (Use / Skip / Suppress). File: `src/warhammer40k_ai/units/wargear.py:1883`
+- (none; resolved)
 
 ## Optional Yes/No Decisions (Player._should_use_optional_ability)
 
-All current true YES/NO confirmations have been routed through DecisionRequests. Optional target-pick flows that can be declined remain in the **DEC-OPT** list and should use a single selection dialog with a “None/Skip” option (e.g., Move-over mortals, Fight-phase end mortals, Dark Pacts).
+All current true YES/NO confirmations have been routed through DecisionRequests. Optional target-pick flows that can be declined should use a single selection dialog with a “None/Skip” option; no outstanding DEC-OPT items remain.
 
 ## Notes
 

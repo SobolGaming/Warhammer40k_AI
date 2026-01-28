@@ -21,6 +21,7 @@ class TestDarkPacts(unittest.TestCase):
 
         unit = Unit.__new__(Unit)
         unit.name = "Chosen"
+        unit._id = "Chosen"
         unit.parent_army = army
         unit.possible_abilities = ["Dark Pacts"]
         unit.special_rules = {}
@@ -33,7 +34,20 @@ class TestDarkPacts(unittest.TestCase):
         unit.attached_leaders = []
         unit.pass_leadership_check = lambda: True
 
+        army.units.append(unit)
+        game.rebuild_entity_registry()
+
         unit.maybe_trigger_dark_pacts(game, phase_name="SHOOTING_PHASE", trigger="shooting")
+
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionResult
+
+        req = game.decision_queue.peek()
+        self.assertIsNotNone(req)
+        option = next(opt for opt in req.options if opt.payload.get("choice") == "LETHAL HITS")
+        result = DecisionResult(decision_id=req.decision_id, player_id=p1.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+        self.assertTrue(apply_result.ok)
 
         self.assertTrue(unit.special_rules.get("dark_pacts_active"))
         self.assertEqual(unit.special_rules.get("dark_pacts_choice"), "LETHAL HITS")
@@ -57,6 +71,7 @@ class TestDarkPacts(unittest.TestCase):
 
         unit = Unit.__new__(Unit)
         unit.name = "Chosen"
+        unit._id = "Chosen"
         unit.parent_army = army
         unit.possible_abilities = ["Dark Pacts"]
         unit.special_rules = {}
@@ -71,9 +86,23 @@ class TestDarkPacts(unittest.TestCase):
 
         target = Unit.__new__(Unit)
         target.name = "Target"
+        target._id = "Target"
         target.parent_army = p2.army
 
+        army.units.append(unit)
+        game.rebuild_entity_registry()
+
         game._on_shooting_targets_selected_dark_pacts(attacking_unit=unit, target_units=[target])
+
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionResult
+
+        req = game.decision_queue.peek()
+        self.assertIsNotNone(req)
+        option = next(opt for opt in req.options if opt.payload.get("choice") == "SUSTAINED HITS 1")
+        result = DecisionResult(decision_id=req.decision_id, player_id=p1.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+        self.assertTrue(apply_result.ok)
 
         self.assertTrue(unit.special_rules.get("dark_pacts_active"))
         self.assertEqual(unit.special_rules.get("dark_pacts_choice"), "SUSTAINED HITS 1")
@@ -97,6 +126,7 @@ class TestDarkPacts(unittest.TestCase):
 
         unit = Unit.__new__(Unit)
         unit.name = "Chosen"
+        unit._id = "Chosen"
         unit.parent_army = army
         unit.possible_abilities = ["Dark Pacts"]
         unit.special_rules = {}
@@ -130,6 +160,7 @@ class TestDarkPacts(unittest.TestCase):
 
         unit = Unit.__new__(Unit)
         unit.name = "Chosen"
+        unit._id = "Chosen"
         unit.parent_army = army
         unit.possible_abilities = ["Dark Pacts"]
         unit.special_rules = {}

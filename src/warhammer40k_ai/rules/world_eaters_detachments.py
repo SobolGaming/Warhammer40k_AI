@@ -280,54 +280,57 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             key = self._command_phase_key(game, player)
             if self._blood_tithe_command_phase_key == key:
                 return False
-        is_human = False
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
         try:
-            is_human = bool(getattr(player, "has_control", lambda: False)())
+            from ..engine.decision_kinds import DECISION_CHOOSE_BLOOD_TITHE
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
         except Exception:
-            is_human = False
-        if is_human:
-            try:
-                es = getattr(game, "event_system", None)
-                subs = getattr(es, "subscribers", {}) if es is not None else {}
-                if isinstance(subs, dict) and subs.get("blood_tithe_prompt"):
-                    es.publish(
-                        "blood_tithe_prompt",
-                        player=player,
-                        game=game,
-                        manager=self,
-                        options=options,
-                        points=int(self.blood_tithe_points or 0),
-                        timing=timing,
-                        source=source,
-                        ignore_command_phase_limit=bool(ignore_command_phase_limit),
-                    )
-                    return True
-            except Exception:
-                pass
             return False
 
-        choice = None
-        try:
-            ctx = {
-                "ability": "Blood Tithe",
-                "options": [a.name for a in options],
-                "points": int(self.blood_tithe_points or 0),
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BLOOD_TITHE:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and str(ctx.get("timing", "")) == str(timing or ""):
+                    return True
+
+        req_options = [DecisionOption.create("Skip", payload={"action": "skip", "army_id": army_id})]
+        for choice in options:
+            key = getattr(choice, "key", None) or getattr(choice, "choice_key", None)
+            if not key:
+                continue
+            label = getattr(choice, "name", None) or str(choice)
+            payload = {
+                "ability_key": str(key),
+                "army_id": army_id,
+                "timing": timing,
+                "cost": getattr(choice, "cost", None),
+                "summary": getattr(choice, "summary", ""),
+            }
+            req_options.append(DecisionOption.create(label, payload=payload))
+        if not req_options:
+            return False
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_BLOOD_TITHE,
+            "Select a Blood Tithe ability.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "army_id": army_id,
                 "timing": timing,
                 "source": source,
-            }
-            choice = player._choose_optional_value("BLOOD_TITHE", [a.name for a in options], ctx)
-        except Exception:
-            choice = None
-        if isinstance(choice, str):
-            chosen = self._choice_from_name(choice)
-            if chosen is not None:
-                return self.activate_blood_tithe(
-                    chosen.key,
-                    game=game,
-                    player=player,
-                    timing=timing,
-                    ignore_command_phase_limit=ignore_command_phase_limit,
-                )
+                "points": int(self.blood_tithe_points or 0),
+                "ignore_command_phase_limit": bool(ignore_command_phase_limit),
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+            return True
         return False
 
     def on_command_phase_start(self, *, game=None, player=None) -> None:

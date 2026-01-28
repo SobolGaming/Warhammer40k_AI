@@ -2,6 +2,39 @@
 from types import SimpleNamespace
 
 
+class _RegistryStub:
+    def __init__(self, units, player=None):
+        self._units = {str(getattr(u, "_id", "")): u for u in units}
+        self._players = {}
+        if player is not None:
+            pid = str(getattr(player, "id", "") or "")
+            if pid:
+                self._players[pid] = player
+
+    def get(self, entity_id: str, *, kind: str):
+        if kind == "unit":
+            return self._units.get(str(entity_id))
+        if kind == "player":
+            return self._players.get(str(entity_id))
+        return None
+
+
+class _GameStub:
+    def __init__(self, *, enemies, units, player=None):
+        from warhammer40k_ai.engine.decisions import DecisionQueue
+
+        self.is_authoritative = True
+        self.decision_queue = DecisionQueue()
+        self.entity_registry = _RegistryStub(units, player=player)
+        self._enemies = list(enemies or [])
+
+    def request_decision(self, request):
+        self.decision_queue.add(request)
+
+    def get_enemy_units(self, _player):
+        return list(self._enemies)
+
+
 class TestOathOfMoment(unittest.TestCase):
     def test_oath_command_phase_clears_and_selects_target(self):
         from warhammer40k_ai.roster.army import Army
@@ -66,11 +99,21 @@ class TestOathOfMoment(unittest.TestCase):
         mgr.set_target(old_unit)
         self.assertEqual(mgr.oathOfMomentTargetUnitId, old_unit._id)
 
-        class _Game:
-            def get_enemy_units(self, _player):
-                return [enemy_unit]
+        game = _GameStub(enemies=[enemy_unit], units=[enemy_unit, old_unit], player=player)
+        mgr.on_command_phase_start(game=game, player=player)
 
-        mgr.on_command_phase_start(game=_Game(), player=player)
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionResult
+
+        req = game.decision_queue.peek()
+        self.assertIsNotNone(req)
+        option = next(
+            opt for opt in req.options if opt.payload.get("target_unit_id") == getattr(enemy_unit, "_id", None)
+        )
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+        self.assertTrue(apply_result.ok)
+
         self.assertEqual(mgr.oathOfMomentTargetUnitId, enemy_unit._id)
 
     def test_oath_reroll_hit_and_wound_bonus(self):
@@ -231,12 +274,23 @@ class TestOathOfMoment(unittest.TestCase):
         army.player = player
 
         mgr = OathOfMomentManager(army)
+        army.oath_of_moment = mgr
 
-        class _Game:
-            def get_enemy_units(self, _player):
-                return [embarked, available]
+        game = _GameStub(enemies=[embarked, available], units=[embarked, available], player=player)
+        mgr.on_command_phase_start(game=game, player=player)
 
-        mgr.on_command_phase_start(game=_Game(), player=player)
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionResult
+
+        req = game.decision_queue.peek()
+        self.assertIsNotNone(req)
+        option = next(
+            opt for opt in req.options if opt.payload.get("target_unit_id") == getattr(available, "_id", None)
+        )
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+        self.assertTrue(apply_result.ok)
+
         self.assertEqual(mgr.oathOfMomentTargetUnitId, available._id)
 
 

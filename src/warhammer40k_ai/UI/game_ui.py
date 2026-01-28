@@ -3039,6 +3039,12 @@ class GameView:
         try:
             from ..engine.decision_kinds import (
                 DECISION_CHOOSE_BLESSINGS,
+                DECISION_CHOOSE_BLOOD_TITHE,
+                DECISION_CHOOSE_COMBAT_DOCTRINE,
+                DECISION_CHOOSE_COMBAT_DRUGS,
+                DECISION_CHOOSE_GRAND_COVEN,
+                DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
+                DECISION_CHOOSE_CHIVALRIC_OATH,
                 DECISION_CHOOSE_DOCTRINA,
                 DECISION_CHOOSE_HARBINGER,
                 DECISION_CHOOSE_HYPER_ADAPTATION,
@@ -3047,10 +3053,16 @@ class GameView:
                 DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
                 DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
                 DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+                DECISION_CHOOSE_PLAGUE,
+                DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
+                DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
+                DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
                 DECISION_CHOOSE_QUARRY,
                 DECISION_CHOOSE_SHADOW_FORM,
                 DECISION_CHOOSE_VOW,
                 DECISION_CHOOSE_WRATHFUL_PRESENCE,
+                DECISION_CHOOSE_DARK_PACT,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
             )
@@ -3061,6 +3073,420 @@ class GameView:
             br = self._battle_round_from_request(request, fallback=int(getattr(game, "turn", 0) or 0))
             self._pending_blessings_queue.append(player)
             self._open_next_blessings_prompt(br)
+            return
+
+        if decision_type == DECISION_CHOOSE_BLOOD_TITHE:
+            if self.blood_tithe_dialog is None:
+                try:
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    from .dialogs import BloodTitheDialog
+                    self.blood_tithe_dialog = BloodTitheDialog(sw, sh)
+                except Exception:
+                    self.blood_tithe_dialog = None
+            if self.blood_tithe_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action, first_option_id
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            points = ctx.get("points", 0)
+            timing = ctx.get("timing", "")
+            source = ctx.get("source", "")
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.blood_tithe_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                skip_id = option_id_for_action(request, "skip") or first_option_id(request)
+                if skip_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        skip_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True},
+                    )
+                try:
+                    self.blood_tithe_dialog.hide()
+                except Exception:
+                    pass
+
+            self.blood_tithe_dialog.show(
+                points=int(points or 0),
+                timing=str(timing or ""),
+                source=str(source or ""),
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.blood_tithe_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_COMBAT_DOCTRINE:
+            if self.combat_doctrines_dialog is None:
+                try:
+                    from .dialogs import CombatDoctrinesDialog
+                    sw, sh = self.screen.get_size()
+                    self.combat_doctrines_dialog = CombatDoctrinesDialog(sw, sh)
+                except Exception:
+                    self.combat_doctrines_dialog = None
+            if self.combat_doctrines_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.combat_doctrines_dialog.hide()
+                except Exception:
+                    pass
+
+            self.combat_doctrines_dialog.show(on_confirm=_on_confirm, decision_request=request)
+            try:
+                self.dialog_manager.open(self.combat_doctrines_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_GRAND_COVEN:
+            if self.grand_coven_dialog is None:
+                try:
+                    from .dialogs import GrandCovenDialog
+                    sw, sh = self.screen.get_size()
+                    self.grand_coven_dialog = GrandCovenDialog(sw, sh)
+                except Exception:
+                    self.grand_coven_dialog = None
+            if self.grand_coven_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.grand_coven_dialog.hide()
+                except Exception:
+                    pass
+
+            self.grand_coven_dialog.show(on_confirm=_on_confirm, decision_request=request)
+            try:
+                self.dialog_manager.open(self.grand_coven_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_COMBAT_DRUGS:
+            if self.combat_drugs_dialog is None:
+                try:
+                    from .dialogs import CombatDrugsDialog
+                    sw, sh = self.screen.get_size()
+                    self.combat_drugs_dialog = CombatDrugsDialog(sw, sh)
+                except Exception:
+                    self.combat_drugs_dialog = None
+            if self.combat_drugs_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_payload, first_option_id
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.combat_drugs_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                default_id = option_id_for_payload(request, "choice_key", "ROLL") or first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    self.combat_drugs_dialog.hide()
+                except Exception:
+                    pass
+
+            self.combat_drugs_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=request)
+            try:
+                self.dialog_manager.open(self.combat_drugs_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_DAEMONIC_ALLEGIANCE:
+            if not hasattr(self, "daemonic_allegiance_dialog") or self.daemonic_allegiance_dialog is None:
+                try:
+                    from .dialogs import DaemonicAllegianceDialog
+                    sw, sh = self.screen.get_size()
+                    self.daemonic_allegiance_dialog = DaemonicAllegianceDialog(sw, sh)
+                except Exception:
+                    self.daemonic_allegiance_dialog = None
+            if self.daemonic_allegiance_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_name = ""
+            try:
+                unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+                unit_name = getattr(unit, "name", "") if unit is not None else ""
+            except Exception:
+                unit_name = ""
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.daemonic_allegiance_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                default_id = first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    self.daemonic_allegiance_dialog.hide()
+                except Exception:
+                    pass
+
+            self.daemonic_allegiance_dialog.show(
+                unit_name=unit_name,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.daemonic_allegiance_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_CHIVALRIC_OATH:
+            if not hasattr(self, "code_chivalric_dialog") or self.code_chivalric_dialog is None:
+                try:
+                    from .dialogs import CodeChivalricDialog
+                    sw, sh = self.screen.get_size()
+                    self.code_chivalric_dialog = CodeChivalricDialog(sw, sh)
+                except Exception:
+                    self.code_chivalric_dialog = None
+            if self.code_chivalric_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            oath_kind = str(ctx.get("oath_kind", "") or "").strip().lower()
+            title = "Code Chivalric"
+            header = "Choose an oath for this battle."
+            if oath_kind == "deed":
+                title = "Code Chivalric - Deed"
+                header = "Choose a Deed for this battle."
+            elif oath_kind == "quality":
+                title = "Code Chivalric - Quality"
+                header = "Choose a Quality for this battle."
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.code_chivalric_dialog.hide()
+                except Exception:
+                    pass
+
+            self.code_chivalric_dialog.show(title=title, header=header, on_confirm=_on_confirm, decision_request=request)
+            try:
+                self.dialog_manager.open(self.code_chivalric_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_PLAGUE:
+            if not hasattr(self, "nurgles_gift_dialog") or self.nurgles_gift_dialog is None:
+                try:
+                    from .dialogs import NurglesGiftPlagueDialog
+                    sw, sh = self.screen.get_size()
+                    self.nurgles_gift_dialog = NurglesGiftPlagueDialog(sw, sh)
+                except Exception:
+                    self.nurgles_gift_dialog = None
+            if self.nurgles_gift_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.nurgles_gift_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                default_id = first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    self.nurgles_gift_dialog.hide()
+                except Exception:
+                    pass
+
+            self.nurgles_gift_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=request)
+            try:
+                self.dialog_manager.open(self.nurgles_gift_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_POWER_FROM_PAIN_OPTION:
+            from ..utility.decision_utils import resolve_decision_command
+
+            dlg = getattr(self, "power_from_pain_choice_dialog", None)
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    self.power_from_pain_choice_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    dlg = self.power_from_pain_choice_dialog
+                except Exception:
+                    dlg = None
+            if dlg is None:
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            choice_kind = str(ctx.get("choice_kind", "") or "")
+            title = "Power from Pain"
+            header = "Select a Power from Pain option."
+            if choice_kind == "archon_poisoned_tongue":
+                title = "Archon of the Poisoned Tongue"
+                header = "Choose Lethal Hits or Sustained Hits 1."
+            elif choice_kind == "experimental_enhancements":
+                title = "Experimental Enhancements"
+                header = "Choose Attacks 3 or Attacks 4 (Hazardous)."
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title=title,
+                header=header,
+                subtitle="",
+                on_confirm=_on_confirm,
+                decision_request=request,
+                show_cancel=False,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER:
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action, first_option_id
+
+            dlg = getattr(self, "battle_focus_maneuver_dialog", None)
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    self.battle_focus_maneuver_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    dlg = self.battle_focus_maneuver_dialog
+                except Exception:
+                    dlg = None
+            if dlg is None:
+                return
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_name = ""
+            try:
+                unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+                unit_name = getattr(unit, "name", "") if unit is not None else ""
+            except Exception:
+                unit_name = ""
+            tokens = ctx.get("tokens")
+            subtitle = f"{unit_name} (Tokens: {tokens})" if unit_name and tokens is not None else unit_name
+
+            skip_id = option_id_for_action(request, "skip")
+            default_id = skip_id or first_option_id(request)
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if default_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        default_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True} if default_id == skip_id else {},
+                    )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title="Battle Focus",
+                header="Select a maneuver.",
+                subtitle=subtitle,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+                show_cancel=True,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_DARK_PACT:
+            if self.dark_pacts_dialog is None:
+                try:
+                    from .dialogs import DarkPactsDialog
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    self.dark_pacts_dialog = DarkPactsDialog(sw, sh)
+                except Exception:
+                    self.dark_pacts_dialog = None
+            if self.dark_pacts_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+            trigger = str(ctx.get("trigger", "") or "")
+            subtitle = f"{getattr(unit, 'name', 'Unit')} selected to {('shoot' if trigger == 'shooting' else 'fight')}."
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.dark_pacts_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                skip_id = option_id_for_action(request, "skip")
+                if skip_id:
+                    resolve_decision_command(self.game, request, skip_id, player_id=getattr(player, "id", None))
+                try:
+                    self.dark_pacts_dialog.hide()
+                except Exception:
+                    pass
+
+            self.dark_pacts_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, decision_request=request)
+            try:
+                self.dialog_manager.open(self.dark_pacts_dialog, modal=True)
+            except Exception:
+                pass
             return
 
         if decision_type in (
@@ -3150,6 +3576,91 @@ class GameView:
                 pass
             return
 
+        if decision_type in (
+            DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+            DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+        ):
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            dlg = getattr(self, "overwatch_shooter_dialog", None)
+            default_id = first_option_id(request)
+            if dlg is None:
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_name = str(ctx.get("ability_name", "") or getattr(request, "prompt", "") or "").strip()
+            attacker_unit = None
+            try:
+                attacker_unit = self._resolve_unit_by_id(ctx.get("attacker_unit_id"))
+            except Exception:
+                attacker_unit = None
+            model_name = ""
+            try:
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    reg = getattr(game, "entity_registry", None)
+                    if reg is not None:
+                        model_obj = reg.get(model_id, kind="model")
+                        if model_obj is not None:
+                            model_name = str(getattr(model_obj, "name", "") or "")
+            except Exception:
+                model_name = ""
+            if not model_name and attacker_unit is not None:
+                model_name = str(getattr(attacker_unit, "name", "") or "")
+
+            if decision_type == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
+                title = ability_name or "Post-shoot Battle-shock"
+                subtitle = f"{model_name or 'Model'} shot. Select a unit to take a Battle-shock test."
+            else:
+                title = ability_name or "Suppression"
+                subtitle = f"{model_name or 'Model'} shot. Select a unit to suppress."
+
+            candidates = []
+            for opt in list(getattr(request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                unit_id = payload.get("unit_id")
+                if not unit_id:
+                    continue
+                try:
+                    unit = self._resolve_unit_by_id(unit_id)
+                except Exception:
+                    unit = None
+                if unit is not None:
+                    candidates.append(unit)
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                list(candidates),
+                attacker_unit,
+                _on_confirm,
+                title=title,
+                subtitle=subtitle,
+                on_cancel=_on_cancel,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
         if decision_type == DECISION_CHOOSE_QUARRY:
             ctx = dict(getattr(request, "context", {}) or {})
             kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
@@ -3232,6 +3743,232 @@ class GameView:
                 dlg.show(
                     title=ability_name or "Mortal Wounds",
                     header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ctx.get("necrons_command_phase_enhancement"):
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                dlg = getattr(self, "necrons_command_phase_dialog", None)
+                if dlg is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.necrons_command_phase_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        dlg = self.necrons_command_phase_dialog
+                    except Exception:
+                        dlg = None
+                if dlg is None:
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    return
+
+                title = str(ctx.get("ability", "") or "Command Phase Enhancement")
+                target_label = str(ctx.get("target_label", "") or "")
+                rng = ctx.get("range")
+                subtitle = target_label
+                if rng:
+                    subtitle = f"{subtitle} (Range: {rng}\")" if subtitle else f"Range: {rng}\""
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title=title,
+                    header="Select a target unit.",
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            ability = str(ctx.get("ability", "") or "")
+            if ability == "oath_of_moment":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "oath_of_moment_dialog") or self.oath_of_moment_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.oath_of_moment_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.oath_of_moment_dialog = None
+                dlg = self.oath_of_moment_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title=f"Oath of Moment - {getattr(player, 'name', 'Player')}",
+                    header="Choose an enemy unit to be your Oath of Moment target.",
+                    subtitle="Target lasts until your next Command phase.",
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "bondsman":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                dlg = getattr(self, "bondsman_dialog", None)
+                if dlg is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.bondsman_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        dlg = self.bondsman_dialog
+                    except Exception:
+                        dlg = None
+                if dlg is None:
+                    return
+
+                source_unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
+                source_name = getattr(source_unit, "name", "Unit") if source_unit is not None else "Unit"
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title=f"Bondsman - {source_name}",
+                    header=f"Select an ARMIGER within 12\" of {source_name}.",
+                    subtitle="",
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "cult_ambush_reinforcements":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                dlg = getattr(self, "cult_ambush_unit_dialog", None)
+                if dlg is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.cult_ambush_unit_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        dlg = self.cult_ambush_unit_dialog
+                    except Exception:
+                        dlg = None
+                if dlg is None:
+                    return
+
+                marker_id = str(ctx.get("marker_id", "") or "")
+                subtitle = f"Marker: {marker_id}"
+                try:
+                    mgr = self._get_cult_ambush_manager(player)
+                except Exception:
+                    mgr = None
+                if mgr is not None and marker_id:
+                    try:
+                        for marker in list(getattr(mgr, "markers", []) or []):
+                            if str(getattr(marker, "marker_id", "")) == marker_id:
+                                subtitle = f"Marker at ({getattr(marker, 'x', 0.0):.1f}\", {getattr(marker, 'y', 0.0):.1f}\")"
+                                break
+                    except Exception:
+                        pass
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title="Cult Ambush",
+                    header="Select a unit to set up using this Cult Ambush marker.",
                     subtitle=subtitle,
                     on_confirm=_on_confirm,
                     on_cancel=_on_cancel,

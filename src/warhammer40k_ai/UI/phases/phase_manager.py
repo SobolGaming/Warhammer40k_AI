@@ -451,13 +451,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         self._open_next_hover_mode_prompt()
 
     def _finish_hover_mode_selection(self) -> None:
-        """Finalize Hover mode selection and apply queued declarations."""
-        try:
-            if hasattr(self.game, "_apply_hover_declarations"):
-                self.game._apply_hover_declarations()
-        except Exception:
-            pass
-
+        """Finalize Hover mode selection."""
         cb = getattr(self, "_hover_mode_on_done", None)
         self._hover_mode_on_done = None
         if callable(cb):
@@ -489,26 +483,29 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             unit_id = ""
 
-        def _done(chosen: bool):
-            try:
-                unit.set_hover_mode(bool(chosen))
-            except Exception:
-                pass
-            try:
-                unit.hover_declared = True
-            except Exception:
-                pass
+        def _advance(_chosen: bool):
             self._open_next_hover_mode_prompt()
 
         if callable(getattr(self, "_request_yes_no", None)):
             ctx = {"ability": "hover_mode", "unit_id": unit_id}
-            self._request_yes_no(title, msg, "Hover", "Aircraft", _done, player=player, context=ctx)
+            self._request_yes_no(title, msg, "Hover", "Aircraft", _advance, player=player, context=ctx)
         else:
             try:
-                self.yes_no_dialog.show(title, msg, _done, yes_label="Hover", no_label="Aircraft")
+                def _fallback(chosen: bool):
+                    try:
+                        unit.set_hover_mode(bool(chosen))
+                    except Exception:
+                        pass
+                    try:
+                        unit.hover_declared = True
+                    except Exception:
+                        pass
+                    self._open_next_hover_mode_prompt()
+
+                self.yes_no_dialog.show(title, msg, _fallback, yes_label="Hover", no_label="Aircraft")
                 self.dialog_manager.open(self.yes_no_dialog, modal=True)
             except Exception:
-                _done(False)
+                _advance(False)
 
     def _start_declare_battle_formations_flow(self) -> None:
         """

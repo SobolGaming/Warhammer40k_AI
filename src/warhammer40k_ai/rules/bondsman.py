@@ -230,6 +230,8 @@ class BondsmanManager:
         self.clear_bondsman_effects()
         if not self._army_has_bondsman():
             return
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
         if player is None and self.army is not None:
             player = getattr(self.army, "player", None)
         try:
@@ -240,31 +242,42 @@ class BondsmanManager:
             targets = self.get_eligible_armigers(source, game_map=game_map)
             if not targets:
                 continue
-            chosen = None
             if len(targets) == 1:
-                chosen = targets[0]
-            else:
-                choice = None
-                try:
-                    if player is not None:
-                        ctx = {
-                            "source": getattr(source, "name", "") or "",
-                            "options": [getattr(t, "name", "") for t in targets],
-                        }
-                        choice = player._choose_optional_value("BONDSMAN_TARGET", list(targets), ctx)
-                except Exception:
-                    choice = None
-                if choice in targets:
-                    chosen = choice
-                elif isinstance(choice, str):
-                    choice_norm = choice.strip().lower()
-                    for target in targets:
-                        if str(getattr(target, "name", "") or "").strip().lower() == choice_norm:
-                            chosen = target
-                            break
-            if chosen is None:
+                self.apply_bondsman_effects(source, targets[0])
                 continue
-            self.apply_bondsman_effects(source, chosen)
+            try:
+                from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+                from ..engine.decisions import DecisionOption, DecisionRequest
+                from ..utility.entity_ids import get_entity_id
+            except Exception:
+                continue
+            source_id = get_entity_id(source)
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("ability", "")) == "bondsman" and str(ctx.get("source_unit_id", "")) == str(source_id):
+                        break
+                else:
+                    req_options = [DecisionOption.create("Skip", payload={"action": "skip"})]
+                    for target in targets:
+                        req_options.append(
+                            DecisionOption.create(
+                                getattr(target, "name", "Unit"),
+                                payload={"target_unit_id": get_entity_id(target)},
+                            )
+                        )
+                    req = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        "Select Bondsman target.",
+                        player_id=getattr(player, "id", None),
+                        options=req_options,
+                        context={"source_unit_id": source_id, "ability": "bondsman"},
+                    )
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
 
     def on_fight_phase_start(self, *, game=None) -> None:
         if self.army is None:

@@ -518,21 +518,4 @@ class NecronsDetachmentManager(DetachmentManagerBase):
                 continue
             if pending is not None:
                 continue
-            choice = None
-            try:
-                ctx = {
-                    "source": getattr(source_unit, "name", "") or "",
-                    "ability": getattr(spec, "ability_name", "") or "",
-                    "options": [getattr(t, "name", "") for t in targets],
-                }
-                choice = player._choose_optional_value("COMMAND_PHASE_BEARER_TARGET", list(targets), ctx)
-            except Exception:
-                choice = None
-            if choice in targets:
-                self.apply_command_phase_bearer_effect(source_unit, choice, spec)
-            elif isinstance(choice, str):
-                wanted = choice.strip().lower()
-                for target in targets:
-                    if str(getattr(target, "name", "") or "").strip().lower() == wanted:
-                        self.apply_command_phase_bearer_effect(source_unit, target, spec)
-                        break
+            continue

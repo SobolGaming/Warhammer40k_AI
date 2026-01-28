@@ -3,6 +3,7 @@
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_OATH_OF_MOMENT, army_has_ability_id
+from ..utility.entity_ids import get_entity_id
 
 
 class OathOfMomentManager:
@@ -220,31 +221,39 @@ class OathOfMomentManager:
         options = self._eligible_enemy_units(game=game, player=player)
         if not options:
             return
-
-        ctx = {
-            "ability": "Oath of Moment",
-            "options": [str(getattr(u, "name", "") or "") for u in options],
-        }
-        choice = None
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
         try:
-            choice = player._choose_optional_value("OATH_OF_MOMENT_TARGET", ctx["options"], ctx)
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
         except Exception:
-            choice = None
-
-        selected = None
-        if choice in options:
-            selected = choice
-        elif isinstance(choice, str):
-            for u in options:
-                if str(getattr(u, "name", "") or "").strip().lower() == choice.strip().lower():
-                    selected = u
-                    break
-
-        if selected is None:
-            if len(options) == 1:
-                selected = options[0]
-            else:
-                return
-
-        if selected is not None:
-            self.set_target(selected)
+            return
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("ability", "")) == "oath_of_moment" and str(ctx.get("army_id", "")) == str(army_id):
+                    return
+        req_options = []
+        for unit in options:
+            req_options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"target_unit_id": get_entity_id(unit)},
+                )
+            )
+        if not req_options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Oath of Moment target.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"ability": "oath_of_moment", "army_id": army_id},
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)

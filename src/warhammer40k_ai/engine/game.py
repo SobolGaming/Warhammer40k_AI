@@ -31,9 +31,11 @@ from .decision_kinds import (
     DECISION_DECLARE_SHOTS,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_CHOOSE_QUARRY,
+    DECISION_CHOOSE_CHIVALRIC_OATH,
     DECISION_MOVE_UNIT,
     DECISION_ALLOCATE_DAMAGE,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
+    DECISION_SELECT_TARGET_MODEL,
     DECISION_SELECT_OVERWATCH_SHOOTER,
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
@@ -593,13 +595,6 @@ class Game:
         )
 
     def _maybe_prompt_combat_doctrines(self) -> None:
-        es = getattr(self, "event_system", None)
-        if es is None or not hasattr(es, "subscribers"):
-            raise RuntimeError("Event system missing for Combat Doctrines prompt.")
-        subs = getattr(es, "subscribers", {})
-        if not isinstance(subs, dict):
-            raise RuntimeError("Event system subscribers not configured.")
-
         player = self.get_current_player()
         if player is None:
             raise RuntimeError("Combat Doctrines prompt requires current player.")
@@ -611,44 +606,58 @@ class Game:
             return
         if not getattr(mgr, "can_select_now", lambda **_k: False)(game=self):
             return
-        is_human = bool(getattr(player, "has_control", lambda: False)())
-        if is_human and subs.get("combat_doctrines_prompt"):
-            es.publish("combat_doctrines_prompt", player=player, game=self)
+        if not bool(getattr(self, "is_authoritative", True)):
             return
         options = list(getattr(mgr, "get_available_doctrines", lambda: [])() or [])
         if not options:
             return
-        ctx = {
-            "ability_name": "Combat Doctrines",
-            "phase": "Command phase",
-            "options": [o.name for o in options],
-        }
-        choice = None
         try:
-            choice = player._choose_optional_value("COMBAT_DOCTRINE", [o.name for o in options], ctx)
+            from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DOCTRINE
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
         except Exception:
-            choice = None
-        selected = None
-        if choice in options:
-            selected = choice
-        elif isinstance(choice, str):
-            choice_norm = choice.strip().lower()
-            for opt in options:
-                if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
-                    selected = opt
-                    break
-        if selected is None:
             return
-        mgr.select_doctrine(selected, battle_round=getattr(self, "turn", 0))
+        army_id = get_entity_id(army)
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_COMBAT_DOCTRINE:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", battle_round) or battle_round) == battle_round:
+                    return
+        req_options = [
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "summary": "Do not select a Combat Doctrine this Command phase.", "army_id": army_id},
+            )
+        ]
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_COMBAT_DOCTRINE,
+            "Select Combat Doctrine.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
 
     def _maybe_prompt_grand_coven(self) -> None:
-        es = getattr(self, "event_system", None)
-        if es is None or not hasattr(es, "subscribers"):
-            raise RuntimeError("Event system missing for Grand Coven prompt.")
-        subs = getattr(es, "subscribers", {})
-        if not isinstance(subs, dict):
-            raise RuntimeError("Event system subscribers not configured.")
-
         player = self.get_current_player()
         if player is None:
             raise RuntimeError("Grand Coven prompt requires current player.")
@@ -658,51 +667,58 @@ class Game:
         mgr = getattr(army, "thousand_sons_detachments", None)
         if mgr is None or not getattr(mgr, "can_select_grand_coven", lambda **_k: False)(game=self):
             return
-        is_human = bool(getattr(player, "has_control", lambda: False)())
-        if is_human and subs.get("grand_coven_prompt"):
-            es.publish("grand_coven_prompt", player=player, game=self)
+        if not bool(getattr(self, "is_authoritative", True)):
             return
-
         options = list(getattr(mgr, "get_available_grand_coven_abilities", lambda: [])() or [])
         if not options:
             return
-        labels = ["None"] + [o.name for o in options]
-        ctx = {
-            "ability_name": "Kindred Sorcery",
-            "phase": "Command phase",
-            "options": list(labels),
-        }
-        choice = None
         try:
-            choice = player._choose_optional_value("GRAND_COVEN", labels, ctx)
+            from ..engine.decision_kinds import DECISION_CHOOSE_GRAND_COVEN
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
         except Exception:
-            choice = None
-        if choice is None:
             return
-        if isinstance(choice, str) and choice.strip().lower() in ("none", "skip", "no"):
+        army_id = get_entity_id(army)
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_GRAND_COVEN:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", battle_round) or battle_round) == battle_round:
+                    return
+        req_options = [
+            DecisionOption.create(
+                "None",
+                payload={"skip": True, "summary": "Do not select a Kindred Sorcery ability this Command phase.", "army_id": army_id},
+            )
+        ]
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or ""
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
             return
-
-        selected = None
-        if choice in options:
-            selected = choice
-        elif isinstance(choice, str):
-            choice_norm = choice.strip().lower()
-            for opt in options:
-                if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
-                    selected = opt
-                    break
-        if selected is None:
-            return
-        mgr.select_grand_coven(selected, battle_round=getattr(self, "turn", 0))
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_GRAND_COVEN,
+            "Select a Kindred Sorcery ability.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
 
     def _maybe_prompt_combat_drugs(self) -> None:
-        es = getattr(self, "event_system", None)
-        if es is None or not hasattr(es, "subscribers"):
-            raise RuntimeError("Event system missing for Combat Drugs prompt.")
-        subs = getattr(es, "subscribers", {})
-        if not isinstance(subs, dict):
-            raise RuntimeError("Event system subscribers not configured.")
-
         player = self.get_current_player()
         if player is None:
             raise RuntimeError("Combat Drugs prompt requires current player.")
@@ -712,44 +728,63 @@ class Game:
         mgr = getattr(army, "drukhari_detachments", None)
         if mgr is None or not getattr(mgr, "can_select_combat_drugs", lambda **_k: False)(game=self):
             return
-        is_human = bool(getattr(player, "has_control", lambda: False)())
-        if is_human and subs.get("combat_drugs_prompt"):
-            es.publish("combat_drugs_prompt", player=player, game=self)
+        if not bool(getattr(self, "is_authoritative", True)):
             return
-
         options = []
         try:
             options = list(getattr(mgr, "get_available_combat_drugs", lambda: [])() or [])
         except Exception:
             options = []
-        labels = ["Roll 2D6 (randomly select two)"] + [o.name for o in options]
-        ctx = {
-            "ability_name": "Combat Drugs",
-            "phase": "Command phase",
-            "options": list(labels),
-        }
-        choice = None
         try:
-            choice = player._choose_optional_value("COMBAT_DRUGS", labels, ctx)
+            from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DRUGS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
         except Exception:
-            choice = None
-
-        selected = None
-        if choice in options:
-            selected = choice
-        elif isinstance(choice, str):
-            choice_norm = choice.strip().lower()
-            if choice_norm.startswith("roll"):
-                mgr.roll_combat_drugs(battle_round=getattr(self, "turn", 0))
-                return
-            for opt in options:
-                if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
-                    selected = opt
-                    break
-
-        if selected is None:
             return
-        mgr.select_combat_drug(selected, battle_round=getattr(self, "turn", 0))
+        army_id = get_entity_id(army)
+        battle_round = int(getattr(self, "turn", 0) or 0)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_COMBAT_DRUGS:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", battle_round) or battle_round) == battle_round:
+                    return
+        req_options = [
+            DecisionOption.create(
+                "Roll 2D6 (randomly select two)",
+                payload={
+                    "choice_key": "ROLL",
+                    "random": True,
+                    "summary": "Apply both results; duplicates have no additional effect.",
+                    "army_id": army_id,
+                },
+            )
+        ]
+        for opt in options:
+            key = getattr(opt, "key", None)
+            if not key:
+                continue
+            name = getattr(opt, "name", None) or str(opt)
+            summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+            req_options.append(
+                DecisionOption.create(
+                    name,
+                    payload={"choice_key": str(key), "summary": summary, "army_id": army_id},
+                )
+            )
+        if not req_options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_COMBAT_DRUGS,
+            "Select Combat Drugs.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"army_id": army_id, "battle_round": battle_round},
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
 
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
         player = self.get_current_player()
@@ -3195,6 +3230,188 @@ class Game:
             {"name": ability_name},
         )
 
+    def _maybe_apply_cult_ambush_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("ability", "")) != "cult_ambush_reinforcements":
+            return
+        marker_id = str(ctx.get("marker_id", "") or "")
+        if not marker_id:
+            return
+        player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+        army = player.get_army() if player is not None else None
+        mgr = getattr(army, "cult_ambush", None) if army is not None else None
+        if mgr is None:
+            return
+        marker = None
+        try:
+            for entry in list(getattr(mgr, "markers", []) or []):
+                if str(getattr(entry, "marker_id", "")) == marker_id:
+                    marker = entry
+                    break
+        except Exception:
+            marker = None
+        if marker is None:
+            return
+        if not bool(getattr(marker, "active", False)):
+            return
+
+        chosen_unit = None
+        if not self._decision_is_skip(request, result):
+            payload = self._decision_option_payload(request, result)
+            unit_id = payload.get("target_unit_id", payload.get("unit_id"))
+            chosen_unit = self._resolve_unit_by_id(str(unit_id or ""))
+            if chosen_unit is not None:
+                try:
+                    mgr.deploy_unit_from_marker(chosen_unit, marker, game=self)
+                except Exception:
+                    pass
+
+        remaining_marker_ids = [str(m) for m in list(ctx.get("remaining_marker_ids") or []) if str(m or "")]
+        available_unit_ids = [str(u) for u in list(ctx.get("available_unit_ids") or []) if str(u or "")]
+        if chosen_unit is not None:
+            try:
+                used_id = str(get_entity_id(chosen_unit))
+            except Exception:
+                used_id = ""
+            if used_id:
+                available_unit_ids = [uid for uid in available_unit_ids if str(uid) != used_id]
+        remaining_marker_ids = [mid for mid in remaining_marker_ids if str(mid) != marker_id]
+
+        if not remaining_marker_ids or not available_unit_ids:
+            return
+
+        next_marker_id = ""
+        for mid in list(remaining_marker_ids or []):
+            next_marker_id = str(mid)
+            try:
+                found = False
+                for entry in list(getattr(mgr, "markers", []) or []):
+                    if str(getattr(entry, "marker_id", "")) == next_marker_id and bool(getattr(entry, "active", False)):
+                        found = True
+                        break
+                if found:
+                    break
+            except Exception:
+                break
+        if not next_marker_id:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                pctx = getattr(pending, "context", {}) or {}
+                if str(pctx.get("ability", "")) == "cult_ambush_reinforcements" and str(pctx.get("marker_id", "")) == next_marker_id:
+                    return
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        req_options = [DecisionOption.create("Skip (leave marker)", payload={"action": "skip"})]
+        for uid in list(available_unit_ids or []):
+            unit = self._resolve_unit_by_id(str(uid))
+            if unit is None:
+                continue
+            req_options.append(
+                DecisionOption.create(
+                    getattr(unit, "name", "Unit"),
+                    payload={"target_unit_id": str(uid)},
+                )
+            )
+        if not req_options:
+            return
+        next_remaining = [mid for mid in remaining_marker_ids if str(mid) != next_marker_id]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Select Cult Ambush unit.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "ability": "cult_ambush_reinforcements",
+                "marker_id": next_marker_id,
+                "remaining_marker_ids": list(next_remaining),
+                "available_unit_ids": list(available_unit_ids),
+            },
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
+
+    def _queue_code_chivalric_target_decision(self, mgr, player) -> bool:
+        if mgr is None or player is None:
+            return False
+        try:
+            options = list(mgr.get_eligible_character_models(game=self, player=player) or [])
+        except Exception:
+            options = []
+        if not options:
+            return False
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_SELECT_TARGET_MODEL:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("selection_kind", "")) == "code_chivalric_target":
+                    return True
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        req_options = []
+        for model in options:
+            unit_name = getattr(getattr(model, "parent_unit", None), "name", "")
+            label = f"{getattr(model, 'name', '')} ({unit_name})" if unit_name else str(getattr(model, "name", "Model"))
+            req_options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+        if not req_options:
+            return False
+        req = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            "Select Code Chivalric target model.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={"selection_kind": "code_chivalric_target"},
+        )
+        if hasattr(self, "request_decision"):
+            self.request_decision(req)
+        return True
+
+    def _maybe_queue_code_chivalric_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        decision_type = str(getattr(request, "decision_type", "") or "")
+        ctx = dict(getattr(request, "context", {}) or {})
+        player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+        army = player.get_army() if player is not None else None
+        mgr = getattr(army, "code_chivalric", None) if army is not None else None
+        if mgr is None:
+            return
+
+        if decision_type == DECISION_CHOOSE_CHIVALRIC_OATH:
+            oath_kind = str(ctx.get("oath_kind", "") or "").strip().lower()
+            if oath_kind == "deed":
+                if getattr(mgr, "deed_requires_character_target", lambda: False)() and not getattr(mgr, "deed_target_model_id", None):
+                    if self._queue_code_chivalric_target_decision(mgr, player):
+                        return
+                if not getattr(mgr, "selected_quality_key", None):
+                    mgr.on_read_mission_objectives(game=self, player=player)
+            elif oath_kind == "quality":
+                if getattr(mgr, "deed_requires_character_target", lambda: False)() and not getattr(mgr, "deed_target_model_id", None):
+                    self._queue_code_chivalric_target_decision(mgr, player)
+            return
+
+        if decision_type == DECISION_SELECT_TARGET_MODEL and str(ctx.get("selection_kind", "")) == "code_chivalric_target":
+            payload = self._decision_option_payload(request, result)
+            model_id = payload.get("model_id", payload.get("model"))
+            model = self._resolve_model_by_id(str(model_id or ""))
+            if model is not None:
+                try:
+                    mgr.set_deed_target_model(model)
+                except Exception:
+                    pass
+            if not getattr(mgr, "selected_quality_key", None):
+                mgr.on_read_mission_objectives(game=self, player=player)
+
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -3427,63 +3644,34 @@ class Game:
         if not triggers:
             return
 
-        def _apply_battleshock(target_unit, model, spec) -> None:
-            if target_unit is None:
-                return
-            target_unit.take_battle_shock_test(self.turn)
-            from ..utility.event_bus import append_action
-            pn = attacker_player
-            ability_name = str(spec.get("source", "") or "Post-shoot Battle-shock").strip()
-            append_action(pn, f"{getattr(model, 'name', 'Model')} used {ability_name} on {target_unit.name}")
-
-        es = getattr(self, "event_system", None)
-        if attacker_player.has_control():
-            if es is None or not hasattr(es, "subscribers"):
-                raise RuntimeError("Event system missing for post-shoot Battle-shock prompt.")
-            subs = getattr(es, "subscribers", None)
-            if not isinstance(subs, dict):
-                raise RuntimeError("Event system subscribers not configured.")
-            if subs.get("post_shoot_battleshock_prompt"):
-                for model, spec, candidates in triggers:
-                    ability = {"name": spec.get("source", "Post-shoot Battle-shock")}
-                    es.publish(
-                        "post_shoot_battleshock_prompt",
-                        player=attacker_player,
-                        attacker_unit=attacker_unit,
-                        model=model,
-                        candidates=list(candidates),
-                        ability=ability,
-                        on_select=lambda chosen, _m=model, _s=spec: _apply_battleshock(chosen, _m, _s),
-                        game=self,
-                    )
-                return
-
-        def _choose_target(candidates: list[Any], spec: dict, model) -> Optional[Any]:
-            choice = None
-            chooser = getattr(attacker_player, "_choose_optional_value", None)
-            if callable(chooser):
-                ctx = {
-                    "model": getattr(model, "name", "") or "",
-                    "ability": str(spec.get("source", "") or "Post-shoot Battle-shock").strip(),
-                    "candidates": [getattr(c, "name", "") for c in candidates],
-                }
-                try:
-                    choice = chooser("POST_SHOOT_BATTLESHOCK_TARGET", list(candidates), ctx)
-                except Exception:
-                    choice = None
-            if choice in candidates:
-                return choice
-            if isinstance(choice, str):
-                wanted = choice.strip().lower()
-                for cand in candidates:
-                    if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
-                        return cand
-            return None
+        from .decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
 
         for model, spec, candidates in triggers:
-            chosen = _choose_target(candidates, spec, model)
-            if chosen is not None:
-                _apply_battleshock(chosen, model, spec)
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                f"{ability_name}: select a unit to take a Battle-shock test.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
 
     def _on_unit_shooting_resolved_post_shoot_suppression(
         self,
@@ -3555,79 +3743,34 @@ class Game:
         if not triggers:
             return
 
-        owner_id = attacker_player.id
-        current_turn = int(getattr(self, "turn", 0) or 0)
-
-        def _apply_suppression(target_unit, model, spec) -> None:
-            if target_unit is None:
-                return
-            root = target_unit.get_attached_unit_root()
-            members = list(root.get_attached_unit_members() or [])
-            if not members:
-                members = [root]
-            for unit in members:
-                if unit is None:
-                    continue
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
-                    sr = {}
-                sr["post_shoot_suppressed_active"] = True
-                sr["post_shoot_suppressed_owner"] = owner_id
-                sr["post_shoot_suppressed_turn"] = int(current_turn)
-                unit.special_rules = sr
-            from ..utility.event_bus import append_action
-            pn = attacker_player
-            ability_name = str(spec.get("source", "") or "Suppressed").strip()
-            append_action(pn, f"{getattr(model, 'name', 'Model')} suppressed {target_unit.name} ({ability_name})")
-
-        es = getattr(self, "event_system", None)
-        if attacker_player.has_control():
-            if es is None or not hasattr(es, "subscribers"):
-                raise RuntimeError("Event system missing for post-shoot suppression prompt.")
-            subs = getattr(es, "subscribers", None)
-            if not isinstance(subs, dict):
-                raise RuntimeError("Event system subscribers not configured.")
-            if subs.get("post_shoot_suppress_prompt"):
-                for model, spec, candidates in triggers:
-                    ability = {"name": spec.get("source", "Suppressed")}
-                    es.publish(
-                        "post_shoot_suppress_prompt",
-                        player=attacker_player,
-                        attacker_unit=attacker_unit,
-                        model=model,
-                        candidates=list(candidates),
-                        ability=ability,
-                        on_select=lambda chosen, _m=model, _s=spec: _apply_suppression(chosen, _m, _s),
-                        game=self,
-                    )
-                return
-
-        def _choose_target(candidates: list[Any], spec: dict, model) -> Optional[Any]:
-            choice = None
-            chooser = getattr(attacker_player, "_choose_optional_value", None)
-            if callable(chooser):
-                ctx = {
-                    "model": getattr(model, "name", "") or "",
-                    "ability": str(spec.get("source", "") or "Suppressed").strip(),
-                    "candidates": [getattr(c, "name", "") for c in candidates],
-                }
-                try:
-                    choice = chooser("POST_SHOOT_SUPPRESSION_TARGET", list(candidates), ctx)
-                except Exception:
-                    choice = None
-            if choice in candidates:
-                return choice
-            if isinstance(choice, str):
-                wanted = choice.strip().lower()
-                for cand in candidates:
-                    if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
-                        return cand
-            return None
+        from .decision_kinds import DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET
 
         for model, spec, candidates in triggers:
-            chosen = _choose_target(candidates, spec, model)
-            if chosen is not None:
-                _apply_suppression(chosen, model, spec)
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Suppressed").strip() or "Suppressed"
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+                f"{ability_name}: select a unit to suppress.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
 
     def _on_unit_shooting_resolved_aspect_shrine(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
@@ -4933,26 +5076,6 @@ class Game:
             return
         phase = getattr(self, "phase", None)
         phase_name = str(getattr(phase, "name", "") or phase or "")
-        player = None
-        try:
-            player = root.get_parent_army().player
-        except Exception:
-            player = None
-        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-        es = getattr(self, "event_system", None)
-        subs = getattr(es, "subscribers", None) if es is not None else None
-        has_sub = bool(isinstance(subs, dict) and subs.get("dark_pacts_prompt"))
-        if is_human and es is not None:
-            es.publish(
-                "dark_pacts_prompt",
-                player=player,
-                unit=root,
-                phase_name=phase_name,
-                trigger="shooting",
-                game=self,
-            )
-            if has_sub:
-                return
         trigger_fn = getattr(root, "maybe_trigger_dark_pacts", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
@@ -4968,26 +5091,6 @@ class Game:
             return
         phase = getattr(self, "phase", None)
         phase_name = str(getattr(phase, "name", "") or phase or "")
-        player = None
-        try:
-            player = root.get_parent_army().player
-        except Exception:
-            player = None
-        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-        es = getattr(self, "event_system", None)
-        subs = getattr(es, "subscribers", None) if es is not None else None
-        has_sub = bool(isinstance(subs, dict) and subs.get("dark_pacts_prompt"))
-        if is_human and es is not None:
-            es.publish(
-                "dark_pacts_prompt",
-                player=player,
-                unit=root,
-                phase_name=phase_name,
-                trigger="fight",
-                game=self,
-            )
-            if has_sub:
-                return
         trigger_fn = getattr(root, "maybe_trigger_dark_pacts", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="fight")
@@ -6116,6 +6219,8 @@ class Game:
             self._maybe_queue_bodyguard_return_followup(request, result)
             self._maybe_apply_mortal_wounds_followup(request, result)
             self._maybe_apply_bodyguard_loss_followup(request, result)
+            self._maybe_apply_cult_ambush_followup(request, result)
+            self._maybe_queue_code_chivalric_followup(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:
@@ -9990,22 +10095,9 @@ class Game:
                 pending = list(army.get_pending_daemonic_allegiance_units() or [])
                 if not pending:
                     continue
-                if player.has_control():
-                    es = getattr(self, "event_system", None)
-                    if es is None or not hasattr(es, "subscribers"):
-                        raise RuntimeError("Event system missing for daemonic allegiance prompt.")
-                    subs = getattr(es, "subscribers", None)
-                    if not isinstance(subs, dict):
-                        raise RuntimeError("Event system subscribers not configured.")
-                    if subs.get("daemonic_allegiance_prompt"):
-                        es.publish(
-                            "daemonic_allegiance_prompt",
-                            player=player,
-                            units=pending,
-                            game=self,
-                        )
-                        continue
-                army.resolve_daemonic_allegiances(player=player)
+                if not bool(getattr(self, "is_authoritative", True)):
+                    continue
+                army.resolve_daemonic_allegiances(player=player, game=self)
         else:
             print("Not enough players loaded")
     
@@ -10047,15 +10139,6 @@ class Game:
             if not mgr._army_has_code_chivalric():
                 continue
             mgr.on_read_mission_objectives(game=self, player=player)
-            if player.has_control():
-                es = getattr(self, "event_system", None)
-                if es is None or not hasattr(es, "subscribers"):
-                    raise RuntimeError("Event system missing for Code Chivalric prompt.")
-                subs = getattr(es, "subscribers", None)
-                if not isinstance(subs, dict):
-                    raise RuntimeError("Event system subscribers not configured.")
-                if subs.get("code_chivalric_prompt"):
-                    es.publish("code_chivalric_prompt", player=player, game=self)
     
     def execute_create_battlefield_phase(self, mission_name: str = None) -> None:
         """Phase 3: Create Battlefield - Set up map, terrain, deployment zones, and objectives."""
@@ -10169,6 +10252,20 @@ class Game:
         players = list(self.players or [])
         if not players:
             return
+        pending_unit_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "hover_mode":
+                    continue
+                unit_id = str(ctx.get("unit_id", "") or "")
+                if unit_id:
+                    pending_unit_ids.add(unit_id)
+
+        from .decision_requests import build_hover_mode_requests
 
         for player in players:
             if player is None:
@@ -10176,70 +10273,13 @@ class Game:
             army = player.get_army()
             if army is None:
                 raise RuntimeError(f"Hover declarations require an army for {player.name}.")
-            candidates = []
-            for unit in list(army.units):
-                if unit is None:
+            units = list(getattr(army, "units", []) or [])
+            requests = build_hover_mode_requests(self, units, queue_requests=False)
+            for req in list(requests or []):
+                unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+                if unit_id and unit_id in pending_unit_ids:
                     continue
-                if bool(getattr(unit, "hover_declared", False)):
-                    continue
-                has_hover = getattr(unit, "has_hover", None)
-                if not callable(has_hover) or not has_hover():
-                    continue
-                has_keyword = getattr(unit, "has_keyword", None)
-                if not callable(has_keyword) or not has_keyword("Aircraft"):
-                    continue
-                candidates.append(unit)
-
-            if not candidates:
-                continue
-
-            options = [str(getattr(u, "_id", "")) for u in candidates]
-            ctx = {
-                "player": getattr(player, "name", ""),
-                "units": [getattr(u, "name", "") for u in candidates],
-                "unit_ids": list(options),
-            }
-
-            selection = None
-            chooser = getattr(player, "_choose_optional_value", None)
-            if callable(chooser):
-                selection = chooser("HOVER_MODE", list(options), ctx)
-
-            selected_ids: set[str] = set()
-            selected_names: set[str] = set()
-
-            if isinstance(selection, dict):
-                for key, value in selection.items():
-                    if not value:
-                        continue
-                    skey = str(key).strip()
-                    if skey in options:
-                        selected_ids.add(skey)
-                    else:
-                        selected_names.add(skey.lower())
-            elif isinstance(selection, (list, tuple, set)):
-                for item in selection:
-                    skey = str(item).strip()
-                    if skey in options:
-                        selected_ids.add(skey)
-                    else:
-                        selected_names.add(skey.lower())
-            elif isinstance(selection, str):
-                skey = selection.strip()
-                if skey in options:
-                    selected_ids.add(skey)
-                else:
-                    selected_names.add(skey.lower())
-            elif isinstance(selection, bool):
-                if selection:
-                    selected_ids.update(options)
-
-            for unit in candidates:
-                unit_id = str(getattr(unit, "_id", ""))
-                unit_name = str(getattr(unit, "name", "") or "").lower()
-                if unit_id in selected_ids or (unit_name and unit_name in selected_names):
-                    unit.set_hover_mode(True)
-                unit.hover_declared = True
+                self.request_decision(req)
 
     def execute_declare_battle_formations_phase(self) -> None:
         """Phase 5: Declare Battle Formations - Attach leaders, embark in transports, allocate reserves."""

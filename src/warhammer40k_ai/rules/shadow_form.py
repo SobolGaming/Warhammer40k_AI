@@ -313,25 +313,4 @@ class ShadowFormManager:
                         if hasattr(game, "request_decision"):
                             game.request_decision(req)
                 continue
-
-            choice = None
-            try:
-                if player is not None:
-                    choice = player._choose_optional_value(
-                        "SHADOW_FORM",
-                        [o.name for o in SHADOW_FORM_OPTIONS],
-                        {"ability": SHADOW_FORM_NAME, "options": [o.name for o in SHADOW_FORM_OPTIONS]},
-                    )
-            except Exception:
-                choice = None
-            selected = None
-            if choice in SHADOW_FORM_OPTIONS:
-                selected = choice
-            elif isinstance(choice, str):
-                choice_norm = choice.strip().lower()
-                for opt in SHADOW_FORM_OPTIONS:
-                    if opt.name.strip().lower() == choice_norm or opt.key.strip().lower() == choice_norm:
-                        selected = opt
-                        break
-            if selected is not None:
-                set_active_shadow_form(unit, selected.key, battle_round=int(battle_round or 0))
+            continue

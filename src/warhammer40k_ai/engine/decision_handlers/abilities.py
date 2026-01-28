@@ -24,6 +24,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_PLAGUE,
     DECISION_CHOOSE_PLEDGE,
     DECISION_CHOOSE_QUARRY,
+    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     DECISION_DISCARD_SECONDARY,
     DECISION_CHOOSE_SHADOW_FORM,
     DECISION_CHOOSE_VOW,
@@ -39,6 +41,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_MOVE_MODIFIER_IGNORES,
     DECISION_CHOOSE_ADVANCE_MODIFIER_IGNORES,
     DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
+    DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
+    DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
@@ -894,7 +898,161 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     mgr.apply_command_phase_bearer_effect(source_unit, chosen, spec)
                 except Exception:
                     pass
+    ability_key = str(ctx.get("ability", "") or "")
+    if ability_key == "oath_of_moment":
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "oath_of_moment", None) if army is not None else None
+        if mgr is not None and chosen is not None:
+            try:
+                mgr.set_target(chosen)
+            except Exception:
+                pass
+            try:
+                player = getattr(army, "player", None)
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"Oath of Moment: selected {tname} as target.")
+            except Exception:
+                pass
+    if ability_key == "bondsman":
+        army = _resolve_army(game, request, payload)
+        mgr = getattr(army, "bondsman", None) if army is not None else None
+        source_unit = resolve_unit(game, ctx.get("source_unit_id"))
+        if mgr is not None and source_unit is not None and chosen is not None:
+            try:
+                mgr.apply_bondsman_effects(source_unit, chosen)
+            except Exception:
+                pass
+            try:
+                player = getattr(army, "player", None)
+                sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"Bondsman: {sname} -> {tname}")
+            except Exception:
+                pass
     return chosen
+
+
+def _validate_post_shoot_battleshock_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Post-shoot Battle-shock requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Post-shoot Battle-shock target not found.",)
+    return ()
+
+
+def _apply_post_shoot_battleshock_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Post-shoot Battle-shock target not found.")
+    turn = int(getattr(game, "turn", 0) or 0)
+    try:
+        target_unit.take_battle_shock_test(turn)
+    except Exception:
+        pass
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Post-shoot Battle-shock").strip()
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
+    model_name = str(getattr(model, "name", "") or "") if model is not None else ""
+    if not model_name and attacker_unit is not None:
+        model_name = str(getattr(attacker_unit, "name", "") or "")
+    if not model_name:
+        model_name = "Model"
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+    try:
+        from ...utility.event_bus import append_action
+        if player is not None:
+            append_action(player, f"{model_name} used {ability_name} on {target_unit.name}")
+    except Exception:
+        pass
+    return target_unit
+
+
+def _validate_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Post-shoot suppression requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Post-shoot suppression target not found.",)
+    return ()
+
+
+def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Post-shoot suppression target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Suppressed").strip()
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
+    model_name = str(getattr(model, "name", "") or "") if model is not None else ""
+    if not model_name and attacker_unit is not None:
+        model_name = str(getattr(attacker_unit, "name", "") or "")
+    if not model_name:
+        model_name = "Model"
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+    owner_id = str(getattr(player, "id", "") or "")
+    current_turn = int(getattr(game, "turn", 0) or 0)
+
+    root = target_unit
+    try:
+        root = target_unit.get_attached_unit_root()
+    except Exception:
+        root = target_unit
+    try:
+        members = list(root.get_attached_unit_members() or [])
+    except Exception:
+        members = []
+    if not members:
+        members = [root]
+
+    for unit in members:
+        if unit is None:
+            continue
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["post_shoot_suppressed_active"] = True
+        sr["post_shoot_suppressed_owner"] = owner_id
+        sr["post_shoot_suppressed_turn"] = int(current_turn)
+        unit.special_rules = sr
+
+    try:
+        from ...utility.event_bus import append_action
+        if player is not None:
+            append_action(player, f"{model_name} suppressed {target_unit.name} ({ability_name})")
+    except Exception:
+        pass
+    return target_unit
 
 
 def _validate_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -1093,6 +1251,81 @@ def _apply_choose_aspect(game: object, request: DecisionRequest, result: Decisio
         return None
     payload = _option_payload(request, result)
     return payload.get("choice")
+
+
+def _validate_choose_battle_focus_maneuver(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or request.context.get("unit_id")
+    choice = payload.get("choice_key") or payload.get("choice")
+    if unit_val is None or choice is None:
+        return ("Battle Focus maneuver requires unit_id and choice.",)
+    if resolve_unit(game, unit_val) is None:
+        return ("Battle Focus unit not found.",)
+    return ()
+
+
+def _apply_choose_battle_focus_maneuver(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Battle Focus unit not found.")
+    army = getattr(unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "battle_focus", None) if army is not None else None
+    if mgr is None:
+        raise RuntimeError("Battle Focus manager not found.")
+    choice = payload.get("choice_key") or payload.get("choice")
+    applied = bool(mgr.apply_maneuver(unit, str(choice), game))
+    try:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(choice)
+        if label:
+            uname = str(getattr(unit, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"Battle Focus: {uname} used {label}.")
+    except Exception:
+        pass
+    return applied
+
+
+def _validate_choose_power_from_pain_option(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or request.context.get("unit_id")
+    choice_kind = payload.get("choice_kind") or request.context.get("choice_kind")
+    choice = payload.get("choice_key") or payload.get("choice")
+    if unit_val is None or choice_kind is None or choice is None:
+        return ("Power from Pain choice requires unit_id, choice_kind, and choice.",)
+    if resolve_unit(game, unit_val) is None:
+        return ("Power from Pain unit not found.",)
+    return ()
+
+
+def _apply_choose_power_from_pain_option(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Power from Pain unit not found.")
+    army = getattr(unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "power_from_pain", None) if army is not None else None
+    if mgr is None:
+        raise RuntimeError("Power from Pain manager not found.")
+    choice_kind = payload.get("choice_kind") or request.context.get("choice_kind")
+    choice = payload.get("choice_key") or payload.get("choice")
+    pending_key = request.context.get("pending_key") or payload.get("pending_key")
+    if pending_key:
+        try:
+            mgr.record_empowerment_choice(pending_key=str(pending_key), choice_kind=str(choice_kind), choice=str(choice), game=game)
+        except Exception:
+            pass
+    return str(choice)
 
 
 def _validate_select_setup_reactive_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -1514,6 +1747,16 @@ register_decision_handler(DECISION_USE_MIRACLE_DIE, validate=_validate_use_mirac
 register_decision_handler(DECISION_CHOOSE_PLAGUE, validate=_validate_choose_plague, apply=_apply_choose_plague)
 register_decision_handler(DECISION_CHOOSE_PLEDGE, validate=_validate_choose_pledge, apply=_apply_choose_pledge)
 register_decision_handler(DECISION_CHOOSE_QUARRY, validate=_validate_choose_quarry, apply=_apply_choose_quarry)
+register_decision_handler(
+    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    validate=_validate_post_shoot_battleshock_target,
+    apply=_apply_post_shoot_battleshock_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+    validate=_validate_post_shoot_suppression_target,
+    apply=_apply_post_shoot_suppression_target,
+)
 register_decision_handler(DECISION_DISCARD_SECONDARY, validate=_validate_discard_secondary, apply=_apply_discard_secondary)
 register_decision_handler(DECISION_CHOOSE_SHADOW_FORM, validate=_validate_choose_shadow_form, apply=_apply_choose_shadow_form)
 register_decision_handler(DECISION_CHOOSE_VOW, validate=_validate_choose_vow, apply=_apply_choose_vow)
@@ -1524,6 +1767,16 @@ register_decision_handler(
     apply=_apply_choose_wrathful,
 )
 register_decision_handler(DECISION_CHOOSE_ASPECT, validate=_validate_choose_aspect, apply=_apply_choose_aspect)
+register_decision_handler(
+    DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
+    validate=_validate_choose_battle_focus_maneuver,
+    apply=_apply_choose_battle_focus_maneuver,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
+    validate=_validate_choose_power_from_pain_option,
+    apply=_apply_choose_power_from_pain_option,
+)
 register_decision_handler(
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     validate=_validate_select_setup_reactive_target,

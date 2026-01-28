@@ -59,6 +59,7 @@ class _DummyPlayer:
     def __init__(self, army, *, choice=None):
         self.army = army
         self.name = "P1"
+        self.id = "P1"
         self._choice = choice
 
     def get_army(self):
@@ -66,6 +67,35 @@ class _DummyPlayer:
 
     def _choose_optional_value(self, _key, _options, _ctx):
         return self._choice
+
+
+class _RegistryStub:
+    def __init__(self, units, player=None):
+        self._units = {str(getattr(u, "_id", "")): u for u in units}
+        self._players = {}
+        if player is not None:
+            pid = str(getattr(player, "id", "") or "")
+            if pid:
+                self._players[pid] = player
+
+    def get(self, entity_id: str, *, kind: str):
+        if kind == "unit":
+            return self._units.get(str(entity_id))
+        if kind == "player":
+            return self._players.get(str(entity_id))
+        return None
+
+
+class _GameStub:
+    def __init__(self, units, player=None):
+        from warhammer40k_ai.engine.decisions import DecisionQueue
+
+        self.decision_queue = DecisionQueue()
+        self.entity_registry = _RegistryStub(units, player=player)
+        self.is_authoritative = True
+
+    def request_decision(self, request):
+        self.decision_queue.add(request)
 
 
 class TestNecronsCommandPhaseEnhancements(unittest.TestCase):
@@ -110,14 +140,27 @@ class TestNecronsCommandPhaseEnhancements(unittest.TestCase):
         mgr = NecronsDetachmentManager(army)
         army.necrons_detachments = mgr
 
-        mgr.on_command_phase_start(game=None, player=player)
+        game = _GameStub([bearer, target_a, target_b], player=player)
+        mgr.on_command_phase_start(game=game, player=player)
+
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decisions import DecisionResult
+
+        req = game.decision_queue.peek()
+        self.assertIsNotNone(req)
+        option = next(
+            opt for opt in req.options if opt.payload.get("target_unit_id") == getattr(target_b, "_id", None)
+        )
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+        self.assertTrue(apply_result.ok)
 
         self.assertFalse(target_a.special_rules.get("command_phase_fell_back_and_shoot_active", False))
         self.assertTrue(target_b.special_rules.get("command_phase_fell_back_and_shoot_active", False))
         self.assertTrue(Unit.has_fell_back_and_shoot(target_b))
 
         player._choice = None
-        mgr.on_command_phase_start(game=None, player=player)
+        mgr.on_command_phase_start(game=game, player=player)
         self.assertFalse(target_b.special_rules.get("command_phase_fell_back_and_shoot_active", False))
 
     def test_chrono_impedance_fields_reduce_allocated_damage(self):

@@ -88,9 +88,17 @@ def test_hover_declaration_applied_in_battle_formations():
     a1.add_unit(hover_unit)
     a1.add_unit(other_unit)
 
-    p1.set_next_optional_selection("HOVER_MODE", [str(hover_unit._id)])
-
     game.execute_declare_battle_formations_phase()
+
+    pending = list(game.decision_queue.list() or [])
+    hover_id = get_entity_id(hover_unit)
+    for req in pending:
+        unit_id = str(getattr(req, "context", {}).get("unit_id", "") or "")
+        if unit_id == str(hover_id):
+            option = next(opt for opt in req.options if opt.payload.get("choice") is True)
+        else:
+            option = next(opt for opt in req.options if opt.payload.get("choice") is False)
+        resolve_decision_command(game, req, option.option_id, player_id=p1.id)
 
     assert hover_unit.hover_mode is True
     assert hover_unit.hover_declared is True
