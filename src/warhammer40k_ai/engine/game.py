@@ -905,33 +905,13 @@ class Game:
             amount = int(ability.get("amount", 0) or 0)
             if amount <= 0:
                 continue
-            ctx = {
-                "ability_name": ability.get("name", "") or "",
-                "unit": getattr(unit, "name", "") or "",
-                "bodyguard": getattr(bodyguard, "name", "") or "",
-                "amount": amount,
-                "phase": "Command phase",
-            }
-            should = bool(player._should_use_optional_ability("RETURN_BODYGUARD_MODEL", ctx))
-            if not should:
-                continue
-            destroyed_models = list(bodyguard.models_lost or [])
-            if not destroyed_models:
-                continue
-            chosen_models = destroyed_models[:amount]
-            returned = unit.return_destroyed_bodyguard_models(
-                amount,
-                game_map=getattr(self, "map", None),
-                chosen_models=chosen_models,
+            self._queue_bodyguard_return_decision(
+                player=player,
+                leader_unit=unit,
+                bodyguard_unit=bodyguard,
+                ability=ability,
+                remaining=amount,
             )
-            from ..utility.event_bus import append_action
-            if player is not None:
-                ability_name = ability.get("name", "") or "Bodyguard Return"
-                if returned > 0:
-                    names = ", ".join(getattr(m, "name", "Model") for m in (chosen_models[:returned] or []))
-                    append_action(player, f"{ability_name}: returned {names} to {getattr(bodyguard, 'name', 'Unit')}.")
-                else:
-                    append_action(player, f"{ability_name}: no model returned to {getattr(bodyguard, 'name', 'Unit')}.")
 
     def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
@@ -2007,6 +1987,80 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _queue_bodyguard_return_decision(
+        self,
+        *,
+        player,
+        leader_unit,
+        bodyguard_unit,
+        ability: dict,
+        remaining: int,
+    ) -> DecisionRequest | None:
+        if player is None or leader_unit is None or bodyguard_unit is None:
+            return None
+        if int(remaining or 0) <= 0:
+            return None
+        bodyguard_id = maybe_entity_id(bodyguard_unit)
+        if not bodyguard_id:
+            return None
+        leader_id = maybe_entity_id(leader_unit)
+        if not leader_id:
+            return None
+        destroyed = list(getattr(bodyguard_unit, "models_lost", []) or [])
+        if not destroyed:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None:
+            for req in list(queue.list() or []):
+                if getattr(req, "decision_type", None) != DECISION_ALLOCATE_DAMAGE:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("selection_kind", "") or "") != "bodyguard_return":
+                    continue
+                if str(ctx.get("leader_unit_id", "") or "") != str(leader_id):
+                    continue
+                if str(ctx.get("bodyguard_unit_id", "") or "") != str(bodyguard_id):
+                    continue
+                return req
+        try:
+            destroyed_sorted = sorted(destroyed, key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            destroyed_sorted = list(destroyed)
+        ability_name = str(ability.get("name", "") or "Bodyguard Return")
+        options = [DecisionOption.create("None", payload={"model_id": None, "action": "skip"})]
+        used_labels = set()
+        for model in destroyed_sorted:
+            label = str(getattr(model, "name", "") or "Model")
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used_labels.add(label)
+            options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+        allowed_ids = [get_entity_id(m) for m in destroyed_sorted if get_entity_id(m)]
+        ctx = {
+            "selection_kind": "bodyguard_return",
+            "ability_name": ability_name,
+            "phase": "Command phase",
+            "leader_unit_id": leader_id,
+            "unit_id": bodyguard_id,
+            "bodyguard_unit_id": bodyguard_id,
+            "amount": int(remaining or 0),
+            "remaining": int(remaining or 0),
+            "reason": f"{ability_name}: Return bodyguard model",
+            "allowed_model_ids": allowed_ids,
+        }
+        request = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            f"{ability_name}: Return bodyguard model",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_reactive_move_movement_decision(
         self,
         *,
@@ -2703,6 +2757,100 @@ class Game:
                 chosen_models=[model],
             )
             return
+
+    def _maybe_queue_bodyguard_return_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_ALLOCATE_DAMAGE:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("selection_kind", "") or "") != "bodyguard_return":
+            return
+
+        def _get_payload():
+            for opt in list(getattr(request, "options", []) or []):
+                if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
+                    return dict(getattr(opt, "payload", {}) or {})
+            return {}
+
+        def _is_skip(payload: dict) -> bool:
+            if bool((getattr(result, "payload", {}) or {}).get("skipped", False)):
+                return True
+            if str((getattr(result, "payload", {}) or {}).get("action", "") or "") == "skip":
+                return True
+            if str(payload.get("action", "") or "") == "skip":
+                return True
+            return payload.get("model_id") in (None, "")
+
+        payload = _get_payload()
+        if _is_skip(payload):
+            return
+        model_id = payload.get("model_id")
+        if model_id in (None, ""):
+            return
+        model = None
+        registry = getattr(self, "entity_registry", None)
+        if registry is not None:
+            model = registry.get(str(model_id), kind="model")
+        if model is None:
+            for p in list(self.players or []):
+                army = p.get_army()
+                if army is None:
+                    continue
+                for unit in list(getattr(army, "units", []) or []):
+                    for candidate in list(getattr(unit, "models_lost", []) or []):
+                        if str(getattr(candidate, "_id", "")) == str(model_id):
+                            model = candidate
+                            break
+                    if model is not None:
+                        break
+                if model is not None:
+                    break
+        if model is None:
+            return
+
+        leader_id = str(ctx.get("leader_unit_id", "") or "")
+        bodyguard_id = str(ctx.get("bodyguard_unit_id", "") or ctx.get("unit_id", "") or "")
+        leader = self._resolve_unit_by_id(leader_id) if leader_id else None
+        bodyguard = self._resolve_unit_by_id(bodyguard_id) if bodyguard_id else None
+        if leader is None and bodyguard is None:
+            return
+        caller = leader if leader is not None else bodyguard
+        returned = caller.return_destroyed_bodyguard_models(
+            1,
+            game_map=getattr(self, "map", None),
+            chosen_models=[model],
+        )
+        ability_name = str(ctx.get("ability_name", "") or "Bodyguard Return")
+        if returned > 0:
+            try:
+                from ..utility.event_bus import append_action
+                player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+                if player is not None and bodyguard is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: returned {getattr(model, 'name', 'Model')} to {getattr(bodyguard, 'name', 'Unit')}.",
+                    )
+            except Exception:
+                pass
+        if returned <= 0:
+            return
+
+        remaining = int(ctx.get("remaining", 0) or 0)
+        remaining = max(0, remaining - 1)
+        if remaining <= 0:
+            return
+        if bodyguard is None:
+            return
+        if not list(getattr(bodyguard, "models_lost", []) or []):
+            return
+        self._queue_bodyguard_return_decision(
+            player=self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None)),
+            leader_unit=leader if leader is not None else caller,
+            bodyguard_unit=bodyguard,
+            ability={"name": ability_name},
+            remaining=remaining,
+        )
 
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -5774,6 +5922,7 @@ class Game:
             self._maybe_queue_setup_reactive_followup(request, result)
             self._maybe_queue_reverberating_summons_followup(request, result)
             self._maybe_apply_optional_ability_confirmation(request, result)
+            self._maybe_queue_bodyguard_return_followup(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:

@@ -59,7 +59,7 @@ Each of the following uses `_should_use_optional_ability` directly instead of a 
 - [ ] DEC-YESNO-003 POWER_FROM_PAIN (army rule activation) → use DECISION_CONFIRM_YES_NO. Files: `src/warhammer40k_ai/engine/game.py:790`, `src/warhammer40k_ai/rules/power_from_pain.py:1200`
 - [x] DEC-YESNO-004 POSSESSED_LORD activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:843`
 - [ ] DEC-YESNO-005 ENHANCEMENT_FIGHT_FIRST activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:862`
-- [ ] DEC-YESNO-006 RETURN_BODYGUARD_MODEL → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:914`
+- [x] DEC-YESNO-006 RETURN_BODYGUARD_MODEL → use DECISION_ALLOCATE_DAMAGE (selection_kind="bodyguard_return") with None/Skip option. File: `src/warhammer40k_ai/engine/game.py:914`
 - [ ] DEC-YESNO-007 OPPONENT_TURN_STRATEGIC_RESERVES → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:1315`
 - [ ] DEC-YESNO-008 SEDUCTIVE_GAMBIT → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3089`
 - [ ] DEC-YESNO-009 MOVE_OVER_MORTAL_WOUNDS (use ability) → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3402`

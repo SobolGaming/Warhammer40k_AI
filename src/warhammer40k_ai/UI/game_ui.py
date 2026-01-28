@@ -2748,8 +2748,16 @@ class GameView:
                 if attacker and weapon:
                     subtitle = f"{subtitle} (from {attacker} - {weapon})"
                 selection_kind = str(ctx.get("selection_kind", "") or "")
+                show_wargear = False
+                none_label = "None"
                 if selection_kind == "hazardous":
                     instruction = "HAZARDOUS priority: wounded eligible model; otherwise non-Character; otherwise Character."
+                elif selection_kind == "bodyguard_return":
+                    instruction = "Select a destroyed model to return (or None)."
+                    show_wargear = True
+                    none_label = "Skip return"
+                    if ctx.get("ability_name"):
+                        title = str(ctx.get("ability_name", "") or title)
                 else:
                     instruction = "If a model is already wounded, you must continue allocating to a wounded eligible model."
 
@@ -2781,6 +2789,8 @@ class GameView:
                     instruction=instruction,
                     on_choice=_on_choice,
                     decision_request=request,
+                    show_wargear=show_wargear,
+                    none_label=none_label,
                 )
                 try:
                     self.dialog_manager.open(dlg, modal=True)
