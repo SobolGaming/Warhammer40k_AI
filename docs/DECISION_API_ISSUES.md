@@ -24,7 +24,7 @@ Each of the following uses `_choose_optional_value` directly instead of a Decisi
 - [ ] DEC-OPT-009 SHADOW_FORM → use DECISION_CHOOSE_SHADOW_FORM. File: `src/warhammer40k_ai/rules/shadow_form.py:320`
 - [ ] DEC-OPT-010 TEMPLAR_VOW → use DECISION_CHOOSE_VOW. File: `src/warhammer40k_ai/rules/templar_vows.py:349`
 - [ ] DEC-OPT-011 WRATHFUL_PRESENCE → use DECISION_CHOOSE_WRATHFUL_PRESENCE. File: `src/warhammer40k_ai/rules/wrathful_presence.py:338`
-- [ ] DEC-OPT-012 DARK_PACTS_CHOICE → use DECISION_CHOOSE_DARK_PACT. File: `src/warhammer40k_ai/units/unit.py:10170`
+- [ ] DEC-OPT-012 DARK_PACTS_CHOICE → use DECISION_CHOOSE_DARK_PACT with “Skip” option (single-dialog pattern). File: `src/warhammer40k_ai/units/unit.py:10170`
 - [ ] DEC-OPT-013 DAEMONIC_ALLEGIANCE → use DECISION_CHOOSE_DAEMONIC_ALLEGIANCE. File: `src/warhammer40k_ai/roster/army.py:834`
 - [ ] DEC-OPT-014 CODE_CHIVALRIC_DEED → use DECISION_CHOOSE_CHIVALRIC_OATH with context (deed vs quality). File: `src/warhammer40k_ai/rules/code_chivalric.py:294`
 - [ ] DEC-OPT-015 CODE_CHIVALRIC_QUALITY → use DECISION_CHOOSE_CHIVALRIC_OATH with context (deed vs quality). File: `src/warhammer40k_ai/rules/code_chivalric.py:316`
@@ -37,35 +37,15 @@ Each of the following uses `_choose_optional_value` directly instead of a Decisi
 - [ ] DEC-OPT-022 POWER_FROM_PAIN_EXPERIMENTAL_ENHANCEMENTS → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/rules/power_from_pain.py:682`
 - [ ] DEC-OPT-023 CULT_AMBUSH_REINFORCEMENTS → needs decision kind. File: `src/warhammer40k_ai/rules/cult_ambush.py:728`
 - [ ] DEC-OPT-024 CHARGE_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/engine/game.py:3108`
-- [ ] DEC-OPT-025 MOVE_OVER_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/engine/game.py:3257`
-- [ ] DEC-OPT-026 FIGHT_PHASE_END_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/engine/game.py:3562`
+- [ ] DEC-OPT-025 MOVE_OVER_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context), include “None/Skip” for optional use. File: `src/warhammer40k_ai/engine/game.py:3257`
+- [ ] DEC-OPT-026 FIGHT_PHASE_END_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context), include “None/Skip” for optional use. File: `src/warhammer40k_ai/engine/game.py:3562`
 - [ ] DEC-OPT-027 CHARGE_PHASE_BODYGUARD_LOSS_MODEL → needs decision kind. File: `src/warhammer40k_ai/engine/game.py:3423`
 - [ ] DEC-OPT-028 BATTLE_FOCUS_MOVE_MANEUVER / BATTLE_FOCUS_{single option} → needs decision kind (new) or DecisionRequest per maneuver. File: `src/warhammer40k_ai/rules/battle_focus.py:514`, `src/warhammer40k_ai/rules/battle_focus.py:518`
 - [ ] DEC-OPT-029 ASPECT_SHRINE_TOKEN → not YES/NO; requires multi-option choice (Use / Skip / Suppress). File: `src/warhammer40k_ai/units/wargear.py:1883`
 
 ## Optional Yes/No Decisions (Player._should_use_optional_ability)
 
-Each of the following uses `_should_use_optional_ability` directly instead of a DecisionRequest:
-
-- [ ] DEC-YESNO-003 POWER_FROM_PAIN (army rule activation) → use DECISION_CONFIRM_YES_NO. Files: `src/warhammer40k_ai/engine/game.py:790`, `src/warhammer40k_ai/rules/power_from_pain.py:1200`
-- [ ] DEC-YESNO-005 ENHANCEMENT_FIGHT_FIRST activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:862`
-- [ ] DEC-YESNO-007 OPPONENT_TURN_STRATEGIC_RESERVES → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:1315`
-- [ ] DEC-YESNO-008 SEDUCTIVE_GAMBIT → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3089`
-- [ ] DEC-YESNO-009 MOVE_OVER_MORTAL_WOUNDS (use ability) → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3402`
-- [ ] DEC-YESNO-010 FIGHT_PHASE_END_MORTAL_WOUNDS (use ability) → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3721`
-- [ ] DEC-YESNO-011 SENSATIONAL_PERFORMANCE → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:4729`
-- [ ] DEC-YESNO-013 DARK_PACTS (use ability) → use DecisionRequest (likely DECISION_CONFIRM_YES_NO with context, then DECISION_CHOOSE_DARK_PACT). File: `src/warhammer40k_ai/units/unit.py:10167`
-- [ ] DEC-YESNO-014 CULT_AMBUSH (use ability) → use DecisionRequest. File: `src/warhammer40k_ai/rules/cult_ambush.py:675`
-- [ ] DEC-YESNO-015 CABAL_CHANNEL_WARP → use DecisionRequest. File: `src/warhammer40k_ai/rules/cabal_of_sorcerers.py:503`
-- [ ] DEC-YESNO-016 POWER_FROM_PAIN_STRATAGEM → use DecisionRequest. File: `src/warhammer40k_ai/rules/stratagems.py:692`
-- [ ] DEC-YESNO-017 GILDED_CHAMPION → use DecisionRequest (DECISION_USE_GILDED_CHAMPION). File: `src/warhammer40k_ai/rules/stratagems.py:2728`
-- [ ] DEC-YESNO-018 DIRECT_THE_SLAUGHTER (CP discount usage) → use DecisionRequest. File: `src/warhammer40k_ai/roster/player.py:733`
-- [ ] DEC-YESNO-019 TARGETED_STRATAGEM_DISCOUNT (CP discount usage) → use DecisionRequest. File: `src/warhammer40k_ai/roster/player.py:750`
-- [ ] DEC-YESNO-020 GIFT_OF_FORESIGHT (CP discount usage) → use DecisionRequest. File: `src/warhammer40k_ai/roster/player.py:766`
-- [ ] DEC-YESNO-021 MASTER_OF_THE_PAGEANT (CP discount usage) → use DecisionRequest. File: `src/warhammer40k_ai/roster/player.py:783`
-- [ ] DEC-YESNO-022 BATTLE_FOCUS_FLITTING_SHADOWS → use DecisionRequest. Files: `src/warhammer40k_ai/rules/battle_focus.py:545`, `src/warhammer40k_ai/rules/battle_focus.py:574`
-- [ ] DEC-YESNO-023 BATTLE_FOCUS_SUDDEN_STRIKE → use DecisionRequest. File: `src/warhammer40k_ai/rules/battle_focus.py:599`
-- [ ] DEC-YESNO-024 BATTLE_FOCUS_FADE_BACK → use DecisionRequest. File: `src/warhammer40k_ai/rules/battle_focus.py:646`
+All current true YES/NO confirmations have been routed through DecisionRequests. Optional target-pick flows that can be declined remain in the **DEC-OPT** list and should use a single selection dialog with a “None/Skip” option (e.g., Move-over mortals, Fight-phase end mortals, Dark Pacts).
 
 ## Notes
 

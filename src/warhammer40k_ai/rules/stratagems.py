@@ -2719,29 +2719,8 @@ class StratagemManager:
         )
         if prepared is None or game is None:
             return
-        if not bool(getattr(game, "is_authoritative", True)):
-            self._queue_gilded_champion_decision(game, prepared)
-            return
-        if self._publish_gilded_champion_prompt(game, prepared):
-            return
-        ctx = {
-            "ability_name": prepared.get("ability_name", ""),
-            "phase": prepared.get("phase_name", ""),
-            "model": getattr(prepared.get("model"), "name", ""),
-        }
-        should_fn = getattr(self.player, "_should_use_optional_ability", None)
-        should_use = bool(should_fn("GILDED_CHAMPION", ctx)) if callable(should_fn) else False
-        if not should_use:
-            return
-        self.use(
-            "GILDED CHAMPION",
-            model=prepared.get("model"),
-            ability_key=prepared.get("ability_key", ""),
-            ability_name=prepared.get("ability_name", ""),
-            phase_name=prepared.get("phase_name", ""),
-            source=prepared.get("source", "datasheet"),
-            target_unit=prepared.get("target_unit"),
-        )
+        self._queue_gilded_champion_decision(game, prepared)
+        return
 
     # ---------------- Orks: CAREEN! ----------------
 

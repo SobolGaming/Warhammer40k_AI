@@ -496,13 +496,7 @@ class CabalOfSorcerersManager:
         if channel_decision is not None:
             channel = bool(channel_decision)
         else:
-            try:
-                ctx = {"ritual": ritual.name, "rolls": list(base_rolls)}
-                army_player = getattr(self.army, "player", None)
-                if army_player is not None:
-                    channel = bool(army_player._should_use_optional_ability("CABAL_CHANNEL_WARP", ctx))
-            except Exception:
-                channel = False
+            channel = False
         if channel:
             if len(provided_rolls) >= 3:
                 extra = int(provided_rolls[2])

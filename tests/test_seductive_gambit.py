@@ -1,6 +1,8 @@
 ﻿import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.units.unit import Unit
 
 
@@ -9,12 +11,21 @@ class TestSeductiveGambit(unittest.TestCase):
         class _Unit:
             def __init__(self):
                 self.name = "Daemonettes"
+                self._id = "Daemonettes"
                 self.special_rules = {}
                 self.parent_army = army
                 self.keywords = ["SLAANESH"]
+                self.deployed = True
+                self.reserve_status = "deployed"
 
             def get_parent_army(self):
                 return self.parent_army
+
+            def get_attached_unit_root(self):
+                return self
+
+            def is_alive(self):
+                return True
 
             def has_any_keyword(self, keyword: str) -> bool:
                 kw = (keyword or "").strip().upper()
@@ -31,12 +42,20 @@ class TestSeductiveGambit(unittest.TestCase):
         army.faction_id = "CD"
         p1 = Player("P1", PlayerControl.LOCAL, army=army)
         p2 = Player("P2", PlayerControl.REMOTE, army=Army("Other", "Other"))
-        p1._next_optional_decisions = {"SEDUCTIVE_GAMBIT": True}
-
         game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[p1, p2])
         unit = self._make_unit(army)
+        army.units = [unit]
+        game.rebuild_entity_registry()
 
         game.event_system.publish("unit_move_ended", unit=unit, action="charge")
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        option_id = next(
+            opt.option_id for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False))
+        )
+        resolve_decision_command(game, request, option_id, player_id=p1.id)
 
         self.assertTrue(unit.special_rules.get("seductive_gambit_active"))
         self.assertEqual(unit.special_rules.get("seductive_gambit_expires_phase"), "FIGHT_PHASE")

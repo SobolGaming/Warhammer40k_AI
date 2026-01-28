@@ -1,6 +1,9 @@
 ﻿import unittest
 from types import SimpleNamespace
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
 
 class TestPossessedLordPromptHook(unittest.TestCase):
     def test_prompt_hook_controls_activation_at_fight_phase_start(self):
@@ -42,6 +45,15 @@ class TestPossessedLordPromptHook(unittest.TestCase):
             def is_alive(self):
                 return True
 
+            def is_in_reserves(self):
+                return False
+
+            def has_enhancement_fight_first_once_per_battle(self):
+                return False
+
+            def can_use_enhancement_fight_first(self):
+                return False
+
         class _Army:
             def __init__(self, unit):
                 self.id = None
@@ -66,19 +78,30 @@ class TestPossessedLordPromptHook(unittest.TestCase):
         # Ensure current player is p1
         g.current_player_index = 0
 
-        # Decision: do NOT activate
-        p1.decision_hook = lambda _p, key, _ctx: False
-
         # Publish start of fight phase
         g.phase = SimpleNamespace(name="FIGHT_PHASE")
         g.event_system.publish("phase_start", player=p1, phase=g.phase)
+
+        pending = [req for req in g.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        skip_id = next(
+            opt.option_id for opt in list(request.options or []) if not bool((opt.payload or {}).get("choice", False))
+        )
+        resolve_decision_command(g, request, skip_id, player_id=p1.id)
 
         m = u.models[0]
         self.assertEqual(int(m.get_temporary_melee_attacks_bonus()), 0)
 
         # Now choose YES and publish again (simulate a later turn; reset by new model instance is not needed here)
-        p1.decision_hook = lambda _p, key, _ctx: key == "POSSESSED_LORD"
         g.event_system.publish("phase_start", player=p1, phase=g.phase)
+        pending = [req for req in g.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        use_id = next(
+            opt.option_id for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False))
+        )
+        resolve_decision_command(g, request, use_id, player_id=p1.id)
         self.assertEqual(int(m.get_temporary_melee_attacks_bonus()), 3)
 
 

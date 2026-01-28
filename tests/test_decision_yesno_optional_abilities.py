@@ -59,6 +59,15 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         model.set_location(0.0, 0.0, 0.0, 0.0)
         return model
 
+    def _resolve_yes(self, game, request, player):
+        option_id = None
+        for opt in list(request.options or []):
+            if bool((opt.payload or {}).get("choice", False)):
+                option_id = opt.option_id
+                break
+        self.assertIsNotNone(option_id)
+        resolve_decision_command(game, request, option_id, player_id=player.id)
+
     def test_shadow_in_the_warp_queues_and_applies(self):
         tyr_army = Army("Tyranids", detachment_type="Other")
         tyr_army.faction_id = "TYR"
@@ -90,13 +99,7 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         ctx = request.context or {}
         self.assertEqual(ctx.get("ability"), "shadow_in_the_warp")
 
-        option_id = None
-        for opt in list(request.options or []):
-            if bool((opt.payload or {}).get("choice", False)):
-                option_id = opt.option_id
-                break
-        self.assertIsNotNone(option_id)
-        resolve_decision_command(game, request, option_id, player_id=tyr_player.id)
+        self._resolve_yes(game, request, tyr_player)
 
         self.assertTrue(tyr_army.shadow_in_the_warp.used_this_battle)
 
@@ -127,13 +130,7 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         ctx = request.context or {}
         self.assertEqual(ctx.get("ability"), "waaagh")
 
-        option_id = None
-        for opt in list(request.options or []):
-            if bool((opt.payload or {}).get("choice", False)):
-                option_id = opt.option_id
-                break
-        self.assertIsNotNone(option_id)
-        resolve_decision_command(game, request, option_id, player_id=ork_player.id)
+        self._resolve_yes(game, request, ork_player)
 
         self.assertTrue(mgr.used_this_battle)
         self.assertTrue(mgr.active)
@@ -171,15 +168,258 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(ctx.get("ability"), "possessed_lord")
         self.assertEqual(ctx.get("model_id"), get_entity_id(model))
 
-        option_id = None
-        for opt in list(request.options or []):
-            if bool((opt.payload or {}).get("choice", False)):
-                option_id = opt.option_id
-                break
-        self.assertIsNotNone(option_id)
-        resolve_decision_command(game, request, option_id, player_id=player.id)
+        self._resolve_yes(game, request, player)
 
         self.assertTrue(model.has_used_once_per_battle("possessed_lord"))
+
+    def test_power_from_pain_command_phase_queues_and_applies(self):
+        army = Army("Drukhari", detachment_type="Other")
+        army.faction_id = "DRU"
+        enemy_army = Army("Enemies", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Drukhari", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        mgr = army.power_from_pain
+        if mgr is None:
+            self.skipTest("Power from Pain manager unavailable")
+        mgr.has_command_phase_action = lambda **_kw: True
+        mgr._resolved = False
+
+        def _resolve_action(**_kw):
+            mgr._resolved = True
+
+        mgr.resolve_command_phase_action = _resolve_action
+
+        game._maybe_prompt_power_from_pain_command_phase()
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "power_from_pain_command")
+
+        self._resolve_yes(game, request, player)
+        self.assertTrue(mgr._resolved)
+
+    def test_enhancement_fight_first_queues_and_applies(self):
+        army = Army("Test", detachment_type="Other")
+        army.faction_id = "SM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "CSM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("Enhanced", army)
+        unit.enhancement = SimpleNamespace(name="Test Enhancement")
+        unit.has_enhancement_fight_first_once_per_battle = lambda: True
+        unit.can_use_enhancement_fight_first = lambda: True
+        unit._activated = False
+        unit.activate_enhancement_fight_first = lambda: setattr(unit, "_activated", True)
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_optional_abilities(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "enhancement_fight_first")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+        self.assertTrue(unit._activated)
+
+    def test_opponent_turn_strategic_reserves_queues_and_applies(self):
+        army = Army("Owner", detachment_type="Other")
+        army.faction_id = "SM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "CSM"
+
+        owner = Player("Owner", PlayerControl.REMOTE, army=army)
+        enemy = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[owner, enemy])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("Reserves Unit", army)
+        unit.get_end_of_opponent_turn_strategic_reserves_ability = lambda: {"name": "Strategic Reserves"}
+        unit.enter_strategic_reserves_midgame = lambda **_kw: setattr(unit, "_entered", True) or True
+        unit._entered = False
+
+        enemy_unit = self._make_unit("Enemy Unit", enemy_army)
+        unit.models = [self._make_model("Model", unit)]
+        enemy_unit.models = [self._make_model("Enemy Model", enemy_unit)]
+        enemy_unit.models[0].set_location(40.0, 0.0, 0.0, 0.0)
+
+        army.units = [unit]
+        enemy_army.units = [enemy_unit]
+        game.map.units = [unit, enemy_unit]
+        game.rebuild_entity_registry()
+
+        game._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player=enemy)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "opponent_turn_strategic_reserves")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, owner)
+        self.assertTrue(unit._entered)
+
+    def test_seductive_gambit_queues_and_applies(self):
+        army = Army("Daemons", detachment_type="Other")
+        army.faction_id = "DAE"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Daemons", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.CHARGE_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("Slaanesh Unit", army, faction_keywords=["SLAANESH"])
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        army.chaos_daemons_detachments = SimpleNamespace(seductive_gambit_applies=lambda _u: True)
+
+        game._on_unit_move_ended_detachment_rules(unit=unit, action="charge")
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "seductive_gambit")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+        self.assertTrue(unit.special_rules.get("seductive_gambit_active"))
+
+    def test_sensational_performance_queues_and_applies(self):
+        army = Army("Emperors Children", detachment_type="Other")
+        army.faction_id = "EC"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("EC", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("EC Unit", army)
+        unit.round_state.charged_this_round = True
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        army.emperors_children_detachments = SimpleNamespace(sensational_performance_applies=lambda _u: True)
+
+        game._on_fight_unit_selected_emperors_children(unit=unit)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "sensational_performance")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+        self.assertTrue(unit.special_rules.get("sensational_performance_active"))
+
+    def test_cult_ambush_queues_and_applies(self):
+        army = Army("GSC", detachment_type="Other")
+        army.faction_id = "GC"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("GSC", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("Cult Unit", army)
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        mgr = SimpleNamespace(
+            can_spend_for_unit=lambda _u: True,
+            resurgence_cost_for_unit=lambda _u: 2,
+            resurgence_points=4,
+            handle_unit_destroyed=lambda _u, **_kw: setattr(unit, "_ambush_used", True),
+        )
+        army.cult_ambush = mgr
+        unit._ambush_used = False
+
+        game._on_unit_destroyed_cult_ambush(unit=unit)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "cult_ambush")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+        self.assertTrue(unit._ambush_used)
+
+    def test_battle_focus_sudden_strike_queues_and_applies(self):
+        army = Army("Aeldari", detachment_type="Other")
+        army.faction_id = "AE"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Aeldari", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        unit = self._make_unit("Aspect", army, keywords=["ASURYANI"])
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        mgr = army.battle_focus
+        if mgr is None:
+            self.skipTest("Battle Focus manager unavailable")
+        mgr.tokens = 1
+        mgr._army_has_battle_focus = lambda: True
+        mgr._unit_has_battle_focus = lambda _u: True
+        mgr._can_use_unit_this_phase = lambda _u: True
+        mgr._maneuver_used_this_phase = lambda _m: False
+
+        mgr.maybe_trigger_sudden_strike(unit, game)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "battle_focus_sudden_strike")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+        self.assertEqual(unit.special_rules.get("battle_focus_sudden_strike_expires_phase"), "FIGHT_PHASE")
 
 
 if __name__ == "__main__":

@@ -751,13 +751,6 @@ class Game:
         mgr.select_combat_drug(selected, battle_round=getattr(self, "turn", 0))
 
     def _maybe_prompt_power_from_pain_command_phase(self) -> None:
-        es = getattr(self, "event_system", None)
-        if es is None or not hasattr(es, "subscribers"):
-            raise RuntimeError("Event system missing for Power from Pain prompt.")
-        subs = getattr(es, "subscribers", {})
-        if not isinstance(subs, dict):
-            raise RuntimeError("Event system subscribers not configured.")
-
         player = self.get_current_player()
         if player is None:
             raise RuntimeError("Power from Pain prompt requires current player.")
@@ -769,16 +762,19 @@ class Game:
             return
         if not mgr.has_command_phase_action(game=self, player=player):
             return
-        is_human = bool(getattr(player, "has_control", lambda: False)())
-        if is_human and subs.get("power_from_pain_prompt"):
-            es.publish("power_from_pain_prompt", player=player, game=self)
-            return
         ctx = {
             "ability_name": "Power from Pain",
             "phase": "Command phase",
         }
-        if player._should_use_optional_ability("POWER_FROM_PAIN", ctx):
-            mgr.resolve_command_phase_action(game=self, player=player)
+        message = "Use Power from Pain? (Command phase)"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="power_from_pain_command",
+            ability_name="Power from Pain",
+            message=message,
+            context=ctx,
+            instance_key="command_phase",
+        )
 
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
@@ -859,10 +855,18 @@ class Game:
                     "ability_name": enh_name or "Fight First Enhancement",
                     "unit": getattr(unit, "name", "") or "",
                     "phase": "Fight phase",
+                    "unit_id": maybe_entity_id(unit),
                 }
-                should = bool(player._should_use_optional_ability("ENHANCEMENT_FIGHT_FIRST", ctx))
-                if should:
-                    unit.activate_enhancement_fight_first()
+                message = f"Activate {ctx['ability_name']} for {getattr(unit, 'name', 'Unit')}?"
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="enhancement_fight_first",
+                    ability_name=ctx["ability_name"],
+                    message=message,
+                    context=ctx,
+                    payload={"unit_id": ctx.get("unit_id")},
+                    instance_key=str(ctx.get("unit_id") or ""),
+                )
             return
 
         if pname != "COMMAND_PHASE":
@@ -1220,7 +1224,6 @@ class Game:
         game_map = self.map
         if game_map is None:
             raise RuntimeError("Strategic reserves prompt requires a game map.")
-        es = getattr(self, "event_system", None)
 
         for opp in list(self.players or []):
             if opp is None:
@@ -1268,44 +1271,31 @@ class Game:
             if not eligible:
                 continue
 
-            if opp.has_control():
-                if es is None or not hasattr(es, "subscribers"):
-                    raise RuntimeError("Event system missing for strategic reserves prompt.")
-                subs = getattr(es, "subscribers", None)
-                if not isinstance(subs, dict):
-                    raise RuntimeError("Event system subscribers not configured.")
-                if subs.get("opponent_turn_strategic_reserves_prompt"):
-                    es.publish(
-                        "opponent_turn_strategic_reserves_prompt",
-                        player=opp,
-                        units=list(eligible),
-                        game=self,
-                    )
-                continue
-
             for entry in eligible:
                 unit = entry.get("unit")
                 ability = entry.get("ability") or {}
                 if unit is None:
                     continue
+                unit_id = maybe_entity_id(unit)
                 ctx = {
                     "ability_name": ability.get("name", "") or "",
                     "unit": getattr(unit, "name", "") or "",
                     "phase": "End of opponent's turn",
+                    "unit_id": unit_id,
                 }
-                should = bool(opp._should_use_optional_ability("OPPONENT_TURN_STRATEGIC_RESERVES", ctx))
-                if not should:
-                    continue
-                used = unit.enter_strategic_reserves_midgame(
-                    game=self,
-                    game_map=game_map,
-                    reason="end of opponent turn",
+                message = (
+                    f"{getattr(unit, 'name', 'Unit')} can enter Strategic Reserves at the end of the opponent's turn.\n\n"
+                    "Use this ability?"
                 )
-                if used:
-                    from ..utility.event_bus import append_action
-                    if opp is not None:
-                        ability_name = ability.get("name", "") or "Strategic Reserves"
-                        append_action(opp, f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.")
+                self._queue_optional_ability_confirmation(
+                    player=opp,
+                    ability_key="opponent_turn_strategic_reserves",
+                    ability_name=ctx["ability_name"] or "Strategic Reserves",
+                    message=message,
+                    context=ctx,
+                    payload={"unit_id": unit_id},
+                    instance_key=str(unit_id or ""),
+                )
 
     def _on_phase_end_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Clear For the Greater Good state at the end of the Shooting phase."""
@@ -1894,12 +1884,14 @@ class Game:
         message: str | None = None,
         context: dict | None = None,
         payload: dict | None = None,
+        instance_key: str | None = None,
     ) -> DecisionRequest | None:
         if player is None:
             return None
         key = str(ability_key or "").strip().lower()
         if not key:
             return None
+        instance = str(instance_key or "").strip().lower()
         existing = None
         queue = getattr(self, "decision_queue", None)
         if queue is not None:
@@ -1910,6 +1902,10 @@ class Game:
                 req_key = str(ctx.get("ability", "") or ctx.get("ability_key", "") or "").strip().lower()
                 if req_key != key:
                     continue
+                if instance:
+                    req_instance = str(ctx.get("ability_instance", "") or "").strip().lower()
+                    if req_instance != instance:
+                        continue
                 if getattr(req, "player_id", None) == getattr(player, "id", None):
                     existing = req
                     break
@@ -1920,6 +1916,8 @@ class Game:
         ctx["ability_name"] = str(ability_name or "").strip() or key.replace("_", " ").title()
         if message:
             ctx["message"] = message
+        if instance:
+            ctx["ability_instance"] = instance
         payload = dict(payload or {})
         options = [
             DecisionOption.create("Use", payload=dict(payload, choice=True)),
@@ -2348,7 +2346,21 @@ class Game:
             return
         ctx = dict(getattr(request, "context", {}) or {})
         ability_key = str(ctx.get("ability", "") or ctx.get("ability_key", "") or "").strip().lower()
-        if ability_key not in ("shadow_in_the_warp", "waaagh", "possessed_lord"):
+        if ability_key not in (
+            "shadow_in_the_warp",
+            "waaagh",
+            "possessed_lord",
+            "power_from_pain_command",
+            "power_from_pain_empower",
+            "enhancement_fight_first",
+            "opponent_turn_strategic_reserves",
+            "seductive_gambit",
+            "sensational_performance",
+            "cult_ambush",
+            "battle_focus_flitting_shadows",
+            "battle_focus_sudden_strike",
+            "battle_focus_fade_back",
+        ):
             return
         selected = None
         for opt in list(getattr(request, "options", []) or []):
@@ -2420,6 +2432,155 @@ class Game:
                 return
             model.activate_possessed_lord()
             return
+
+        if ability_key == "power_from_pain_command":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            army = player.get_army()
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is None:
+                return
+            can_fn = getattr(mgr, "has_command_phase_action", None)
+            if callable(can_fn) and not bool(can_fn(game=self, player=player)):
+                return
+            resolve_fn = getattr(mgr, "resolve_command_phase_action", None)
+            if callable(resolve_fn):
+                resolve_fn(game=self, player=player)
+            return
+
+        if ability_key == "power_from_pain_empower":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            trigger = str(payload.get("trigger") or ctx.get("trigger") or "")
+            if not unit_id or not trigger:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            army = unit.get_parent_army()
+            mgr = getattr(army, "power_from_pain", None) if army is not None else None
+            if mgr is None:
+                return
+            mgr.empower_unit_for_trigger(unit, trigger=trigger, game=self)
+            return
+
+        if ability_key == "enhancement_fight_first":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            can_use = getattr(unit, "can_use_enhancement_fight_first", None)
+            if callable(can_use) and not bool(can_use()):
+                return
+            activate = getattr(unit, "activate_enhancement_fight_first", None)
+            if callable(activate):
+                activate()
+            return
+
+        if ability_key == "opponent_turn_strategic_reserves":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            used = unit.enter_strategic_reserves_midgame(
+                game=self,
+                game_map=getattr(self, "map", None),
+                reason="end of opponent turn",
+            )
+            if used:
+                from ..utility.event_bus import append_action
+                player = getattr(unit.get_parent_army(), "player", None)
+                ability_name = str(ctx.get("ability_name", "") or "Strategic Reserves")
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.",
+                    )
+            return
+
+        if ability_key == "seductive_gambit":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["seductive_gambit_active"] = True
+            sr["seductive_gambit_expires_phase"] = "FIGHT_PHASE"
+            unit.special_rules = sr
+            return
+
+        if ability_key == "sensational_performance":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if sr.get("sensational_performance_active"):
+                return
+            sr["sensational_performance_active"] = True
+            sr["sensational_performance_expires_phase"] = "FIGHT_PHASE"
+            sr["sensational_performance_strength_bonus"] = 1
+            sr["sensational_performance_ap_bonus"] = 1
+            unit.special_rules = sr
+            try:
+                from ..utility.event_bus import append_action
+                player = getattr(unit.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"Sensational Performance: {getattr(unit, 'name', 'Unit')} gains bonuses this Fight phase.",
+                    )
+            except Exception:
+                pass
+            return
+
+        if ability_key == "cult_ambush":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            army = unit.get_parent_army()
+            mgr = getattr(army, "cult_ambush", None) if army is not None else None
+            if mgr is None:
+                return
+            player = getattr(army, "player", None)
+            mgr.handle_unit_destroyed(unit, game=self, player=player)
+            return
+
+        if ability_key in ("battle_focus_flitting_shadows", "battle_focus_sudden_strike", "battle_focus_fade_back"):
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            army = unit.get_parent_army()
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            if mgr is None:
+                return
+            if ability_key == "battle_focus_flitting_shadows":
+                mgr._apply_maneuver(unit, mgr.MANEUVER_FLITTING, self)
+                return
+            if ability_key == "battle_focus_sudden_strike":
+                mgr._apply_maneuver(unit, mgr.MANEUVER_SUDDEN_STRIKE, self)
+                return
+            if ability_key == "battle_focus_fade_back":
+                mgr._apply_reactive_move(unit, mgr.MANEUVER_FADE_BACK, self)
+                return
 
     def _setup_reactive_can_shoot_target(self, unit, target_unit) -> bool:
         if unit is None or target_unit is None:
@@ -3330,15 +3491,23 @@ class Game:
                 player = unit.get_parent_army().player
                 if player is None:
                     raise RuntimeError("Seductive Gambit requires a player.")
-                ctx = {"unit": getattr(unit, "name", "") or "", "ability_name": "Seductive Gambit"}
-                if not player._should_use_optional_ability("SEDUCTIVE_GAMBIT", ctx):
-                    return
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
-                    sr = {}
-                sr["seductive_gambit_active"] = True
-                sr["seductive_gambit_expires_phase"] = "FIGHT_PHASE"
-                unit.special_rules = sr
+                unit_id = maybe_entity_id(unit)
+                ctx = {
+                    "unit": getattr(unit, "name", "") or "",
+                    "ability_name": "Seductive Gambit",
+                    "phase": "Charge phase",
+                    "unit_id": unit_id,
+                }
+                message = f"Use Seductive Gambit for {getattr(unit, 'name', 'Unit')}?"
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="seductive_gambit",
+                    ability_name="Seductive Gambit",
+                    message=message,
+                    context=ctx,
+                    payload={"unit_id": unit_id},
+                    instance_key=str(unit_id or ""),
+                )
 
     def _choose_charge_mortal_wounds_target(self, player, unit, candidates, spec):
         if not candidates:
@@ -4951,34 +5120,26 @@ class Game:
             return
 
         player = getattr(army, "player", None) if army is not None else None
-        is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
-        should = False
-        if is_human:
-            decide = getattr(player, "_should_use_optional_ability", None)
-            if callable(decide):
-                ctx = {"ability_name": "Sensational Performance", "phase": "Fight phase", "unit": getattr(unit, "name", "")}
-                should = bool(decide("SENSATIONAL_PERFORMANCE", ctx))
-        else:
-            try:
-                import random
-                should = bool(random.choice([True, False]))
-            except Exception:
-                should = False
-        if not should:
+        if player is None:
             return
-
-        sr["sensational_performance_active"] = True
-        sr["sensational_performance_expires_phase"] = "FIGHT_PHASE"
-        sr["sensational_performance_strength_bonus"] = 1
-        sr["sensational_performance_ap_bonus"] = 1
-        unit.special_rules = sr
-        try:
-            from ..utility.event_bus import append_action
-            if player is not None:
-                append_action(player, f"Sensational Performance: {getattr(unit, 'name', 'Unit')} gains bonuses this Fight phase.")
-        except Exception:
-            pass
-
+        unit_id = maybe_entity_id(unit)
+        ctx = {
+            "ability_name": "Sensational Performance",
+            "phase": "Fight phase",
+            "unit": getattr(unit, "name", ""),
+            "unit_id": unit_id,
+        }
+        message = f"Use Sensational Performance for {getattr(unit, 'name', 'Unit')}?"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="sensational_performance",
+            ability_name="Sensational Performance",
+            message=message,
+            context=ctx,
+            payload={"unit_id": unit_id},
+            instance_key=str(unit_id or ""),
+        )
+        
     def _on_fight_unit_selected_maddened_ferocity(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -5557,25 +5718,28 @@ class Game:
         if not mgr.can_spend_for_unit(unit):
             return
         player = getattr(army, "player", None)
-        es = getattr(self, "event_system", None)
         if player is None:
             raise RuntimeError("Cult Ambush requires a player.")
-        if player.has_control():
-            if es is None or not hasattr(es, "subscribers"):
-                raise RuntimeError("Event system missing for Cult Ambush prompt.")
-            subs = getattr(es, "subscribers", None)
-            if not isinstance(subs, dict):
-                raise RuntimeError("Event system subscribers not configured.")
-            if subs.get("cult_ambush_prompt"):
-                es.publish(
-                    "cult_ambush_prompt",
-                    player=player,
-                    unit=unit,
-                    cost=mgr.resurgence_cost_for_unit(unit),
-                    game=self,
-                )
-                return
-        mgr.handle_unit_destroyed(unit, game=self, player=player)
+        unit_id = maybe_entity_id(unit)
+        ctx = {
+            "ability_name": "Cult Ambush",
+            "unit": getattr(unit, "name", "") or "",
+            "unit_id": unit_id,
+            "cost": mgr.resurgence_cost_for_unit(unit),
+            "points": int(getattr(mgr, "resurgence_points", 0) or 0),
+        }
+        message = (
+            f"Use Cult Ambush to return {getattr(unit, 'name', 'Unit')} to Cult Ambush?"
+        )
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="cult_ambush",
+            ability_name="Cult Ambush",
+            message=message,
+            context=ctx,
+            payload={"unit_id": unit_id},
+            instance_key=str(unit_id or ""),
+        )
 
     def _on_unit_move_ended_cult_ambush(self, unit=None, **_kwargs) -> None:
         if unit is None:

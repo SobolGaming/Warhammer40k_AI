@@ -96,22 +96,12 @@ def test_gilded_champion_local_prompt_and_phase_restriction():
     game, player, unit = _build_game(authoritative=True)
     model = unit.models[0]
 
-    prompts: list[dict] = []
-    game.event_system.subscribe("gilded_champion_prompt", lambda **kw: prompts.append(kw))
-
     assert model.mark_used_once_per_battle("test_once", ability_name="Test Once", source="datasheet")
-    assert len(prompts) == 1
-    assert prompts[0]["ability_key"] == "test_once"
+    decisions = [req for req in game.decision_queue.list() if req.decision_type == DECISION_USE_GILDED_CHAMPION]
+    assert len(decisions) == 1
+    request = decisions[0]
 
-    assert player.stratagems.use(
-        "GILDED CHAMPION",
-        model=model,
-        ability_key="test_once",
-        ability_name="Test Once",
-        phase_name="Fight phase",
-        source="datasheet",
-        target_unit=unit,
-    )
+    resolve_decision_command(game, request, _use_option_id(request), player_id=player.id)
     assert player.command_points == 2
     # Extra use exists, but cannot be used again in the same phase.
     assert model.has_used_once_per_battle("test_once", phase_name="FIGHT_PHASE")

@@ -665,18 +665,6 @@ class CultAmbushManager:
             return None
         if player is None:
             player = getattr(self.army, "player", None)
-        should = False
-        try:
-            ctx = {
-                "unit": unit,
-                "cost": self.resurgence_cost_for_unit(unit),
-                "points": int(self.resurgence_points or 0),
-            }
-            should = bool(player._should_use_optional_ability("CULT_AMBUSH", ctx))
-        except Exception:
-            should = False
-        if not should:
-            return None
         new_unit = self.spend_resurgence_for_unit(unit, game=game)
         if new_unit is None:
             return None

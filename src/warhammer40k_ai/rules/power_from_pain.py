@@ -6,6 +6,7 @@ from typing import Iterable, Optional
 
 from ..utility.ability_support import ABILITY_POWER_FROM_PAIN, army_has_ability_id
 from ..utility.dice import get_roll
+from ..utility.entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -1195,14 +1196,24 @@ class PowerFromPainManager:
             "pain_abilities": [spec.name for spec in applicable],
             "pain_tokens": int(self.tokens or 0),
             "pain_cost": 1,
+            "unit_id": get_entity_id(unit),
         }
-        try:
-            should = bool(getattr(player, "_should_use_optional_ability", lambda *_a, **_k: False)("POWER_FROM_PAIN", ctx))
-        except Exception:
-            should = False
-        if not should:
-            return False
-        return self.empower_unit_for_trigger(unit, trigger=trigger, game=game)
+        queue_fn = getattr(game, "_queue_optional_ability_confirmation", None)
+        if callable(queue_fn):
+            message = (
+                f"Empower {getattr(unit, 'name', 'Unit')} with Power from Pain for {trigger}?\n\n"
+                f"Spend 1 Pain token to activate: {', '.join([spec.name for spec in applicable])}"
+            )
+            queue_fn(
+                player=player,
+                ability_key="power_from_pain_empower",
+                ability_name="Power from Pain",
+                message=message,
+                context=ctx,
+                payload={"unit_id": ctx.get("unit_id"), "trigger": trigger},
+                instance_key=f"{ctx.get('unit_id') or ''}:{trigger}",
+            )
+        return False
 
     # ---------------- Stratagem Pain token support ----------------
 

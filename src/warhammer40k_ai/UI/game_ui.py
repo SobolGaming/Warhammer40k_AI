@@ -9796,7 +9796,45 @@ class GameView:
                         "Channel the Warp?"
                     )
 
-                    def _on_channel(choice: bool):
+                    from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from ..engine.decisions import DecisionOption, DecisionRequest
+
+                    channel_options = [
+                        DecisionOption.create("Channel", payload={"choice": True}),
+                        DecisionOption.create("No", payload={"choice": False}),
+                    ]
+                    channel_ctx = {
+                        "ability": "cabal_channel_warp",
+                        "ability_name": "Channel the Warp",
+                        "message": msg,
+                        "ritual_decision_id": ritual_req.decision_id,
+                        "ritual_option_id": option_id,
+                        "caster_model_id": get_entity_id(caster_model),
+                        "target_unit_id": get_entity_id(target_unit),
+                        "rolls": [r1, r2],
+                    }
+                    channel_req = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        "Cabal of Sorcerers",
+                        player_id=getattr(player, "id", None),
+                        options=channel_options,
+                        context=channel_ctx,
+                    )
+                    if self.game is not None:
+                        self.game.request_decision(channel_req)
+
+                    def _on_channel_resolved(_req, _result):
+                        chosen = False
+                        selected = None
+                        for opt in list(getattr(_req, "options", []) or []):
+                            if getattr(opt, "option_id", None) == getattr(_result, "option_id", None):
+                                selected = opt
+                                break
+                        payload = dict(getattr(selected, "payload", {}) or {}) if selected is not None else {}
+                        if "choice" in payload:
+                            chosen = bool(payload.get("choice"))
+                        elif "choice" in getattr(_result, "payload", {}):
+                            chosen = bool(_result.payload.get("choice"))
                         try:
                             resolve_decision_value(
                                 self.game,
@@ -9805,14 +9843,15 @@ class GameView:
                                 result_payload={
                                     "target_unit_id": get_entity_id(target_unit),
                                     "rolls": [r1, r2],
-                                    "channel_decision": choice,
+                                    "channel_decision": chosen,
                                     "caster_model_id": get_entity_id(caster_model),
                                 },
                             )
                         finally:
                             self._cabal_flow_active = False
 
-                    self._request_yes_no("Cabal of Sorcerers", msg, "Channel", "No", _on_channel, player=player)
+                    if getattr(self, "phase_manager", None) is not None:
+                        self.phase_manager._register_decision_callback(channel_req, _on_channel_resolved)
 
                 def _on_target_cancel():
                     skip_id = option_id_for_action(target_req, "skip")
@@ -12921,56 +12960,153 @@ class GameView:
                 self._request_blessings_roll(player, self.game, context, _done)
             return
 
-        if callable(getattr(self, "_request_yes_no", None)):
-            try:
-                target_unit = context.get("target_unit", None)
-                strat = manager.get_by_name(str(name)) if manager else None
-                if strat is not None and target_unit is not None:
-                    prev = player.preview_stratagem_cp_cost(strat, target_unit=target_unit, assume_optional_discounts=True)
-                    reasons = list(prev.get("reasons", []) or [])
-                    use_mop = any("Master of the Pageant" in str(r) for r in reasons)
-                    use_dts = any("Direct the Slaughter" in str(r) for r in reasons)
-                    tsd_reason = next((r for r in reasons if "Targeted Stratagem Discount" in str(r)), None)
-                    use_tsd = bool(tsd_reason)
-                    if use_mop or use_dts or use_tsd:
-                        if self._optional_flow_active:
-                            return
-                        self._optional_flow_active = True
-                        base = int(prev.get("base", getattr(strat, "cp_cost", 0) or 0) or 0)
-                        if use_mop:
-                            title = "Master of the Pageant"
-                            msg = f"Use Master of the Pageant to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
-                            decision_key = "MASTER_OF_THE_PAGEANT"
-                        elif use_dts:
-                            title = "Direct the Slaughter"
-                            msg = f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
-                            decision_key = "DIRECT_THE_SLAUGHTER"
-                        else:
-                            label = "Stratagem CP Discount"
-                            if tsd_reason:
-                                m = re.search(r"Targeted Stratagem Discount\s*\(([^)]+)\)", str(tsd_reason))
-                                if m:
-                                    label = m.group(1).strip() or label
-                            title = label
-                            msg = f"Use {label} to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP"
-                            decision_key = "TARGETED_STRATAGEM_DISCOUNT"
+        try:
+            target_unit = context.get("target_unit", None)
+            strat = manager.get_by_name(str(name)) if manager else None
+            if strat is not None and target_unit is not None:
+                prev = player.preview_stratagem_cp_cost(strat, target_unit=target_unit, assume_optional_discounts=True)
+                reasons = list(prev.get("reasons", []) or [])
+                base = int(prev.get("base", getattr(strat, "cp_cost", 0) or 0) or 0)
+                optional_decisions = []
 
-                        def _done(chosen: bool):
+                use_mop = any("Master of the Pageant" in str(r) for r in reasons)
+                use_dts = any("Direct the Slaughter" in str(r) for r in reasons)
+                tsd_reason = next((r for r in reasons if "Targeted Stratagem Discount" in str(r)), None)
+                use_tsd = bool(tsd_reason)
+
+                if use_mop:
+                    optional_decisions.append(
+                        {
+                            "key": "MASTER_OF_THE_PAGEANT",
+                            "title": "Master of the Pageant",
+                            "message": f"Use Master of the Pageant to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP",
+                        }
+                    )
+                if use_dts:
+                    optional_decisions.append(
+                        {
+                            "key": "DIRECT_THE_SLAUGHTER",
+                            "title": "Direct the Slaughter",
+                            "message": f"Use Direct the Slaughter to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP",
+                        }
+                    )
+                if use_tsd:
+                    label = "Stratagem CP Discount"
+                    if tsd_reason:
+                        m = re.search(r"Targeted Stratagem Discount\\s*\\(([^)]+)\\)", str(tsd_reason))
+                        if m:
+                            label = m.group(1).strip() or label
+                    optional_decisions.append(
+                        {
+                            "key": "TARGETED_STRATAGEM_DISCOUNT",
+                            "title": label,
+                            "message": f"Use {label} to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP",
+                        }
+                    )
+
+                try:
+                    gof = int(player._preview_gift_of_foresight_discount(stratagem=strat, target_unit=target_unit) or 0)
+                except Exception:
+                    gof = 0
+                if gof:
+                    optional_decisions.append(
+                        {
+                            "key": "GIFT_OF_FORESIGHT",
+                            "title": "Gift of Foresight",
+                            "message": f"Use Gift of Foresight to reduce CP cost by 1?\n\n{str(name)}: {base}CP -> {max(0, base-1)}CP",
+                        }
+                    )
+
+                try:
+                    army = player.get_army()
+                except Exception:
+                    army = None
+                mgr = getattr(army, "power_from_pain", None) if army is not None else None
+                pain_cost = 0
+                if mgr is not None:
+                    try:
+                        pain_cost = int(mgr.stratagem_pain_token_cost(strat) or 0)
+                    except Exception:
+                        pain_cost = 0
+                if pain_cost > 0 and int(getattr(mgr, "tokens", 0) or 0) >= pain_cost:
+                    optional_decisions.append(
+                        {
+                            "key": "POWER_FROM_PAIN_STRATAGEM",
+                            "title": "Power from Pain",
+                            "message": f"Spend {pain_cost} Pain token(s) to empower {str(name)}?",
+                        }
+                    )
+
+                if optional_decisions:
+                    if self._optional_flow_active:
+                        return
+                    self._optional_flow_active = True
+
+                    from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from ..engine.decisions import DecisionOption, DecisionRequest
+
+                    target_unit_id = get_entity_id(target_unit)
+                    decisions = list(optional_decisions)
+
+                    def _queue_next_decision():
+                        if not decisions:
                             self._optional_flow_active = False
-                            try:
-                                player.set_next_optional_decision(decision_key, bool(chosen))
-                            except Exception:
-                                pass
                             ok2 = manager.use(name, **context)
                             if ok2:
                                 print(f"Used stratagem: {name}")
                             else:
                                 print(f"Could not use stratagem: {name}")
+                            return
 
-                        self._request_yes_no(title, msg, "Use", "Skip", _done)
-                        return
-            except Exception:
-                pass
+                        decision = decisions.pop(0)
+                        ctx = {
+                            "ability": str(decision.get("key", "") or "").strip().lower(),
+                            "ability_name": decision.get("title", ""),
+                            "message": decision.get("message", ""),
+                            "stratagem": str(name),
+                            "target_unit_id": target_unit_id,
+                        }
+                        options = [
+                            DecisionOption.create("Use", payload={"choice": True}),
+                            DecisionOption.create("Skip", payload={"choice": False}),
+                        ]
+                        req = DecisionRequest.create(
+                            DECISION_CONFIRM_YES_NO,
+                            decision.get("title", "Confirm"),
+                            player_id=getattr(player, "id", None),
+                            options=options,
+                            context=ctx,
+                        )
+                        if self.game is not None:
+                            self.game.request_decision(req)
+
+                        def _on_resolved(_req, _result):
+                            chosen = False
+                            selected = None
+                            for opt in list(getattr(_req, "options", []) or []):
+                                if getattr(opt, "option_id", None) == getattr(_result, "option_id", None):
+                                    selected = opt
+                                    break
+                            payload = dict(getattr(selected, "payload", {}) or {}) if selected is not None else {}
+                            if "choice" in payload:
+                                chosen = bool(payload.get("choice"))
+                            elif "choice" in getattr(_result, "payload", {}):
+                                chosen = bool(_result.payload.get("choice"))
+                            try:
+                                player.set_next_optional_decision(decision.get("key", ""), bool(chosen))
+                            except Exception:
+                                pass
+                            _queue_next_decision()
+
+                        if getattr(self, "phase_manager", None) is not None:
+                            self.phase_manager._register_decision_callback(req, _on_resolved)
+                        else:
+                            self._optional_flow_active = False
+
+                    _queue_next_decision()
+                    return
+        except Exception:
+            pass
 
         ok = manager.use(name, **context)
         if ok:

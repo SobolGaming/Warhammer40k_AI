@@ -1,5 +1,8 @@
 ﻿import unittest
 
+from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+
 
 class _MockDatasheet:
     def __init__(self, name, *, abilities=None):
@@ -81,8 +84,15 @@ class TestOpponentTurnStrategicReserves(unittest.TestCase):
 
         game.map.units = [unit, enemy]
 
-        p2._next_optional_decisions = {"OPPONENT_TURN_STRATEGIC_RESERVES": True}
         game._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player=p1)
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        option_id = next(
+            opt.option_id for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False))
+        )
+        resolve_decision_command(game, request, option_id, player_id=p2.id)
 
         self.assertTrue(unit.is_in_strategic_reserves())
         self.assertNotIn(unit, game.map.units)
@@ -114,9 +124,10 @@ class TestOpponentTurnStrategicReserves(unittest.TestCase):
 
         game.map.units = [unit, enemy]
 
-        p2._next_optional_decisions = {"OPPONENT_TURN_STRATEGIC_RESERVES": True}
         game._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player=p1)
 
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 0)
         self.assertFalse(unit.is_in_strategic_reserves())
         self.assertIn(unit, game.map.units)
 

@@ -542,8 +542,21 @@ class BattleFocusManager:
             "target": getattr(target, "name", "") or "",
             "tokens": int(self.tokens or 0),
         }
-        if self._should_use(player, "BATTLE_FOCUS_FLITTING_SHADOWS", ctx):
-            self._apply_maneuver(unit, self.MANEUVER_FLITTING, game)
+        unit_id = get_entity_id(unit)
+        ctx["unit_id"] = unit_id
+        queue_fn = getattr(game, "_queue_optional_ability_confirmation", None)
+        if callable(queue_fn):
+            message = f"Use Battle Focus (Flitting Shadows) for {getattr(unit, 'name', 'Unit')}?"
+            queue_fn(
+                player=player,
+                ability_key="battle_focus_flitting_shadows",
+                ability_name="Battle Focus",
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id},
+                instance_key=f"{unit_id or ''}:charge",
+            )
+        return
 
     def maybe_trigger_setup_maneuver(self, unit, game) -> None:
         if unit is None or game is None:
@@ -571,8 +584,21 @@ class BattleFocusManager:
             "unit": getattr(unit, "name", "") or "",
             "tokens": int(self.tokens or 0),
         }
-        if self._should_use(player, "BATTLE_FOCUS_FLITTING_SHADOWS", ctx):
-            self._apply_maneuver(unit, self.MANEUVER_FLITTING, game)
+        unit_id = get_entity_id(unit)
+        ctx["unit_id"] = unit_id
+        queue_fn = getattr(game, "_queue_optional_ability_confirmation", None)
+        if callable(queue_fn):
+            message = f"Use Battle Focus (Flitting Shadows) for {getattr(unit, 'name', 'Unit')}?"
+            queue_fn(
+                player=player,
+                ability_key="battle_focus_flitting_shadows",
+                ability_name="Battle Focus",
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id},
+                instance_key=f"{unit_id or ''}:setup",
+            )
+        return
 
     def maybe_trigger_sudden_strike(self, unit, game) -> None:
         if unit is None or game is None:
@@ -596,8 +622,21 @@ class BattleFocusManager:
             "unit": getattr(unit, "name", "") or "",
             "tokens": int(self.tokens or 0),
         }
-        if self._should_use(player, "BATTLE_FOCUS_SUDDEN_STRIKE", ctx):
-            self._apply_maneuver(unit, self.MANEUVER_SUDDEN_STRIKE, game)
+        unit_id = get_entity_id(unit)
+        ctx["unit_id"] = unit_id
+        queue_fn = getattr(game, "_queue_optional_ability_confirmation", None)
+        if callable(queue_fn):
+            message = f"Use Battle Focus (Sudden Strike) for {getattr(unit, 'name', 'Unit')}?"
+            queue_fn(
+                player=player,
+                ability_key="battle_focus_sudden_strike",
+                ability_name="Battle Focus",
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id},
+                instance_key=f"{unit_id or ''}:sudden_strike",
+            )
+        return
 
     def maybe_trigger_opportunity_seized(self, moving_unit, game) -> None:
         if moving_unit is None or game is None:
@@ -643,8 +682,21 @@ class BattleFocusManager:
             "hits": int(hits or 0),
             "tokens": int(self.tokens or 0),
         }
-        if self._should_use(player, "BATTLE_FOCUS_FADE_BACK", ctx):
-            self._apply_reactive_move(target_unit, self.MANEUVER_FADE_BACK, game)
+        unit_id = get_entity_id(target_unit)
+        ctx["unit_id"] = unit_id
+        queue_fn = getattr(game, "_queue_optional_ability_confirmation", None)
+        if callable(queue_fn):
+            message = f"Use Battle Focus (Fade Back) for {getattr(target_unit, 'name', 'Unit')}?"
+            queue_fn(
+                player=player,
+                ability_key="battle_focus_fade_back",
+                ability_name="Battle Focus",
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id},
+                instance_key=f"{unit_id or ''}:fade_back",
+            )
+        return
 
     # ---------------- Effects ----------------
 

@@ -779,7 +779,9 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
     def test_sensational_performance_action_log(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
         from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
         from warhammer40k_ai.utility.event_bus import get_recent_actions
 
         army = Army("Emperor's Children", detachment_type="Court of the Phoenician")
@@ -790,9 +792,18 @@ class TestEmperorsChildrenDetachments(unittest.TestCase):
 
         unit = _StubUnit("Attacker", army)
         unit.round_state.charged_this_round = True
+        army.units = [unit]
+        game.rebuild_entity_registry()
 
-        with patch("random.choice", return_value=True):
-            game._on_fight_unit_selected_emperors_children(unit=unit)
+        game._on_fight_unit_selected_emperors_children(unit=unit)
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        option_id = next(
+            opt.option_id for opt in list(request.options or []) if bool((opt.payload or {}).get("choice", False))
+        )
+        resolve_decision_command(game, request, option_id, player_id=player.id)
 
         actions = get_recent_actions(player, limit=5)
         self.assertTrue(any("Sensational Performance" in entry for entry in actions))
