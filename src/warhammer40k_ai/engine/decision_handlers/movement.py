@@ -356,6 +356,10 @@ def _validate_placement_positions(
         deployment_errors = _validate_deployment_positions(game, unit, model_positions)
         if deployment_errors:
             return deployment_errors
+    if str(placement_kind or "") == "reserves_arrival":
+        reserves_errors = _validate_reserves_arrival_positions(game, unit, model_positions)
+        if reserves_errors:
+            return reserves_errors
 
     return ()
 
@@ -399,6 +403,230 @@ def _validate_deployment_positions(
     return ()
 
 
+def _validate_reserves_arrival_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+) -> Sequence[str]:
+    evaluation = _evaluate_reserves_arrival_positions(game, unit, model_positions)
+    if evaluation.get("errors"):
+        return tuple(evaluation.get("errors") or [])
+    return ()
+
+
+def _evaluate_reserves_arrival_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+) -> dict:
+    errors: list[str] = []
+    if unit is None:
+        return {"errors": ["Reserves arrival requires a unit."]}
+    if not bool(getattr(unit, "is_in_reserves", lambda: False)()):
+        return {"errors": ["Unit is not in reserves."]}
+    try:
+        if not unit.can_arrive_from_reserves(getattr(game, "turn", 0)):
+            return {"errors": ["Unit cannot arrive from reserves this turn."]}
+    except Exception:
+        return {"errors": ["Reserves arrival eligibility check failed."]}
+
+    if not isinstance(model_positions, list) or not model_positions:
+        return {"errors": ["Reserves arrival requires model positions."]}
+
+    from ...utility.entity_ids import get_entity_id
+
+    positions_by_id: dict[str, tuple[float, float, float, float]] = {}
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            return {"errors": ["Reserves arrival missing model_id."]}
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            return {"errors": ["Reserves arrival missing position coordinates."]}
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            return {"errors": ["Reserves arrival position coordinates must be numeric."]}
+        facing = entry.get("facing")
+        if facing is None:
+            facing = 0.0
+        try:
+            facing_val = float(facing)
+        except (TypeError, ValueError):
+            facing_val = 0.0
+        positions_by_id[model_id] = (x, y, z, facing_val)
+
+    prospective: list[tuple[float, float, float, float]] = []
+    for model in list(getattr(unit, "models", []) or []):
+        mid = str(get_entity_id(model))
+        if mid not in positions_by_id:
+            return {"errors": ["Reserves arrival missing positions for all models."]}
+        prospective.append(positions_by_id[mid])
+
+    game_map = getattr(game, "map", None)
+    battlefield = getattr(game, "battlefield", None)
+    width = None
+    height = None
+    if battlefield is not None:
+        try:
+            width = float(getattr(battlefield, "width", None))
+            height = float(getattr(battlefield, "height", None))
+        except Exception:
+            width = None
+            height = None
+    if (width is None or height is None) and game_map is not None:
+        try:
+            width = float(getattr(game_map, "width", None))
+            height = float(getattr(game_map, "height", None))
+        except Exception:
+            width = None
+            height = None
+    if width is None or height is None:
+        return {"errors": errors}
+
+    def _model_radius(model) -> float:
+        mb = getattr(model, "model_base", None)
+        if mb is None:
+            return 1.0
+        if hasattr(mb, "get_longest_radius"):
+            return float(mb.get_longest_radius())
+        if hasattr(mb, "get_radius"):
+            return float(mb.get_radius())
+        r = getattr(mb, "radius", None)
+        if isinstance(r, (list, tuple)) and r:
+            return float(r[0])
+        return float(r) if r is not None else 1.0
+
+    def _center_dist_to_edge(x: float, y: float, edge: str) -> float:
+        if edge == "own":
+            return float(y)
+        if edge == "enemy":
+            return float(height - y)
+        if edge == "left":
+            return float(x)
+        if edge == "right":
+            return float(width - x)
+        return float("inf")
+
+    strategic_ok = False
+    strategic_used_edge_touch = False
+    selected_edge: str | None = None
+
+    if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
+        for edge in ("own", "left", "right", "enemy"):
+            ok_all = True
+            used_touch = False
+            for model, (x, y, _z, _facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+                r = float(_model_radius(model))
+                d = _center_dist_to_edge(x, y, edge)
+                max_center = 6.0 - r
+                if max_center >= 0.0:
+                    if d > max_center + 1e-6:
+                        ok_all = False
+                        break
+                else:
+                    if abs(d - float(r)) > 0.25:
+                        ok_all = False
+                        break
+                    used_touch = True
+            if ok_all:
+                strategic_ok = True
+                strategic_used_edge_touch = bool(used_touch)
+                selected_edge = edge
+                break
+
+    deep_strike_ok = True
+    if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
+        try:
+            deep_strike_ok = bool(getattr(unit, "has_deep_strike", lambda: False)())
+        except Exception:
+            deep_strike_ok = False
+        if not strategic_ok and not deep_strike_ok:
+            return {"errors": ["Reserves arrival must be within 6\" of a battlefield edge."]}
+
+    battlefield_edge = selected_edge if strategic_ok else None
+
+    try:
+        min_enemy_distance = float(getattr(game, "_warp_rifts_min_distance")(unit) or 9.0)
+    except Exception:
+        min_enemy_distance = 9.0
+
+    if battlefield_edge is None:
+        sr = getattr(unit, "special_rules", None)
+        pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0) if isinstance(sr, dict) else 0.0
+        if pain_min:
+            min_enemy_distance = min(float(min_enemy_distance), float(pain_min))
+
+    try:
+        from ...utility.aura_utils import horizontal_distance_between_bases_2d
+    except Exception:
+        horizontal_distance_between_bases_2d = None
+    enemy_units = []
+    try:
+        player = unit.get_parent_army().player
+        enemy_units = list(getattr(game, "get_enemy_units", lambda _p: [])(player) or [])
+    except Exception:
+        enemy_units = []
+    enemy_models = []
+    for enemy in list(enemy_units or []):
+        try:
+            if not getattr(enemy, "is_alive", lambda: True)():
+                continue
+        except Exception:
+            if not getattr(enemy, "is_alive", True):
+                continue
+        if not bool(getattr(enemy, "deployed", False)):
+            continue
+        if str(getattr(enemy, "reserve_status", "deployed")) != "deployed":
+            continue
+        if getattr(enemy, "embarked_in", None) is not None:
+            continue
+        if bool(getattr(enemy, "is_embarked", False)):
+            continue
+        for em in list(getattr(enemy, "models", []) or []):
+            if not getattr(em, "is_alive", True):
+                continue
+            enemy_models.append(em)
+
+    if callable(horizontal_distance_between_bases_2d):
+        for model, (x, y, z, facing) in zip(list(getattr(unit, "models", []) or []), prospective):
+            try:
+                base = unit._create_potential_base(x, y, z, facing, model=model)
+            except Exception:
+                base = None
+            if base is None:
+                continue
+            for em in list(enemy_models or []):
+                try:
+                    dist = float(horizontal_distance_between_bases_2d(base, em.model_base))
+                except Exception:
+                    continue
+                if dist < float(min_enemy_distance):
+                    return {"errors": [f"Reserves arrival must be more than {int(min_enemy_distance)}\" from enemy models."]}
+
+    try:
+        if bool(getattr(game, "_reserves_denial_violated")(unit, prospective)):
+            return {"errors": ["Reserves arrival position is denied by an enemy ability."]}
+    except Exception:
+        pass
+
+    pending_deep_strike = False
+    if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
+        pending_deep_strike = bool(deep_strike_ok and not strategic_ok)
+    else:
+        pending_deep_strike = True
+
+    return {
+        "errors": errors,
+        "prospective": prospective,
+        "battlefield_edge": battlefield_edge,
+        "edge_touch": bool(strategic_ok and strategic_used_edge_touch),
+        "pending_deep_strike": bool(pending_deep_strike),
+    }
+
+
 def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
@@ -429,6 +657,8 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             unit.update_coherency()
     if placement_kind == "deployment":
         _finalize_deployment_move(game, unit, model_positions)
+    if placement_kind == "reserves_arrival":
+        _finalize_reserves_arrival_move(game, unit, model_positions)
 
     members = _movement_members(unit)
     for member in members:
@@ -505,6 +735,64 @@ def _finalize_deployment_move(game: object, unit: object, model_positions: list[
         game.record_deployment_action(player, unit, "deployed", getattr(unit, "position", None))
     if hasattr(game, "advance_deployment_turn"):
         game.advance_deployment_turn(unit)
+
+
+def _finalize_reserves_arrival_move(game: object, unit: object, model_positions: list[dict]) -> None:
+    if unit is None:
+        return
+    evaluation = _evaluate_reserves_arrival_positions(game, unit, model_positions)
+    errors = list(evaluation.get("errors") or [])
+    if errors:
+        raise RuntimeError("; ".join(str(e) for e in errors if e))
+
+    # Track special arrival flags (edge touch / deep strike) for downstream rules.
+    try:
+        if evaluation.get("edge_touch"):
+            setattr(unit, "_pending_reserves_edge_touch", True)
+        elif hasattr(unit, "_pending_reserves_edge_touch"):
+            delattr(unit, "_pending_reserves_edge_touch")
+    except Exception:
+        pass
+    try:
+        setattr(unit, "_pending_reserves_deep_strike", bool(evaluation.get("pending_deep_strike", False)))
+    except Exception:
+        pass
+
+    # Update unit centroid position for convenience.
+    positions = []
+    for entry in list(model_positions or []):
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        positions.append((x, y, z))
+    if positions:
+        ux = sum(p[0] for p in positions) / len(positions)
+        uy = sum(p[1] for p in positions) / len(positions)
+        uz = sum(p[2] for p in positions) / len(positions)
+        unit.position = (ux, uy, uz)
+
+    game_map = getattr(game, "map", None)
+    if game_map is not None and hasattr(game_map, "units"):
+        try:
+            if unit not in game_map.units:
+                game_map.units.append(unit)
+        except Exception:
+            pass
+
+    try:
+        turn = int(getattr(game, "turn", 0) or 0)
+    except Exception:
+        turn = 0
+    try:
+        unit._finalize_reserves_arrival(turn, game_map)
+    except Exception as exc:
+        raise RuntimeError(f"Reserves arrival finalize failed: {exc}") from exc
 
 
 def _validate_resolve_coherency(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

@@ -30,16 +30,9 @@ class TestDamageAllocationRules(unittest.TestCase):
         wounded = _Model("wounded", wounds=1, base_wounds=2)
         fresh = _Model("fresh", wounds=2, base_wounds=2)
 
-        def _provider(_unit, models, _ctx):
-            # Attempt to violate rule by picking fresh
-            return fresh
-
         chosen = choose_damage_allocation_model(
             target_unit=object(),
             candidates=[fresh, wounded],
-            is_human=True,
-            provider=_provider,
-            ctx=None,
         )
         self.assertIs(chosen, wounded)
 
@@ -49,18 +42,11 @@ class TestDamageAllocationRules(unittest.TestCase):
         a = _Model("a", wounds=2, base_wounds=2)
         b = _Model("b", wounds=2, base_wounds=2)
 
-        def _provider(_unit, models, _ctx):
-            self.assertEqual(set(models), {a, b})
-            return b
-
         chosen = choose_damage_allocation_model(
             target_unit=object(),
             candidates=[a, b],
-            is_human=True,
-            provider=_provider,
-            ctx=None,
         )
-        self.assertIs(chosen, b)
+        self.assertIs(chosen, a)
 
     def test_hazardous_priority_wounded_first(self):
         from warhammer40k_ai.utility.damage_allocation import choose_hazardous_failure_model
@@ -72,9 +58,6 @@ class TestDamageAllocationRules(unittest.TestCase):
         chosen = choose_hazardous_failure_model(
             attacker_unit_root=object(),
             eligible_models=[fresh_char, fresh_nonchar, wounded],
-            is_human=False,
-            provider=None,
-            ctx=None,
         )
         self.assertIs(chosen, wounded)
 
@@ -87,10 +70,6 @@ class TestDamageAllocationRules(unittest.TestCase):
         chosen = choose_hazardous_failure_model(
             attacker_unit_root=object(),
             eligible_models=[fresh_char, fresh_nonchar],
-            is_human=False,
-            provider=None,
-            ctx=None,
         )
         self.assertIs(chosen, fresh_nonchar)
-
 

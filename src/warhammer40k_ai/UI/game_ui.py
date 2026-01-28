@@ -2010,6 +2010,7 @@ class GameView:
             ]
             ctx = dict(context or {})
             ctx["message"] = message
+            ctx["ui_prompted"] = True
             req = DecisionRequest.create(
                 DECISION_CONFIRM_YES_NO,
                 title or "Confirm",
@@ -2858,6 +2859,156 @@ class GameView:
                 return
 
         if bool(getattr(game, "is_authoritative", True)):
+            return
+
+        try:
+            from ..engine.decision_kinds import DECISION_MOVE_UNIT
+        except Exception:
+            DECISION_MOVE_UNIT = ""
+
+        if decision_type == DECISION_MOVE_UNIT:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if str(ctx.get("placement_kind", "")) != "reserves_arrival":
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            try:
+                if not player.has_control():
+                    return
+            except Exception:
+                return
+            unit_id = str(ctx.get("unit_id", "") or "")
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            movement_type = str(ctx.get("movement_type", "") or "deploy")
+            try:
+                self.phase_manager._request_move_unit_decision(
+                    unit,
+                    movement_type,
+                    lambda _completed: None,
+                    decision_request=request,
+                )
+            except Exception:
+                return
+            return
+
+        try:
+            from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        except Exception:
+            DECISION_CONFIRM_YES_NO = ""
+
+        if decision_type == DECISION_CONFIRM_YES_NO:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if bool(ctx.get("ui_prompted", False)):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            try:
+                if not player.has_control():
+                    return
+            except Exception:
+                return
+            if getattr(self, "yes_no_dialog", None) is None:
+                return
+            if self.yes_no_dialog.visible and getattr(self.yes_no_dialog, "decision_request", None) is request:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            def _on_confirm(option_id: str):
+                if not option_id:
+                    return
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload={},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    self.yes_no_dialog.hide()
+                except Exception:
+                    pass
+
+            title = str(getattr(request, "prompt", "") or "Confirm")
+            message = str(ctx.get("message", "") or "")
+            if not message:
+                ability_name = str(ctx.get("ability_name", "") or "")
+                if ability_name:
+                    message = ability_name
+            self.yes_no_dialog.show(
+                title,
+                message,
+                _on_confirm,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.yes_no_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        try:
+            from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+        except Exception:
+            DECISION_USE_MIRACLE_DIE = ""
+
+        if decision_type == DECISION_USE_MIRACLE_DIE:
+            ctx = dict(getattr(request, "context", {}) or {})
+            if bool(ctx.get("ui_prompted", False)):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None))
+            if player is None:
+                return
+            try:
+                if not player.has_control():
+                    return
+            except Exception:
+                return
+            if not hasattr(self, "miracle_dice_dialog") or self.miracle_dice_dialog is None:
+                try:
+                    from .dialogs import MiracleDiceDialog
+                    self.miracle_dice_dialog = MiracleDiceDialog(self.screen.get_width(), self.screen.get_height())
+                except Exception:
+                    self.miracle_dice_dialog = None
+            if self.miracle_dice_dialog is None:
+                return
+            if self.miracle_dice_dialog.visible and getattr(self.miracle_dice_dialog, "decision_request", None) is request:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            def _on_choice(option_id: str):
+                if not option_id:
+                    return
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload={},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    self.miracle_dice_dialog.hide()
+                except Exception:
+                    pass
+
+            title = str(getattr(request, "prompt", "") or "Acts of Faith")
+            message = str(ctx.get("message", "") or "")
+            dice_values = list(ctx.get("pool", []) or [])
+            self.miracle_dice_dialog.show(
+                title=title,
+                message=message,
+                dice_values=dice_values,
+                callback=_on_choice,
+                skip_label="Skip",
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.miracle_dice_dialog, modal=True)
+            except Exception:
+                pass
             return
 
         player = self._resolve_player_by_id(getattr(request, "player_id", None))
@@ -6314,35 +6465,38 @@ class GameView:
             on_done()
             return
 
-        is_human = False
-        try:
-            is_human = bool(getattr(player, "has_control", lambda: False)())
-        except Exception:
-            is_human = False
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
 
-        if not is_human:
-            should = False
-            try:
-                ctx = {
-                    "unit": unit,
-                    "target_unit": target_unit,
-                    "ability_sources": list(unit.get_fight_within_3_sources() or []),
-                }
-                should = bool(player._should_use_optional_ability("FIGHT_WITHIN_3", ctx))
-            except Exception:
-                should = False
-            if should:
-                try:
-                    unit.set_fight_within_3_active(True, source=ability_name)
-                except Exception:
-                    pass
+        unit_id = get_entity_id(unit)
+        target_id = get_entity_id(target_unit)
+        msg = f"Use {ability_name} to let models within 3\" of enemy models fight?"
+        options = [
+            DecisionOption.create("Use", payload={"choice": True, "unit_id": unit_id}),
+            DecisionOption.create("Skip", payload={"choice": False, "unit_id": unit_id}),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            ability_name,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "unit_id": unit_id,
+                "target_unit_id": target_id,
+                "ability": "fight_within_3",
+                "ability_name": ability_name,
+                "message": msg,
+            },
+        )
+        try:
+            if self.game is not None:
+                self.game.request_decision(req)
+        except Exception:
             on_done()
             return
 
-        title = ability_name
-        msg = f"Use {ability_name} to let models within 3\" of enemy models fight?"
-
-        def _done(chosen: bool):
+        def _apply_choice(chosen: bool):
             if chosen:
                 try:
                     unit.set_fight_within_3_active(True, source=ability_name)
@@ -6355,10 +6509,29 @@ class GameView:
                     pass
             on_done()
 
-        try:
-            self._request_yes_no(title, msg, "Use", "Skip", _done, player=player)
-        except Exception:
-            _done(False)
+        registrar = getattr(getattr(self, "phase_manager", None), "_register_decision_callback", None)
+        if callable(registrar):
+            def _on_resolved(_request, result):
+                choice = None
+                try:
+                    selected = None
+                    for opt in list(getattr(req, "options", []) or []):
+                        if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
+                            selected = opt
+                            break
+                    if selected is not None:
+                        payload = dict(getattr(selected, "payload", {}) or {})
+                        if "choice" in payload:
+                            choice = bool(payload.get("choice"))
+                    if choice is None and isinstance(getattr(result, "payload", None), dict):
+                        if "choice" in result.payload:
+                            choice = bool(result.payload.get("choice"))
+                except Exception:
+                    choice = None
+                _apply_choice(bool(choice))
+            registrar(req, _on_resolved)
+        else:
+            _apply_choice(False)
 
     def _start_frenzy_fight_sequence(self, unit, attacker_unit, game_ctx):
         if unit is None or attacker_unit is None or game_ctx is None:
@@ -10301,12 +10474,10 @@ class GameView:
         except Exception:
             pass
 
-        dlg = self.miracle_dice_dialog
-        choice_holder = {"choice": None, "done": False}
-
-        def _on_choice(chosen):
-            choice_holder["choice"] = chosen
-            choice_holder["done"] = True
+        from ..engine.decision_kinds import DECISION_USE_MIRACLE_DIE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_command
+        from ..utility.entity_ids import get_entity_id
 
         # Show highest values first for clarity
         try:
@@ -10314,12 +10485,78 @@ class GameView:
         except Exception:
             values_sorted = values
 
+        unit_id = get_entity_id(unit) if unit is not None else None
+        options = [
+            DecisionOption.create(str(val), payload={"die_value": int(val), "unit_id": unit_id})
+            for val in list(values_sorted or [])
+        ]
+        options.append(DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}))
+        context = {
+            "unit_id": unit_id,
+            "roll_type": str(roll_type or ""),
+            "dice_count": int(dice_count or 1),
+            "die_faces": int(die_faces or 6),
+            "pool": list(values_sorted or []),
+            "ability": "acts_of_faith",
+            "ability_name": "Acts of Faith",
+            "message": msg,
+            "ui_prompted": True,
+        }
+        needed = _kwargs.get("needed", None)
+        if needed is not None:
+            context["needed"] = int(needed)
+        req = DecisionRequest.create(
+            DECISION_USE_MIRACLE_DIE,
+            "Select Miracle Die",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        dlg = self.miracle_dice_dialog
+        choice_holder = {"choice": None, "done": False}
+
+        def _on_choice(option_id: str):
+            if not option_id:
+                choice_holder["choice"] = None
+                choice_holder["done"] = True
+                return
+            selected = None
+            for opt in list(getattr(req, "options", []) or []):
+                if getattr(opt, "option_id", None) == option_id:
+                    selected = opt
+                    break
+            chosen_val = None
+            if selected is not None:
+                payload = dict(getattr(selected, "payload", {}) or {})
+                if str(payload.get("action", "") or "").lower() == "skip":
+                    chosen_val = None
+                else:
+                    chosen_val = payload.get("die_value", payload.get("value"))
+            if self.game is not None:
+                resolve_decision_command(
+                    self.game,
+                    req,
+                    option_id,
+                    result_payload={},
+                    player_id=getattr(player, "id", None),
+                )
+            try:
+                chosen_val = int(chosen_val) if chosen_val is not None else None
+            except Exception:
+                chosen_val = None
+            choice_holder["choice"] = chosen_val
+            choice_holder["done"] = True
+
         dlg.show(
             title=title,
             message=msg,
             dice_values=values_sorted,
             callback=_on_choice,
             skip_label="Skip",
+            decision_request=req,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)

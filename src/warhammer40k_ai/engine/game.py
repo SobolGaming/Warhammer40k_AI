@@ -9327,11 +9327,108 @@ class Game:
                 len(units_that_must_arrive),
             )
 
+        # Queue explicit placement decisions for each eligible unit.
+        try:
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+        pending = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    try:
+                        if str(getattr(req, "decision_type", "")) != DECISION_MOVE_UNIT:
+                            continue
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("placement_kind", "")) != "reserves_arrival":
+                            continue
+                        uid = str(ctx.get("unit_id", "") or "")
+                        if uid:
+                            pending.add(uid)
+                    except Exception:
+                        continue
+        except Exception:
+            pending = set()
+        must_ids = set()
+        for unit in list(units_that_must_arrive or []):
+            try:
+                must_ids.add(str(get_entity_id(unit)))
+            except Exception:
+                continue
+        # Deterministic ordering by entity id
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+        for unit in sorted(list(units_that_can_arrive or []), key=_unit_sort_key):
+            try:
+                unit_id = str(get_entity_id(unit))
+            except Exception:
+                unit_id = ""
+            if unit_id and unit_id in pending:
+                continue
+            allow_skip = True
+            if unit_id and unit_id in must_ids:
+                allow_skip = False
+            request = self._build_reserves_arrival_request(unit, allow_skip=allow_skip)
+            if request is not None:
+                try:
+                    self.request_decision(request)
+                except Exception:
+                    pass
+
         return units_arrived
 
     def find_valid_reserves_position(self, unit: 'Unit') -> Optional[Tuple[float, float, float]]:
         """Return None unless a controller provides an explicit placement."""
         return None
+
+    def _build_reserves_arrival_request(self, unit: 'Unit', *, allow_skip: bool) -> Optional["DecisionRequest"]:
+        if unit is None:
+            return None
+        from .decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ]
+        if allow_skip:
+            options.append(
+                DecisionOption.create(
+                    "Skip",
+                    payload={"unit_id": unit_id, "movement_type": "deploy", "action": "skip"},
+                )
+            )
+        player_id = None
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = getattr(unit, "parent_army", None)
+        if army is not None:
+            player = getattr(army, "player", None)
+            player_id = getattr(player, "id", None) if player is not None else None
+        allowed_model_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or []) if m is not None]
+        context = {
+            "unit_id": unit_id,
+            "movement_type": "deploy",
+            "placement_kind": "reserves_arrival",
+            "allowed_model_ids": allowed_model_ids,
+            "allow_skip": bool(allow_skip),
+            "battle_round": int(getattr(self, "turn", 0) or 0),
+            "reserve_status": str(getattr(unit, "reserve_status", "") or ""),
+        }
+        return DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"Arrive from Reserves: {getattr(unit, 'name', 'Unit')}",
+            player_id=player_id,
+            options=options,
+            context=context,
+        )
 
     def get_first_turn_player_index(self) -> int:
         """Get the index of player who goes first (will be set during DETERMINE_FIRST_TURN_ORDER)"""
