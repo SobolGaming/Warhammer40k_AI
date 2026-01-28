@@ -78,6 +78,55 @@ class CandidateAction:
 - Candidate enumeration is intent-driven and solver-backed.
 - The policy selects among legal candidates instead of generating raw coordinates.
 
+## Human Gameplay Telemetry & Learning
+
+Human games are a first-class data source for bootstrapping and realism. The telemetry contract must align with the Decision API so human actions map to the same candidate-based policies used by AI.
+
+### DecisionRecord Schema (Minimum)
+
+See `docs/DECISION_RECORD_SCHEMA.json` for the canonical JSON schema.
+
+Each decision (human or AI) emits a DecisionRecord with:
+
+- Identification and determinism: `game_id`, `turn_id`, `phase`, `decision_id`, `decision_type`,
+  `ruleset_id`, `dataslate_id`, `points_id`, `global_seed`, `decision_seed`.
+- Observation: canonicalized snapshot or replayable delta, stored as:
+  `omniscient_state` and `player_obs_state(player_id)`.
+- Candidate set: full `candidates` list and `mask` at decision time.
+  Each CandidateAction includes stable `action_id`/hash, `params`, and `metadata`
+  (e.g., solver metrics, time spent, threat estimates).
+- Choice: `chosen_action_id` and wall-clock time used.
+- Outcome: immediate deltas (VP, CP, destroyed units, etc.) and end-of-turn/end-of-game returns.
+
+### HumanActionCandidate Injection (Required)
+
+Humans will often select actions not present in the solver's top-K candidates. To keep training aligned:
+
+- Always generate the solver candidate set for the decision.
+- When a human commits an action, validate it and compute required PathWitness artifacts.
+- If the action is not already in the candidate set, append a `HumanActionCandidate` with
+  the exact params and witnesses, then mark it as the chosen action.
+
+This preserves a candidate-based dataset even for freeform UI actions.
+
+### Determinism and Reproducibility
+
+- If candidate generation is stochastic, record `decision_seed` and the full candidate list.
+- Replayers must be able to reconstruct the exact candidate set and outcome for training.
+
+### Invalid Attempt Telemetry (Optional but Recommended)
+
+When a human attempts an illegal action and the UI rejects it:
+
+- Log the attempted action as an invalid record with the rejection reason.
+- This supports later UI explainability and proposal models.
+
+### Usage by Tier
+
+- Tier 3: primary supervised source (learning-to-rank over candidates for movement/targets/charges/fights).
+- Tier 2: optional auxiliary supervision (infer unit roles and CP posture from observed actions).
+- Tier 1: keep RL/self-play primary; optionally add self-supervised prediction targets.
+
 ## Movement System Design
 
 - Movement uses intent, constrained optimization, and full path witnesses.
@@ -242,15 +291,16 @@ Time management is a concrete subsystem, not an open question.
 
 1. Ruleset/version plumbing and deterministic replay.
 2. Unified Decision API with action masking.
-3. State encoding foundation with canonical perspectives.
-4. Tier 1 Plan schema integrated into decision contexts.
-5. Compute Budget / Time Manager (caps, multipliers, anytime fallback).
-6. MovementIntent schema and solver hooks.
-7. PathWitness artifacts with continuous validation.
-8. Tight clearance detection and pivot constraints.
-9. Tier 2 orchestration scaffolding.
-10. Training harness with league self-play.
-11. Army muster generator and evaluator prototype.
+3. DecisionRecord logging + dual-view observation + HumanActionCandidate injection + deterministic replayer.
+4. State encoding foundation with canonical perspectives.
+5. Tier 1 Plan schema integrated into decision contexts.
+6. Compute Budget / Time Manager (caps, multipliers, anytime fallback).
+7. MovementIntent schema and solver hooks.
+8. PathWitness artifacts with continuous validation.
+9. Tight clearance detection and pivot constraints.
+10. Tier 2 orchestration scaffolding.
+11. Training harness with league self-play.
+12. Army muster generator and evaluator prototype.
 
 ## ML Framework Recommendation
 

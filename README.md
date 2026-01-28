@@ -94,6 +94,9 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 
 ### Documentation
 
+- **AI planning and telemetry**
+  - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
+  - [DecisionRecord schema](docs/DECISION_RECORD_SCHEMA.json): telemetry contract for human/AI decisions and replay.
 - **Support matrices**
   - [Ability Support Matrix](docs/ABILITY_SUPPORT_MATRIX.md): engine support status for abilities and stratagems.
   - [Wargear Keyword Support Matrix](docs/WARGEAR_KEYWORD_SUPPORT_MATRIX.md): wargear keyword behavior coverage.

@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:warhammer40k_ai:decision_record",
+  "title": "DecisionRecord",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "game_id",
+    "turn_id",
+    "phase",
+    "decision_id",
+    "decision_type",
+    "ruleset_id",
+    "dataslate_id",
+    "points_id",
+    "global_seed",
+    "decision_seed",
+    "omniscient_state",
+    "player_obs_state",
+    "candidates",
+    "mask",
+    "wall_clock_ms",
+    "outcome"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string"
+    },
+    "game_id": {
+      "type": "string"
+    },
+    "turn_id": {
+      "type": ["string", "integer"]
+    },
+    "phase": {
+      "type": "string"
+    },
+    "decision_id": {
+      "type": "string"
+    },
+    "decision_type": {
+      "type": "string"
+    },
+    "ruleset_id": {
+      "type": "string"
+    },
+    "dataslate_id": {
+      "type": "string"
+    },
+    "points_id": {
+      "type": "string"
+    },
+    "global_seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "decision_seed": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "omniscient_state": {
+      "$ref": "#/$defs/StateBlob"
+    },
+    "player_obs_state": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/StateBlob"
+      }
+    },
+    "candidates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CandidateAction"
+      }
+    },
+    "mask": {
+      "type": "array",
+      "items": {
+        "type": "boolean"
+      },
+      "description": "Mask length should match candidates length."
+    },
+    "chosen_action_id": {
+      "type": "string"
+    },
+    "wall_clock_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "time_budget_ms": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome"
+    },
+    "human_action_injected": {
+      "type": "boolean"
+    },
+    "valid": {
+      "type": "boolean",
+      "default": true
+    },
+    "rejection_reason": {
+      "type": "string"
+    },
+    "invalid_attempt": {
+      "$ref": "#/$defs/CandidateAction"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "valid": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "required": ["invalid_attempt", "rejection_reason"]
+      },
+      "else": {
+        "required": ["chosen_action_id"]
+      }
+    }
+  ],
+  "$defs": {
+    "CandidateAction": {
+      "type": "object",
+      "required": ["action_id", "params", "metadata"],
+      "properties": {
+        "action_id": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object"
+        },
+        "metadata": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false
+    },
+    "StateBlob": {
+      "description": "Canonicalized snapshot or replayable delta reference.",
+      "oneOf": [
+        {
+          "type": "object"
+        },
+        {
+          "type": "string"
+        }
+      ]
+    },
+    "Outcome": {
+      "type": "object",
+      "properties": {
+        "immediate_deltas": {
+          "type": "object"
+        },
+        "end_of_turn_return": {
+          "type": "number"
+        },
+        "end_of_game_return": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
