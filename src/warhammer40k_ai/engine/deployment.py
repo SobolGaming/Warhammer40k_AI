@@ -3,9 +3,14 @@ import logging
 from abc import ABC, abstractmethod
 
 from .game import Game
+from .decision_kinds import DECISION_MOVE_UNIT
+from .decisions import DecisionOption, DecisionRequest
+from .decision_requests import build_reserves_allocation_request
 from ..roster.player import Player
 from ..utility.calcs import get_dist
+from ..utility.decision_utils import resolve_decision_command
 from ..utility.dice import get_dice_roll
+from ..utility.entity_ids import get_entity_id
 from .missions import OfficialMission, MissionRegistry, DeploymentZoneType, create_objectives_from_mission
 
 if TYPE_CHECKING:
@@ -115,9 +120,9 @@ class DeploymentManager:
         logger.info(f"{self.defender.name} chose deployment zone, {self.attacker.name} gets the other")
         
         # Step 3: Declare Reserves & Strategic Reserves (simultaneously)
-        defender_reserves = defender_decision_maker.declare_reserves(self.defender)
+        defender_reserves = self._resolve_reserves_decisions(self.defender, defender_decision_maker)
         attacker_decision_maker = decision_makers[self.attacker.id]
-        attacker_reserves = attacker_decision_maker.declare_reserves(self.attacker)
+        attacker_reserves = self._resolve_reserves_decisions(self.attacker, attacker_decision_maker)
         
         deployment_results['reserves'][self.defender.id] = defender_reserves
         deployment_results['reserves'][self.attacker.id] = attacker_reserves
@@ -198,6 +203,101 @@ class DeploymentManager:
             zones.append(attacker_zone)
         
         return zones
+
+    def _resolve_reserves_decisions(self, player: Player, decision_maker: DeploymentDecisionMaker) -> dict:
+        army = player.get_army()
+        if army is None:
+            return {}
+        decisions = dict(decision_maker.declare_reserves(player) or {})
+        request = build_reserves_allocation_request(self.game, army)
+        if request is None:
+            return decisions
+        option_id = request.options[0].option_id if getattr(request, "options", None) else ""
+        buckets = {"deploy": [], "reserves": [], "strategic_reserves": []}
+        for unit_id, status in decisions.items():
+            unit_key = str(unit_id)
+            choice = str(status or "deploy")
+            if choice not in buckets:
+                choice = "deploy"
+            buckets[choice].append(unit_key)
+        resolve_decision_command(
+            self.game,
+            request,
+            option_id,
+            result_payload={"unit_ids_by_bucket": buckets},
+            player_id=getattr(player, "id", None),
+        )
+        return decisions
+
+    def _build_deployment_move_request(self, unit: 'Unit') -> DecisionRequest:
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ]
+        player_id = None
+        army = getattr(unit, "get_parent_army", None)
+        if callable(army):
+            army = army()
+        else:
+            army = getattr(unit, "parent_army", None)
+        if army is not None:
+            player = getattr(army, "player", None)
+            player_id = getattr(player, "id", None) if player is not None else None
+        allowed_model_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or [])]
+        context = {
+            "unit_id": unit_id,
+            "movement_type": "deploy",
+            "placement_kind": "deployment",
+            "allowed_model_ids": allowed_model_ids,
+            "allow_skip": False,
+            "max_distance": 0.0,
+        }
+        return DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"Deploy {getattr(unit, 'name', 'Unit')}",
+            player_id=player_id,
+            options=options,
+            context=context,
+        )
+
+    def _build_deployment_model_positions(self, unit: 'Unit', position: Tuple[float, float]) -> List[dict]:
+        x, y = position
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            raise RuntimeError("Deployment requires an active game map.")
+        use_repulsors = True
+        has_infiltrate = getattr(unit, "has_infiltrate", None)
+        if callable(has_infiltrate) and has_infiltrate():
+            use_repulsors = False
+        boundary_repulsors = None
+        if use_repulsors:
+            repulsor_fn = getattr(self.game, "get_boundary_repulsors", None)
+            if callable(repulsor_fn):
+                boundary_repulsors = repulsor_fn(unit, context="deployment")
+        model_positions = unit.calculate_model_positions(
+            x,
+            y,
+            game_map,
+            avoid_friendly_units=False,
+            boundary_repulsors=boundary_repulsors,
+        )
+        if not model_positions or len(model_positions) != len(getattr(unit, "models", []) or []):
+            raise RuntimeError(f"Unable to calculate deployment positions for {getattr(unit, 'name', 'Unit')}.")
+        payload_positions: List[dict] = []
+        for model, pos in zip(unit.models, model_positions):
+            model_id = get_entity_id(model)
+            model_x, model_y, model_z, model_facing = pos
+            payload_positions.append(
+                {
+                    "model_id": model_id,
+                    "position": [float(model_x), float(model_y), float(model_z)],
+                    "facing": float(model_facing),
+                }
+            )
+        return payload_positions
     
     def setup_mission_objectives(self) -> None:
         """Set up objectives based on the selected mission."""
@@ -263,9 +363,19 @@ class DeploymentManager:
                 # Deploy next unit
                 unit = current_units.pop(0)
                 position = current_decision_maker.choose_unit_deployment_position(unit, current_zone, current_deployed)
-                
-                # Actually deploy the unit
-                self.deploy_unit(unit, position, current_zone)
+
+                # Route deployment placement through DecisionRequest/Command API.
+                request = self._build_deployment_move_request(unit)
+                self.game.request_decision(request)
+                model_positions = self._build_deployment_model_positions(unit, position)
+                option_id = request.options[0].option_id if getattr(request, "options", None) else ""
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload={"model_positions": model_positions},
+                    player_id=getattr(request, "player_id", None),
+                )
                 current_deployed.append(unit)
                 deployment_order.append((current_player.id, unit.id, position))
                 

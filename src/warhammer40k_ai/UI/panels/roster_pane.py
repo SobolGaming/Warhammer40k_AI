@@ -216,31 +216,6 @@ class RosterPane(pygame.sprite.Sprite):
 
                         def on_deploy_complete(completed: bool):
                             if completed:
-                                unit.deployed = True
-                                # Attached leaders deploy together
-                                try:
-                                    for l in list(getattr(unit, "attached_leaders", []) or []):
-                                        l.deployed = True
-                                        l.reserve_status = getattr(unit, "reserve_status", "deployed")
-                                except Exception:
-                                    pass
-                                if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
-                                    print("ERROR: Deployment failed: game map unavailable to register unit")
-                                    return
-                                if unit not in self.game_view.game_map.units:
-                                    self.game_view.game_map.units.append(unit)
-                                current_deployment_player = self.game_view.game.get_current_deployment_player()
-                                if current_deployment_player:
-                                    try:
-                                        locs = [m.get_location() for m in unit.models]
-                                        ux = sum(loc[0] for loc in locs) / len(locs)
-                                        uy = sum(loc[1] for loc in locs) / len(locs)
-                                        uz = sum(loc[2] for loc in locs) / len(locs)
-                                        unit.position = (ux, uy, uz)
-                                    except Exception:
-                                        pass
-                                    self.game_view.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
-                                self.game_view.game.advance_deployment_turn(unit)
                                 self.selected_unit = None
                                 self.game_view.selected_unit = None
                             else:

@@ -208,7 +208,13 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         if seen != allowed_set:
             return ("Move unit: model_positions must include all and only allowed_model_ids.",)
     if placement_kind or allowed_ids is not None:
-        placement_errors = _validate_placement_positions(game, unit, model_positions, allowed_ids=allowed_ids)
+        placement_errors = _validate_placement_positions(
+            game,
+            unit,
+            model_positions,
+            allowed_ids=allowed_ids,
+            placement_kind=placement_kind,
+        )
         if placement_errors:
             return placement_errors
     return ()
@@ -220,6 +226,7 @@ def _validate_placement_positions(
     model_positions: object,
     *,
     allowed_ids: object = None,
+    placement_kind: str | None = None,
 ) -> Sequence[str]:
     if not isinstance(model_positions, list) or not model_positions:
         return ("Move unit: placement requires model_positions.",)
@@ -345,6 +352,50 @@ def _validate_placement_positions(
         if set(candidate_bases.keys()) != allowed_set:
             return ("Move unit: placement must include all allowed models.",)
 
+    if str(placement_kind or "") == "deployment":
+        deployment_errors = _validate_deployment_positions(game, unit, model_positions)
+        if deployment_errors:
+            return deployment_errors
+
+    return ()
+
+
+def _validate_deployment_positions(
+    game: object,
+    unit: object,
+    model_positions: object,
+) -> Sequence[str]:
+    validate_fn = getattr(game, "is_valid_single_model_deployment", None)
+    if not callable(validate_fn):
+        return ()
+    player_id = None
+    army = getattr(unit, "get_parent_army", None)
+    if callable(army):
+        army = army()
+    else:
+        army = getattr(unit, "parent_army", None)
+    if army is not None:
+        player = getattr(army, "player", None)
+        player_id = getattr(player, "id", None) if player is not None else None
+    if not player_id:
+        return ("Move unit: deployment requires player_id.",)
+    for entry in list(model_positions or []):
+        model_id = str(entry.get("model_id", "") or "")
+        if not model_id:
+            return ("Move unit: deployment missing model_id.",)
+        model = get_model(game, model_id)
+        if model is None:
+            return (f"Move unit: deployment model not found: {model_id}",)
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            return ("Move unit: deployment position missing coordinates.",)
+        x = float(pos[0])
+        y = float(pos[1])
+        z = float(pos[2]) if len(pos) > 2 else float(getattr(model.model_base, "z", 0.0))
+        check = validate_fn(model, x, y, z, player_id)
+        if not bool(check.get("valid", False)):
+            reason = str(check.get("reason", "") or "invalid")
+            return (f"Move unit: deployment invalid: {reason}",)
     return ()
 
 
@@ -376,6 +427,8 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             model._pending_placement_source = None
         if hasattr(unit, "update_coherency"):
             unit.update_coherency()
+    if placement_kind == "deployment":
+        _finalize_deployment_move(game, unit, model_positions)
 
     members = _movement_members(unit)
     for member in members:
@@ -406,6 +459,52 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
     if movement_type == "reactive":
         _clear_battle_focus_reactive_flags(unit)
     return None
+
+
+def _finalize_deployment_move(game: object, unit: object, model_positions: list[dict]) -> None:
+    if unit is None:
+        return
+    unit.deployed = True
+    leaders = list(getattr(unit, "attached_leaders", []) or [])
+    for leader in leaders:
+        leader.deployed = True
+        leader.reserve_status = getattr(unit, "reserve_status", "deployed")
+        leader.reserve_turn_deployed = getattr(unit, "reserve_turn_deployed", None)
+
+    game_map = getattr(game, "map", None)
+    if game_map is not None:
+        units_list = getattr(game_map, "units", None)
+        if isinstance(units_list, list) and unit not in units_list:
+            units_list.append(unit)
+
+    positions = []
+    for entry in list(model_positions or []):
+        pos = entry.get("position") or []
+        if not isinstance(pos, (list, tuple)) or len(pos) < 2:
+            continue
+        try:
+            x = float(pos[0])
+            y = float(pos[1])
+            z = float(pos[2]) if len(pos) > 2 else 0.0
+        except (TypeError, ValueError):
+            continue
+        positions.append((x, y, z))
+    if positions:
+        ux = sum(p[0] for p in positions) / len(positions)
+        uy = sum(p[1] for p in positions) / len(positions)
+        uz = sum(p[2] for p in positions) / len(positions)
+        unit.position = (ux, uy, uz)
+
+    army = getattr(unit, "get_parent_army", None)
+    if callable(army):
+        army = army()
+    else:
+        army = getattr(unit, "parent_army", None)
+    player = getattr(army, "player", None) if army is not None else None
+    if player is not None and hasattr(game, "record_deployment_action"):
+        game.record_deployment_action(player, unit, "deployed", getattr(unit, "position", None))
+    if hasattr(game, "advance_deployment_turn"):
+        game.advance_deployment_turn(unit)
 
 
 def _validate_resolve_coherency(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

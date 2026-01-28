@@ -1500,29 +1500,8 @@ class DeploymentPhaseHandler(BasePhaseHandler):
 
             # Ensure per-model deployment dialog is opened
             def on_deploy_complete(completed: bool):
-                # Mark unit deployed and advance turn when completed
-                unit = self.game_view.selected_unit
-                if completed and unit:
-                    unit.deployed = True
-                    # Ensure unit is registered on the map for downstream phases
-                    if not hasattr(self.game_view, 'game_map') or self.game_view.game_map is None:
-                        print("ERROR: Deployment failed: game map unavailable to register unit")
-                        return
-                    if unit not in self.game_view.game_map.units:
-                        self.game_view.game_map.units.append(unit)
-                    current_deployment_player = self.game.get_current_deployment_player()
-                    if current_deployment_player:
-                        try:
-                            locs = [m.get_location() for m in unit.models]
-                            ux = sum(loc[0] for loc in locs) / len(locs)
-                            uy = sum(loc[1] for loc in locs) / len(locs)
-                            uz = sum(loc[2] for loc in locs) / len(locs)
-                            unit.position = (ux, uy, uz)
-                        except Exception:
-                            pass
-                        self.game.record_deployment_action(current_deployment_player, unit, 'deployed', getattr(unit, 'position', None))
-                    self.game.advance_deployment_turn(unit)
-                    # Clear selection
+                # Engine resolves deployment state through DecisionRequest/Command.
+                if completed:
                     self.game_view.selected_unit = None
                     self.game_view.left_roster_pane.selected_unit = None
                     self.game_view.right_roster_pane.selected_unit = None
@@ -2971,12 +2950,15 @@ class BattlePhaseHandler(BasePhaseHandler):
                 player_id = unit.get_parent_army().player.id
             except Exception:
                 player_id = None
+            context = {"unit_id": unit_id, "movement_type": movement_type}
+            if movement_type == "deploy":
+                context["placement_kind"] = "deployment"
             req = DecisionRequest.create(
                 DECISION_MOVE_UNIT,
                 f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
                 player_id=player_id,
                 options=options,
-                context={"unit_id": unit_id, "movement_type": movement_type},
+                context=context,
             )
             self.game.request_decision(req)
         elif max_distance is None:
