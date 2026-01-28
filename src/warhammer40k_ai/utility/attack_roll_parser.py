@@ -272,6 +272,10 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         if parts:
             return AttackRollCondition(target_exclude_keywords_any=parts)
 
+    m = re.fullmatch(r"(?:the target of that attack|that attack) targets (?P<clause>.+)", t)
+    if m:
+        return _parse_target_clause(m.group("clause"))
+
     return None
 
 
@@ -316,7 +320,48 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
         parts = tuple(p.strip().lower() for p in raw.split(",") if p.strip())
         if parts:
             return AttackRollCondition(target_exclude_keywords_any=parts)
+    keywords = _parse_keyword_list_clause(t)
+    if keywords:
+        return AttackRollCondition(target_keywords_any=keywords)
     return None
+
+
+def _parse_keyword_list_clause(text: str) -> Optional[Tuple[str, ...]]:
+    t = _strip_punct(text.strip())
+    if not t:
+        return None
+    for prefix in ("a ", "an ", "enemy "):
+        if t.startswith(prefix):
+            t = t[len(prefix):].strip()
+    t = re.sub(r"\b(units?|models?)$", "", t).strip()
+    if not t:
+        return None
+    if not any(sep in t for sep in (" or ", ",", " and ")):
+        return None
+    for blocked in ("within ", "objective", "below", "battle", "can fly", "cannot fly", "that is", "that are", "excluding"):
+        if blocked in t:
+            return None
+    keywords: list[str] = []
+    for chunk in t.split(","):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if " or " in chunk:
+            parts = [p.strip() for p in chunk.split(" or ") if p.strip()]
+        elif " and " in chunk:
+            parts = [p.strip() for p in chunk.split(" and ") if p.strip()]
+        else:
+            parts = [chunk]
+        for part in parts:
+            if not part:
+                continue
+            if part in ("unit", "model"):
+                continue
+            if part not in keywords:
+                keywords.append(part)
+    if not keywords:
+        return None
+    return tuple(keywords)
 
 
 def _parse_effect_clause(text: str) -> Optional[AttackRollEffect]:
@@ -468,13 +513,27 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
         rest = norm[m.end():].strip()
         if rest.startswith("that targets "):
             rest = rest[len("that targets "):]
-            if "," not in rest:
+            target_clause = None
+            for m_comma in re.finditer(r",", rest):
+                after = rest[m_comma.end():].lstrip(" ,")
+                after_stripped = _strip_effect_preamble(after)
+                if _EFFECT_START_RE.match(after_stripped):
+                    target_clause = rest[:m_comma.start()].strip()
+                    rest = after_stripped
+                    break
+            if not target_clause:
+                m_eff = re.search(
+                    r"\b(?:you can|reroll|re-?roll|add|subtract|improve|a successful|an unmodified|a critical)\b",
+                    rest,
+                )
+                if m_eff:
+                    target_clause = rest[:m_eff.start()].strip(" ,")
+                    rest = rest[m_eff.start():].lstrip(" ,")
+            if not target_clause:
                 return None
-            target_clause, rest = rest.split(",", 1)
             trigger_condition = _parse_target_clause(target_clause)
             if trigger_condition is None:
                 return None
-            rest = rest.strip()
         if rest.startswith(","):
             rest = rest[1:].strip()
         effects_text = rest

@@ -19973,6 +19973,112 @@ class Unit:
         self._ability_cache[cache_key] = (allowed, reason)
         return allowed, reason
 
+    def _get_model_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None, roll: str = "hit") -> dict:
+        mods = {
+            "reroll_values": (),
+            "reroll_full": False,
+            "reroll_reasons": (),
+            "reroll_full_reasons": (),
+        }
+        if model is None:
+            return mods
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged"):
+            atype = "any"
+        roll_key = str(roll or "").strip().lower()
+        if roll_key not in ("hit", "wound"):
+            return mods
+
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rules = self._get_model_attack_roll_rules(model)
+        if not rules:
+            return mods
+
+        reroll_values: set[int] = set()
+        reroll_reasons: list[str] = []
+        reroll_full_reasons: list[str] = []
+
+        def _cond_suffix(cond: Optional[AttackRollCondition]) -> str:
+            if not cond:
+                return ""
+            parts = []
+            if cond.target_battleshocked:
+                parts.append("vs Battle-shocked targets")
+            if cond.attacker_below_starting_strength:
+                parts.append("while below Starting Strength")
+            if cond.attacker_below_half_strength:
+                parts.append("while below Half-strength")
+            if cond.target_within_objective:
+                parts.append("vs targets within objective range")
+            if cond.target_within_range is not None:
+                parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_can_fly is True:
+                parts.append("vs FLY targets")
+            if cond.target_can_fly is False:
+                parts.append("vs non-FLY targets")
+            if cond.target_keywords_any:
+                kw = "/".join(k.upper() for k in cond.target_keywords_any)
+                parts.append(f"vs {kw} targets")
+            if cond.target_keywords_all:
+                kw = " & ".join(k.upper() for k in cond.target_keywords_all)
+                parts.append(f"vs {kw} targets")
+            if cond.target_below_starting_strength:
+                parts.append("vs targets below Starting Strength")
+            if cond.target_below_half_strength:
+                parts.append("vs targets below Half-strength")
+            if cond.target_exclude_keywords_any:
+                parts.append("excluding " + ", ".join(cond.target_exclude_keywords_any))
+            if not parts:
+                return ""
+            return " (" + "; ".join(parts) + ")"
+
+        for rule, name in list(rules or []):
+            if atype != "any" and rule.attack_type not in ("any", atype):
+                continue
+            for eff in rule.effects:
+                if eff.roll != roll_key or eff.kind != "reroll":
+                    continue
+                cond = eff.condition
+                if not cond or not (cond.target_keywords_any or cond.target_keywords_all):
+                    continue
+                if not self._attack_condition_met(cond, target=target, source_unit=root):
+                    continue
+                label = name or "Model ability"
+                if eff.reroll_full:
+                    reroll_full_reasons.append(f"{label}: re-roll {roll_key.title()} roll{_cond_suffix(cond)}")
+                if eff.reroll_values:
+                    reroll_values.update(int(v) for v in eff.reroll_values)
+                    reroll_reasons.append(
+                        f"{label}: re-roll {roll_key.title()} rolls of {', '.join(str(v) for v in sorted(eff.reroll_values))}{_cond_suffix(cond)}"
+                    )
+
+        mods["reroll_values"] = tuple(sorted(reroll_values))
+        mods["reroll_reasons"] = tuple(reroll_reasons)
+        mods["reroll_full_reasons"] = tuple(reroll_full_reasons)
+        mods["reroll_full"] = bool(reroll_full_reasons)
+        return mods
+
+    def get_model_hit_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
+        mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="hit")
+        return {
+            "reroll_hit_values": mods.get("reroll_values", ()),
+            "reroll_hit_full": bool(mods.get("reroll_full")),
+            "reroll_hit_reasons": mods.get("reroll_reasons", ()),
+            "reroll_hit_full_reasons": mods.get("reroll_full_reasons", ()),
+        }
+
+    def get_model_wound_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
+        mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="wound")
+        return {
+            "reroll_wound_values": mods.get("reroll_values", ()),
+            "reroll_wound_full": bool(mods.get("reroll_full")),
+            "reroll_wound_reasons": mods.get("reroll_reasons", ()),
+            "reroll_wound_full_reasons": mods.get("reroll_full_reasons", ()),
+        }
+
     def model_hit_bonus_vs_fly(self, model: Optional['Model'] = None, *, attack_type: str = "any") -> tuple[int, Optional[str]]:
         """
         Model-specific rule: +N to Hit rolls vs targets that can FLY.

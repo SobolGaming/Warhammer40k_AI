@@ -3193,6 +3193,23 @@ class WargearProfile:
                     reroll_full_reasons.extend(list(unit_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
         except Exception:
             pass
+        try:
+            unit = attacker.parent_unit
+            model_hit_mods = attack_instance.get("_model_hit_reroll_mods")
+            if model_hit_mods is None:
+                model_hit_mods = unit.get_model_hit_reroll_modifiers(attacker, attack_type=attack_type, target=target)
+                attack_instance["_model_hit_reroll_mods"] = model_hit_mods
+            if isinstance(model_hit_mods, dict):
+                for v in list(model_hit_mods.get("reroll_hit_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                reroll_value_reasons.extend(list(model_hit_mods.get("reroll_hit_reasons", ()) or ()))
+                if bool(model_hit_mods.get("reroll_hit_full", False)):
+                    reroll_full_reasons.extend(list(model_hit_mods.get("reroll_hit_full_reasons", ()) or ()))
+        except Exception:
+            pass
         # Contextual reroll sources carried on the attack instance (best-effort).
         try:
             if bool(attack_instance.get("furious_onslaught_applies")):
@@ -3290,63 +3307,6 @@ class WargearProfile:
                     hit_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
-
-        # Model-specific abilities: re-roll Hit roll vs CHARACTER targets (optional).
-        try:
-            if rerolls_allowed and "reroll" not in hit_result:
-                unit = attacker.parent_unit
-                is_character_target = False
-                try:
-                    is_character_target = bool(target.has_keyword("CHARACTER"))
-                except Exception:
-                    try:
-                        is_character_target = bool(target.has_any_keyword("CHARACTER"))
-                    except Exception:
-                        is_character_target = False
-                if unit is not None and is_character_target:
-                    allow, reason = unit.model_can_reroll_hit_vs_character(attacker)
-                    if allow:
-                        try:
-                            success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
-                        except Exception:
-                            success = False
-                        do_reroll = False
-                        try:
-                            game = unit.get_parent_army().player.game
-                            player = unit.get_parent_army().player
-                            is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                        except Exception:
-                            is_human = False
-                            provider = None
-                            player = None
-                        if is_human and callable(provider):
-                            try:
-                                do_reroll = bool(provider(
-                                    player=player,
-                                    unit=unit,
-                                    roll_type="hit",
-                                    value=dice_roll,
-                                    dice=None,
-                                    needed=final_needed,
-                                    success=success,
-                                    reason=reason or "Model ability",
-                                ))
-                            except Exception:
-                                do_reroll = False
-                        else:
-                            do_reroll = (not success)
-                        if do_reroll:
-                            rr = _reroll_hit()
-                            label = reason or "Model ability"
-                            hit_result.setdefault("special_effects", []).append(
-                                f"{label}: re-roll Hit roll vs CHARACTER"
-                            )
-                            hit_result["reroll"] = rr
-                            dice_roll = rr
-                            reroll_used = True
         except Exception:
             pass
 
@@ -5430,6 +5390,23 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            unit = attacker.parent_unit
+            model_wound_mods = attack_instance.get("_model_wound_reroll_mods")
+            if model_wound_mods is None:
+                model_wound_mods = unit.get_model_wound_reroll_modifiers(attacker, attack_type=attack_type, target=target)
+                attack_instance["_model_wound_reroll_mods"] = model_wound_mods
+            if isinstance(model_wound_mods, dict):
+                for v in list(model_wound_mods.get("reroll_wound_values", ()) or ()):
+                    try:
+                        reroll_wound_values.add(int(v))
+                    except Exception:
+                        continue
+                reroll_value_reasons.extend(list(model_wound_mods.get("reroll_wound_reasons", ()) or ()))
+                if bool(model_wound_mods.get("reroll_wound_full", False)):
+                    reroll_full_reasons.extend(list(model_wound_mods.get("reroll_wound_full_reasons", ()) or ()))
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
@@ -5589,85 +5566,6 @@ class WargearProfile:
                     wound_result["reroll"] = rr
                     dice_roll = rr
                     reroll_used = True
-        except Exception:
-            pass
-
-        # Model-specific abilities: re-roll Wound roll vs CHARACTER targets (optional).
-        try:
-            if rerolls_allowed and "reroll" not in wound_result:
-                unit = attacker.parent_unit
-                is_character_target = False
-                try:
-                    is_character_target = bool(target.has_keyword("CHARACTER"))
-                except Exception:
-                    try:
-                        is_character_target = bool(target.has_any_keyword("CHARACTER"))
-                    except Exception:
-                        is_character_target = False
-                if unit is not None and is_character_target:
-                    allow, reason = unit.model_can_reroll_wound_vs_character(attacker)
-                    if allow:
-                        needed = 0
-                        try:
-                            s_val = strength
-                            t_val = target_toughness
-                            if isinstance(s_val, int) and isinstance(t_val, int):
-                                if s_val >= 2 * t_val:
-                                    needed = 2
-                                elif s_val > t_val:
-                                    needed = 3
-                                elif s_val == t_val:
-                                    needed = 4
-                                elif s_val * 2 <= t_val:
-                                    needed = 6
-                                else:
-                                    needed = 5
-                        except Exception:
-                            needed = 0
-                        final_needed = needed
-                        try:
-                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
-                        except Exception:
-                            pass
-                        try:
-                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
-                        except Exception:
-                            success = False
-                        do_reroll = False
-                        try:
-                            game = unit.get_parent_army().player.game
-                            player = unit.get_parent_army().player
-                            is_human = bool(getattr(player, "has_control", lambda: False)())
-                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
-                        except Exception:
-                            is_human = False
-                            provider = None
-                            player = None
-                        if is_human and callable(provider):
-                            try:
-                                do_reroll = bool(provider(
-                                    player=player,
-                                    unit=unit,
-                                    roll_type="wound",
-                                    value=dice_roll,
-                                    dice=None,
-                                    needed=final_needed,
-                                    success=success,
-                                    reason=reason or "Model ability",
-                                ))
-                            except Exception:
-                                do_reroll = False
-                        else:
-                            do_reroll = (not success)
-                        if do_reroll:
-                            rr = _reroll_wound()
-                            label = reason or "Model ability"
-                            wound_result.setdefault("special_effects", []).append(
-                                f"{label}: re-roll Wound roll vs CHARACTER"
-                            )
-                            wound_result["reroll"] = rr
-                            dice_roll = rr
-                            reroll_used = True
         except Exception:
             pass
 

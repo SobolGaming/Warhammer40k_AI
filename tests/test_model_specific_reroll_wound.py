@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 
 
 class _MockDatasheet:
@@ -69,6 +69,168 @@ def _build_game():
 
 
 class TestModelSpecificRerollWound(unittest.TestCase):
+    def test_model_reroll_hit_vs_keyword_list(self):
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
+
+        ability = {
+            "name": "A Challenge Worthy of Skill",
+            "description": "Each time this model makes an attack that targets a CHARACTER, MONSTER or WALKER unit, you can re-roll the Hit roll and you can re-roll the Wound roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit("Lucius", keywords=["HERETIC ASTARTES"], abilities=[ability])
+        target = _make_unit("Target", keywords=["WALKER"])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        called = {}
+        def _provider(**kwargs):
+            called["reason"] = kwargs.get("reason")
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        data = {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+            "type": "Ranged",
+            "name": "Test Gun",
+        }
+        profile = Wargear(data).profiles["default"]
+
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+
+        rolls = iter([2, 6])
+        original_roll = wargear_module.get_roll
+        wargear_module.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._hit_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_module.get_roll = original_roll
+
+        self.assertEqual(result["roll"], 6)
+        self.assertIn("A Challenge Worthy of Skill", called.get("reason", ""))
+
+    def test_model_reroll_wound_vs_keyword_list(self):
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
+
+        ability = {
+            "name": "A Challenge Worthy of Skill",
+            "description": "Each time this model makes an attack that targets a CHARACTER, MONSTER or WALKER unit, you can re-roll the Hit roll and you can re-roll the Wound roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit("Lucius", keywords=["HERETIC ASTARTES"], abilities=[ability])
+        target = _make_unit("Target", keywords=["MONSTER"])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        called = {}
+        def _provider(**kwargs):
+            called["reason"] = kwargs.get("reason")
+            return True
+
+        game.map.roll_reroll_provider = _provider
+
+        data = {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+            "type": "Ranged",
+            "name": "Test Gun",
+        }
+        profile = Wargear(data).profiles["default"]
+
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+
+        rolls = iter([2, 6])
+        original_roll = wargear_module.get_roll
+        wargear_module.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._wound_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_module.get_roll = original_roll
+
+        self.assertEqual(result["roll"], 6)
+        self.assertIn("A Challenge Worthy of Skill", called.get("reason", ""))
+
+    def test_model_reroll_keyword_list_requires_match(self):
+        from warhammer40k_ai.units.wargear import Wargear
+        from warhammer40k_ai.units import wargear as wargear_module
+
+        ability = {
+            "name": "A Challenge Worthy of Skill",
+            "description": "Each time this model makes an attack that targets a CHARACTER, MONSTER or WALKER unit, you can re-roll the Hit roll and you can re-roll the Wound roll.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, p1, _p2, army1, army2 = _build_game()
+        attacker = _make_unit("Lucius", keywords=["HERETIC ASTARTES"], abilities=[ability])
+        target = _make_unit("Target", keywords=["INFANTRY"])
+        army1.add_unit(attacker)
+        army2.add_unit(target)
+
+        game.map.roll_reroll_provider = lambda **_kwargs: True
+
+        data = {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "",
+            "type": "Ranged",
+            "name": "Test Gun",
+        }
+        profile = Wargear(data).profiles["default"]
+
+        attack_instance = {
+            "crit_hit": False,
+            "crit_wound": False,
+            "mortal_wound": False,
+            "below_half_distance": False,
+            "damage": 0,
+            "target_toughness_override": None,
+        }
+
+        rolls = iter([2, 6])
+        original_roll = wargear_module.get_roll
+        wargear_module.get_roll = lambda _d: next(rolls)
+        try:
+            result = profile._wound_target_with_tracking(target, attacker.models[0], attack_instance)
+        finally:
+            wargear_module.get_roll = original_roll
+
+        self.assertEqual(result["roll"], 2)
+
     def test_model_reroll_wound_vs_character(self):
         from warhammer40k_ai.units.wargear import Wargear
         from warhammer40k_ai.units import wargear as wargear_module

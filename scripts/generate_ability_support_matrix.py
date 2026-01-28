@@ -2608,30 +2608,68 @@ def _half_range_attack_keyword_support(description: str) -> Optional[Tuple[str, 
 def _model_reroll_wound_vs_character_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
-    norm = _norm_rules_text(description)
-    if not norm:
+    raw = _strip_html(description)
+    if not raw:
         return None
-    reroll_pattern = (
-        r"each time this model makes (?:a|an)?(?: melee| ranged)? attacks? that targets a character (?:unit|model) "
-        r"you can reroll the (?:hit|wound) roll(?:s)?(?: and you can reroll the (?:hit|wound) roll(?:s)?)?"
-    )
+    sentences = [s.strip() for s in re.split(r"[.;]\s*", raw) if s.strip()]
+    if not sentences:
+        return None
+
     cp_pattern = (
         r"each time (?:this model|this models unit|this unit) destroys an? (?:enemy )?character (?:model|unit) you gain \d+ ?cp"
     )
-    sentences = [s for s in (_norm_rules_text(part) for part in re.split(r"[.;]\s*", _strip_html(description))) if s]
-    unsupported = [s for s in sentences if not (re.fullmatch(reroll_pattern, s) or re.fullmatch(cp_pattern, s))]
-    if unsupported:
-        return None
-    hit_reroll = "reroll the hit roll" in norm and "hit roll of 1" not in norm
-    wound_reroll = "reroll the wound roll" in norm and "wound roll of 1" not in norm
+
+    hit_reroll = False
+    wound_reroll = False
+    keyword_signatures: set[tuple[tuple[str, ...], tuple[str, ...]]] = set()
+    cp_on_kill = False
+
+    for sentence in sentences:
+        norm_sentence = _norm_rules_text(sentence)
+        if re.fullmatch(cp_pattern, norm_sentence):
+            cp_on_kill = True
+            continue
+        rule = parse_attack_roll_text(sentence)
+        if rule is None:
+            return None
+        if rule.subject != "this_model":
+            return None
+        if rule.attack_type not in ("any", "melee", "ranged"):
+            return None
+        if not rule.effects:
+            return None
+        for eff in rule.effects:
+            if eff.kind != "reroll" or eff.roll not in ("hit", "wound"):
+                return None
+            if not eff.reroll_full:
+                return None
+            cond = eff.condition
+            if not cond or not (cond.target_keywords_any or cond.target_keywords_all):
+                return None
+            kw_any = tuple(sorted({k.strip().lower() for k in (cond.target_keywords_any or ()) if k}))
+            kw_all = tuple(sorted({k.strip().lower() for k in (cond.target_keywords_all or ()) if k}))
+            keyword_signatures.add((kw_any, kw_all))
+            if eff.roll == "hit":
+                hit_reroll = True
+            else:
+                wound_reroll = True
+
     if not (hit_reroll or wound_reroll):
         return None
-    cp_on_kill = bool(re.search(r"gain \d+ ?cp", norm) and "destroy" in norm and "character" in norm)
+
+    target_label = "keyword-conditioned targets"
+    if len(keyword_signatures) == 1:
+        kw_any, kw_all = next(iter(keyword_signatures))
+        if kw_any:
+            target_label = "/".join(k.upper() for k in kw_any) + " units"
+        elif kw_all:
+            target_label = " & ".join(k.upper() for k in kw_all) + " units"
+
     notes = []
     if hit_reroll:
-        notes.append("Model attacks vs CHARACTER units can re-roll the Hit roll (optional).")
+        notes.append(f"Model attacks vs {target_label} can re-roll the Hit roll (optional).")
     if wound_reroll:
-        notes.append("Model attacks vs CHARACTER units can re-roll the Wound roll (optional).")
+        notes.append(f"Model attacks vs {target_label} can re-roll the Wound roll (optional).")
     if cp_on_kill:
         notes.append("Gain CP on destroying CHARACTER models supported.")
     return ("Supported", " ".join(notes))
