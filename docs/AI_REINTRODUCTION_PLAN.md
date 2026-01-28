@@ -10,7 +10,7 @@ This document consolidates the HRL design and training plan for reintroducing Ar
 
 ## Target Environment
 
-- Matched Play, Chapter Approved 2025–2026.
+- Matched Play, Chapter Approved 2025-2026.
 - 2000 points.
 - Frequent points and rules updates.
 - Likely future edition change (10e to 11e).
@@ -84,6 +84,48 @@ class CandidateAction:
 - Full path witnesses are required to ensure rules-faithful legality.
 - Solver output includes per-model endpoints, path witnesses, and legality proof metadata.
 
+### MovementIntent Schema (Required)
+
+MovementIntent is the compact, expressive input that drives solver candidate generation.
+
+```
+class MovementIntent:
+    objective_targets: list[str]            # objective_id or region_id
+    screen_deny_targets: list[str]          # region_id or lane_id
+    weights: dict                           # screen_coverage, coherency, threat_avoid, obj_proximity
+    anchors: dict[str, str]                 # {model_id: region_id}, optional, 0-3 anchors
+    constraint_toggles: dict                # avoid_los_to, avoid_threat_range_of, keep_in_cover, etc.
+```
+
+### PathWitness Contract (Required)
+
+Full path means a compact witness (polyline + events), not a high-resolution trace.
+
+ModelPathWitness primitives: `translate`, `pivot`, `floor_transition`.
+
+Required fields (per primitive):
+- `from_pose`, `to_pose`, `theta`, `pivot_cost_applied`, `layer_id`
+
+Required invariants:
+- Path is contiguous and ordered; first `from_pose` equals starting pose; last `to_pose` equals endpoint.
+- Translation segment length <= max segment length for the current clearance mode.
+- `layer_id` changes only on `floor_transition` primitives.
+
+Required validations per translation segment:
+- Continuous intersection with forbidden Engagement Range regions when applicable.
+- Continuous intersection with impassable terrain boundaries given traversal archetype.
+- Enemy model pass-through constraints (movement-type dependent).
+
+Required distance accounting:
+- Translation distance computed per segment using the active ruleset's distance mode.
+- Pivot penalty applied once per move when any pivot occurs (`pivot_cost_applied` on first pivot only).
+
+### Path-Time Legality Constraints (Continuous)
+
+- Cannot enter Engagement Range at any point during Normal/Advance moves unless the mover is explicitly permitted.
+- Cannot pass through enemy models unless the movement type explicitly allows it.
+- Traversal archetype (breach, fly, walker, etc.) determines which terrain volumes are impassable.
+
 ### Corridor and Segment Witnesses
 
 - CorridorWitness per base profile group per unit move.
@@ -98,9 +140,14 @@ class CandidateAction:
 
 ### Tight Clearance Detection
 
-- Elliptical bases: tight if b ≤ clearance < a.
-- Rectangular hulls: tight if w ≤ clearance < sqrt(l^2 + w^2).
+- Elliptical bases: tight if b <= clearance < a.
+- Rectangular hulls: tight if w <= clearance < sqrt(l^2 + w^2).
 - Tight intervals trigger stricter segment length and pivot constraints.
+
+In tight intervals, orientation is constrained:
+- Apply yaw-band constraints relative to local corridor direction.
+- Allow pivots only if resulting yaw remains within the admissible band.
+- Escalate to finer discretization only when clearance is near r_in.
 
 ### Pivot Handling
 
@@ -112,6 +159,26 @@ class CandidateAction:
 - One shared policy conditioned on faction, detachment, and toolset.
 - Toolset includes stratagems, enhancements, and once-per-battle rules.
 - Optional adapters or MoE gating for detachment specialization.
+
+### Tool Descriptor Schema (Required)
+
+Tools are represented as structured effect descriptors to enable generalization and patch resiliency.
+
+Minimum fields:
+- Timing window(s).
+- Target constraints and legality hooks.
+- Cost (CP, once-per-battle, etc.).
+- Effect category + parameters (modify hit/wound/save/damage/move/OC/etc.).
+- Duration and expiry conditions.
+
+## Compute Budget / Time Manager
+
+Time management is a concrete subsystem, not an open question.
+
+- Per decision type time caps (movement, shooting allocation, charge planning, etc.).
+- Per unit priority multipliers (P0/P1/P2).
+- Anytime behavior: return best candidate found so far and fall back to simpler intent if time expires.
+- Time budgets are logged with decisions for profiling and retraining.
 
 ## Training Plan
 
@@ -152,6 +219,11 @@ class CandidateAction:
 - Movement rules change: update engine and retrain movement executor.
 - New edition: rebuild adapters and executors, transfer high-level VP concepts.
 
+### Worked Examples (Freeze vs Retrain)
+
+- Movement rules change (e.g., traversal or ER path constraints update): update engine legality + movement solver, retrain Tier 3 movement executor; freeze Tier 1/2; use rehearsal on prior movement regression suite.
+- Tool change (e.g., stratagem timing/target/cost update): update tool descriptor and legality hooks, fine-tune Tier 2 resource head; freeze movement executor; add targeted sims covering the updated tool window and target constraints.
+
 ## Army Muster System
 
 - Separate agent from in-game AI.
@@ -172,12 +244,13 @@ class CandidateAction:
 2. Unified Decision API with action masking.
 3. State encoding foundation with canonical perspectives.
 4. Tier 1 Plan schema integrated into decision contexts.
-5. MovementIntent schema and solver hooks.
-6. PathWitness artifacts with continuous validation.
-7. Tight clearance detection and pivot constraints.
-8. Tier 2 orchestration scaffolding.
-9. Training harness with league self-play.
-10. Army muster generator and evaluator prototype.
+5. Compute Budget / Time Manager (caps, multipliers, anytime fallback).
+6. MovementIntent schema and solver hooks.
+7. PathWitness artifacts with continuous validation.
+8. Tight clearance detection and pivot constraints.
+9. Tier 2 orchestration scaffolding.
+10. Training harness with league self-play.
+11. Army muster generator and evaluator prototype.
 
 ## ML Framework Recommendation
 
@@ -257,7 +330,6 @@ class CandidateAction:
 
 ### Open
 
-- Compute budgets: define concrete time caps per decision and per unit (P0/P1/P2) to enforce tournament time constraints.
 - Training data specification: define heuristic demo formats, storage, and minimum dataset sizes for Tier 3 pretraining.
 - Movement solver worst-case limits: specify maximum allowed runtime and fallback behavior when dense terrain causes solver escalation.
 - Ruleset/version tagging schema: define exact fields and where they are stored in logs and snapshots for reproducible training/evaluation.
