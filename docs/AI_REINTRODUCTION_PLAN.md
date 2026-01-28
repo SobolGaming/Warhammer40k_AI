@@ -86,6 +86,14 @@ Human games are a first-class data source for bootstrapping and realism. The tel
 
 See [DECISION_RECORD_SCHEMA.json](DECISION_RECORD_SCHEMA.json) for the canonical JSON schema.
 
+#### Mapping to Decision API Contract
+
+DecisionRecord is a telemetry superset of the Decision API:
+
+- `decision_id`, `decision_type`, `candidates`, and `mask` mirror the Decision object.
+- `chosen_action_id` mirrors the selected `CandidateAction.action_id`.
+- Telemetry-only fields add replay and learning context: state snapshots, RNG seeds, wall-clock timing, and outcomes.
+
 Each decision (human or AI) emits a DecisionRecord with:
 
 - Identification and determinism: `game_id`, `turn_id`, `phase`, `decision_id`, `decision_type`,
