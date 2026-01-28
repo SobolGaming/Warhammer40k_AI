@@ -8,14 +8,6 @@ This list enumerates **all known player-facing decisions** that do **not** curre
 ## Non-DecisionRequest Flows (Direct UI/Console/Provider)
 
 - [ ] DEC-DEP-001 Deployment zone selection bypasses DecisionRequest. Current path uses DeploymentDecisionMaker/UI. Files: `src/warhammer40k_ai/engine/deployment.py:21`, `src/warhammer40k_ai/UI/human_interface.py:33`. Suggested: new DecisionRequest (e.g., DECISION_CHOOSE_DEPLOYMENT_ZONE) with deterministic options.
-- [x] DEC-DEP-002 Reserves declaration bypasses DecisionRequest. Current path uses UI or console input. Files: `src/warhammer40k_ai/engine/deployment.py:26`, `src/warhammer40k_ai/engine/deployment.py:507`. Suggested: reuse DECISION_DECLARE_RESERVES with deterministic options.
-- [x] DEC-DEP-003 Unit deployment position bypasses DecisionRequest. Current path uses UI click/console input. Files: `src/warhammer40k_ai/engine/deployment.py:31`, `src/warhammer40k_ai/engine/deployment.py:265`, `src/warhammer40k_ai/UI/human_interface.py:39`. Suggested: DecisionRequest (likely DECISION_MOVE_UNIT with placement_kind="deployment").
-- [x] DEC-RES-001 Reserves arrival panel placement bypasses DecisionRequest. Current path uses panel callbacks. Files: `src/warhammer40k_ai/UI/panels/reserves_arrival_panel.py`. Suggested: DecisionRequest (likely DECISION_MOVE_UNIT with placement_kind="reserves_arrival" or new decision kind).
-- [x] DEC-DMG-001 Damage allocation choice bypasses DecisionRequest. Current path uses provider callbacks in damage allocation. Files: `src/warhammer40k_ai/utility/damage_allocation.py`, `src/warhammer40k_ai/units/unit.py:5814`, `src/warhammer40k_ai/units/wargear.py:8063`, `src/warhammer40k_ai/UI/phases/phase_manager.py:3506`. Suggested: DECISION_ALLOCATE_DAMAGE.
-- [x] DEC-DMG-002 Hazardous failure allocation bypasses DecisionRequest. Current path uses provider callbacks. Files: `src/warhammer40k_ai/utility/damage_allocation.py`, `src/warhammer40k_ai/engine/attack_resolution.py:1497`, `src/warhammer40k_ai/units/wargear.py:1718`. Suggested: DECISION_ALLOCATE_DAMAGE (with context selection_kind="hazardous").
-- [x] DEC-DMG-003 Precision target allocation bypasses DecisionRequest. Current path uses UI provider. Files: `src/warhammer40k_ai/UI/phases/phase_manager.py:3521`. Suggested: DECISION_SELECT_PRECISION_TARGET.
-- [x] DEC-FAITH-001 Miracle Die selection bypasses DecisionRequest. Current path returns None in Acts of Faith without issuing decisions. Files: `src/warhammer40k_ai/rules/acts_of_faith.py`. Suggested: DECISION_USE_MIRACLE_DIE.
-- [x] DEC-FIGHT-001 Fight Within 3" optional ability uses direct UI/hook. Files: `src/warhammer40k_ai/UI/game_ui.py:5893`. Suggested: DECISION_CONFIRM_YES_NO with context ability_name.
 
 ## Optional Selection Decisions (Player._choose_optional_value)
 
@@ -49,23 +41,19 @@ Each of the following uses `_choose_optional_value` directly instead of a Decisi
 - [ ] DEC-OPT-026 FIGHT_PHASE_END_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/engine/game.py:3562`
 - [ ] DEC-OPT-027 CHARGE_PHASE_BODYGUARD_LOSS_MODEL → needs decision kind. File: `src/warhammer40k_ai/engine/game.py:3423`
 - [ ] DEC-OPT-028 BATTLE_FOCUS_MOVE_MANEUVER / BATTLE_FOCUS_{single option} → needs decision kind (new) or DecisionRequest per maneuver. File: `src/warhammer40k_ai/rules/battle_focus.py:514`, `src/warhammer40k_ai/rules/battle_focus.py:518`
+- [ ] DEC-OPT-029 ASPECT_SHRINE_TOKEN → not YES/NO; requires multi-option choice (Use / Skip / Suppress). File: `src/warhammer40k_ai/units/wargear.py:1883`
 
 ## Optional Yes/No Decisions (Player._should_use_optional_ability)
 
 Each of the following uses `_should_use_optional_ability` directly instead of a DecisionRequest:
 
-- [x] DEC-YESNO-001 SHADOW_IN_THE_WARP → use DECISION_CONFIRM_YES_NO with context ability_name. File: `src/warhammer40k_ai/engine/game.py:571`
-- [x] DEC-YESNO-002 WAAAGH → use DECISION_CONFIRM_YES_NO with context ability_name. File: `src/warhammer40k_ai/engine/game.py:601`
 - [ ] DEC-YESNO-003 POWER_FROM_PAIN (army rule activation) → use DECISION_CONFIRM_YES_NO. Files: `src/warhammer40k_ai/engine/game.py:790`, `src/warhammer40k_ai/rules/power_from_pain.py:1200`
-- [x] DEC-YESNO-004 POSSESSED_LORD activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:843`
 - [ ] DEC-YESNO-005 ENHANCEMENT_FIGHT_FIRST activation → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:862`
-- [x] DEC-YESNO-006 RETURN_BODYGUARD_MODEL → use DECISION_ALLOCATE_DAMAGE (selection_kind="bodyguard_return") with None/Skip option. File: `src/warhammer40k_ai/engine/game.py:914`
 - [ ] DEC-YESNO-007 OPPONENT_TURN_STRATEGIC_RESERVES → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:1315`
 - [ ] DEC-YESNO-008 SEDUCTIVE_GAMBIT → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3089`
 - [ ] DEC-YESNO-009 MOVE_OVER_MORTAL_WOUNDS (use ability) → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3402`
 - [ ] DEC-YESNO-010 FIGHT_PHASE_END_MORTAL_WOUNDS (use ability) → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:3721`
 - [ ] DEC-YESNO-011 SENSATIONAL_PERFORMANCE → use DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:4729`
-- [ ] DEC-YESNO-012 ASPECT_SHRINE_TOKEN → use DecisionRequest (likely DECISION_CHOOSE_ASPECT or DECISION_CONFIRM_YES_NO with context). File: `src/warhammer40k_ai/units/wargear.py:1883`
 - [ ] DEC-YESNO-013 DARK_PACTS (use ability) → use DecisionRequest (likely DECISION_CONFIRM_YES_NO with context, then DECISION_CHOOSE_DARK_PACT). File: `src/warhammer40k_ai/units/unit.py:10167`
 - [ ] DEC-YESNO-014 CULT_AMBUSH (use ability) → use DecisionRequest. File: `src/warhammer40k_ai/rules/cult_ambush.py:675`
 - [ ] DEC-YESNO-015 CABAL_CHANNEL_WARP → use DecisionRequest. File: `src/warhammer40k_ai/rules/cabal_of_sorcerers.py:503`
@@ -78,16 +66,6 @@ Each of the following uses `_should_use_optional_ability` directly instead of a 
 - [ ] DEC-YESNO-022 BATTLE_FOCUS_FLITTING_SHADOWS → use DecisionRequest. Files: `src/warhammer40k_ai/rules/battle_focus.py:545`, `src/warhammer40k_ai/rules/battle_focus.py:574`
 - [ ] DEC-YESNO-023 BATTLE_FOCUS_SUDDEN_STRIKE → use DecisionRequest. File: `src/warhammer40k_ai/rules/battle_focus.py:599`
 - [ ] DEC-YESNO-024 BATTLE_FOCUS_FADE_BACK → use DecisionRequest. File: `src/warhammer40k_ai/rules/battle_focus.py:646`
-
-## Auto-Resolved DecisionRequests (Must Remain External)
-
-These create a DecisionRequest but immediately resolve it inside the engine based on hooks. They should be emitted and **left pending** for the controller (human UI, remote client, or AI) to resolve deterministically.
-
-- [x] DEC-AUTO-001 Reactive move positions auto-resolve DECISION_MOVE_UNIT using `choose_reactive_move_positions`. File: `src/warhammer40k_ai/engine/game.py:2024`
-- [x] DEC-AUTO-002 Battle Focus reactive selection auto-resolves DECISION_SELECT_OVERWATCH_SHOOTER. File: `src/warhammer40k_ai/engine/game.py:2123`
-- [x] DEC-AUTO-003 Loping Speed confirmation auto-resolves DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:2711`
-- [x] DEC-AUTO-004 Transport reactive disembark auto-resolves DECISION_DISEMBARK. File: `src/warhammer40k_ai/engine/game.py:3910`
-- [x] DEC-AUTO-005 Blood Surge confirmation auto-resolves DECISION_CONFIRM_YES_NO. File: `src/warhammer40k_ai/engine/game.py:5021`
 
 ## Notes
 
