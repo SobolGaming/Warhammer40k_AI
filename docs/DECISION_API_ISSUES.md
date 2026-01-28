@@ -28,18 +28,12 @@ Each of the following uses `_choose_optional_value` directly instead of a Decisi
 - [ ] DEC-OPT-013 DAEMONIC_ALLEGIANCE → use DECISION_CHOOSE_DAEMONIC_ALLEGIANCE. File: `src/warhammer40k_ai/roster/army.py:834`
 - [ ] DEC-OPT-014 CODE_CHIVALRIC_DEED → use DECISION_CHOOSE_CHIVALRIC_OATH with context (deed vs quality). File: `src/warhammer40k_ai/rules/code_chivalric.py:294`
 - [ ] DEC-OPT-015 CODE_CHIVALRIC_QUALITY → use DECISION_CHOOSE_CHIVALRIC_OATH with context (deed vs quality). File: `src/warhammer40k_ai/rules/code_chivalric.py:316`
-- [ ] DEC-OPT-016 HIT_MODIFIER_IGNORES → use DECISION_CHOOSE_HIT_MODIFIER_IGNORES. Files: `src/warhammer40k_ai/engine/attack_resolution.py:551`, `src/warhammer40k_ai/engine/attack_resolution.py:682`, `src/warhammer40k_ai/units/wargear.py:2899`, `src/warhammer40k_ai/units/wargear.py:2996`
-- [ ] DEC-OPT-017 SKILL_MODIFIER_IGNORES → use DECISION_CHOOSE_SKILL_MODIFIER_IGNORES. Files: `src/warhammer40k_ai/engine/attack_resolution.py:617`, `src/warhammer40k_ai/units/wargear.py:2953`
 - [ ] DEC-OPT-018 OATH_OF_MOMENT_TARGET → likely DECISION_CHOOSE_QUARRY with context ability_name. File: `src/warhammer40k_ai/rules/oath_of_moment.py:230`
 - [ ] DEC-OPT-019 BONDSMAN_TARGET → needs decision kind (new or DECISION_CHOOSE_QUARRY with context). File: `src/warhammer40k_ai/rules/bondsman.py:254`
 - [ ] DEC-OPT-020 COMMAND_PHASE_BEARER_TARGET → needs decision kind (new or DECISION_CHOOSE_QUARRY with context). File: `src/warhammer40k_ai/rules/necrons_detachments.py:528`
 - [ ] DEC-OPT-021 POWER_FROM_PAIN_ARCHON_POISONED_TONGUE → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/rules/power_from_pain.py:605`
 - [ ] DEC-OPT-022 POWER_FROM_PAIN_EXPERIMENTAL_ENHANCEMENTS → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/rules/power_from_pain.py:682`
 - [ ] DEC-OPT-023 CULT_AMBUSH_REINFORCEMENTS → needs decision kind. File: `src/warhammer40k_ai/rules/cult_ambush.py:728`
-- [ ] DEC-OPT-024 CHARGE_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context). File: `src/warhammer40k_ai/engine/game.py:3108`
-- [ ] DEC-OPT-025 MOVE_OVER_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context), include “None/Skip” for optional use. File: `src/warhammer40k_ai/engine/game.py:3257`
-- [ ] DEC-OPT-026 FIGHT_PHASE_END_MORTAL_WOUNDS_TARGET → needs decision kind (new or reuse with context), include “None/Skip” for optional use. File: `src/warhammer40k_ai/engine/game.py:3562`
-- [ ] DEC-OPT-027 CHARGE_PHASE_BODYGUARD_LOSS_MODEL → needs decision kind. File: `src/warhammer40k_ai/engine/game.py:3423`
 - [ ] DEC-OPT-028 BATTLE_FOCUS_MOVE_MANEUVER / BATTLE_FOCUS_{single option} → needs decision kind (new) or DecisionRequest per maneuver. File: `src/warhammer40k_ai/rules/battle_focus.py:514`, `src/warhammer40k_ai/rules/battle_focus.py:518`
 - [ ] DEC-OPT-029 ASPECT_SHRINE_TOKEN → not YES/NO; requires multi-option choice (Use / Skip / Suppress). File: `src/warhammer40k_ai/units/wargear.py:1883`
 

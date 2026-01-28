@@ -56,7 +56,10 @@ class _MapStub:
 def test_charge_phase_bodyguard_loss_ai(monkeypatch):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
     from warhammer40k_ai.roster.player import Player, PlayerControl
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
 
     ability = {
         "name": "Battle Lust",
@@ -93,9 +96,22 @@ def test_charge_phase_bodyguard_loss_ai(monkeypatch):
     game.map = _MapStub()
 
     monkeypatch.setattr("warhammer40k_ai.units.unit.get_roll", lambda _die: 12)
-    player.set_next_optional_selection("CHARGE_PHASE_BODYGUARD_LOSS_MODEL", bodyguard.models[0])
 
     game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.CHARGE_PHASE)
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_ALLOCATE_DAMAGE
+    assert req.context.get("selection_kind") == "bodyguard_loss"
+    target_id = get_entity_id(bodyguard.models[0])
+    option_id = None
+    for opt in list(req.options or []):
+        if opt.payload.get("model_id") == target_id:
+            option_id = opt.option_id
+            break
+    assert option_id is not None
+    resolve_decision_command(game, req, option_id, player_id=player.id)
 
     assert len(bodyguard.models) == 1
     assert len(leader.models) == 1
@@ -104,6 +120,7 @@ def test_charge_phase_bodyguard_loss_ai(monkeypatch):
 def test_charge_phase_bodyguard_loss_prompts_human(monkeypatch):
     from warhammer40k_ai.roster.army import Army
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
 
     ability = {
         "name": "Battle Lust",
@@ -144,21 +161,11 @@ def test_charge_phase_bodyguard_loss_prompts_human(monkeypatch):
 
     monkeypatch.setattr("warhammer40k_ai.units.unit.get_roll", lambda _die: 12)
 
-    game.event_system.subscribe("charge_phase_bodyguard_loss_prompt", lambda **_k: None)
-
-    published = {}
-    original_publish = game.event_system.publish
-
-    def _record_publish(event_name, **kwargs):
-        if event_name == "charge_phase_bodyguard_loss_prompt":
-            published["event"] = event_name
-            published["kwargs"] = kwargs
-        return original_publish(event_name, **kwargs)
-
-    monkeypatch.setattr(game.event_system, "publish", _record_publish)
-
     game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.CHARGE_PHASE)
 
-    assert published.get("event") == "charge_phase_bodyguard_loss_prompt"
-    assert len(published["kwargs"]["candidates"]) == 2
-    assert callable(published["kwargs"].get("on_select"))
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_ALLOCATE_DAMAGE
+    assert req.context.get("selection_kind") == "bodyguard_loss"
+    assert len(req.options) == 2

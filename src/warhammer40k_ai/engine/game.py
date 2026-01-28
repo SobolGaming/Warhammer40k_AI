@@ -30,6 +30,7 @@ from .decision_kinds import (
     DECISION_DISEMBARK,
     DECISION_DECLARE_SHOTS,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
+    DECISION_CHOOSE_QUARRY,
     DECISION_MOVE_UNIT,
     DECISION_ALLOCATE_DAMAGE,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
@@ -1838,6 +1839,25 @@ class Game:
                     return u
         return None
 
+    def _resolve_model_by_id(self, model_id: str | None):
+        if not model_id:
+            return None
+        registry = getattr(self, "entity_registry", None)
+        if registry is not None:
+            model = registry.get(str(model_id), kind="model")
+            if model is not None:
+                return model
+        for p in list(self.players or []):
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                for model in list(getattr(unit, "models", []) or []):
+                    mid = maybe_entity_id(model)
+                    if mid and str(mid) == str(model_id):
+                        return model
+        return None
+
     def _option_id_for_payload(self, request: DecisionRequest, key: str, value: object) -> str | None:
         if request is None:
             return None
@@ -1846,6 +1866,27 @@ class Game:
             if payload.get(key) == value:
                 return opt.option_id
         return None
+
+    def _decision_option_payload(self, request: DecisionRequest | None, result: DecisionResult | None) -> dict:
+        if request is None or result is None:
+            return {}
+        for opt in list(getattr(request, "options", []) or []):
+            if getattr(opt, "option_id", None) == getattr(result, "option_id", None):
+                return dict(getattr(opt, "payload", {}) or {})
+        return {}
+
+    def _decision_is_skip(self, request: DecisionRequest | None, result: DecisionResult | None) -> bool:
+        if result is None:
+            return False
+        payload = dict(getattr(result, "payload", {}) or {})
+        if bool(payload.get("skipped", False)):
+            return True
+        if str(payload.get("action", "") or "") == "skip":
+            return True
+        opt_payload = self._decision_option_payload(request, result)
+        if bool(opt_payload.get("skip", False)):
+            return True
+        return str(opt_payload.get("action", "") or "") == "skip"
 
     def _reactive_move_context(
         self,
@@ -1926,6 +1967,83 @@ class Game:
         request = DecisionRequest.create(
             DECISION_CONFIRM_YES_NO,
             ctx["ability_name"],
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_mortal_wounds_target_decision(
+        self,
+        *,
+        player,
+        unit,
+        candidates: list,
+        spec: dict,
+        kind: str,
+        model=None,
+        allow_skip: bool = False,
+        phase: str | None = None,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        if not candidates:
+            return None
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("charge_end", "move_over", "fight_phase_end"):
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        ability_name = str((spec or {}).get("name", "") or (spec or {}).get("source", "") or "Mortal Wounds").strip()
+        if not ability_name:
+            ability_name = "Mortal Wounds"
+
+        options = []
+        if allow_skip:
+            options.append(DecisionOption.create("Skip", payload={"action": "skip"}))
+
+        sorted_candidates = [c for c in candidates if c is not None]
+        sorted_candidates.sort(key=lambda c: str(maybe_entity_id(c) or ""))
+        used_labels = set()
+        candidate_ids = []
+        for enemy in sorted_candidates:
+            enemy_id = maybe_entity_id(enemy)
+            if not enemy_id:
+                continue
+            candidate_ids.append(str(enemy_id))
+            label = str(getattr(enemy, "name", "") or "Enemy unit")
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} ({idx})"
+                idx += 1
+            used_labels.add(label)
+            options.append(DecisionOption.create(label, payload={"target_unit_id": enemy_id}))
+
+        if not options or (allow_skip and len(options) == 1):
+            return None
+
+        ctx = {
+            "engine_flow": True,
+            "mortal_wounds_kind": kind_key,
+            "unit_id": unit_id,
+            "ability_name": ability_name,
+            "spec": dict(spec or {}),
+            "candidate_ids": list(candidate_ids),
+        }
+        if model is not None:
+            model_id = maybe_entity_id(model)
+            if model_id:
+                ctx["model_id"] = str(model_id)
+        if phase:
+            ctx["phase"] = str(phase)
+
+        prompt = f"{ability_name}: Select target"
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
@@ -3013,6 +3131,70 @@ class Game:
             remaining=remaining,
         )
 
+    def _maybe_apply_mortal_wounds_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_CHOOSE_QUARRY:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if not bool(ctx.get("engine_flow", False)):
+            return
+        kind = str(ctx.get("mortal_wounds_kind", "") or "").strip().lower()
+        if kind not in ("charge_end", "move_over", "fight_phase_end"):
+            return
+        if self._decision_is_skip(request, result):
+            return
+        payload = self._decision_option_payload(request, result)
+        target_id = payload.get("target_unit_id", payload.get("unit_id"))
+        target_unit = self._resolve_unit_by_id(str(target_id or ""))
+        if target_unit is None:
+            return
+        unit_id = str(ctx.get("unit_id", "") or "")
+        unit = self._resolve_unit_by_id(unit_id)
+        if unit is None:
+            return
+        spec = dict(ctx.get("spec", {}) or {})
+        if kind == "charge_end":
+            self.resolve_charge_end_mortal_wounds(unit, target_unit, spec)
+            return
+        model_id = str(ctx.get("model_id", "") or "")
+        model = self._resolve_model_by_id(model_id)
+        if model is None:
+            return
+        if kind == "move_over":
+            self.resolve_move_over_mortal_wounds(unit, model, target_unit, spec)
+            return
+        if kind == "fight_phase_end":
+            self.resolve_fight_phase_end_mortal_wounds(unit, model, target_unit, spec)
+            return
+
+    def _maybe_apply_bodyguard_loss_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_ALLOCATE_DAMAGE:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("selection_kind", "") or "") != "bodyguard_loss":
+            return
+        payload = self._decision_option_payload(request, result)
+        model_id = payload.get("model_id", payload.get("model"))
+        model = self._resolve_model_by_id(str(model_id or ""))
+        if model is None:
+            return
+        leader_id = str(ctx.get("leader_unit_id", "") or "")
+        bodyguard_id = str(ctx.get("bodyguard_unit_id", "") or ctx.get("unit_id", "") or "")
+        leader_unit = self._resolve_unit_by_id(leader_id)
+        bodyguard = self._resolve_unit_by_id(bodyguard_id)
+        if leader_unit is None or bodyguard is None:
+            return
+        ability_name = str(ctx.get("ability_name", "") or "Leadership Test")
+        self._resolve_charge_phase_bodyguard_loss(
+            leader_unit,
+            bodyguard,
+            model,
+            {"name": ability_name},
+        )
+
     def _on_unit_move_ended_loping_speed(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -3509,26 +3691,6 @@ class Game:
                     instance_key=str(unit_id or ""),
                 )
 
-    def _choose_charge_mortal_wounds_target(self, player, unit, candidates, spec):
-        if not candidates:
-            return None
-        choice = None
-        if player is not None and callable(getattr(player, "_choose_optional_value", None)):
-            ctx = {
-                "unit": getattr(unit, "name", "") or "",
-                "ability": str((spec or {}).get("name", "") or ""),
-                "candidates": [getattr(c, "name", "") for c in candidates],
-            }
-            choice = player._choose_optional_value("CHARGE_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
-        if choice is not None and choice in candidates:
-            return choice
-        if isinstance(choice, str):
-            wanted = choice.strip().lower()
-            for cand in candidates:
-                if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
-                    return cand
-        return None
-
     def resolve_charge_end_mortal_wounds(self, unit, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):
             return
@@ -3626,57 +3788,19 @@ class Game:
         player = root.get_parent_army().player
         if player is None:
             return
-        es = getattr(self, "event_system", None)
-
         for spec in specs:
             if len(engaged) == 1:
                 self.resolve_charge_end_mortal_wounds(root, engaged[0], spec)
                 continue
-
-            if bool(getattr(player, "has_control", lambda: False)()):
-                def _on_select(target_unit, _spec=spec, _root=root):
-                    if target_unit is None:
-                        return
-                    self.resolve_charge_end_mortal_wounds(_root, target_unit, _spec)
-
-                if es is not None:
-                    es.publish(
-                        "charge_mortal_wounds_prompt",
-                        player=player,
-                        unit=root,
-                        candidates=list(engaged),
-                        ability=spec,
-                        on_select=_on_select,
-                    )
-                    subs = getattr(es, "subscribers", None)
-                    if isinstance(subs, dict) and subs.get("charge_mortal_wounds_prompt"):
-                        continue
-
-            target = self._choose_charge_mortal_wounds_target(player, root, engaged, spec)
-            if target is None:
-                continue
-            self.resolve_charge_end_mortal_wounds(root, target, spec)
-
-    def _choose_move_over_mortal_wounds_target(self, player, unit, model, candidates, spec):
-        if not candidates:
-            return None
-        choice = None
-        if player is not None and callable(getattr(player, "_choose_optional_value", None)):
-            ctx = {
-                "unit": getattr(unit, "name", "") or "",
-                "model": getattr(model, "name", "") or "",
-                "ability": str((spec or {}).get("source", "") or ""),
-                "candidates": [getattr(c, "name", "") for c in candidates],
-            }
-            choice = player._choose_optional_value("MOVE_OVER_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
-        if choice in candidates:
-            return choice
-        if isinstance(choice, str):
-            wanted = choice.strip().lower()
-            for cand in candidates:
-                if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
-                    return cand
-        return None
+            self._queue_mortal_wounds_target_decision(
+                player=player,
+                unit=root,
+                candidates=list(engaged),
+                spec=spec,
+                kind="charge_end",
+                allow_skip=False,
+                phase="Charge phase",
+            )
 
     def resolve_move_over_mortal_wounds(self, unit, model, target_unit, spec) -> None:
         if unit is None or model is None or target_unit is None or not isinstance(spec, dict):
@@ -3767,8 +3891,6 @@ class Game:
             player = model_unit.get_parent_army().player
             if player is None:
                 continue
-            es = getattr(self, "event_system", None)
-
             for spec in specs:
                 move_types = set(spec.get("move_types") or [])
                 if action_key not in move_types:
@@ -3781,68 +3903,16 @@ class Game:
                     ]
                 if not filtered:
                     continue
-
-                ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
-                ctx = {
-                    "unit": getattr(model_unit, "name", "") or "",
-                    "model": getattr(model, "name", "") or "",
-                    "ability_name": ability_name,
-                    "candidates": [getattr(c, "name", "") for c in filtered],
-                }
-
-                if bool(getattr(player, "has_control", lambda: False)()):
-                    def _on_select(target_unit, _spec=spec, _unit=model_unit, _model=model):
-                        if target_unit is None:
-                            return
-                        self.resolve_move_over_mortal_wounds(_unit, _model, target_unit, _spec)
-
-                    if es is not None:
-                        es.publish(
-                            "move_over_mortal_wounds_prompt",
-                            player=player,
-                            unit=model_unit,
-                            model=model,
-                            candidates=list(filtered),
-                            ability=spec,
-                            on_select=_on_select,
-                        )
-                        subs = getattr(es, "subscribers", None)
-                        if isinstance(subs, dict) and subs.get("move_over_mortal_wounds_prompt"):
-                            continue
-                    else:
-                        continue
-
-                should_fn = getattr(player, "_should_use_optional_ability", None)
-                should = bool(should_fn("MOVE_OVER_MORTAL_WOUNDS", ctx)) if callable(should_fn) else False
-                if not should:
-                    continue
-                target = filtered[0] if len(filtered) == 1 else self._choose_move_over_mortal_wounds_target(
-                    player, model_unit, model, filtered, spec
+                self._queue_mortal_wounds_target_decision(
+                    player=player,
+                    unit=model_unit,
+                    model=model,
+                    candidates=list(filtered),
+                    spec=spec,
+                    kind="move_over",
+                    allow_skip=True,
+                    phase="Movement phase",
                 )
-                if target is None:
-                    continue
-                self.resolve_move_over_mortal_wounds(model_unit, model, target, spec)
-
-    def _choose_charge_phase_bodyguard_loss_model(self, player, bodyguard, candidates, ability):
-        if not candidates:
-            return None
-        choice = None
-        if player is not None and callable(getattr(player, "_choose_optional_value", None)):
-            ctx = {
-                "unit": getattr(bodyguard, "name", "") or "",
-                "ability": str((ability or {}).get("name", "") or ""),
-                "candidates": [getattr(c, "name", "") for c in candidates],
-                "phase": "Charge phase",
-            }
-            choice = player._choose_optional_value("CHARGE_PHASE_BODYGUARD_LOSS_MODEL", list(candidates), ctx)
-        if choice is not None and choice in candidates:
-            return choice
-        if isinstance(choice, str):
-            wanted = choice.strip().lower()
-            for cand in candidates:
-                if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
-                    return cand
-        return None
 
     def _resolve_charge_phase_bodyguard_loss(self, leader_unit, bodyguard, model, ability):
         if model is None:
@@ -3850,7 +3920,7 @@ class Game:
         ability_name = str((ability or {}).get("name", "") or "Leadership Test").strip() or "Leadership Test"
         model.die(game_map=getattr(self, "map", None))
         from ..utility.event_bus import append_action
-        player = getattr(getattr(leader_unit.get_parent_army(), "player", None), None)
+        player = getattr(leader_unit.get_parent_army(), "player", None)
         if player is not None:
             append_action(
                 player,
@@ -3873,8 +3943,6 @@ class Game:
         game_map = self.map
         if game_map is None:
             return
-
-        es = getattr(self, "event_system", None)
 
         for unit in list(army.units):
             if unit is None:
@@ -3936,52 +4004,42 @@ class Game:
             if len(candidates) == 1:
                 self._resolve_charge_phase_bodyguard_loss(unit, bodyguard, candidates[0], ability)
                 continue
-
-            if bool(getattr(player, "has_control", lambda: False)()):
-                def _on_select(chosen_model, _unit=unit, _bodyguard=bodyguard, _ability=ability):
-                    if chosen_model is None:
-                        return
-                    self._resolve_charge_phase_bodyguard_loss(_unit, _bodyguard, chosen_model, _ability)
-
-                if es is not None:
-                    es.publish(
-                        "charge_phase_bodyguard_loss_prompt",
-                        player=player,
-                        unit=unit,
-                        bodyguard=bodyguard,
-                        candidates=list(candidates),
-                        ability=ability,
-                        on_select=_on_select,
+            ability_name = str((ability or {}).get("name", "") or "Leadership Test").strip() or "Leadership Test"
+            options = []
+            sorted_candidates = [m for m in list(candidates) if m is not None]
+            sorted_candidates.sort(key=lambda m: str(maybe_entity_id(m) or ""))
+            for model in sorted_candidates:
+                model_id = maybe_entity_id(model)
+                if not model_id:
+                    continue
+                options.append(
+                    DecisionOption.create(
+                        getattr(model, "name", "Model"),
+                        payload={"model_id": model_id},
                     )
-                    subs = getattr(es, "subscribers", None)
-                    if isinstance(subs, dict) and subs.get("charge_phase_bodyguard_loss_prompt"):
-                        continue
-
-            chosen = self._choose_charge_phase_bodyguard_loss_model(player, bodyguard, candidates, ability)
-            if chosen is None:
+                )
+            if not options:
                 continue
-            self._resolve_charge_phase_bodyguard_loss(unit, bodyguard, chosen, ability)
-
-    def _choose_fight_phase_end_mortal_wounds_target(self, player, unit, model, candidates, spec):
-        if not candidates:
-            return None
-        choice = None
-        if player is not None and callable(getattr(player, "_choose_optional_value", None)):
+            leader_id = maybe_entity_id(unit)
+            bodyguard_id = maybe_entity_id(bodyguard)
+            if not leader_id or not bodyguard_id:
+                continue
             ctx = {
-                "unit": getattr(unit, "name", "") or "",
-                "model": getattr(model, "name", "") or "",
-                "ability": str((spec or {}).get("source", "") or ""),
-                "candidates": [getattr(c, "name", "") for c in candidates],
+                "engine_flow": True,
+                "selection_kind": "bodyguard_loss",
+                "leader_unit_id": leader_id,
+                "bodyguard_unit_id": bodyguard_id,
+                "unit_id": bodyguard_id,
+                "ability_name": ability_name,
             }
-            choice = player._choose_optional_value("FIGHT_PHASE_END_MORTAL_WOUNDS_TARGET", list(candidates), ctx)
-        if choice in candidates:
-            return choice
-        if isinstance(choice, str):
-            wanted = choice.strip().lower()
-            for cand in candidates:
-                if str(getattr(cand, "name", "") or "").strip().lower() == wanted:
-                    return cand
-        return None
+            request = DecisionRequest.create(
+                DECISION_ALLOCATE_DAMAGE,
+                "Select Bodyguard model to destroy.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(request)
 
     def resolve_fight_phase_end_mortal_wounds(self, unit, model, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):
@@ -4100,47 +4158,16 @@ class Game:
                         continue
 
                     for spec in specs:
-                        ability_name = str(spec.get("source", "") or "Fight phase mortals").strip() or "Fight phase mortals"
-                        ctx = {
-                            "unit": getattr(unit, "name", "") or "",
-                            "model": getattr(model, "name", "") or "",
-                            "ability_name": ability_name,
-                            "phase": "Fight phase",
-                            "candidates": [getattr(c, "name", "") for c in candidates],
-                        }
-                        if bool(getattr(p, "has_control", lambda: False)()):
-                            def _on_select(target_unit, _spec=spec, _unit=unit, _model=model):
-                                if target_unit is None:
-                                    return
-                                self.resolve_fight_phase_end_mortal_wounds(_unit, _model, target_unit, _spec)
-
-                            es = getattr(self, "event_system", None)
-                            if es is not None:
-                                es.publish(
-                                    "fight_phase_end_mortal_wounds_prompt",
-                                    player=p,
-                                    unit=unit,
-                                    model=model,
-                                    candidates=list(candidates),
-                                    ability=spec,
-                                    on_select=_on_select,
-                                )
-                                subs = getattr(es, "subscribers", None)
-                                if isinstance(subs, dict) and subs.get("fight_phase_end_mortal_wounds_prompt"):
-                                    continue
-                            else:
-                                continue
-
-                        should_fn = getattr(p, "_should_use_optional_ability", None)
-                        should = bool(should_fn("FIGHT_PHASE_END_MORTAL_WOUNDS", ctx)) if callable(should_fn) else False
-                        if not should:
-                            continue
-                        target = candidates[0] if len(candidates) == 1 else self._choose_fight_phase_end_mortal_wounds_target(
-                            p, unit, model, candidates, spec
+                        self._queue_mortal_wounds_target_decision(
+                            player=p,
+                            unit=unit,
+                            model=model,
+                            candidates=list(candidates),
+                            spec=spec,
+                            kind="fight_phase_end",
+                            allow_skip=True,
+                            phase="Fight phase",
                         )
-                        if target is None:
-                            continue
-                        self.resolve_fight_phase_end_mortal_wounds(unit, model, target, spec)
 
     def _on_phase_end_leadership_cp_gain(self, player=None, phase=None, **_kwargs) -> None:
         """End of Shooting/Fight phase: Leadership test to gain CP after destroying enemy units."""
@@ -6087,6 +6114,8 @@ class Game:
             self._maybe_queue_reverberating_summons_followup(request, result)
             self._maybe_apply_optional_ability_confirmation(request, result)
             self._maybe_queue_bodyguard_return_followup(request, result)
+            self._maybe_apply_mortal_wounds_followup(request, result)
+            self._maybe_apply_bodyguard_loss_followup(request, result)
         return apply_result
 
     def get_current_player(self) -> Player:

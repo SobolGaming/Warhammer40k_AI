@@ -65,6 +65,8 @@ def _setup_players(unit, enemies, *, human=False):
     enemy_army = SimpleNamespace(player=enemy_player, units=list(enemies))
     player.army = army
     enemy_player.army = enemy_army
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
     unit.set_parent_army(army)
     for enemy in enemies:
         enemy.set_parent_army(enemy_army)
@@ -73,6 +75,9 @@ def _setup_players(unit, enemies, *, human=False):
 
 def test_move_over_mortal_wounds_ai(monkeypatch):
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
 
     ability = (
         "Each time this model ends a Normal or Advance move, you can select one enemy unit that it moved over during "
@@ -110,9 +115,22 @@ def test_move_over_mortal_wounds_ai(monkeypatch):
         return rolls[die].pop(0)
 
     monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fake_get_roll)
-    player._should_use_optional_ability = lambda *_a, **_k: True
 
     game._on_unit_move_ended_move_over_mortal_wounds(unit=unit, action="move")
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+    assert req.context.get("mortal_wounds_kind") == "move_over"
+    target_id = get_entity_id(enemy)
+    option_id = None
+    for opt in list(req.options or []):
+        if opt.payload.get("target_unit_id") == target_id:
+            option_id = opt.option_id
+            break
+    assert option_id is not None
+    resolve_decision_command(game, req, option_id, player_id=player.id)
 
     assert applied["amount"] == 3
     assert applied["target"] is enemy
@@ -120,6 +138,7 @@ def test_move_over_mortal_wounds_ai(monkeypatch):
 
 def test_move_over_mortal_wounds_human_prompts(monkeypatch):
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 
     ability = (
         "Each time this model ends a Normal or Advance move, you can select one enemy unit that it moved over during "
@@ -144,19 +163,14 @@ def test_move_over_mortal_wounds_human_prompts(monkeypatch):
     game.players = [player, enemy_player]
     game.map = _MapStub([unit, enemy1, enemy2], [enemy1, enemy2])
 
-    published = {}
-
-    def _fake_publish(event_name, **kwargs):
-        published["event"] = event_name
-        published["kwargs"] = kwargs
-
-    monkeypatch.setattr(game.event_system, "publish", _fake_publish)
-
     game._on_unit_move_ended_move_over_mortal_wounds(unit=unit, action="move")
 
-    assert published.get("event") == "move_over_mortal_wounds_prompt"
-    assert len(published["kwargs"]["candidates"]) == 2
-    assert callable(published["kwargs"].get("on_select"))
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+    assert req.context.get("mortal_wounds_kind") == "move_over"
+    assert len(req.options) == 3
 
 
 def test_move_over_mortal_wounds_vertical_move_does_not_trigger(monkeypatch):
@@ -191,11 +205,11 @@ def test_move_over_mortal_wounds_vertical_move_does_not_trigger(monkeypatch):
         return 0
 
     unit._apply_mortal_wounds_to_unit = types.MethodType(_apply, unit)
-    player._should_use_optional_ability = lambda *_a, **_k: True
 
     game._on_unit_move_ended_move_over_mortal_wounds(unit=unit, action="move")
 
     assert applied == {}
+    assert not list(game.decision_queue.list() or [])
 
 
 def test_move_over_mortal_wounds_requires_fly(monkeypatch):
@@ -230,8 +244,8 @@ def test_move_over_mortal_wounds_requires_fly(monkeypatch):
         return 0
 
     unit._apply_mortal_wounds_to_unit = types.MethodType(_apply, unit)
-    player._should_use_optional_ability = lambda *_a, **_k: True
 
     game._on_unit_move_ended_move_over_mortal_wounds(unit=unit, action="move")
 
     assert applied == {}
+    assert not list(game.decision_queue.list() or [])

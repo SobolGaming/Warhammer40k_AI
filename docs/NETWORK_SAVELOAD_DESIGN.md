@@ -170,6 +170,7 @@ Movement:
 - setup_reactive_action_dialog: CHOOSE_SETUP_REACTIVE_ACTION {action}
 - battlefield_point_pick_dialog: PICK_POINT {point}
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
+- move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id`, `ability_name`, `spec`)
 Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use `CONFIRM_YES_NO` with
 `reactive_move_*` context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_distance`
 (rolled or fixed).
@@ -193,11 +194,14 @@ Notes:
 
 Charge:
 - charge_declaration_dialog: DECLARE_CHARGE {unit_id, target_unit_ids[]}
+- charge_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `mortal_wounds_kind="charge_end"`, `unit_id`, `ability_name`, `spec`)
+- charge_phase_bodyguard_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="bodyguard_loss"`, `leader_unit_id`, `bodyguard_unit_id`, `ability_name`)
 
 Fight:
 - fight_unit_selection_dialog: SELECT_FIGHTER {unit_id}
 - fight_target_selection_dialog: SELECT_FIGHT_TARGETS {unit_id, target_unit_ids}
 - fight_target_selection_dialog: SELECT_EXPLODING_HORRORS_TARGET {target_unit_id | skip} (context `unit_id`)
+- fight_phase_end_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="fight_phase_end"`, `unit_id`, `model_id`, `ability_name`, `spec`)
 - exploding_horrors_model_selection_dialog: SELECT_EXPLODING_HORRORS_MODELS {model_ids[]} (context `unit_id`, `target_unit_id`, `allowed_model_ids`)
 - fight_within_3_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_within_3"`, `unit_id`, `target_unit_id`)
 - possessed_lord_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="possessed_lord"`, `unit_id`, `model_id`)
@@ -227,7 +231,7 @@ Dice Rolls:
 - dice_roll_dialog: REQUEST_DICE_ROLL {roll_id, action_id="roll"}
 - dice_roll_dialog (reroll): SELECT_DICE_REROLL {roll_id, action_id, selected_die_ids[]}
 - damage_allocation_dialog: ALLOCATE_DAMAGE {unit_id, model_id} (context `selection_kind`, `allowed_model_ids`, `remaining_wounds`, `sequence_id`/`save_index` when tied to attack resolution)
-  Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reverberating_summons_return`, `bodyguard_return`.
+  Selection kinds in use: `wound_allocation`, `hazardous`, `mortal_wound` (attack sequence), `unit_mortal_wound` (non-attack), `reverberating_summons_return`, `bodyguard_return`, `bodyguard_loss`.
 - overwatch_shooter_dialog: SELECT_RISE_TO_CHALLENGE {unit_id | skip}
 
 Faction / Detachment / Ability choices:

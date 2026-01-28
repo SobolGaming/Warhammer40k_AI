@@ -58,6 +58,9 @@ class _MapStub:
 
 def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+    from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+    from warhammer40k_ai.utility.entity_ids import get_entity_id
 
     ability = (
         "At the end of the Fight phase, you can select one enemy unit within Engagement Range of this model "
@@ -74,6 +77,8 @@ def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
     enemy_army = SimpleNamespace(player=enemy_player, units=[enemy])
     player.army = army
     enemy_player.army = enemy_army
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
 
     unit.set_parent_army(army)
     enemy.set_parent_army(enemy_army)
@@ -97,9 +102,22 @@ def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
         return rolls[die].pop(0)
 
     monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fake_get_roll)
-    player._should_use_optional_ability = lambda *_a, **_k: True
 
     game._on_phase_end_fight_phase_mortal_wounds(phase=SimpleNamespace(name="FIGHT_PHASE"))
+
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+    assert req.context.get("mortal_wounds_kind") == "fight_phase_end"
+    target_id = get_entity_id(enemy)
+    option_id = None
+    for opt in list(req.options or []):
+        if opt.payload.get("target_unit_id") == target_id:
+            option_id = opt.option_id
+            break
+    assert option_id is not None
+    resolve_decision_command(game, req, option_id, player_id=player.id)
 
     assert applied["amount"] == 5
     assert applied["target"] is enemy
@@ -107,6 +125,7 @@ def test_fight_phase_end_mortal_wounds_ai(monkeypatch):
 
 def test_fight_phase_end_mortal_wounds_prompts_human(monkeypatch):
     from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+    from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
 
     ability = (
         "At the end of the Fight phase, you can select one enemy unit within Engagement Range of this model "
@@ -125,6 +144,8 @@ def test_fight_phase_end_mortal_wounds_prompts_human(monkeypatch):
     enemy_army = SimpleNamespace(player=enemy_player, units=[enemy1, enemy2])
     player.army = army
     enemy_player.army = enemy_army
+    player.get_army = lambda: army
+    enemy_player.get_army = lambda: enemy_army
 
     unit.set_parent_army(army)
     enemy1.set_parent_army(enemy_army)
@@ -134,16 +155,11 @@ def test_fight_phase_end_mortal_wounds_prompts_human(monkeypatch):
     game.players = [player, enemy_player]
     game.map = _MapStub([enemy1, enemy2])
 
-    published = {}
-
-    def _fake_publish(event_name, **kwargs):
-        published["event"] = event_name
-        published["kwargs"] = kwargs
-
-    monkeypatch.setattr(game.event_system, "publish", _fake_publish)
-
     game._on_phase_end_fight_phase_mortal_wounds(phase=SimpleNamespace(name="FIGHT_PHASE"))
 
-    assert published.get("event") == "fight_phase_end_mortal_wounds_prompt"
-    assert len(published["kwargs"]["candidates"]) == 2
-    assert callable(published["kwargs"].get("on_select"))
+    pending = list(game.decision_queue.list() or [])
+    assert len(pending) == 1
+    req = pending[0]
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+    assert req.context.get("mortal_wounds_kind") == "fight_phase_end"
+    assert len(req.options) == 3

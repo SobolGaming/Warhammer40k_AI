@@ -2872,17 +2872,6 @@ class WargearProfile:
                             )
                         except Exception:
                             choice = None
-                    if choice is None and player is not None and callable(getattr(player, "_choose_optional_value", None)):
-                        try:
-                            ctx = {
-                                "ability_name": ignore_rule_name,
-                                "attacker": attacker,
-                                "target": target,
-                                "weapon_profile": self,
-                            }
-                            choice = player._choose_optional_value("HIT_MODIFIER_IGNORES", list(options), ctx)
-                        except Exception:
-                            choice = None
                 if choice not in (options or []):
                     choice = CHOICE_KEEP_ALL
                 attack_instance["hit_modifier_choice"] = choice
@@ -2925,18 +2914,6 @@ class WargearProfile:
                             )
                         except Exception:
                             choice = None
-                    if choice is None and player is not None and callable(getattr(player, "_choose_optional_value", None)):
-                        try:
-                            ctx = {
-                                "ability_name": driven_rule_name,
-                                "attacker": attacker,
-                                "target": target,
-                                "weapon_profile": self,
-                                "modifier_kind": "weapon_skill",
-                            }
-                            choice = player._choose_optional_value("SKILL_MODIFIER_IGNORES", list(options), ctx)
-                        except Exception:
-                            choice = None
                     if choice not in options:
                         choice = CHOICE_KEEP_ALL
                     attack_instance["skill_modifier_choice"] = choice
@@ -2966,18 +2943,6 @@ class WargearProfile:
                                 ability_name=f"{driven_rule_name} (Hit roll)",
                                 choices=options,
                             )
-                        except Exception:
-                            choice = None
-                    if choice is None and player is not None and callable(getattr(player, "_choose_optional_value", None)):
-                        try:
-                            ctx = {
-                                "ability_name": driven_rule_name,
-                                "attacker": attacker,
-                                "target": target,
-                                "weapon_profile": self,
-                                "modifier_kind": "hit_roll",
-                            }
-                            choice = player._choose_optional_value("HIT_MODIFIER_IGNORES", list(options), ctx)
                         except Exception:
                             choice = None
                     if choice not in options:
