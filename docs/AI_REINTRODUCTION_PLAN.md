@@ -141,9 +141,9 @@ msg:
   type: PLAN_REQUEST
   payload:
     game_id: "g_2026_01_28_0007"
-    ruleset_id: "CA2025_2026"
-    dataslate_id: "2026.01"
-    points_id: "2026.01"
+    ruleset_id: "core_rules_24.09+updates_2025-10-22"
+    dataslate_id: "balance_dataslate_2026-01-07"
+    points_id: "mfm_2026-01-07"
     round: 2
     active_player: "P1"
     phase: "COMMAND"
@@ -369,9 +369,9 @@ Tier 4: emitted DecisionRecord (valid JSON per schema)
   "phase": "MOVEMENT",
   "decision_id": "d_r2_p1_move_P1_U8",
   "decision_type": "MOVE_UNIT",
-  "ruleset_id": "CA2025_2026",
-  "dataslate_id": "2026.01",
-  "points_id": "2026.01",
+  "ruleset_id": "core_rules_24.09+updates_2025-10-22",
+  "dataslate_id": "balance_dataslate_2026-01-07",
+  "points_id": "mfm_2026-01-07",
   "global_seed": 4128891,
   "decision_seed": 99312044,
   "omniscient_state": {
@@ -536,9 +536,9 @@ Tier 4: DecisionRecord showing injected human action (valid JSON per schema)
   "phase": "MOVEMENT",
   "decision_id": "d_r1_p2_move_P2_U5",
   "decision_type": "MOVE_UNIT",
-  "ruleset_id": "CA2025_2026",
-  "dataslate_id": "2026.01",
-  "points_id": "2026.01",
+  "ruleset_id": "core_rules_24.09+updates_2025-10-22",
+  "dataslate_id": "balance_dataslate_2026-01-07",
+  "points_id": "mfm_2026-01-07",
   "global_seed": 771192,
   "decision_seed": 771200,
   "omniscient_state": "stateblob://g_2026_01_28_0012/r1/p2/move/P2_U5/before",
