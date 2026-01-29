@@ -533,6 +533,11 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            from ..utility.aura_effects import get_aura_melee_ap_bonus
+            aura_ap, _ = get_aura_melee_ap_bonus(getattr(attacker, "parent_unit", None), self)
+            if aura_ap:
+                ap_val -= int(aura_ap)
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -1382,6 +1387,11 @@ class WargearProfile:
             base_ap = int(self.ap)
         except Exception:
             base_ap = effective_ap
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            from ..utility.aura_effects import get_aura_melee_ap_bonus
+            aura_ap, aura_reasons = get_aura_melee_ap_bonus(getattr(attacker, "parent_unit", None), self, game_map=game_map)
+            if aura_ap:
+                attack_result.attacks_special_modifiers.extend(list(aura_reasons or ()))
         if effective_ap == (base_ap - 1):
             attack_result.attacks_special_modifiers.append("Plunging Fire (AP improved by 1)")
         if cabal_ap_bonus:

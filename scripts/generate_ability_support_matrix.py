@@ -1700,6 +1700,7 @@ def _classify_ability_base(
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
+    aura_melee_ap_support = _aura_melee_ap_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
     charge_move_devastating_support = _charge_move_devastating_wounds_support(description)
@@ -1800,6 +1801,8 @@ def _classify_ability_base(
         return aura_oc_support
     if aura_adv_charge_support:
         return aura_adv_charge_support
+    if aura_melee_ap_support:
+        return aura_melee_ap_support
     if fall_back_shoot_support:
         return fall_back_shoot_support
     if advance_no_roll_support:
@@ -2367,6 +2370,28 @@ def _aura_advance_charge_roll_support(description: str) -> Optional[Tuple[str, s
     rng = m.group("rng")
     amt = m.group("amt")
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} to Advance and Charge rolls.")
+
+
+def _aura_melee_ap_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"(?:if that unit made a charge move this turn )?"
+        r"improve the armou?r penetration characteristic of melee weapons equipped by models in that unit by (?P<amt>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = m.group("kw").strip()
+    rng = m.group("rng")
+    amt = m.group("amt")
+    needs_charge = "if that unit made a charge move this turn" in norm
+    note = " after a charge move this turn" if needs_charge else ""
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" improve melee AP by {amt}{note}.")
 
 
 def _bearer_invulnerable_save_support(description: str) -> Optional[Tuple[str, str]]:
