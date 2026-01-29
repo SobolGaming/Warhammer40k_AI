@@ -19373,6 +19373,26 @@ class Unit:
         self._ability_cache['blood_surge'] = found
         return found
 
+    def has_brazen_fury(self) -> bool:
+        """Check if the unit has the Brazen Fury detachment ability (Possessed Slaughterband)."""
+        if 'brazen_fury' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['brazen_fury']
+        applies = False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if mgr is not None and callable(getattr(mgr, "brazen_fury_applies", None)):
+            try:
+                applies = bool(mgr.brazen_fury_applies(self))
+            except Exception:
+                applies = False
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['brazen_fury'] = applies
+        return applies
+
     def get_loping_speed_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -20124,6 +20144,28 @@ class Unit:
         owner = str(getattr(current_player, "name", "") or "")
         return f"{br}:{pname}:{owner}"
 
+    def _brazen_fury_phase_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            phase = getattr(game, "phase", None)
+            pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        except Exception:
+            pname = ""
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "name", "") or "")
+        return f"{br}:{pname}:{owner}"
+
     def blood_surge_used_this_phase(self, game=None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -20138,6 +20180,20 @@ class Unit:
         sr["blood_surge_used_phase_key"] = self._blood_surge_phase_key(game)
         self.special_rules = sr
 
+    def brazen_fury_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._brazen_fury_phase_key(game)
+        return str(sr.get("brazen_fury_used_phase_key", "")) == key
+
+    def mark_brazen_fury_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["brazen_fury_used_phase_key"] = self._brazen_fury_phase_key(game)
+        self.special_rules = sr
+
     def can_blood_surge(self, game=None, game_map=None) -> bool:
         if not self.has_blood_surge():
             return False
@@ -20146,6 +20202,29 @@ class Unit:
         if self.is_battle_shocked():
             return False
         if self.blood_surge_used_this_phase(game):
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(self):
+                    if game_map.is_within_engagement_range(self, enemy):
+                        return False
+            except Exception:
+                pass
+        return True
+
+    def can_brazen_fury(self, game=None, game_map=None) -> bool:
+        if not self.has_brazen_fury():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.is_battle_shocked():
+            return False
+        if self.brazen_fury_used_this_phase(game):
             return False
         if game_map is None:
             try:

@@ -2398,6 +2398,9 @@ class GameView:
         # World Eaters: Blood Surge prompt queue
         self._pending_blood_surge_queue = []
         self._blood_surge_flow_active = False
+        # World Eaters: Brazen Fury prompt queue
+        self._pending_brazen_fury_queue = []
+        self._brazen_fury_flow_active = False
         # Reverberating Summons prompt queue
         self._pending_reverberating_summons_queue = []
         self._reverberating_summons_flow_active = False
@@ -2530,6 +2533,8 @@ class GameView:
                 event_system.subscribe("blood_tithe_updated", self._on_blood_tithe_updated)
                 # World Eaters: Blood Surge prompt on opponent shooting casualties
                 event_system.subscribe("blood_surge_prompt", self._on_blood_surge_prompt)
+                # World Eaters: Brazen Fury prompt on opponent shooting casualties
+                event_system.subscribe("brazen_fury_prompt", self._on_brazen_fury_prompt)
                 event_system.subscribe("reverberating_summons_prompt", self._on_reverberating_summons_prompt)
                 # Reactive normal move prompt (enemy unit ends move within range)
                 event_system.subscribe("loping_speed_prompt", self._on_loping_speed_prompt)
@@ -6661,6 +6666,96 @@ class GameView:
             return
         try:
             self._request_yes_no(title, msg, "Surge", "Skip", _done, player=player)
+        except Exception:
+            _finish_and_next()
+
+    # ---------------- Brazen Fury prompts ----------------
+
+    def _on_brazen_fury_prompt(self, player=None, unit=None, attacker_unit=None, game=None, **_kwargs):
+        if player is None or unit is None:
+            return
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return
+        except Exception:
+            return
+
+        if self._brazen_fury_flow_active:
+            self._pending_brazen_fury_queue.append((player, unit, attacker_unit, game))
+            return
+        self._pending_brazen_fury_queue.append((player, unit, attacker_unit, game))
+        self._open_next_brazen_fury_prompt(game or self.game)
+
+    def _open_next_brazen_fury_prompt(self, game):
+        q = list(getattr(self, "_pending_brazen_fury_queue", []) or [])
+        if not q:
+            self._pending_brazen_fury_queue = []
+            self._brazen_fury_flow_active = False
+            return
+        player, unit, attacker_unit, game_ctx = q.pop(0)
+        self._pending_brazen_fury_queue = q
+
+        game_ctx = game_ctx or game or self.game
+        if player is None or unit is None or game_ctx is None:
+            self._open_next_brazen_fury_prompt(game_ctx)
+            return
+
+        try:
+            if not unit.can_brazen_fury(game=game_ctx, game_map=getattr(game_ctx, "map", None)):
+                self._open_next_brazen_fury_prompt(game_ctx)
+                return
+        except Exception:
+            self._open_next_brazen_fury_prompt(game_ctx)
+            return
+
+        attacker_name = getattr(attacker_unit, "name", "Enemy unit")
+        title = "Brazen Fury"
+        msg = (
+            f"{attacker_name} destroyed models in {getattr(unit, 'name', 'unit')}.\n\n"
+            "Brazen Fury: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+            "This unit cannot Brazen Fury while Battle-shocked or within Engagement Range."
+        )
+
+        def _finish_and_next():
+            self._brazen_fury_flow_active = False
+            self._open_next_brazen_fury_prompt(game_ctx)
+
+        def _start_brazen_fury_move():
+            try:
+                max_distance = int(game_ctx.roll_brazen_fury_distance(unit) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                _finish_and_next()
+                return
+
+            def _move_done(completed: bool):
+                try:
+                    if completed:
+                        unit.mark_brazen_fury_used(game_ctx)
+                except Exception:
+                    pass
+                _finish_and_next()
+
+            try:
+                self.phase_manager._request_move_unit_decision(
+                    unit,
+                    "brazen_fury",
+                    _move_done,
+                    max_distance=max_distance,
+                )
+            except Exception:
+                _finish_and_next()
+
+        def _done(choice: bool):
+            if not choice:
+                _finish_and_next()
+                return
+            _start_brazen_fury_move()
+
+        self._brazen_fury_flow_active = True
+        try:
+            self._request_yes_no(title, msg, "Fury", "Skip", _done, player=player)
         except Exception:
             _finish_and_next()
 
@@ -15598,6 +15693,7 @@ class GameView:
                             'fall_back': MovementType.FALL_BACK,
                             'charge': MovementType.CHARGE,
                             'blood_surge': MovementType.BLOOD_SURGE,
+                            'brazen_fury': MovementType.BRAZEN_FURY,
                             'scout': MovementType.SCOUT,
                             'pile_in': MovementType.PILE_IN,
                             'consolidate': MovementType.CONSOLIDATE,

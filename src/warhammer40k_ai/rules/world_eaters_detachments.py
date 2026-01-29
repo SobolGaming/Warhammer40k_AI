@@ -72,6 +72,11 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Goretrack Onslaught")
 
+    def is_possessed_slaughterband(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Possessed Slaughterband")
+
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
             return False
@@ -98,6 +103,15 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
         if not self.is_goretrack_onslaught():
             return False
         return self.unit_is_world_eaters(unit)
+
+    def brazen_fury_applies(self, unit) -> bool:
+        if not self.is_possessed_slaughterband():
+            return False
+        if unit is None:
+            return False
+        if not self.unit_is_world_eaters(unit):
+            return False
+        return self._attached_unit_has_keyword(unit, "POSSESSED")
 
     def unit_is_blood_tithe_eligible(self, unit) -> bool:
         return self.unit_is_blood_legions(unit) or self.unit_is_world_eaters(unit)

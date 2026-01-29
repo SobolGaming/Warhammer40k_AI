@@ -790,6 +790,7 @@ class MovementType(Enum):
     FALL_BACK = "fall_back"
     CHARGE = "charge"
     BLOOD_SURGE = "blood_surge"
+    BRAZEN_FURY = "brazen_fury"
     CAREEN = "careen"
     PILE_IN = "pile_in"
     CONSOLIDATE = "consolidate"
@@ -880,7 +881,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
     # Get validation rules for this movement type
     validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit, target_units=target_units)
-    if movement_type == MovementType.BLOOD_SURGE:
+    if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY):
         try:
             validation_rules["blood_surge_max_distance"] = float(max_distance)
         except Exception:
@@ -978,7 +979,13 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
     # CRITICAL FIX: For engagement range validation, we need to account for models
     # that might be near the destination, not just the starting position.
     # Formula: max_movement_distance + model_base_radius + engagement_range + buffer
-    if movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.CHARGE, MovementType.BLOOD_SURGE]:
+    if movement_type in [
+        MovementType.MOVE,
+        MovementType.ADVANCE,
+        MovementType.CHARGE,
+        MovementType.BLOOD_SURGE,
+        MovementType.BRAZEN_FURY,
+    ]:
         # Calculate the actual maximum possible movement distance for this movement type
         actual_max_movement = max_distance
         if movement_type == MovementType.ADVANCE:
@@ -1315,11 +1322,13 @@ def get_validation_rules(
         except Exception:
             pass
 
-    elif movement_type == MovementType.BLOOD_SURGE:
+    elif movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY):
+        reason = "Blood Surge" if movement_type == MovementType.BLOOD_SURGE else "Brazen Fury"
         base_rules.update({
             'allow_engagement_range_movement': True,
             'must_end_as_close_as_possible_to_closest_enemy_unit': True,
             'closest_enemy_unit_exclude_keywords': {"AIRCRAFT"},
+            'closest_enemy_unit_reason': reason,
             # Pathfinding discretization can drift a touch; allow a tiny epsilon.
             'distance_tolerance': 0.05,
         })
@@ -2862,10 +2871,11 @@ def validate_final_position(model: 'Model', position: Tuple[float, float, float]
         except Exception:
             tol = 0.0
         if new_distance_to_unit > (min_possible + tol):
+            reason_label = str(validation_rules.get("closest_enemy_unit_reason", "") or "Blood Surge")
             return {
                 'valid': False,
                 'reason': (
-                    f'Blood Surge must end as close as possible to closest enemy unit '
+                    f'{reason_label} must end as close as possible to closest enemy unit '
                     f'({closest_unit.name}): {new_distance_to_unit:.2f}" > {min_possible:.2f}"'
                 )
             }

@@ -147,6 +147,8 @@ class Game:
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
         self._blood_surge_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # World Eaters: Brazen Fury shooting snapshots (attacker -> {target: model_count})
+        self._brazen_fury_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # World Eaters: Frenzy (Helbrute) target snapshots (attacker -> [targets])
         self._frenzy_shooting_targets: Dict['Unit', List['Unit']] = {}
         self._frenzy_fight_targets: Dict['Unit', List['Unit']] = {}
@@ -2545,7 +2547,7 @@ class Game:
         if decision_type == DECISION_CONFIRM_YES_NO:
             ctx = dict(getattr(request, "context", {}) or {})
             kind = str(ctx.get("reactive_move_kind", "") or "").strip()
-            if kind not in ("loping_speed", "blood_surge"):
+            if kind not in ("loping_speed", "blood_surge", "brazen_fury"):
                 return
             opt = None
             for candidate in list(getattr(request, "options", []) or []):
@@ -2607,6 +2609,24 @@ class Game:
                     max_distance=max_distance,
                     kind=kind,
                     movement_type=movement_type or "blood_surge",
+                    source=source,
+                )
+                return
+            if kind == "brazen_fury":
+                if not unit.can_brazen_fury(game=self, game_map=getattr(self, "map", None)):
+                    return
+                max_distance = int(self.roll_brazen_fury_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    attacker_unit=attacker_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "brazen_fury",
                     source=source,
                 )
                 return
@@ -6459,6 +6479,100 @@ class Game:
                 move_fn(getattr(self, "map", None), max_dist)
                 target.mark_blood_surge_used(self)
 
+    def _on_shooting_targets_selected_brazen_fury(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        snapshot = dict(self._brazen_fury_shooting_snapshot.get(attacking_unit, {}) or {})
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                continue
+            try:
+                if not root.has_brazen_fury():
+                    continue
+            except Exception:
+                continue
+            count = self._alive_model_count(root)
+            if count <= 0:
+                continue
+            snapshot[root] = count
+        if snapshot:
+            self._brazen_fury_shooting_snapshot[attacking_unit] = snapshot
+
+    def _on_unit_shooting_resolved_brazen_fury(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        snapshot = self._brazen_fury_shooting_snapshot.pop(attacker_unit, {})
+        if not snapshot:
+            return
+        phase = getattr(self, "phase", None)
+        phase_name = str(getattr(phase, "name", "") or phase or "")
+        if "SHOOT" not in phase_name.upper():
+            return
+        current_player = None
+        try:
+            current_player = self.get_current_player()
+        except Exception:
+            current_player = None
+        for target, before in snapshot.items():
+            if target is None:
+                continue
+            after = self._alive_model_count(target)
+            if after >= int(before or 0):
+                continue
+            try:
+                if not target.has_brazen_fury():
+                    continue
+            except Exception:
+                continue
+            try:
+                target_player = target.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None or current_player is None:
+                continue
+            if target_player is current_player:
+                continue
+            can_fn = getattr(target, "can_brazen_fury", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            player = target_player
+            is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("brazen_fury_prompt"))
+            if is_human and es is not None:
+                es.publish(
+                    "brazen_fury_prompt",
+                    player=player,
+                    unit=target,
+                    attacker_unit=attacker_unit,
+                    game=self,
+                )
+                if has_sub:
+                    continue
+            msg = (
+                "Brazen Fury: Move D6\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This unit cannot Brazen Fury while Battle-shocked or within Engagement Range."
+            )
+            self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="brazen_fury",
+                movement_type="brazen_fury",
+                source="Brazen Fury",
+                message=msg,
+                attacker_unit=attacker_unit,
+            )
+
     def _on_shooting_targets_selected_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -9964,6 +10078,18 @@ class Game:
             append_dice(player, f"{tag}: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
 
         return int(max_distance)
+
+    def roll_brazen_fury_distance(self, unit: 'Unit') -> int:
+        """Roll Brazen Fury distance (D6)."""
+        if unit is None:
+            return 0
+        from ..utility.dice import get_roll
+        base_roll = int(get_roll("D6") or 0)
+        from ..utility.event_bus import append_dice
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
+            append_dice(player, f"Brazen Fury roll: {int(base_roll or 0)}\" for {unit.name}")
+        return int(base_roll or 0)
 
     def roll_loping_speed_distance(self, unit: 'Unit') -> int:
         """Resolve distance for a reactive Normal move (fixed or rolled)."""

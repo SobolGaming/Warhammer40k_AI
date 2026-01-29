@@ -390,6 +390,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Rush to the Fray": (
             r"each time a world eaters unit from your army disembarks from a transport until the end of the turn add \d+ to charge rolls made for that unit and that units melee weapons have the lance ability",
         ),
+        "Brazen Fury": (
+            r"world eaters possessed units from your army have the following ability",
+            r"in your opponents shooting phase each time an enemy unit has shot if any models from this unit were destroyed as a result of those attacks this unit can make a brazen fury move",
+            r"to do so roll one d6",
+            r"models in this unit move a number of inches up to this result but this unit must end that move as close as possible to the closest enemy unit excluding aircraft",
+            r"when doing so those models can be moved within engagement range of that enemy unit",
+            r"this unit cannot make a brazen fury move while it is battle shocked or within engagement range of one or more enemy units and can only make one brazen fury move per phase",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -1392,6 +1400,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
+        "Brazen Fury": (
+            "Supported",
+            "Possessed Slaughterband: on opponent shooting casualties, eligible WORLD EATERS POSSESSED can Brazen Fury (D6) toward closest non-AIRCRAFT enemy; once per phase; blocked if Battle-shocked or engaged.",
+        ),
         "Rush to the Fray": (
             "Supported",
             "Goretrack Onslaught: disembarking WORLD EATERS units gain +1 to charge rolls and melee weapons gain [LANCE] until end of turn.",
