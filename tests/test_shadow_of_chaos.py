@@ -36,7 +36,18 @@ class _ModelStub:
 
 
 class _UnitStub:
-    def __init__(self, *, models=None, lost=None, battleline=False, abilities=None, army=None, name="Test Unit"):
+    def __init__(
+        self,
+        *,
+        models=None,
+        lost=None,
+        battleline=False,
+        abilities=None,
+        army=None,
+        name="Test Unit",
+        keywords=None,
+        faction_keywords=None,
+    ):
         self.models = list(models or [])
         self.models_lost = list(lost or [])
         self._battleline = bool(battleline)
@@ -47,6 +58,8 @@ class _UnitStub:
         self._army = army
         self.deployed = True
         self._alive = True
+        self.keywords = [str(k).strip().upper() for k in (keywords or []) if str(k).strip()]
+        self.faction_keywords = [str(k).strip().upper() for k in (faction_keywords or []) if str(k).strip()]
 
     @property
     def is_battleline(self) -> bool:
@@ -60,6 +73,12 @@ class _UnitStub:
 
     def get_attached_unit_models(self):
         return self.models
+
+    def has_any_keyword(self, keyword: str) -> bool:
+        kw = str(keyword or "").strip().upper()
+        if not kw:
+            return False
+        return kw in set(self.keywords + self.faction_keywords)
 
     def is_max_health(self):
         for m in self.models:
@@ -168,6 +187,62 @@ class TestShadowOfChaos(unittest.TestCase):
 
         with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
             self.assertTrue(mgr.is_unit_within_shadow(target, game=game))
+
+    def test_greater_daemon_shadow_aura_counts_for_matching_god(self):
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowOfChaosManager
+
+        source = _UnitStub(
+            models=[_ModelStub(wounds=6, base_wounds=6)],
+            abilities=[_AbilityStub("Greater Daemon of Khorne (Aura)")],
+            keywords=["LEGIONES DAEMONICA", "KHORNE"],
+            name="Bloodthirster",
+        )
+        target = _UnitStub(
+            models=[_ModelStub(wounds=2, base_wounds=2)],
+            keywords=["LEGIONES DAEMONICA", "KHORNE"],
+            name="Target",
+        )
+
+        daemon_army = _ArmyStub(units=[source, target], faction_id="CD")
+        source._army = daemon_army
+        target._army = daemon_army
+        player = _PlayerStub("Daemons", daemon_army)
+        daemon_army.player = player
+        game = _GameStub([player])
+        player.game = game
+
+        mgr = ShadowOfChaosManager(daemon_army)
+
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
+            self.assertTrue(mgr.is_unit_within_shadow(target, game=game))
+
+    def test_greater_daemon_shadow_aura_requires_matching_god(self):
+        from warhammer40k_ai.rules.shadow_of_chaos import ShadowOfChaosManager
+
+        source = _UnitStub(
+            models=[_ModelStub(wounds=6, base_wounds=6)],
+            abilities=[_AbilityStub("Greater Daemon of Khorne (Aura)")],
+            keywords=["LEGIONES DAEMONICA", "KHORNE"],
+            name="Bloodthirster",
+        )
+        target = _UnitStub(
+            models=[_ModelStub(wounds=2, base_wounds=2)],
+            keywords=["LEGIONES DAEMONICA", "NURGLE"],
+            name="Target",
+        )
+
+        daemon_army = _ArmyStub(units=[source, target], faction_id="CD")
+        source._army = daemon_army
+        target._army = daemon_army
+        player = _PlayerStub("Daemons", daemon_army)
+        daemon_army.player = player
+        game = _GameStub([player])
+        player.game = game
+
+        mgr = ShadowOfChaosManager(daemon_army)
+
+        with patch("warhammer40k_ai.utility.aura_utils.unit_within_range_of_unit", return_value=True):
+            self.assertFalse(mgr.is_unit_within_shadow(target, game=game))
 
 
 if __name__ == "__main__":

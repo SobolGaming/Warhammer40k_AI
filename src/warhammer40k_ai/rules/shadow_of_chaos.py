@@ -20,6 +20,7 @@ class ShadowOfChaosManager:
     Chaos Daemons Army Rule: The Shadow of Chaos.
     """
 
+    GOD_KEYWORDS = {"KHORNE", "NURGLE", "SLAANESH", "TZEENTCH"}
     GREATER_DAEMON_NAMES = {
         "BLOODTHIRSTER",
         "GREAT UNCLEAN ONE",
@@ -31,6 +32,12 @@ class ShadowOfChaosManager:
         "SKARBRAND",
     }
     DARK_MASTER_ABILITY = "THE DARK MASTER (AURA)"
+    GREATER_DAEMON_SHADOW_AURA_TOKENS = {
+        "greater daemon of khorne": "KHORNE",
+        "greater daemon of nurgle": "NURGLE",
+        "greater daemon of slaanesh": "SLAANESH",
+        "greater daemon of tzeentch": "TZEENTCH",
+    }
 
     def __init__(self, army=None):
         self.army = army
@@ -49,7 +56,8 @@ class ShadowOfChaosManager:
             return False
         return army_has_ability_id(self.army, ABILITY_SHADOW_OF_CHAOS)
 
-    def _unit_is_legiones_daemonica(self, unit) -> bool:
+    @staticmethod
+    def _unit_is_legiones_daemonica(unit) -> bool:
         if unit is None:
             return False
         try:
@@ -78,13 +86,30 @@ class ShadowOfChaosManager:
         return re.sub(r"\s+", " ", val).strip()
 
     @classmethod
-    def _unit_has_dark_master(cls, unit) -> bool:
+    def _iter_unit_abilities(cls, unit):
         if unit is None:
-            return False
+            return []
         try:
             abilities = list(getattr(unit, "possible_abilities", []) or [])
         except Exception:
             abilities = []
+        is_active = getattr(unit, "_ability_is_active", None)
+        out = []
+        for ab in abilities:
+            if callable(is_active):
+                try:
+                    if not is_active(ab):
+                        continue
+                except Exception:
+                    continue
+            out.append(ab)
+        return out
+
+    @classmethod
+    def _unit_has_dark_master(cls, unit) -> bool:
+        if unit is None:
+            return False
+        abilities = cls._iter_unit_abilities(unit)
         if abilities:
             target = cls._norm_text(cls.DARK_MASTER_ABILITY)
             for ab in abilities:
@@ -98,6 +123,54 @@ class ShadowOfChaosManager:
         if name and name.replace(" ", "") == "belakor":
             return True
         return False
+
+    @classmethod
+    def _unit_god_keywords(cls, unit) -> set[str]:
+        if unit is None:
+            return set()
+        out = set()
+        for kw in cls.GOD_KEYWORDS:
+            try:
+                if unit.has_any_keyword(kw):
+                    out.add(kw)
+            except Exception:
+                continue
+        return out
+
+    @classmethod
+    def _unit_shadow_aura_god_keywords(cls, unit) -> set[str]:
+        if unit is None:
+            return set()
+        out = set()
+        abilities = cls._iter_unit_abilities(unit)
+        if not abilities:
+            return out
+        for ab in abilities:
+            name = cls._norm_text(getattr(ab, "name", "") or "")
+            if not name:
+                continue
+            for token, god in cls.GREATER_DAEMON_SHADOW_AURA_TOKENS.items():
+                if token in name:
+                    out.add(god)
+        return out
+
+    @classmethod
+    def _army_greater_daemon_shadow_aura_units(cls, army) -> list[tuple[object, set[str]]]:
+        if army is None:
+            return []
+        out = []
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                pass
+            gods = cls._unit_shadow_aura_god_keywords(unit)
+            if gods:
+                out.append((unit, gods))
+        return out
 
     @classmethod
     def _army_dark_master_units(cls, army) -> list:
@@ -164,6 +237,37 @@ class ShadowOfChaosManager:
                 continue
         return False
 
+    @classmethod
+    def unit_within_greater_daemon_shadow_aura(cls, unit, army, *, game=None) -> bool:
+        if unit is None or army is None:
+            return False
+        if not cls._unit_is_legiones_daemonica(unit):
+            return False
+        target_gods = cls._unit_god_keywords(unit)
+        if not target_gods:
+            return False
+        try:
+            if game is None:
+                player = getattr(army, "player", None)
+                game = getattr(player, "game", None) if player is not None else None
+        except Exception:
+            game = None
+        if game is None:
+            return False
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+        for source, source_gods in cls._army_greater_daemon_shadow_aura_units(army):
+            if source_gods.isdisjoint(target_gods):
+                continue
+            try:
+                if unit_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
+        return False
+
     def get_shadow_zones(self, *, game=None, player=None) -> set[str]:
         if not self._army_has_shadow():
             return set()
@@ -188,6 +292,13 @@ class ShadowOfChaosManager:
             player_army = None
         if self.unit_within_dark_master_aura(unit, player_army, game=game):
             return True
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = None
+        if unit_army is not None and unit_army is player_army:
+            if self.unit_within_greater_daemon_shadow_aura(unit, player_army, game=game):
+                return True
         zones = self.get_shadow_zones(game=game, player=player)
         if not zones:
             return False

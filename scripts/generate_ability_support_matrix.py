@@ -1522,6 +1522,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Pall of Despair (Aura, Psychic)"): ("Supported", "Forces Battle-shock tests for Below Starting Strength units within 9\" in opponent Command phase; heals on failed tests."),
         ("CD", "Shadow Lord (Aura, Psychic)"): ("Supported", "Re-roll Hit rolls of 1 aura within 6\" while active."),
         ("CD", "The Dark Master (Aura)"): ("Supported", "Area within 6\" counts as Shadow of Chaos."),
+        ("CD", "Greater Daemon of Khorne (Aura)"): (
+            "Supported",
+            "Friendly KHORNE LEGIONES DAEMONICA units within 6\" count as within your army's Shadow of Chaos.",
+        ),
+        ("CD", "Greater Daemon of Nurgle (Aura)"): (
+            "Supported",
+            "Friendly NURGLE LEGIONES DAEMONICA units within 6\" count as within your army's Shadow of Chaos.",
+        ),
+        ("CD", "Greater Daemon of Slaanesh (Aura)"): (
+            "Supported",
+            "Friendly SLAANESH LEGIONES DAEMONICA units within 6\" count as within your army's Shadow of Chaos.",
+        ),
+        ("CD", "Greater Daemon of Tzeentch (Aura)"): (
+            "Supported",
+            "Friendly TZEENTCH LEGIONES DAEMONICA units within 6\" count as within your army's Shadow of Chaos.",
+        ),
         ("CD", "Monarch of the Hunt"): ("Supported", "Quarry selection + melee reroll hooks vs quarry."),
         ("CD", "No Prey Can Evade"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("CD", "Unholy Speed"): ("Supported", "Re-roll Advance and Charge rolls."),
