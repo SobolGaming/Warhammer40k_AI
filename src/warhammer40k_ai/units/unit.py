@@ -7325,6 +7325,10 @@ class Unit:
             self._apply_attached_possessed_formation_bonus(bodyguard)
         except Exception:
             pass
+        try:
+            self._apply_attached_battleline_infiltrators_scouts(bodyguard)
+        except Exception:
+            pass
         # Attachment status affects leading-only abilities; refresh caches/rules.
         try:
             self._invalidate_ability_cache()
@@ -8296,6 +8300,12 @@ class Unit:
         except Exception:
             pass
         try:
+            if self._ability_attached_battleline_infiltrators_scouts(ability) is not None:
+                sr = getattr(self, "special_rules", None)
+                return bool(isinstance(sr, dict) and sr.get("attached_battleline_infiltrators_scouts"))
+        except Exception:
+            pass
+        try:
             from ..rules.wrathful_presence import ability_name_to_key, unit_has_active_wrathful_presence
             name = ability if isinstance(ability, str) else getattr(ability, "name", "")
             key = ability_name_to_key(name)
@@ -8356,6 +8366,49 @@ class Unit:
             return None
         return int(m.group(1))
 
+    def _ability_attached_battleline_infiltrators_scouts(self, ability) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "If this model is attached to an EMPEROR'S CHILDREN BATTLELINE unit during the Declare Battle Formations step,
+        this model has the Infiltrators and Scouts 6\" abilities."
+        """
+        desc = ""
+        name = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._normalize_rules_text(f"{name} {desc}")
+        if not text:
+            return None
+        low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "declare battle formations" not in low:
+            return None
+        if "attached to" not in low or "battleline" not in low:
+            return None
+        if "infiltrators" not in low or "scout" not in low:
+            return None
+        m = re.search(r"attached to an? (?P<keywords>.+?) unit", low)
+        if not m:
+            return None
+        kw_phrase = str(m.group("keywords") or "").strip()
+        if not kw_phrase:
+            return None
+        m = re.search(r"scouts?\s*(\d+)", low)
+        if not m:
+            return None
+        try:
+            dist = int(m.group(1))
+        except Exception:
+            return None
+        if dist <= 0:
+            return None
+        return {"keywords": kw_phrase, "scout_distance": int(dist)}
+
     def _apply_attached_possessed_formation_bonus(self, bodyguard: 'Unit') -> None:
         """Apply the WORLD EATERS POSSESSED formation bonus for Leaders like LORD OF THE EIGHTBOUND."""
         if bodyguard is None:
@@ -8380,6 +8433,30 @@ class Unit:
         if not sr.get("attached_possessed_formation_bonus"):
             sr["attached_possessed_formation_bonus"] = True
             sr["attached_possessed_formation_scout_distance"] = int(dist)
+            self.special_rules = sr
+
+    def _apply_attached_battleline_infiltrators_scouts(self, bodyguard: 'Unit') -> None:
+        """Apply battle formation bonuses that grant Infiltrators + Scouts to the Leader model."""
+        if bodyguard is None:
+            return
+        rule = None
+        for ab in (getattr(self, "possible_abilities", []) or []):
+            rule = self._ability_attached_battleline_infiltrators_scouts(ab)
+            if rule is not None:
+                break
+        if rule is None:
+            return
+        try:
+            if not self._unit_matches_keyword_phrase(bodyguard, rule.get("keywords", ""), use_effective=False):
+                return
+        except Exception:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if not sr.get("attached_battleline_infiltrators_scouts"):
+            sr["attached_battleline_infiltrators_scouts"] = True
+            sr["attached_battleline_infiltrators_scout_distance"] = int(rule.get("scout_distance", 0) or 0)
             self.special_rules = sr
 
     def _get_aspect_shrine_root(self) -> 'Unit':
@@ -19923,6 +20000,51 @@ class Unit:
         return text
 
     @staticmethod
+    def _normalize_keyword_phrase(value: str) -> str:
+        t = str(value or "").lower()
+        t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+        t = re.sub(r"[^a-z0-9]+", " ", t)
+        return re.sub(r"\s+", " ", t).strip()
+
+    @classmethod
+    def _unit_matches_keyword_phrase(cls, unit, phrase: str, *, use_effective: bool = True) -> bool:
+        key_phrase = cls._normalize_keyword_phrase(phrase)
+        if not key_phrase:
+            return False
+        tokens = key_phrase.split()
+        if not tokens:
+            return False
+        keywords: set[str] = set()
+        if use_effective:
+            try:
+                kws = list(getattr(unit, "get_effective_keywords")() or [])
+            except Exception:
+                kws = list(getattr(unit, "keywords", []) or [])
+            try:
+                kws += list(getattr(unit, "get_effective_faction_keywords")() or [])
+            except Exception:
+                kws += list(getattr(unit, "faction_keywords", []) or [])
+        else:
+            kws = list(getattr(unit, "keywords", []) or [])
+            kws += list(getattr(unit, "faction_keywords", []) or [])
+        for kw in kws:
+            norm = cls._normalize_keyword_phrase(kw)
+            if norm:
+                keywords.add(norm)
+        if not keywords:
+            return False
+        n = len(tokens)
+        dp = [False] * (n + 1)
+        dp[n] = True
+        for i in range(n - 1, -1, -1):
+            for j in range(i + 1, n + 1):
+                cand = " ".join(tokens[i:j])
+                if cand in keywords and dp[j]:
+                    dp[i] = True
+                    break
+        return dp[0]
+
+    @staticmethod
     def _strip_eligibility_prefix(text: str) -> str:
         """
         Strip Wahapedia-style eligibility prefixes like:
@@ -22090,52 +22212,44 @@ class Unit:
         if isinstance(sr, dict) and sr.get("enhancement_praesidius_lone_operative"):
             return True
 
+        normalize_rules_text = getattr(self, "_normalize_rules_text", None)
+        if not callable(normalize_rules_text):
+            def normalize_rules_text(value: str) -> str:
+                return Unit._normalize_rules_text(self, value)
+        else:
+            def normalize_rules_text(value: str) -> str:
+                return self._normalize_rules_text(value)
+
+        strip_eligibility_prefix = getattr(self, "_strip_eligibility_prefix", None)
+        if not callable(strip_eligibility_prefix):
+            def strip_eligibility_prefix(value: str) -> str:
+                return Unit._strip_eligibility_prefix(value)
+        else:
+            def strip_eligibility_prefix(value: str) -> str:
+                return self._strip_eligibility_prefix(value)
+
+        unit_matches_keyword_phrase = getattr(self, "_unit_matches_keyword_phrase", None)
+        if not callable(unit_matches_keyword_phrase):
+            def unit_matches_keyword_phrase(unit, phrase: str) -> bool:
+                return Unit._unit_matches_keyword_phrase(unit, phrase)
+        else:
+            def unit_matches_keyword_phrase(unit, phrase: str) -> bool:
+                return self._unit_matches_keyword_phrase(unit, phrase)
+
+        def _iter_ability_entries():
+            if callable(getattr(self, "_iter_ability_entries_for_rules", None)):
+                yield from self._iter_ability_entries_for_rules(model=None)
+                return
+            for ability in getattr(self, "possible_abilities", []) or []:
+                yield getattr(ability, "name", None), getattr(ability, "description", None)
+
         def _normalize_lo_text(value: str) -> str:
-            t = self._normalize_rules_text(value or "")
+            t = normalize_rules_text(value or "")
             t = t.replace("\u2019", "'").replace("\u0192?T", "'")
             t = re.sub(r"'s\b", "s", t, flags=re.IGNORECASE)
             t = t.lower()
             t = re.sub(r"[^a-z0-9]+", " ", t)
             return re.sub(r"\s+", " ", t).strip()
-
-        def _normalize_keyword_phrase(value: str) -> str:
-            t = str(value or "").lower()
-            t = t.replace("\u2019", "'").replace("\u0192?T", "'")
-            t = re.sub(r"[^a-z0-9]+", " ", t)
-            return re.sub(r"\s+", " ", t).strip()
-
-        def _unit_matches_keyword_phrase(unit, phrase: str) -> bool:
-            key_phrase = _normalize_keyword_phrase(phrase)
-            if not key_phrase:
-                return False
-            tokens = key_phrase.split()
-            if not tokens:
-                return False
-            keywords: set[str] = set()
-            try:
-                kws = list(getattr(unit, "get_effective_keywords")() or [])
-            except Exception:
-                kws = list(getattr(unit, "keywords", []) or [])
-            try:
-                kws += list(getattr(unit, "get_effective_faction_keywords")() or [])
-            except Exception:
-                kws += list(getattr(unit, "faction_keywords", []) or [])
-            for kw in kws:
-                norm = _normalize_keyword_phrase(kw)
-                if norm:
-                    keywords.add(norm)
-            if not keywords:
-                return False
-            n = len(tokens)
-            dp = [False] * (n + 1)
-            dp[n] = True
-            for i in range(n - 1, -1, -1):
-                for j in range(i + 1, n + 1):
-                    cand = " ".join(tokens[i:j])
-                    if cand in keywords and dp[j]:
-                        dp[i] = True
-                        break
-            return dp[0]
 
         # Base Lone Operative (static) and conditional proximity-based Lone Operative.
         cache = getattr(self, "_ability_cache", None)
@@ -22147,8 +22261,8 @@ class Unit:
         if base_found is None or conditional_rules is None:
             base_found = False
             conditional_rules = []
-            for name, desc in self._iter_ability_entries_for_rules(model=None):
-                text_src = self._strip_eligibility_prefix(desc or name or "")
+            for name, desc in _iter_ability_entries():
+                text_src = strip_eligibility_prefix(desc or name or "")
                 norm = _normalize_lo_text(text_src)
                 if "lone operative" not in norm:
                     continue
@@ -22210,15 +22324,12 @@ class Unit:
                                 continue
                             if not getattr(other, "is_alive", lambda: True)():
                                 continue
-                            if not _unit_matches_keyword_phrase(other, kw_phrase):
+                            if not unit_matches_keyword_phrase(other, kw_phrase):
                                 continue
                             if unit_within_range_of_unit(self, other, rng, use_attached_aggregate=True):
                                 return True
                 except Exception:
                     pass
-            if not base_found:
-                return False
-
         # LORD OF MURDER (datasheet rule, not an Aura keyworded ability):
         # While this model is within 3" of one or more friendly WORLD EATERS INFANTRY units,
         # this model has the Lone Operative ability.

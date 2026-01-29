@@ -1512,7 +1512,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("EC", "Daemonic Speed"): ("Supported", "Fights First."),
         ("EC", "Duellist's Hubris"): ("Supported", "Fights First when not leading a unit."),
         ("EC", "Lord of Excess"): ("Supported", "Conditional Lone Operative within 3\" of friendly SLAANESH INFANTRY units."),
-        ("EC", "LORD OF THE HOST"): ("Partial", "Infiltrators/Scouts 6\" detected; attachment restriction not enforced."),
+        ("EC", "LORD OF THE HOST"): ("Supported", "Conditional Infiltrators/Scouts 6\" if attached to friendly EMPEROR'S CHILDREN BATTLELINE at battle formations."),
         ("EC", "Lethal Obsession"): ("Supported", "Same-target shooting requirement tracked; charge reroll applies vs that target until end of turn."),
         ("EC", "No Prey Can Evade"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("EC", "Unholy Speed"): ("Supported", "Re-roll Advance and Charge rolls."),
@@ -1716,6 +1716,7 @@ def _classify_ability_base(
     melee_damage_support = _melee_damage_bonus_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
+    attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
     transport_support = _transport_disembark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
@@ -1836,6 +1837,8 @@ def _classify_ability_base(
         return two_melee_weapons_support
     if attached_possessed_support:
         return attached_possessed_support
+    if attached_battleline_infiltrators_support:
+        return attached_battleline_infiltrators_support
     if transport_support:
         return transport_support
     if transport_reactive_disembark_support:
@@ -4232,6 +4235,27 @@ def _attached_possessed_formation_bonus_support(description: str) -> Optional[Tu
     return (
         "Supported",
         f"Leader gains Deep Strike and Scouts {m.group('rng')}\" if attached to WORLD EATERS POSSESSED at battle formations.",
+    )
+
+
+def _attached_battleline_infiltrators_scouts_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"if this model is attached to an? (?P<kw>.+?) battleline unit during the declare battle formations step "
+        r"this model has the infiltrators and scouts (?P<rng>\d+) abilities",
+        norm,
+    )
+    if not m:
+        return None
+    kw = (m.group("kw") or "").strip().upper()
+    rng = m.group("rng") or "6"
+    return (
+        "Supported",
+        f"Leader gains Infiltrators and Scouts {rng}\" if attached to friendly {kw} BATTLELINE at battle formations.",
     )
 
 
