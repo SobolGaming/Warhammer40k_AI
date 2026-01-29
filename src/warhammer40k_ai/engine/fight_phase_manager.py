@@ -449,7 +449,13 @@ class FightPhaseManager:
 
                 # Step 3: Resolve melee attacks
                 # Use attached view so leader models fight as part of the attached unit
-                self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, weapon_declarations)
+                attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, weapon_declarations)
+                self.game._maybe_trigger_daemonic_poisons(
+                    attacker_unit=self._as_attached_view(fighting_unit),
+                    hits_by_target=attack_summary.get("hits_by_target"),
+                    hit_models_by_target=attack_summary.get("hit_models_by_target"),
+                    phase="fight",
+                )
                 try:
                     if hasattr(self.game, "event_system"):
                         self.game.event_system.publish(
@@ -503,12 +509,23 @@ class FightPhaseManager:
             auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
         except Exception:
             auto_decls = []
+        hits_by_target_total = {}
+        hit_models_by_target_total = {}
         for target_unit, attacking_models in target_declarations.items():
             try:
                 decls = list(auto_decls or [])
                 if attacking_models:
                     decls = [d for d in decls if d.get("model") in attacking_models]
-                self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
+                attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
+                for unit, hits in (attack_summary.get("hits_by_target") or {}).items():
+                    hits_by_target_total[unit] = int(hits_by_target_total.get(unit, 0) or 0) + int(hits or 0)
+                for unit, models in (attack_summary.get("hit_models_by_target") or {}).items():
+                    if unit not in hit_models_by_target_total:
+                        hit_models_by_target_total[unit] = set()
+                    try:
+                        hit_models_by_target_total[unit].update(set(models or []))
+                    except Exception:
+                        pass
             except Exception:
                 pass
             try:
@@ -520,6 +537,13 @@ class FightPhaseManager:
                     )
             except Exception:
                 pass
+        if hits_by_target_total:
+            self.game._maybe_trigger_daemonic_poisons(
+                attacker_unit=self._as_attached_view(fighting_unit),
+                hits_by_target=hits_by_target_total,
+                hit_models_by_target=hit_models_by_target_total,
+                phase="fight",
+            )
         try:
             if hasattr(fighting_unit, "consolidate_towards_enemies"):
                 fighting_unit.consolidate_towards_enemies(getattr(self.game, "map", None))
@@ -545,12 +569,30 @@ class FightPhaseManager:
             # Step 2: Make melee attacks based on declarations
             print(f"{fighting_unit.name} makes melee attacks")
             auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
+            hits_by_target_total = {}
+            hit_models_by_target_total = {}
             for target_unit, attacking_models in target_declarations.items():
                 print(f"  {len(attacking_models)} models attacking {target_unit.name}")
                 decls = list(auto_decls or [])
                 if attacking_models:
                     decls = [d for d in decls if d.get("model") in attacking_models]
-                self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
+                attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, decls)
+                for unit, hits in (attack_summary.get("hits_by_target") or {}).items():
+                    hits_by_target_total[unit] = int(hits_by_target_total.get(unit, 0) or 0) + int(hits or 0)
+                for unit, models in (attack_summary.get("hit_models_by_target") or {}).items():
+                    if unit not in hit_models_by_target_total:
+                        hit_models_by_target_total[unit] = set()
+                    try:
+                        hit_models_by_target_total[unit].update(set(models or []))
+                    except Exception:
+                        pass
+            if hits_by_target_total:
+                self.game._maybe_trigger_daemonic_poisons(
+                    attacker_unit=self._as_attached_view(fighting_unit),
+                    hits_by_target=hits_by_target_total,
+                    hit_models_by_target=hit_models_by_target_total,
+                    phase="fight",
+                )
             try:
                 if hasattr(self.game, "event_system"):
                     self.game.event_system.publish(
@@ -656,16 +698,16 @@ class FightPhaseManager:
                 declarations.append({"model": model, "weapon_profile": profile})
         return declarations
 
-    def _resolve_melee_attacks(self, attacking_unit: Unit, target_unit: Unit, weapon_declarations: List) -> None:
+    def _resolve_melee_attacks(self, attacking_unit: Unit, target_unit: Unit, weapon_declarations: List) -> Dict:
         """Resolve melee attacks with detailed output like shooting."""
         # AIRCRAFT fight restrictions (defensive guard)
         try:
             if bool(getattr(target_unit, "is_aircraft", False)) and not bool(getattr(attacking_unit, "is_flying", False)):
                 print(f"{attacking_unit.name} cannot make melee attacks against AIRCRAFT")
-                return
+                return {"hits_by_target": {}, "hit_models_by_target": {}}
             if bool(getattr(attacking_unit, "is_aircraft", False)) and not bool(getattr(target_unit, "is_flying", False)):
                 print(f"{attacking_unit.name} can only make melee attacks against FLY units")
-                return
+                return {"hits_by_target": {}, "hit_models_by_target": {}}
         except Exception:
             pass
         print(f"Resolving melee attacks: {attacking_unit.name} vs {target_unit.name}")
@@ -692,7 +734,14 @@ class FightPhaseManager:
             pass
 
         game_map = getattr(self.game, "map", None)
-        attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
+        hit_tracker = {}
+        hit_models_by_target = {}
+        attack_context = {
+            "pending_mortal_wounds": {},
+            "defer_mortal_wounds": True,
+            "hit_tracker": hit_tracker,
+            "hit_models_by_target": hit_models_by_target,
+        }
         base_provider = None
         if game_map is not None:
             base_provider = getattr(game_map, "damage_allocation_provider", None)
@@ -755,7 +804,7 @@ class FightPhaseManager:
             pass
         if hasattr(attacking_unit, "_resolve_pending_horrors_split"):
             attacking_unit._resolve_pending_horrors_split(game_map=game_map)
-
+        return {"hits_by_target": hit_tracker, "hit_models_by_target": hit_models_by_target}
 
     def get_stage_info(self, current_player: Player, opponent_player: Player) -> Dict:
         """Get information about the current stage for UI display."""

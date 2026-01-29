@@ -1510,6 +1510,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CSM", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("EC", "Daemon Primarch of Slaanesh"): ("Supported", "Opponent Command phase selection of Beguiling Form, Daemonic Speed, or Enthralling Hypnosis until the next opponent Command phase."),
+        ("EC", "Daemonic Poisons"): ("Supported", "After shooting/fight, select a hit enemy unit to poison; poisoned units roll D6 in each Command phase (4+ -> D3 mortal wounds)."),
         ("EC", "Beguiling Form"): ("Supported", "-1 to hit when targeting this model (while selected)."),
         ("EC", "Daemonic Speed"): ("Supported", "Fights First (while selected)."),
         ("EC", "Enthralling Hypnosis (Aura)"): ("Supported", "Enemy units within 6\" that Fall Back must pass a Leadership test or remain stationary (while selected)."),

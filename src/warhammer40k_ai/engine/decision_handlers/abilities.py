@@ -27,6 +27,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+    DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
     DECISION_DISCARD_SECONDARY,
     DECISION_CHOOSE_SHADOW_FORM,
     DECISION_CHOOSE_VOW,
@@ -1127,6 +1128,54 @@ def _apply_post_shoot_leadership_debuff_target(game: object, request: DecisionRe
     return target_unit
 
 
+def _validate_daemonic_poisons_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Daemonic Poisons requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Daemonic Poisons target not found.",)
+    return ()
+
+
+def _apply_daemonic_poisons_target(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Daemonic Poisons target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Daemonic Poisons").strip()
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+
+    from ...rules.daemonic_poisons import apply_daemonic_poisons
+
+    apply_daemonic_poisons(
+        target_unit,
+        source_unit=attacker_unit,
+        ability_name=ability_name,
+        game=game,
+        player=player,
+    )
+
+    model_name = str(getattr(model, "name", "") or "") if model is not None else ""
+    if not model_name and attacker_unit is not None:
+        model_name = str(getattr(attacker_unit, "name", "") or "")
+    if not model_name:
+        model_name = "Model"
+    _log_action_for_players(game, player, f"{model_name} poisoned {target_unit.name} ({ability_name}).")
+    return target_unit
+
+
 def _validate_discard_secondary(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     return validate_option_choice(request, result)
 
@@ -1891,6 +1940,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
     validate=_validate_post_shoot_leadership_debuff_target,
     apply=_apply_post_shoot_leadership_debuff_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
+    validate=_validate_daemonic_poisons_target,
+    apply=_apply_daemonic_poisons_target,
 )
 register_decision_handler(DECISION_DISCARD_SECONDARY, validate=_validate_discard_secondary, apply=_apply_discard_secondary)
 register_decision_handler(DECISION_CHOOSE_SHADOW_FORM, validate=_validate_choose_shadow_form, apply=_apply_choose_shadow_form)

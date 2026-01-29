@@ -59,6 +59,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_battleshock"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_suppression"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_leadership_debuff"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_daemonic_poisons"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_blood_surge"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_blood_surge"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_frenzy"),

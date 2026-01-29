@@ -1763,6 +1763,26 @@ class WargearProfile:
                     setattr(attacker, "_one_shot_used", used)
         except Exception:
             pass
+
+        # Optional hit tracking hook for melee or custom attack contexts.
+        try:
+            hit_tracker = attack_context.get("hit_tracker")
+            hit_models_by_target = attack_context.get("hit_models_by_target")
+        except Exception:
+            hit_tracker = None
+            hit_models_by_target = None
+        if hit_tracker is not None:
+            try:
+                hits = int(getattr(attack_result, "total_hits", 0) or 0)
+            except Exception:
+                hits = 0
+            if hits > 0:
+                hit_tracker[target] = int(hit_tracker.get(target, 0) or 0) + hits
+                if hit_models_by_target is not None:
+                    try:
+                        hit_models_by_target.setdefault(target, set()).add(attacker)
+                    except Exception:
+                        pass
         
         return attack_result
 

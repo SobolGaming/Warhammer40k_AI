@@ -3064,6 +3064,7 @@ class GameView:
                 DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+                DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
                 DECISION_CHOOSE_QUARRY,
                 DECISION_CHOOSE_SHADOW_FORM,
                 DECISION_CHOOSE_VOW,
@@ -3586,6 +3587,7 @@ class GameView:
             DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
             DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
             DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
+            DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
         ):
             from ..utility.decision_utils import resolve_decision_command
             from .decision_ui_utils import first_option_id
@@ -3626,6 +3628,10 @@ class GameView:
                 subtitle = (
                     f"{model_name or 'Unit'} shot. Select a unit to suffer -1 to Leadership/Battle-shock tests."
                 )
+            elif decision_type == DECISION_CHOOSE_DAEMONIC_POISONS_TARGET:
+                phase_label = str(ctx.get("phase", "") or "Fight phase").strip()
+                title = ability_name or "Daemonic Poisons"
+                subtitle = f"{model_name or 'Model'} attacked. Select a unit hit in the {phase_label} to poison."
             else:
                 title = ability_name or "Suppression"
                 subtitle = f"{model_name or 'Model'} shot. Select a unit to suppress."

@@ -1078,6 +1078,13 @@ class Unit:
         r"(?:enemy )?unit subtract 1 from that test",
         re.IGNORECASE,
     )
+    _DAEMONIC_POISONS_RE = re.compile(
+        r"in your shooting phase and the fight phase after this model has finished making its attacks "
+        r"select one enemy unit hit by one or more of those attacks until the end of the battle that enemy unit "
+        r"is poisoned at the start of each player s command phase roll one d6 for each poisoned enemy unit "
+        r"on the battlefield on a 4 that enemy unit suffers d3 mortal wounds",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
         r"at the start of the fight phase each enemy unit within engagement range of this model must take a battle shock test "
         r"subtracting 1 from that test if that enemy unit is below half strength",
@@ -20607,6 +20614,53 @@ class Unit:
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_daemonic_poisons_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model shoots/fights, select a hit enemy unit; that unit is poisoned.
+
+        Returns a list of specs with keys:
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_daemonic_poisons:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            name_norm = str(name or "").strip().lower()
+            if name_norm == "daemonic poisons":
+                source = str(name or "Daemonic Poisons").strip() or "Daemonic Poisons"
+                key = source.lower()
+                if key not in seen:
+                    seen.add(key)
+                    specs.append({"source": source})
+                continue
+            text_src = self._strip_eligibility_prefix(desc or name or "")
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._DAEMONIC_POISONS_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Daemonic Poisons").strip() or "Daemonic Poisons"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_start_fight_phase_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:

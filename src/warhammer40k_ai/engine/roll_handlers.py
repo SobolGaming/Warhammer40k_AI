@@ -3,8 +3,6 @@ from __future__ import annotations
 from typing import Optional
 
 from .dice_rolls import DiceRollState, register_roll_handler
-
-
 def _get_unit(game: object, unit_id: Optional[str]):
     if not unit_id:
         return None
@@ -46,6 +44,74 @@ def _get_unit(game: object, unit_id: Optional[str]):
     except Exception:
         pass
     return None
+
+
+def handle_daemonic_poisons_roll(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit_id = spec.get("unit_id")
+    unit = _get_unit(game, unit_id)
+    if unit is None:
+        return None
+    roll_val = int(state.total or 0)
+    ability_name = str(spec.get("ability_name", "") or "Daemonic Poisons").strip() or "Daemonic Poisons"
+    player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+    if roll_val < 4:
+        try:
+            from ..utility.event_bus import append_action
+            if player is not None:
+                append_action(player, f"{ability_name}: {getattr(unit, 'name', 'Unit')} rolled {roll_val} (no effect).")
+        except Exception:
+            pass
+        return 0
+    if not bool(getattr(game, "is_authoritative", True)):
+        return None
+    roll_spec = {
+        "dice_count": 1,
+        "faces": 3,
+        "reason": f"{ability_name}: {getattr(unit, 'name', 'Unit')} damage",
+        "roll_type": "daemonic_poisons_damage",
+        "unit_id": unit_id,
+        "handler_key": "daemonic_poisons_damage",
+        "handler_payload": {"ability_name": ability_name, "source_roll": roll_val},
+    }
+    try:
+        if hasattr(game, "request_dice_roll"):
+            game.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+    except Exception:
+        pass
+    return None
+
+
+def handle_daemonic_poisons_damage_roll(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit_id = spec.get("unit_id")
+    unit = _get_unit(game, unit_id)
+    if unit is None:
+        return None
+    damage = int(state.total or 0)
+    ability_name = str(spec.get("ability_name", "") or "Daemonic Poisons").strip() or "Daemonic Poisons"
+    if damage <= 0:
+        return 0
+    try:
+        game_map = getattr(game, "map", None)
+    except Exception:
+        game_map = None
+    try:
+        if hasattr(unit, "_apply_mortal_wounds_to_unit"):
+            unit._apply_mortal_wounds_to_unit(unit, damage, game_map=game_map)
+    except Exception:
+        pass
+    try:
+        from ..utility.event_bus import append_action
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+        if player is not None:
+            append_action(
+                player,
+                f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers {damage} mortal wounds.",
+            )
+    except Exception:
+        pass
+    return damage
 
 
 def handle_advance_roll(game: object, state: DiceRollState):
@@ -335,3 +401,5 @@ register_roll_handler("attack_wounds", handle_attack_roll)
 register_roll_handler("attack_saves", handle_attack_roll)
 register_roll_handler("attack_damage", handle_attack_roll)
 register_roll_handler("attack_hazardous", handle_attack_roll)
+register_roll_handler("daemonic_poisons", handle_daemonic_poisons_roll)
+register_roll_handler("daemonic_poisons_damage", handle_daemonic_poisons_damage_roll)

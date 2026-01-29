@@ -3890,6 +3890,142 @@ class Game:
             )
             self.request_decision(request)
 
+    def _maybe_trigger_daemonic_poisons(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        *,
+        phase: str,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        phase_key = str(phase or "").strip().lower()
+        if phase_key == "shooting":
+            if not self.is_shooting_phase():
+                return
+        elif phase_key == "fight":
+            if not self.is_fight_phase():
+                return
+        else:
+            return
+
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Daemonic Poisons requires an attacker player.")
+        if phase_key == "shooting" and attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            return model in hit_models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_daemonic_poisons_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                candidates: list[Any] = []
+                seen_targets: set[str] = set()
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    try:
+                        target_root = target_unit.get_attached_unit_root()
+                    except Exception:
+                        target_root = target_unit
+                    if not _is_enemy_unit(target_root):
+                        continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    target_id = get_entity_id(target_root)
+                    if target_id in seen_targets:
+                        continue
+                    seen_targets.add(target_id)
+                    candidates.append(target_root)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from ..rules.daemonic_poisons import apply_daemonic_poisons, DAEMONIC_POISONS_NAME
+        from ..utility.event_bus import append_action
+        from .decision_kinds import DECISION_CHOOSE_DAEMONIC_POISONS_TARGET
+
+        for model, spec, candidates in triggers:
+            ability_name = str(spec.get("source", "") or DAEMONIC_POISONS_NAME).strip() or DAEMONIC_POISONS_NAME
+            model_name = str(getattr(model, "name", "") or "")
+            if len(candidates) == 1:
+                target = candidates[0]
+                apply_daemonic_poisons(
+                    target,
+                    source_unit=attacker_unit,
+                    ability_name=ability_name,
+                    game=self,
+                    player=attacker_player,
+                )
+                if model_name:
+                    append_action(attacker_player, f"{model_name} poisoned {getattr(target, 'name', 'Unit')} ({ability_name}).")
+                else:
+                    append_action(attacker_player, f"{getattr(attacker_unit, 'name', 'Unit')} poisoned {getattr(target, 'name', 'Unit')} ({ability_name}).")
+                continue
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
+                f"{ability_name}: select a unit to poison.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                    "phase": "Shooting phase" if phase_key == "shooting" else "Fight phase",
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_daemonic_poisons(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        self._maybe_trigger_daemonic_poisons(
+            attacker_unit=attacker_unit,
+            hits_by_target=hits_by_target,
+            hit_models_by_target=hit_models_by_target,
+            phase="shooting",
+        )
+
     def _on_unit_shooting_resolved_aspect_shrine(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -5923,7 +6059,13 @@ class Game:
             return
         try:
             from .fight_phase_manager import FightPhaseManager
-            FightPhaseManager(self)._resolve_melee_attacks(unit, target_unit, weapon_declarations)
+            attack_summary = FightPhaseManager(self)._resolve_melee_attacks(unit, target_unit, weapon_declarations)
+            self._maybe_trigger_daemonic_poisons(
+                attacker_unit=unit,
+                hits_by_target=attack_summary.get("hits_by_target"),
+                hit_models_by_target=attack_summary.get("hit_models_by_target"),
+                phase="fight",
+            )
             if hasattr(self, "event_system"):
                 self.event_system.publish(
                     "fight_attacks_resolved",
@@ -7283,6 +7425,57 @@ class Game:
 
         return 9.0
 
+    def _resolve_daemonic_poisons_command_phase(self, player: Player) -> None:
+        if player is None:
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        from ..rules.daemonic_poisons import unit_is_poisoned, DAEMONIC_POISONS_NAME
+
+        poisoned_units: list[Unit] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            rid = get_entity_id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                continue
+            if not unit_is_poisoned(root):
+                continue
+            poisoned_units.append(root)
+
+        if not poisoned_units:
+            return
+
+        for unit in list(poisoned_units):
+            roll_spec = {
+                "dice_count": 1,
+                "faces": 6,
+                "reason": f"{DAEMONIC_POISONS_NAME}: {getattr(unit, 'name', 'Unit')}",
+                "roll_type": "daemonic_poisons",
+                "unit_id": get_entity_id(unit),
+                "handler_key": "daemonic_poisons",
+                "handler_payload": {"ability_name": DAEMONIC_POISONS_NAME},
+            }
+            self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+
     def start_command_phase(self) -> None:
         """Start the command phase: active player gains normal CP, then resolves any bonus CP sources."""
         # Battle-shock expires at the start of *your* next Command phase (even if the unit was later destroyed).
@@ -7302,6 +7495,9 @@ class Game:
             fn = getattr(unit, "clear_battle_shock", None)
             if callable(fn):
                 fn()
+
+        # Fulgrim: Daemonic Poisons (Command phase rolls for poisoned units).
+        self._resolve_daemonic_poisons_command_phase(current_player)
 
         # Fulgrim: Daemon Primarch of Slaanesh selection at the start of the opponent's Command phase.
         self._maybe_prompt_daemon_primarch_slaanesh(current_player)

@@ -3454,7 +3454,13 @@ class BattlePhaseHandler(BasePhaseHandler):
         attack_unit = fighting_unit
         if hasattr(fight_manager, "_as_attached_view"):
             attack_unit = fight_manager._as_attached_view(fighting_unit)
-        fight_manager._resolve_melee_attacks(attack_unit, target_unit, weapon_declarations)
+        attack_summary = fight_manager._resolve_melee_attacks(attack_unit, target_unit, weapon_declarations)
+        self.game._maybe_trigger_daemonic_poisons(
+            attacker_unit=attack_unit,
+            hits_by_target=attack_summary.get("hits_by_target"),
+            hit_models_by_target=attack_summary.get("hit_models_by_target"),
+            phase="fight",
+        )
     
     def _get_weapon_attacks(self, weapon_profile) -> int:
         """Get the number of attacks for a weapon profile."""
