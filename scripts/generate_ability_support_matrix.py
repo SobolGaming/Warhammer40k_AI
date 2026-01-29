@@ -398,6 +398,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"when doing so those models can be moved within engagement range of that enemy unit",
             r"this unit cannot make a brazen fury move while it is battle shocked or within engagement range of one or more enemy units and can only make one brazen fury move per phase",
         ),
+        "Idols of Khorne": (
+            r"at the start of your command phase you can select one of the idols of khorne abilities listed below",
+            r"until the start of your next command phase that ability is active and its effects apply to all world eaters titanic and world eaters monster units from your army",
+            r"you can only select each idols of khorne ability once per battle",
+            r"while a friendly jakhals or goremongers unit is within 6 of this model or within 9 if this model is titanic each time a model in that unit makes an attack add 1 to the hit roll and add 1 to the wound roll",
+            r"while a friendly jakhals or goremongers unit is within 6 of this model or within 9 if this model is titanic add 1 to the move characteristic of models in that unit and add 1 to advance and charge rolls made for that unit",
+            r"while a friendly jakhals or goremongers unit is within 6 of this model or within 9 if this model is titanic models in that unit have a 4 invulnerable save",
+            r"jakhals and goremongers units from your army have the battleline keyword",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -1407,6 +1416,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Rush to the Fray": (
             "Supported",
             "Goretrack Onslaught: disembarking WORLD EATERS units gain +1 to charge rolls and melee weapons gain [LANCE] until end of turn.",
+        ),
+        "Idols of Khorne": (
+            "Supported",
+            "Cult of Blood: Command-phase selection (once per idol per battle) activates one Idol aura for WORLD EATERS TITANIC/MONSTER sources; JAKHALS/GOREMONGERS within 6\" (9\" if source is TITANIC) gain either +1 hit/+1 wound, +1\" Move/+1 Advance/+1 Charge, or a 4+ invulnerable save. JAKHALS/GOREMONGERS gain BATTLELINE.",
         ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),

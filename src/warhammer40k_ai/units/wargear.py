@@ -6820,6 +6820,20 @@ class WargearProfile:
                         attack_instance["inv_save_override"] = 4
         except Exception:
             pass
+        # World Eaters: Idols of Khorne (Idol of Blessed Blood) 4++ for JAKHALS/GOREMONGERS within range.
+        t_unit = getattr(target_model, "parent_unit", None)
+        get_parent_army = getattr(t_unit, "get_parent_army", None) if t_unit is not None else None
+        army = get_parent_army() if callable(get_parent_army) and hasattr(t_unit, "parent_army") else None
+        mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        applies_fn = getattr(mgr, "idols_of_khorne_blessed_blood_applies", None) if mgr is not None else None
+        if callable(applies_fn) and t_unit is not None:
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            if applies_fn(t_unit, game_map=game_map):
+                current = attack_instance.get("inv_save_override", None)
+                if current is None or int(current) > 4:
+                    attack_instance["inv_save_override"] = 4
+                    attack_instance["inv_save_override_reason"] = "Idol of Blessed Blood (Aura)"
         # Wargear abilities (e.g. "The bearer has a 4+ invulnerable save.").
         try:
             t_unit = getattr(target_model, "parent_unit", None)

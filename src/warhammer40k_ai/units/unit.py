@@ -455,6 +455,20 @@ class Unit:
         except Exception:
             pass
 
+        if ckey == "movement":
+            if game_map is None:
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    game_map = None
+            army = self.get_parent_army()
+            mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            applies_fn = getattr(mgr, "idols_of_khorne_burning_wrath_applies", None) if mgr is not None else None
+            if callable(applies_fn) and applies_fn(self, game_map=game_map):
+                mods.append(Modifier(ModifierOp.ADD, 1, source="idols_of_khorne:burning_wrath"))
+
         if ckey == "leadership":
             if game_map is None:
                 try:

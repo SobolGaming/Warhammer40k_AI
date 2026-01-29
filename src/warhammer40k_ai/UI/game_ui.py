@@ -205,6 +205,7 @@ class GameView:
         # Blessings of Khorne dialog (lazy-create only if needed)
         self.blessings_of_khorne_dialog = None
         self.blood_tithe_dialog = None
+        self.idols_of_khorne_dialog = None
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
         self.daemon_primarch_slaanesh_dialog = None
@@ -3050,6 +3051,7 @@ class GameView:
             from ..engine.decision_kinds import (
                 DECISION_CHOOSE_BLESSINGS,
                 DECISION_CHOOSE_BLOOD_TITHE,
+                DECISION_CHOOSE_IDOL_OF_KHORNE,
                 DECISION_CHOOSE_COMBAT_DOCTRINE,
                 DECISION_CHOOSE_COMBAT_DRUGS,
                 DECISION_CHOOSE_GRAND_COVEN,
@@ -3139,6 +3141,32 @@ class GameView:
             )
             try:
                 self.dialog_manager.open(self.blood_tithe_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_IDOL_OF_KHORNE:
+            if self.idols_of_khorne_dialog is None:
+                try:
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    from .dialogs import IdolsOfKhorneDialog
+                    self.idols_of_khorne_dialog = IdolsOfKhorneDialog(sw, sh)
+                except Exception:
+                    self.idols_of_khorne_dialog = None
+            if self.idols_of_khorne_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.idols_of_khorne_dialog.hide()
+                except Exception:
+                    pass
+
+            self.idols_of_khorne_dialog.show(on_confirm=_on_confirm, decision_request=request)
+            try:
+                self.dialog_manager.open(self.idols_of_khorne_dialog, modal=True)
             except Exception:
                 pass
             return

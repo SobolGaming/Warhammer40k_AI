@@ -422,6 +422,10 @@ class Army:
         if callable(apply_fn):
             apply_fn()
         self.units.append(unit)
+        we_mgr = getattr(self, "world_eaters_detachments", None)
+        apply_fn = getattr(we_mgr, "apply_cult_of_blood_battleline_keywords", None) if we_mgr is not None else None
+        if callable(apply_fn):
+            apply_fn(unit)
         game = getattr(getattr(self, "player", None), "game", None)
         refresh_fn = getattr(game, "refresh_rule_subscribers", None) if game is not None else None
         if callable(refresh_fn):

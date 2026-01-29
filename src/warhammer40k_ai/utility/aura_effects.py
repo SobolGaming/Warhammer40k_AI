@@ -679,6 +679,27 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                         )
                     )
 
+    # World Eaters: Idols of Khorne (Idol of Infinite Rage).
+    army = getattr(attacker_unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+    if mgr is not None and hasattr(mgr, "idols_of_khorne_infinite_rage_sources_for_unit"):
+        sources = mgr.idols_of_khorne_infinite_rage_sources_for_unit(attacker_unit, game_map=game_map)
+        if sources:
+            from ..rules.world_eaters_detachments import IDOL_OF_INFINITE_RAGE
+            aura_name = str(getattr(IDOL_OF_INFINITE_RAGE, "name", "") or "Idol of Infinite Rage (Aura)")
+            aura_key = _norm_name(aura_name)
+            if not aura_key or aura_key not in applied_aura_names:
+                if aura_key:
+                    applied_aura_names.add(aura_key)
+                out = out.merge(
+                    AuraAttackModifiers(
+                        hit=1,
+                        wound=1,
+                        hit_reasons=(f"+1 to hit from {aura_name}",),
+                        wound_reasons=(f"+1 to wound from {aura_name}",),
+                    )
+                )
+
     return out
 
 
@@ -749,6 +770,21 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
             amt = int(spec["amount"])
             advance_mods.append((amt, f"Aura: +{amt} to Advance rolls from {ab_name}"))
             charge_mods.append((amt, f"Aura: +{amt} to Charge rolls from {ab_name}"))
+
+    # World Eaters: Idols of Khorne (Idol of Burning Wrath).
+    army = getattr(unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+    if mgr is not None and hasattr(mgr, "idols_of_khorne_burning_wrath_sources_for_unit"):
+        sources = mgr.idols_of_khorne_burning_wrath_sources_for_unit(unit, game_map=game_map)
+        if sources:
+            from ..rules.world_eaters_detachments import IDOL_OF_BURNING_WRATH
+            aura_name = str(getattr(IDOL_OF_BURNING_WRATH, "name", "") or "Idol of Burning Wrath (Aura)")
+            aura_key = _norm_name(aura_name)
+            if not aura_key or aura_key not in applied_aura_names:
+                if aura_key:
+                    applied_aura_names.add(aura_key)
+                advance_mods.append((1, f"Aura: +1 to Advance rolls from {aura_name}"))
+                charge_mods.append((1, f"Aura: +1 to Charge rolls from {aura_name}"))
 
     return advance_mods, charge_mods
 

@@ -6,6 +6,7 @@ from ..decision_dispatcher import register_decision_handler
 from ..decision_kinds import (
     DECISION_CHOOSE_BLESSINGS,
     DECISION_CHOOSE_BLOOD_TITHE,
+    DECISION_CHOOSE_IDOL_OF_KHORNE,
     DECISION_CHOOSE_RITUALS,
     DECISION_CHOOSE_CHIVALRIC_OATH,
     DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
@@ -259,6 +260,50 @@ def _apply_choose_blood_tithe(game: object, request: DecisionRequest, result: De
     timing = str(request.context.get("timing", "") or payload.get("timing", "") or "")
     player = _resolve_player(game, request, payload)
     return bool(mgr.activate_blood_tithe(str(ability_key), game=game, player=player, timing=timing))
+
+
+def _validate_choose_idol_of_khorne(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    ability_key = payload.get("ability_key") or payload.get("choice_key") or payload.get("key")
+    if ability_key is None:
+        return ("Idols of Khorne selection requires ability_key.",)
+    army = _resolve_army(game, request, payload)
+    if army is None or getattr(army, "world_eaters_detachments", None) is None:
+        return ("Idols of Khorne manager not found.",)
+    mgr = getattr(army, "world_eaters_detachments", None)
+    if mgr is None or not getattr(mgr, "is_cult_of_blood", lambda: False)():
+        return ("Idols of Khorne requires Cult of Blood detachment.",)
+    available = {ab.key for ab in list(mgr.get_available_idols_of_khorne() or [])}
+    if str(ability_key).strip().upper() not in available:
+        return ("Idols of Khorne ability already used or invalid.",)
+    return ()
+
+
+def _apply_choose_idol_of_khorne(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Idols of Khorne army not found.")
+    mgr = getattr(army, "world_eaters_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Idols of Khorne manager not found.")
+    ability_key = payload.get("ability_key") or payload.get("choice_key") or payload.get("key")
+    player = _resolve_player(game, request, payload)
+    applied = bool(mgr.activate_idol_of_khorne(str(ability_key), game=game, player=player))
+    if applied:
+        try:
+            label = _option_label(request, result) or str(ability_key)
+            _log_action_for_players(game, player, f"Idols of Khorne: selected {label}.")
+        except Exception:
+            pass
+    return applied
 
 
 def _validate_choose_ritual(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -2061,6 +2106,7 @@ def _apply_choose_charge_modifier_ignores(game: object, request: DecisionRequest
 
 register_decision_handler(DECISION_CHOOSE_BLESSINGS, validate=_validate_choose_blessings, apply=_apply_choose_blessings)
 register_decision_handler(DECISION_CHOOSE_BLOOD_TITHE, validate=_validate_choose_blood_tithe, apply=_apply_choose_blood_tithe)
+register_decision_handler(DECISION_CHOOSE_IDOL_OF_KHORNE, validate=_validate_choose_idol_of_khorne, apply=_apply_choose_idol_of_khorne)
 register_decision_handler(DECISION_CHOOSE_RITUALS, validate=_validate_choose_ritual, apply=_apply_choose_ritual)
 register_decision_handler(DECISION_CHOOSE_CHIVALRIC_OATH, validate=_validate_choose_chivalric, apply=_apply_choose_chivalric)
 register_decision_handler(

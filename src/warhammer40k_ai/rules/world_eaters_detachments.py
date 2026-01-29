@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .detachment_manager import DetachmentManagerBase
+from ..utility.aura_utils import unit_within_range_of_unit
 from ..utility.entity_ids import get_entity_id
 
 
@@ -48,6 +49,36 @@ BLOOD_TITHE_ABILITIES: tuple[BloodTitheAbility, ...] = (
 )
 
 
+@dataclass(frozen=True)
+class IdolOfKhorneAbility:
+    key: str
+    name: str
+    summary: str
+
+
+IDOL_OF_INFINITE_RAGE = IdolOfKhorneAbility(
+    key="INFINITE_RAGE",
+    name="Idol of Infinite Rage (Aura)",
+    summary="JAKHALS/GOREMONGERS within 6\" (9\" if source is TITANIC) gain +1 to Hit and Wound rolls.",
+)
+IDOL_OF_BURNING_WRATH = IdolOfKhorneAbility(
+    key="BURNING_WRATH",
+    name="Idol of Burning Wrath (Aura)",
+    summary="JAKHALS/GOREMONGERS within 6\" (9\" if source is TITANIC) gain +1\" Move and +1 to Advance/Charge rolls.",
+)
+IDOL_OF_BLESSED_BLOOD = IdolOfKhorneAbility(
+    key="BLESSED_BLOOD",
+    name="Idol of Blessed Blood (Aura)",
+    summary="JAKHALS/GOREMONGERS within 6\" (9\" if source is TITANIC) gain a 4+ invulnerable save.",
+)
+
+IDOLS_OF_KHORNE_ABILITIES: tuple[IdolOfKhorneAbility, ...] = (
+    IDOL_OF_INFINITE_RAGE,
+    IDOL_OF_BURNING_WRATH,
+    IDOL_OF_BLESSED_BLOOD,
+)
+
+
 class WorldEatersDetachmentManager(DetachmentManagerBase):
     faction_id = "WE"
 
@@ -56,6 +87,9 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
         self.blood_tithe_points: int = 0
         self.blood_tithe_active: set[str] = set()
         self._blood_tithe_command_phase_key: Optional[tuple] = None
+        self.idols_used: set[str] = set()
+        self.active_idol_key: Optional[str] = None
+        self._idols_command_phase_key: Optional[tuple] = None
 
     def is_berzerker_warband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -77,17 +111,20 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Possessed Slaughterband")
 
+    def is_cult_of_blood(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Cult of Blood")
+
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
             return False
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
-        try:
-            members = list(root.get_attached_unit_members() or [])
-        except Exception:
-            members = [root]
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        members = (
+            list(root.get_attached_unit_members() or [])
+            if hasattr(root, "get_attached_unit_members")
+            else [root]
+        )
         for u in members:
             if self._unit_has_keyword(u, keyword):
                 return True
@@ -98,6 +135,113 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
 
     def unit_is_world_eaters(self, unit) -> bool:
         return self._attached_unit_has_keyword(unit, "WORLD EATERS")
+
+    def _unit_is_jakhals_or_goremongers(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._attached_unit_has_keyword(unit, "JAKHALS"):
+            return True
+        return self._attached_unit_has_keyword(unit, "GOREMONGERS")
+
+    def _resolve_game_map(self, *, unit=None, game=None, game_map=None):
+        if game_map is not None:
+            return game_map
+        if game is not None:
+            return getattr(game, "map", None)
+        if unit is not None and hasattr(unit, "get_parent_army"):
+            army = unit.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None)
+            return getattr(game, "map", None) if game is not None else None
+        game = getattr(getattr(self.army, "player", None), "game", None)
+        return getattr(game, "map", None) if game is not None else None
+
+    def _unit_is_valid_idol_source(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self.army is not None:
+            if not hasattr(unit, "get_parent_army"):
+                return False
+            if unit.get_parent_army() is not self.army:
+                return False
+        if not self.unit_is_world_eaters(unit):
+            return False
+        if not (bool(getattr(unit, "is_titanic", False)) or bool(getattr(unit, "is_monster", False))):
+            return False
+        if hasattr(unit, "is_alive") and callable(unit.is_alive):
+            if not unit.is_alive():
+                return False
+        if hasattr(unit, "deployed") and not bool(getattr(unit, "deployed", True)):
+            return False
+        if str(getattr(unit, "reserve_status", "deployed")) != "deployed":
+            return False
+        return True
+
+    def _idol_range_for_source(self, source_unit) -> float:
+        return 9.0 if bool(getattr(source_unit, "is_titanic", False)) else 6.0
+
+    def _idol_sources_for_unit(self, unit, idol_key: str, *, game_map=None) -> list:
+        if unit is None:
+            return []
+        if not self.is_cult_of_blood():
+            return []
+        key = str(idol_key or "").strip().upper()
+        if not key:
+            return []
+        if str(self.active_idol_key or "").strip().upper() != key:
+            return []
+        if not self._unit_is_jakhals_or_goremongers(unit):
+            return []
+        if not hasattr(unit, "get_parent_army"):
+            return []
+        if unit.get_parent_army() is not self.army:
+            return []
+        game_map = self._resolve_game_map(unit=unit, game_map=game_map)
+        if game_map is None:
+            return []
+        sources = []
+        for source in list(getattr(game_map, "get_friendly_units", lambda _u: [])(unit) or []):
+            if not self._unit_is_valid_idol_source(source):
+                continue
+            rng = self._idol_range_for_source(source)
+            if unit_within_range_of_unit(source, unit, rng, use_attached_aggregate=True):
+                sources.append(source)
+        return sources
+
+    def idols_of_khorne_infinite_rage_sources_for_unit(self, unit, *, game_map=None) -> list:
+        return self._idol_sources_for_unit(unit, "INFINITE_RAGE", game_map=game_map)
+
+    def idols_of_khorne_burning_wrath_sources_for_unit(self, unit, *, game_map=None) -> list:
+        return self._idol_sources_for_unit(unit, "BURNING_WRATH", game_map=game_map)
+
+    def idols_of_khorne_blessed_blood_sources_for_unit(self, unit, *, game_map=None) -> list:
+        return self._idol_sources_for_unit(unit, "BLESSED_BLOOD", game_map=game_map)
+
+    def idols_of_khorne_infinite_rage_applies(self, unit, *, game_map=None) -> bool:
+        return bool(self.idols_of_khorne_infinite_rage_sources_for_unit(unit, game_map=game_map))
+
+    def idols_of_khorne_burning_wrath_applies(self, unit, *, game_map=None) -> bool:
+        return bool(self.idols_of_khorne_burning_wrath_sources_for_unit(unit, game_map=game_map))
+
+    def idols_of_khorne_blessed_blood_applies(self, unit, *, game_map=None) -> bool:
+        return bool(self.idols_of_khorne_blessed_blood_sources_for_unit(unit, game_map=game_map))
+
+    def apply_cult_of_blood_battleline_keywords(self, unit=None) -> None:
+        if not self.is_cult_of_blood():
+            return
+        if unit is None:
+            units = list(getattr(self.army, "units", []) or []) if self.army is not None else []
+        else:
+            units = [unit]
+        for u in units:
+            if u is None:
+                continue
+            root = u.get_attached_unit_root() if hasattr(u, "get_attached_unit_root") else u
+            if not self._unit_is_jakhals_or_goremongers(root):
+                continue
+            kws = list(getattr(root, "keywords", []) or [])
+            if not any(str(k).strip().lower() == "battleline" for k in kws):
+                kws.append("Battleline")
+                root.keywords = kws
 
     def goretrack_onslaught_applies(self, unit) -> bool:
         if not self.is_goretrack_onslaught():
@@ -141,6 +285,45 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
     def get_active_blood_tithe_abilities(self) -> list[BloodTitheAbility]:
         active = set(str(k or "").strip().upper() for k in (self.blood_tithe_active or set()))
         return [ab for ab in BLOOD_TITHE_ABILITIES if ab.key in active]
+
+    def get_idols_of_khorne_abilities(self) -> tuple[IdolOfKhorneAbility, ...]:
+        return IDOLS_OF_KHORNE_ABILITIES
+
+    def get_active_idol_key(self) -> Optional[str]:
+        if not self.is_cult_of_blood():
+            return None
+        key = str(self.active_idol_key or "").strip().upper()
+        return key or None
+
+    def is_idol_active(self, key: str) -> bool:
+        kk = str(key or "").strip().upper()
+        if not kk:
+            return False
+        return kk == str(self.active_idol_key or "").strip().upper()
+
+    def get_available_idols_of_khorne(self) -> list[IdolOfKhorneAbility]:
+        if not self.is_cult_of_blood():
+            return []
+        used = {str(k or "").strip().upper() for k in (self.idols_used or set()) if str(k or "").strip()}
+        return [ab for ab in IDOLS_OF_KHORNE_ABILITIES if ab.key not in used]
+
+    def activate_idol_of_khorne(self, key: str, *, game=None, player=None) -> bool:
+        if not self.is_cult_of_blood():
+            return False
+        kk = str(key or "").strip().upper()
+        if not kk:
+            return False
+        if kk not in {ab.key for ab in IDOLS_OF_KHORNE_ABILITIES}:
+            return False
+        used = {str(k or "").strip().upper() for k in (self.idols_used or set()) if str(k or "").strip()}
+        if kk in used:
+            return False
+        self.active_idol_key = kk
+        self.idols_used.add(kk)
+        return True
+
+    def clear_active_idol_of_khorne(self) -> None:
+        self.active_idol_key = None
 
     def is_blood_tithe_active(self, key: str) -> bool:
         kk = str(key or "").strip().upper()
@@ -347,22 +530,100 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             return True
         return False
 
+    def prompt_idols_of_khorne_selection(
+        self,
+        *,
+        game=None,
+        player=None,
+        timing: str = "command_phase",
+        source: str = "",
+    ) -> bool:
+        if game is None or player is None:
+            return False
+        if not self.is_cult_of_blood():
+            return False
+        options = list(self.get_available_idols_of_khorne() or [])
+        if not options:
+            return False
+        phase_key = self._command_phase_key(game, player)
+        if self._idols_command_phase_key == phase_key:
+            return False
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_IDOL_OF_KHORNE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_IDOL_OF_KHORNE:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and str(ctx.get("timing", "")) == str(timing or ""):
+                    return True
+
+        req_options = [
+            DecisionOption.create(
+                "None",
+                payload={"action": "skip", "skip": True, "army_id": army_id, "summary": "Do not select an Idol this Command phase."},
+            )
+        ]
+        for choice in options:
+            choice_key = getattr(choice, "key", None)
+            if not choice_key:
+                continue
+            label = getattr(choice, "name", None) or str(choice)
+            payload = {
+                "ability_key": str(choice_key),
+                "army_id": army_id,
+                "timing": timing,
+                "summary": getattr(choice, "summary", ""),
+            }
+            req_options.append(DecisionOption.create(label, payload=payload))
+        if not req_options:
+            return False
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_IDOL_OF_KHORNE,
+            "Select an Idol of Khorne ability.",
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "army_id": army_id,
+                "timing": timing,
+                "source": source,
+            },
+        )
+        self._idols_command_phase_key = phase_key
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+            return True
+        return False
+
     def on_command_phase_start(self, *, game=None, player=None) -> None:
         if game is None or player is None:
             return
-        if not self.is_khorne_daemonkin():
-            return
         if player is not getattr(self.army, "player", None):
             return
-        if int(self.blood_tithe_points or 0) <= 0:
-            return
-        self.prompt_blood_tithe_activation(game=game, player=player, timing="command_phase", source="Command phase")
+
+        if self.is_cult_of_blood():
+            self.clear_active_idol_of_khorne()
+            self.apply_cult_of_blood_battleline_keywords()
+            self.prompt_idols_of_khorne_selection(game=game, player=player, timing="command_phase", source="Command phase")
+
+        if self.is_khorne_daemonkin():
+            if int(self.blood_tithe_points or 0) <= 0:
+                return
+            self.prompt_blood_tithe_activation(game=game, player=player, timing="command_phase", source="Command phase")
 
     def validate_detachment_rules(self) -> list[str]:
         errors: list[str] = []
         army = self.army
         if army is None:
             return errors
+        if self.is_cult_of_blood():
+            self.apply_cult_of_blood_battleline_keywords()
         if not self.is_khorne_daemonkin():
             return errors
 
