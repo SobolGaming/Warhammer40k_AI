@@ -1086,8 +1086,14 @@ class Unit:
         re.IGNORECASE,
     )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
-        r"at the start of the fight phase each enemy unit within engagement range of this model must take a battle shock test "
-        r"subtracting 1 from that test if that enemy unit is below half strength",
+        r"at the start of the fight phase each enemy unit within engagement range of this model must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result) if that enemy unit is below half strength)?",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE = re.compile(
+        r"at the start of the fight phase each enemy unit within engagement range of one or more units from your army with "
+        r"this ability must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE = re.compile(
@@ -20689,18 +20695,82 @@ class Unit:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if not self._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized):
+            m = self._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
                 continue
+            penalty = 0
+            try:
+                penalty = int(m.group("penalty") or 0)
+            except Exception:
+                penalty = 0
             source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
             key = source.lower()
             if key in seen:
                 continue
             seen.add(key)
-            specs.append({"source": source})
+            specs.append({"source": source, "penalty": penalty})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_start_fight_phase_engagement_battleshock_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: at the start of the Fight phase, enemies in engagement range test Battle-shock.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - penalty: int (optional, applied when enemy is Below Half-strength)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_fight_phase_engagement_battleshock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                penalty = 0
+                try:
+                    penalty = int(m.group("penalty") or 0)
+                except Exception:
+                    penalty = 0
+                source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "penalty": penalty})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_end_fight_phase_engagement_mortal_wounds_specs(self, model: Optional['Model'] = None) -> List[dict]:

@@ -1045,12 +1045,30 @@ class Game:
             target_unit.special_rules = sr
             target_unit.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
 
+        def _unit_in_engagement_with_unit(source_unit, target_unit) -> bool:
+            if source_unit is None or target_unit is None:
+                return False
+            within_fn = getattr(game_map, "is_within_engagement_range", None)
+            if callable(within_fn):
+                try:
+                    return bool(within_fn(source_unit, target_unit))
+                except Exception:
+                    return False
+            for model in list(getattr(source_unit, "models", []) or []):
+                try:
+                    if _model_in_engagement_with_unit(model, target_unit):
+                        return True
+                except Exception:
+                    continue
+            return False
+
         for p in list(self.players or []):
             if p is None:
                 raise RuntimeError("Engagement Battle-shock requires players.")
             army = p.get_army()
             if army is None:
                 raise RuntimeError(f"Engagement Battle-shock requires an army for {p.name}.")
+            tested_units: set[tuple[str, str]] = set()
             for unit in list(army.units):
                 if unit is None:
                     continue
@@ -1082,6 +1100,35 @@ class Game:
                 if not enemy_roots:
                     continue
 
+                unit_specs = unit.unit_start_fight_phase_engagement_battleshock_specs() or []
+                for spec in unit_specs:
+                    source = str(spec.get("source", "") or "Fight phase Battle-shock").strip()
+                    penalty = 0
+                    try:
+                        penalty = int(spec.get("penalty", 0) or 0)
+                    except Exception:
+                        penalty = 0
+                    for enemy_root in enemy_roots:
+                        if not _unit_in_engagement_with_unit(unit, enemy_root):
+                            continue
+                        key = (str(get_entity_id(enemy_root)), source.lower())
+                        if key in tested_units:
+                            continue
+                        tested_units.add(key)
+                        mod = 0
+                        reason = ""
+                        if penalty and enemy_root.is_below_half_strength():
+                            mod = -penalty
+                            reason = "Below Half-strength"
+                        _apply_battleshock(enemy_root, modifier=mod, reason=reason)
+                        from ..utility.event_bus import append_action
+                        if p is not None:
+                            label = f"{getattr(unit, 'name', 'Unit')} {source}".strip()
+                            append_action(
+                                p,
+                                f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
+                            )
+
                 for model in list(unit.models or []):
                     if not getattr(model, "is_alive", False):
                         continue
@@ -1090,13 +1137,18 @@ class Game:
                         continue
                     for spec in specs:
                         source = str(spec.get("source", "") or "Fight phase Battle-shock").strip()
+                        penalty = 0
+                        try:
+                            penalty = int(spec.get("penalty", 0) or 0)
+                        except Exception:
+                            penalty = 0
                         for enemy_root in enemy_roots:
                             if not _model_in_engagement_with_unit(model, enemy_root):
                                 continue
                             mod = 0
                             reason = ""
-                            if enemy_root.is_below_half_strength():
-                                mod = -1
+                            if penalty and enemy_root.is_below_half_strength():
+                                mod = -penalty
                                 reason = "Below Half-strength"
                             _apply_battleshock(enemy_root, modifier=mod, reason=reason)
                             from ..utility.event_bus import append_action

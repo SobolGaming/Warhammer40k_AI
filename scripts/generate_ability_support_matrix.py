@@ -3657,11 +3657,18 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    pattern = (
+    pattern_model = (
         r"(?:at the )?start of the fight phase each enemy unit within engagement range of this model must take a battle shock test"
-        r"(?: subtracting (?P<penalty>\d+) from that test if that enemy unit is below half strength)?"
+        r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result) if that enemy unit is below half strength)?"
     )
-    m = re.fullmatch(pattern, norm)
+    pattern_unit = (
+        r"(?:at the )?start of the fight phase each enemy unit within engagement range of one or more units from your army "
+        r"with this ability must take a battle shock test"
+        r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?"
+    )
+    m = re.fullmatch(pattern_model, norm)
+    if not m:
+        m = re.fullmatch(pattern_unit, norm)
     if not m:
         return None
     if m.group("penalty"):
