@@ -25,6 +25,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_PLEDGE,
     DECISION_CHOOSE_QUARRY,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
     DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -986,6 +987,92 @@ def _apply_post_shoot_battleshock_target(game: object, request: DecisionRequest,
     return target_unit
 
 
+def _validate_post_shoot_mortal_wounds_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Post-shoot mortal wounds requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Post-shoot mortal wounds target not found.",)
+    return ()
+
+
+def _apply_post_shoot_mortal_wounds_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Post-shoot mortal wounds target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Post-shoot Mortals").strip()
+    dice_count = int(ctx.get("dice", 3) or 3)
+    threshold = int(ctx.get("threshold", 4) or 4)
+    mortal_per = int(ctx.get("mortal_per_success", 1) or 1)
+    if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
+        return target_unit
+
+    from ...utility.dice import get_roll
+
+    rolls = []
+    successes = 0
+    for _ in range(dice_count):
+        r = int(get_roll("D6") or 0)
+        rolls.append(r)
+        if r >= threshold:
+            successes += 1
+    total_mw = int(successes * mortal_per)
+
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    if total_mw > 0 and attacker_unit is not None:
+        try:
+            attacker_unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(game, "map", None))
+        except Exception:
+            pass
+        try:
+            if hasattr(target_unit, "is_alive") and not target_unit.is_alive():
+                return target_unit
+        except Exception:
+            pass
+        try:
+            target_unit.take_battle_shock_test(int(getattr(game, "turn", 0) or 0))
+        except Exception:
+            pass
+
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+    model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
+    model_name = str(getattr(model, "name", "") or "") if model is not None else ""
+    if not model_name and attacker_unit is not None:
+        model_name = str(getattr(attacker_unit, "name", "") or "")
+    if not model_name:
+        model_name = "Model"
+    try:
+        from ...utility.event_bus import append_action, append_dice
+        if player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: rolls {rolls} => {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+            append_action(
+                player,
+                f"{ability_name}: {model_name} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+    except Exception:
+        pass
+
+    return target_unit
+
+
 def _validate_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -1930,6 +2017,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     validate=_validate_post_shoot_battleshock_target,
     apply=_apply_post_shoot_battleshock_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
+    validate=_validate_post_shoot_mortal_wounds_target,
+    apply=_apply_post_shoot_mortal_wounds_target,
 )
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,

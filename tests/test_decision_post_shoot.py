@@ -9,12 +9,20 @@ class _UnitStub:
         self.special_rules = {}
         self._army = army
         self.battleshock_turns = []
+        self.mortal_wounds_applied = []
 
     def get_parent_army(self):
         return self._army
 
     def take_battle_shock_test(self, turn: int):
         self.battleshock_turns.append(int(turn))
+
+    def _apply_mortal_wounds_to_unit(self, target_unit, mortal_wound_amount: int, game_map=None):
+        self.mortal_wounds_applied.append(int(mortal_wound_amount))
+        return 0
+
+    def is_alive(self):
+        return True
 
     def get_attached_unit_root(self):
         return self
@@ -134,3 +142,44 @@ class TestPostShootDecisions(unittest.TestCase):
         self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_owner"), player.id)
         self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_turn"), 4)
         self.assertEqual(target.special_rules.get("post_shoot_leadership_debuff_value"), -1)
+
+    def test_post_shoot_mortal_wounds_battleshock_applies(self):
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+        import warhammer40k_ai.utility.dice as dice_mod
+
+        rolls = iter([4, 2, 6])
+        orig_roll = dice_mod.get_roll
+        dice_mod.get_roll = lambda _expr: next(rolls)
+        try:
+            player = SimpleNamespace(id="P1")
+            army = SimpleNamespace(player=player)
+            attacker = _UnitStub("ATK", "Attacker", army=army)
+            target = _UnitStub("TGT", "Target", army=SimpleNamespace(player=SimpleNamespace(id="P2")))
+            model = _ModelStub("M1", "Shooter")
+            game = _GameStub(units=[attacker, target], models=[model], turn=5)
+
+            option = DecisionOption.create("Target", payload={"unit_id": target._id})
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
+                "Select post-shoot mortal wounds target.",
+                player_id=player.id,
+                options=[option],
+                context={
+                    "attacker_unit_id": attacker._id,
+                    "model_id": model._id,
+                    "ability_name": "Punishing Volley",
+                    "dice": 3,
+                    "threshold": 4,
+                    "mortal_per_success": 1,
+                },
+            )
+            result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+            apply_result = dispatch_decision(game, req, result)
+
+            self.assertTrue(apply_result.ok)
+            self.assertEqual(attacker.mortal_wounds_applied, [2])
+            self.assertEqual(target.battleshock_turns, [5])
+        finally:
+            dice_mod.get_roll = orig_roll

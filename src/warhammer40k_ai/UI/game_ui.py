@@ -3062,6 +3062,7 @@ class GameView:
                 DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
                 DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
                 DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
                 DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -3585,6 +3586,7 @@ class GameView:
 
         if decision_type in (
             DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+            DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
             DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
             DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
             DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -3623,6 +3625,11 @@ class GameView:
             if decision_type == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET:
                 title = ability_name or "Post-shoot Battle-shock"
                 subtitle = f"{model_name or 'Model'} shot. Select a unit to take a Battle-shock test."
+            elif decision_type == DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET:
+                title = ability_name or "Post-shoot Mortals"
+                subtitle = (
+                    f"{model_name or 'Model'} shot. Select a unit to suffer mortal wounds (3D6 on 4+)."
+                )
             elif decision_type == DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET:
                 title = ability_name or "Leadership Debuff"
                 subtitle = (

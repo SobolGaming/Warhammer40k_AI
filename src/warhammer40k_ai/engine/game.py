@@ -3915,6 +3915,94 @@ class Game:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_mortal_wounds_battleshock(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot mortal wounds requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_mortal_wounds_battleshock_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    is_infantry_fn = getattr(target_unit, "is_infantry", None)
+                    if callable(is_infantry_fn):
+                        is_infantry = bool(is_infantry_fn())
+                    else:
+                        is_infantry = bool(getattr(target_unit, "is_infantry", False))
+                    if not is_infantry:
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot Mortals").strip() or "Post-shoot Mortals"
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
+                f"{ability_name}: select a unit to suffer mortal wounds.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                    "dice": int(spec.get("dice", 3) or 3),
+                    "threshold": int(spec.get("threshold", 4) or 4),
+                    "mortal_per_success": int(spec.get("mortal_per_success", 1) or 1),
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_post_shoot_suppression(
         self,
         attacker_unit=None,

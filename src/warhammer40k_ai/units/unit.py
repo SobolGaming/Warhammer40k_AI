@@ -1082,6 +1082,12 @@ class Unit:
         r"(?:that was )?hit by one or more of those attacks that unit must take a battle shock test",
         re.IGNORECASE,
     )
+    _POST_SHOOT_INFANTRY_MW_BATTLESHOCK_RE = re.compile(
+        r"in your shooting phase after this model s unit has shot select one enemy infantry unit hit by one or more of those attacks "
+        r"and roll (?P<dice>three|3) d6 for each 4 that enemy unit suffers 1 mortal wounds? "
+        r"if an enemy unit suffers one or more mortal wounds as a result of this ability it must take a battle shock test",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_SUPPRESSION_RE = re.compile(
         r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?until the start of your next turn that enemy unit is suppressed "
@@ -20561,6 +20567,63 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"infantry_only": infantry_only, "source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_mortal_wounds_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model's unit has shot, select a hit enemy INFANTRY unit;
+        roll 3D6 for mortal wounds, and if any are inflicted, that unit takes a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - infantry_only: bool
+            - dice: int
+            - threshold: int
+            - mortal_per_success: int
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_mortal_wounds_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_INFANTRY_MW_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            dice_raw = str(m.group("dice") or "3").strip().lower()
+            dice = 3 if dice_raw in ("three", "3") else 3
+            threshold = 4
+            source = str(name or "Post-shoot Mortals").strip() or "Post-shoot Mortals"
+            key = (source.lower(), int(dice), int(threshold))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "infantry_only": True,
+                    "dice": int(dice),
+                    "threshold": int(threshold),
+                    "mortal_per_success": 1,
+                    "source": source,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

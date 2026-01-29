@@ -58,6 +58,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_disembarked", "_on_unit_disembarked_setup_reactive_shoot_or_charge"),
                 ("unit_move_ended", "_on_unit_move_ended_loping_speed"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_battleshock"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_mortal_wounds_battleshock"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_suppression"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_leadership_debuff"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_daemonic_poisons"),

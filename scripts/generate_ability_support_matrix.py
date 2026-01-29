@@ -1791,6 +1791,7 @@ def _classify_ability_base(
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
+    post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
@@ -1936,6 +1937,8 @@ def _classify_ability_base(
         return command_phase_regain_wound_support
     if post_shoot_battleshock_support:
         return post_shoot_battleshock_support
+    if post_shoot_infantry_mortal_support:
+        return post_shoot_infantry_mortal_support
     if post_shoot_suppression_support:
         return post_shoot_suppression_support
     if post_shoot_leadership_debuff_support:
@@ -3794,6 +3797,25 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
     if m.group("infantry"):
         return ("Supported", "After shooting, pick a hit enemy INFANTRY unit to take a Battle-shock test.")
     return ("Supported", "After shooting, pick a hit enemy unit to take a Battle-shock test.")
+
+
+def _post_shoot_infantry_mortal_wounds_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this models unit has shot select one enemy infantry unit hit by one or more of those attacks "
+        r"and roll (?:three|3) d6 for each 4 that enemy unit suffers 1 mortal wounds? "
+        r"if an enemy unit suffers one or more mortal wounds as a result of this ability it must take a battle shock test"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After shooting: pick a hit enemy INFANTRY unit; roll 3D6 (4+ -> 1 mortal wound). If any mortals are inflicted, it takes a Battle-shock test.",
+    )
 
 
 def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str]]:
