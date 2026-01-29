@@ -387,6 +387,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"if you control an objective marker at the end of your command phase and a death guard unit from your army excluding battle shocked units is within range of that objective marker that objective marker remains under your control until your opponents level of control over that objective marker is greater than yours at the end of a phase",
             r"in addition until you lose control of that objective marker it has the nurgles gift ability as if it were a death guard model from your army",
         ),
+        "Rush to the Fray": (
+            r"each time a world eaters unit from your army disembarks from a transport until the end of the turn add \d+ to charge rolls made for that unit and that units melee weapons have the lance ability",
+        ),
     }
     return {_norm(name): tuple(pats) for name, pats in raw.items()}
 
@@ -1389,6 +1392,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Sensational Performance": ("Supported", "Court of the Phoenician: optional +1 S/AP on charge."),
         "Master of the Pageant": ("Supported", "Court of the Phoenician: once per round -1 CP stratagem cost."),
         "Relentless Rage": ("Supported", "Berzerker Warband: on charge, melee weapons gain +1A/+2S until end of turn."),
+        "Rush to the Fray": (
+            "Supported",
+            "Goretrack Onslaught: disembarking WORLD EATERS units gain +1 to charge rolls and melee weapons gain [LANCE] until end of turn.",
+        ),
         "Get Stuck In": ("Supported", "War Horde: ORKS melee weapons gain Sustained Hits 1."),
         "Combat Doctrines": ("Supported", "Gladius Task Force: select each doctrine once per battle to grant move/charge eligibility."),
         "Mastered Doctrines": (
