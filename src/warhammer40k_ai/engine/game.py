@@ -4170,6 +4170,30 @@ class Game:
                 roll_summary = f"rolls={rolls}"
                 if d3_rolls:
                     roll_summary += f", d3={d3_rolls}"
+        elif kind == "per_remaining_wounds_4plus_1_max6":
+            models = list(unit.get_attached_unit_models() or [])
+            alive = [m for m in models if getattr(m, "is_alive", False)]
+            model = None
+            if len(alive) == 1:
+                model = alive[0]
+            else:
+                try:
+                    model = unit._get_enhancement_bearer_model()
+                except Exception:
+                    model = None
+                if model not in alive:
+                    model = alive[0] if alive else None
+            remaining = int(getattr(model, "wounds", 0) or 0) if model is not None else 0
+            rolls = []
+            for _ in range(max(0, remaining)):
+                r = int(get_roll("D6") or 0)
+                rolls.append(r)
+                if r >= 4:
+                    total_mw += 1
+            if total_mw > 6:
+                total_mw = 6
+            if rolls:
+                roll_summary = f"rolls={rolls}, remaining_wounds={remaining}"
         elif kind == "table_d6_2_3_4_5_6":
             roll = int(get_roll("D6") or 0)
             if 2 <= roll <= 3:

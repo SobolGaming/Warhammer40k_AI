@@ -2972,6 +2972,11 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         r"each time (?:this models unit|this unit) ends a charge move select one enemy unit within engagement range of (?:this unit|this model) "
         r"(?:then |and (?:then )?)?roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? on a 6 that enemy unit suffers d3 3 mortal wounds?"
     )
+    remaining_wounds = (
+        r"each time this model ends a charge move select one enemy unit within engagement range of it "
+        r"(?:then |and (?:then )?)?roll one d6 for each of this models remaining wounds for each 4 that enemy unit suffers 1 mortal wounds?"
+        r"(?: to a maximum of 6 mortal wounds?)?"
+    )
     if re.fullmatch(per_model, norm):
         return (
             "Supported",
@@ -2981,6 +2986,11 @@ def _charge_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, s
         return (
             "Supported",
             "Charge end: pick an engaged enemy; D6 table for mortal wounds (2-3=1, 4-5=D3, 6=D3+3).",
+        )
+    if re.fullmatch(remaining_wounds, norm):
+        return (
+            "Supported",
+            "Charge end: pick an engaged enemy; D6 per remaining wound, each 4+ inflicts 1 mortal wound (max 6).",
         )
     return None
 

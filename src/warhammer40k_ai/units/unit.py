@@ -1158,6 +1158,14 @@ class Unit:
         r"for\s+each\s+4\+.*?d3\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
+    _CHARGE_END_MORTAL_REMAINING_WOUNDS_RE = re.compile(
+        r"each\s+time\s+this\s+model\s+ends?\s+a\s+charge\s+move.*?"
+        r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range\s+of\s+it.*?"
+        r"roll\s+one\s+d6\s+for\s+each\s+of\s+this\s+model'?s\s+remaining\s+wounds.*?"
+        r"for\s+each\s+4\+.*?suffers?\s+1\s+mortal\s+wounds?"
+        r"(?:.*?maximum\s+of\s+6\s+mortal\s+wounds?)?",
+        re.IGNORECASE,
+    )
     _CHARGE_MOVE_DEVASTATING_WOUNDS_RE = re.compile(
         r"each\s+time\s+this\s+(?:model|unit|model'?s\s+unit)\s+makes?\s+a\s+charge\s+move.*?"
         r"until\s+the\s+end\s+of\s+(?:the\s+)?turn.*?"
@@ -2087,6 +2095,8 @@ class Unit:
                 kind = None
                 if self._CHARGE_END_MORTAL_PER_MODEL_RE.search(text):
                     kind = "per_model_4plus_d3"
+                elif self._CHARGE_END_MORTAL_REMAINING_WOUNDS_RE.search(text):
+                    kind = "per_remaining_wounds_4plus_1_max6"
                 elif self._CHARGE_END_MORTAL_TABLE_RE.search(text):
                     kind = "table_d6_2_3_4_5_6"
                 if not kind:
