@@ -1496,6 +1496,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("CD", "Daemonic Lord"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEGIONES DAEMONICA INFANTRY units."),
         ("CD", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit (melee) aura within 6\" for KHORNE LEGIONES DAEMONICA."),
+        ("CD", "Split"): (
+            "Supported",
+            "Queued after attack resolution: 4+ spawns 2 Blue for destroyed Pink, or 1 Brimstone for destroyed Blue; placement handled.",
+        ),
+        ("CD", "Sullen Malevolence (Aura)"): (
+            "Supported",
+            "Enemy units within 6\" suffer Leadership +1 while the unit contains Blue Horrors and Blue abilities are active.",
+        ),
+        ("CD", "Exploding Horrors"): (
+            "Supported",
+            "Fight selection: choose engaged enemy and Brimstones; each 4+ destroys a Brimstone and deals 1 mortal.",
+        ),
+        ("CD", "HORRORS ARE PINK. HORRORS ARE BLUE. WHEREONCE THERE WAS ONE, NOW THERE ARE TWO."): (
+            "Supported",
+            "When no Pink Horrors remain, unit swaps to Blue Horrors datasheet; Blue abilities are suppressed while Pink models remain.",
+        ),
         ("CD", "Shadow Form"): ("Supported", "Shadow Form selection each battle round with active effect tracking."),
         ("CD", "Wreathed in Shadows (Aura, Psychic)"): ("Supported", "18\" ranged targeting restriction while within 6\" of active Shadow Form source."),
         ("CD", "Pall of Despair (Aura, Psychic)"): ("Supported", "Forces Battle-shock tests for Below Starting Strength units within 9\" in opponent Command phase; heals on failed tests."),
@@ -1556,6 +1572,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TS", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("TS", "Servile Pawns"): ("Supported", "Conditional Lone Operative within 3\" of friendly THOUSAND SONS INFANTRY units."),
+        ("TS", "Split"): (
+            "Supported",
+            "Queued after attack resolution: 4+ spawns 2 Blue for destroyed Pink, or 1 Brimstone for destroyed Blue; placement handled.",
+        ),
+        ("TS", "Sullen Malevolence (Aura)"): (
+            "Supported",
+            "Enemy units within 6\" suffer Leadership +1 while the unit contains Blue Horrors and Blue abilities are active.",
+        ),
+        ("TS", "Exploding Horrors"): (
+            "Supported",
+            "Fight selection: choose engaged enemy and Brimstones; each 4+ destroys a Brimstone and deals 1 mortal.",
+        ),
+        ("TS", "HORRORS ARE PINK. HORRORS ARE BLUE. WHEREONCE THERE WAS ONE, NOW THERE ARE TWO."): (
+            "Supported",
+            "When no Pink Horrors remain, unit swaps to Blue Horrors datasheet; Blue abilities are suppressed while Pink models remain.",
+        ),
         ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
         ("WE", "Reborn in Blood"): ("Supported", "Revive + reserves placement; restricted to the next Movement phase only."),
         ("WE", "Wrathful Presence"): ("Supported", "Battle-round selection sets one of the three Wrathful Presence abilities."),
