@@ -643,6 +643,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "psychic assassin": "When targeting a unit with the PSYKER keyword, this weapon's Attacks characteristic becomes 6.",
         "conversion": "Unmodified successful hits of 4+ become critical hits when the target is beyond the Conversion distance.",
         "linked fire": "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied.",
+        "reverberating summons": "Weapon ability: on destroying a model, return 1 Plaguebearer model to a friendly unit within 12\".",
         # Ork-specific keywords
         "bubblechukka": "Random profile selection via D6 roll (1-2: big bubble, 3-4: wobbly bubble, 5-6: dense bubble).",
         "dead choppy": "+1 Attacks for each additional dread klaw equipped.",
