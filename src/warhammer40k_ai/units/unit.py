@@ -378,6 +378,22 @@ class Unit:
             except Exception:
                 pass
 
+        if ckey == "toughness":
+            if game_map is None:
+                try:
+                    army = self.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None)
+                    game_map = getattr(game, "map", None) if game is not None else None
+                except Exception:
+                    game_map = None
+            try:
+                from ..utility.aura_effects import get_aura_toughness_bonus
+                bonus, _reasons = get_aura_toughness_bonus(self, game_map=game_map)
+                if bonus:
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source="aura:toughness_add"))
+            except Exception:
+                pass
+
         if ckey == "leadership":
             if game_map is None:
                 try:

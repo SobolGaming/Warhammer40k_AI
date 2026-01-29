@@ -1700,6 +1700,9 @@ def _classify_ability_base(
     unit_contains_oc_support = _unit_contains_oc_support(description)
     aura_oc_support = _aura_objective_control_support(description)
     aura_adv_charge_support = _aura_advance_charge_roll_support(description)
+    aura_hit_support = _aura_hit_bonus_support(description)
+    aura_strength_support = _aura_strength_support(description)
+    aura_toughness_support = _aura_toughness_support(description)
     aura_melee_ap_support = _aura_melee_ap_support(description)
     fall_back_shoot_support = _fall_back_shoot_support(description)
     advance_no_roll_support = _advance_no_roll_fixed_distance_support(description)
@@ -1801,6 +1804,12 @@ def _classify_ability_base(
         return aura_oc_support
     if aura_adv_charge_support:
         return aura_adv_charge_support
+    if aura_hit_support:
+        return aura_hit_support
+    if aura_strength_support:
+        return aura_strength_support
+    if aura_toughness_support:
+        return aura_toughness_support
     if aura_melee_ap_support:
         return aura_melee_ap_support
     if fall_back_shoot_support:
@@ -2372,6 +2381,86 @@ def _aura_advance_charge_roll_support(description: str) -> Optional[Tuple[str, s
     return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} to Advance and Charge rolls.")
 
 
+def _aura_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"each time a model in that unit makes a (?P<atype>melee|ranged) attack add (?P<amt>\d+) to the hit roll",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = m.group("kw").strip()
+    rng = m.group("rng")
+    amt = m.group("amt")
+    atype = m.group("atype").strip().lower()
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} to {atype} Hit rolls.")
+
+
+def _aura_strength_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"add (?P<amt>\d+) to the strength characteristic of (?:(?P<atype>melee|ranged) )?weapons equipped by models in that unit",
+        norm,
+    )
+    if m:
+        faction_kw = m.group("kw").strip()
+        rng = m.group("rng")
+        amt = m.group("amt")
+        atype = (m.group("atype") or "any").strip().lower()
+        return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} Strength ({atype}).")
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"each time a model in that unit makes a (?P<atype>melee|ranged) attack add (?P<amt>\d+) to the strength characteristic of that attack",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = m.group("kw").strip()
+    rng = m.group("rng")
+    amt = m.group("amt")
+    atype = m.group("atype").strip().lower()
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain +{amt} Strength for {atype} attacks.")
+
+
+def _aura_toughness_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"add (?P<amt>\d+) to the toughness characteristic of models in that unit",
+        norm,
+    )
+    if m:
+        faction_kw = m.group("kw").strip()
+        rng = m.group("rng")
+        amt = m.group("amt")
+        return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Toughness +{amt}.")
+    m = re.fullmatch(
+        r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
+        r"improve the toughness characteristic of models in that unit by (?P<amt>\d+)",
+        norm,
+    )
+    if not m:
+        return None
+    faction_kw = m.group("kw").strip()
+    rng = m.group("rng")
+    amt = m.group("amt")
+    return ("Supported", f"Aura: friendly {faction_kw} within {rng}\" gain Toughness +{amt}.")
+
+
 def _aura_melee_ap_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -2381,7 +2470,7 @@ def _aura_melee_ap_support(description: str) -> Optional[Tuple[str, str]]:
     m = re.fullmatch(
         r"while a friendly (?P<kw>.+) unit is within (?P<rng>\d+) of this (?:model|unit|bearer) "
         r"(?:if that unit made a charge move this turn )?"
-        r"improve the armou?r penetration characteristic of melee weapons equipped by models in that unit by (?P<amt>\d+)",
+        r"improve the armou?r penetration(?: characteristic)? of melee weapons (?:equipped by models )?in that unit by (?P<amt>\d+)",
         norm,
     )
     if not m:
