@@ -7,6 +7,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_BLESSINGS,
     DECISION_CHOOSE_BLOOD_TITHE,
     DECISION_CHOOSE_IDOL_OF_KHORNE,
+    DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
+    DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
     DECISION_CHOOSE_RITUALS,
     DECISION_CHOOSE_CHIVALRIC_OATH,
     DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
@@ -227,6 +229,16 @@ def _apply_choose_blessings(game: object, request: DecisionRequest, result: Deci
         _log_action_for_players(game, player, f"{prefix}{names_text} (dice: {dice_text})")
     except Exception:
         pass
+    if getattr(ctx, "timing", None) == BlessingsTiming.START_OF_BATTLE_ROUND:
+        det_mgr = getattr(army, "world_eaters_detachments", None)
+        if det_mgr is not None and getattr(det_mgr, "is_vessels_of_wrath", lambda: False)():
+            br = int(getattr(ctx, "battle_round", 0) or 0)
+            det_mgr.prompt_wrath_of_khorne_model_selection(
+                game=game,
+                player=getattr(army, "player", None),
+                battle_round=br,
+                source="Blessings of Khorne",
+            )
     return applied
 
 
@@ -303,6 +315,109 @@ def _apply_choose_idol_of_khorne(game: object, request: DecisionRequest, result:
             _log_action_for_players(game, player, f"Idols of Khorne: selected {label}.")
         except Exception:
             pass
+    return applied
+
+
+def _validate_select_vessel_of_wrath_models(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    model_ids = result.payload.get("model_ids")
+    if not isinstance(model_ids, list) or not model_ids:
+        return ("Wrath of Khorne requires model_ids.",)
+    ctx = getattr(request, "context", {}) or {}
+    max_models = ctx.get("max_models")
+    if max_models is not None and len(model_ids) > int(max_models):
+        return ("Too many models selected for Wrath of Khorne.",)
+    allowed_ids = {str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None}
+    seen: set[str] = set()
+    for mid in list(model_ids or []):
+        mid = str(mid or "")
+        if not mid:
+            return ("Wrath of Khorne requires valid model_ids.",)
+        if mid in seen:
+            return ("Wrath of Khorne model_ids must be unique.",)
+        seen.add(mid)
+        if allowed_ids and mid not in allowed_ids:
+            return ("Wrath of Khorne model is not eligible.",)
+        if resolve_model(game, mid) is None:
+            return ("Wrath of Khorne model not found.",)
+    return ()
+
+
+def _apply_select_vessel_of_wrath_models(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Wrath of Khorne army not found.")
+    mgr = getattr(army, "world_eaters_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Wrath of Khorne manager not found.")
+    ctx = getattr(request, "context", {}) or {}
+    battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+    model_ids = list(result.payload.get("model_ids") or [])
+    applied = bool(mgr.apply_wrath_of_khorne_models(model_ids, battle_round=battle_round))
+    if applied:
+        mgr.prompt_wrath_of_khorne_blessing_selection(
+            game=game,
+            player=getattr(army, "player", None),
+            battle_round=battle_round,
+            source="Wrath of Khorne",
+        )
+        player = getattr(army, "player", None)
+        _log_action_for_players(game, player, f"Wrath of Khorne: selected {len(model_ids)} model(s).")
+    return applied
+
+
+def _validate_choose_vessel_of_wrath_blessing(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    blessing_key = payload.get("blessing_key") or payload.get("key")
+    if blessing_key is None:
+        return ("Wrath of Khorne blessing selection requires blessing_key.",)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        return ("Wrath of Khorne army not found.",)
+    mgr = getattr(army, "world_eaters_detachments", None)
+    if mgr is None or not getattr(mgr, "is_vessels_of_wrath", lambda: False)():
+        return ("Wrath of Khorne requires Vessels of Wrath detachment.",)
+    bless_mgr = getattr(army, "blessings_of_khorne", None)
+    if bless_mgr is None:
+        return ("Blessings of Khorne manager not found.",)
+    key = str(blessing_key).strip().upper()
+    if key not in getattr(bless_mgr, "definitions", {}):
+        return ("Invalid Blessing of Khorne selection.",)
+    if key in set(getattr(bless_mgr, "active_blessing_keys", set()) or set()):
+        return ("Blessing already active for the army.",)
+    ctx = getattr(request, "context", {}) or {}
+    battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+    if not getattr(mgr, "has_active_wrath_of_khorne_models", lambda **_k: False)(battle_round=battle_round):
+        return ("No Vessels of Wrath selected this battle round.",)
+    return ()
+
+
+def _apply_choose_vessel_of_wrath_blessing(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    army = _resolve_army(game, request, payload)
+    if army is None:
+        raise RuntimeError("Wrath of Khorne army not found.")
+    mgr = getattr(army, "world_eaters_detachments", None)
+    if mgr is None:
+        raise RuntimeError("Wrath of Khorne manager not found.")
+    ctx = getattr(request, "context", {}) or {}
+    battle_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+    blessing_key = payload.get("blessing_key") or payload.get("key")
+    applied = bool(mgr.apply_wrath_of_khorne_blessing(str(blessing_key), battle_round=battle_round))
+    if applied:
+        player = getattr(army, "player", None)
+        label = _option_label(request, result) or str(blessing_key)
+        _log_action_for_players(game, player, f"Wrath of Khorne: bonus blessing {label}.")
     return applied
 
 
@@ -2107,6 +2222,16 @@ def _apply_choose_charge_modifier_ignores(game: object, request: DecisionRequest
 register_decision_handler(DECISION_CHOOSE_BLESSINGS, validate=_validate_choose_blessings, apply=_apply_choose_blessings)
 register_decision_handler(DECISION_CHOOSE_BLOOD_TITHE, validate=_validate_choose_blood_tithe, apply=_apply_choose_blood_tithe)
 register_decision_handler(DECISION_CHOOSE_IDOL_OF_KHORNE, validate=_validate_choose_idol_of_khorne, apply=_apply_choose_idol_of_khorne)
+register_decision_handler(
+    DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
+    validate=_validate_select_vessel_of_wrath_models,
+    apply=_apply_select_vessel_of_wrath_models,
+)
+register_decision_handler(
+    DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
+    validate=_validate_choose_vessel_of_wrath_blessing,
+    apply=_apply_choose_vessel_of_wrath_blessing,
+)
 register_decision_handler(DECISION_CHOOSE_RITUALS, validate=_validate_choose_ritual, apply=_apply_choose_ritual)
 register_decision_handler(DECISION_CHOOSE_CHIVALRIC_OATH, validate=_validate_choose_chivalric, apply=_apply_choose_chivalric)
 register_decision_handler(

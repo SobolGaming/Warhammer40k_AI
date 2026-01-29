@@ -390,6 +390,14 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Rush to the Fray": (
             r"each time a world eaters unit from your army disembarks from a transport until the end of the turn add \d+ to charge rolls made for that unit and that units melee weapons have the lance ability",
         ),
+        "Wrath of Khorne": (
+            r"at the start of the battle round after activating blessings of khorne you can select one or more models from your army from those listed below including models that are embarked within transports",
+            r"you can select the same type of model multiple times",
+            r"the maximum number of models you can select depends on the battle size as follows",
+            r"until the end of the battle round each of those models has the vessel of wrath keyword we recommend marking such models with a suitable token",
+            r"then select one blessing of khorne that is not currently active for your army",
+            r"until the end of the battle round that blessing of khorne is active for vessel of wrath units from your army in addition to any others that are active for your army",
+        ),
         "Brazen Fury": (
             r"world eaters possessed units from your army have the following ability",
             r"in your opponents shooting phase each time an enemy unit has shot if any models from this unit were destroyed as a result of those attacks this unit can make a brazen fury move",
@@ -1416,6 +1424,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Rush to the Fray": (
             "Supported",
             "Goretrack Onslaught: disembarking WORLD EATERS units gain +1 to charge rolls and melee weapons gain [LANCE] until end of turn.",
+        ),
+        "Wrath of Khorne": (
+            "Supported",
+            "Vessels of Wrath: after Blessings of Khorne, select up to battle-size cap eligible models (including embarked) to gain VESSEL OF WRATH; pick one non-active Blessing to apply to VESSEL OF WRATH units for the battle round.",
         ),
         "Idols of Khorne": (
             "Supported",

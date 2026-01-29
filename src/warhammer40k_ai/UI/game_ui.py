@@ -206,6 +206,8 @@ class GameView:
         self.blessings_of_khorne_dialog = None
         self.blood_tithe_dialog = None
         self.idols_of_khorne_dialog = None
+        self.vessels_of_wrath_models_dialog = None
+        self.wrath_of_khorne_blessing_dialog = None
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
         self.daemon_primarch_slaanesh_dialog = None
@@ -3052,6 +3054,8 @@ class GameView:
                 DECISION_CHOOSE_BLESSINGS,
                 DECISION_CHOOSE_BLOOD_TITHE,
                 DECISION_CHOOSE_IDOL_OF_KHORNE,
+                DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
+                DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
                 DECISION_CHOOSE_COMBAT_DOCTRINE,
                 DECISION_CHOOSE_COMBAT_DRUGS,
                 DECISION_CHOOSE_GRAND_COVEN,
@@ -3167,6 +3171,81 @@ class GameView:
             self.idols_of_khorne_dialog.show(on_confirm=_on_confirm, decision_request=request)
             try:
                 self.dialog_manager.open(self.idols_of_khorne_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_SELECT_VESSEL_OF_WRATH_MODELS:
+            if self.vessels_of_wrath_models_dialog is None:
+                try:
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    from .dialogs import VesselsOfWrathModelsDialog
+                    self.vessels_of_wrath_models_dialog = VesselsOfWrathModelsDialog(sw, sh)
+                except Exception:
+                    self.vessels_of_wrath_models_dialog = None
+            if self.vessels_of_wrath_models_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            allowed_ids = [str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None]
+            max_models = int(ctx.get("max_models", 0) or 0)
+            registry = getattr(self.game, "entity_registry", None)
+            models = []
+            for mid in allowed_ids:
+                model = registry.get(str(mid), kind="model") if registry is not None else None
+                if model is not None:
+                    models.append(model)
+            if not models:
+                return
+
+            def _on_confirm(option_id: str, payload: dict):
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload=payload or {},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    self.vessels_of_wrath_models_dialog.hide()
+                except Exception:
+                    pass
+
+            self.vessels_of_wrath_models_dialog.show(
+                models=models,
+                max_models=max_models,
+                on_confirm=_on_confirm,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.vessels_of_wrath_models_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING:
+            if self.wrath_of_khorne_blessing_dialog is None:
+                try:
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    from .dialogs import WrathOfKhorneBlessingDialog
+                    self.wrath_of_khorne_blessing_dialog = WrathOfKhorneBlessingDialog(sw, sh)
+                except Exception:
+                    self.wrath_of_khorne_blessing_dialog = None
+            if self.wrath_of_khorne_blessing_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.wrath_of_khorne_blessing_dialog.hide()
+                except Exception:
+                    pass
+
+            self.wrath_of_khorne_blessing_dialog.show(on_confirm=_on_confirm, decision_request=request)
+            try:
+                self.dialog_manager.open(self.wrath_of_khorne_blessing_dialog, modal=True)
             except Exception:
                 pass
             return

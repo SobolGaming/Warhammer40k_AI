@@ -1998,6 +1998,9 @@ class Army:
                             req = None
                         if req is not None and hasattr(game, "request_decision"):
                             game.request_decision(req)
+        mgr = getattr(self, "world_eaters_detachments", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "battle_focus", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)

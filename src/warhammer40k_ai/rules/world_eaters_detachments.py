@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from typing import Iterable, Optional
+import re
 
 from .detachment_manager import DetachmentManagerBase
 from ..utility.aura_utils import unit_within_range_of_unit
@@ -90,6 +91,11 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
         self.idols_used: set[str] = set()
         self.active_idol_key: Optional[str] = None
         self._idols_command_phase_key: Optional[tuple] = None
+        self._vessel_of_wrath_model_ids: set[str] = set()
+        self._vessel_of_wrath_round: Optional[int] = None
+        self._wrath_of_khorne_prompt_round: Optional[int] = None
+        self._wrath_of_khorne_blessing_round: Optional[int] = None
+        self._wrath_of_khorne_blessing_key: Optional[str] = None
 
     def is_berzerker_warband(self) -> bool:
         if not self._army_faction_matches(self.faction_id):
@@ -116,6 +122,11 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Cult of Blood")
 
+    def is_vessels_of_wrath(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Vessels of Wrath")
+
     def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
             return False
@@ -135,6 +146,296 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
 
     def unit_is_world_eaters(self, unit) -> bool:
         return self._attached_unit_has_keyword(unit, "WORLD EATERS")
+
+    @staticmethod
+    def _norm_name(text: str) -> str:
+        s = str(text or "").strip().lower()
+        s = s.replace("\u2019", "'")
+        s = re.sub(r"<[^>]+>", " ", s)
+        s = re.sub(r"[^a-z0-9]+", " ", s)
+        return re.sub(r"\s+", " ", s).strip()
+
+    def _model_is_wrath_of_khorne_candidate(self, model) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        if not self.unit_is_world_eaters(unit):
+            return False
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            is_character = bool(has_any_keyword("CHARACTER"))
+            is_epic = bool(has_any_keyword("EPIC HERO"))
+        else:
+            kws = [str(k).lower() for k in (getattr(unit, "keywords", []) or [])]
+            is_character = "character" in kws
+            is_epic = "epic hero" in kws
+        if is_character and not is_epic:
+            return True
+        name = self._norm_name(getattr(model, "name", "") or "")
+        if not name:
+            return False
+        if name in {
+            "eightbound champion",
+            "exalted eightbound champion",
+            "khorne berzerkers champion",
+            "khorne berzerker champion",
+            "world eaters terminator champion",
+            "terminator champion",
+        }:
+            return True
+        return False
+
+    def _iter_army_models(self) -> list:
+        units = list(getattr(self.army, "units", []) or []) if self.army is not None else []
+        models = []
+        for unit in units:
+            for model in list(getattr(unit, "models", []) or []):
+                models.append(model)
+        return models
+
+    def get_wrath_of_khorne_max_models(self) -> int:
+        points_limit = int(getattr(self.army, "points_limit", 0) or 0) if self.army is not None else 0
+        if points_limit <= 1000:
+            return 2
+        if points_limit <= 2000:
+            return 3
+        return 4
+
+    def get_wrath_of_khorne_candidates(self) -> list:
+        if not self.is_vessels_of_wrath():
+            return []
+        candidates = []
+        for model in self._iter_army_models():
+            if hasattr(model, "is_alive") and not bool(getattr(model, "is_alive", True)):
+                continue
+            if self._model_is_wrath_of_khorne_candidate(model):
+                candidates.append(model)
+        return candidates
+
+    def _clear_vessel_of_wrath_keywords(self, *, battle_round: int) -> None:
+        if self._vessel_of_wrath_round is None:
+            return
+        if int(self._vessel_of_wrath_round) == int(battle_round):
+            return
+        ids = set(self._vessel_of_wrath_model_ids or set())
+        if not ids:
+            self._vessel_of_wrath_round = None
+            return
+        for model in self._iter_army_models():
+            mid = get_entity_id(model)
+            if str(mid) not in ids:
+                continue
+            kws = list(getattr(model, "keywords", []) or [])
+            new_kws = [k for k in kws if str(k).strip().lower() != "vessel of wrath"]
+            model.keywords = new_kws
+        self._vessel_of_wrath_model_ids = set()
+        self._vessel_of_wrath_round = None
+        self._wrath_of_khorne_blessing_key = None
+        self._wrath_of_khorne_blessing_round = None
+
+    def on_battle_round_start(self, battle_round: int, *, game=None) -> None:
+        if not self.is_vessels_of_wrath():
+            return
+        self._clear_vessel_of_wrath_keywords(battle_round=int(battle_round))
+        self._wrath_of_khorne_prompt_round = None
+
+    def apply_wrath_of_khorne_models(self, model_ids: list[str], *, battle_round: int) -> bool:
+        if not self.is_vessels_of_wrath():
+            return False
+        ids = [str(mid) for mid in list(model_ids or []) if str(mid or "")]
+        if not ids:
+            return False
+        unique_ids = []
+        seen = set()
+        for mid in ids:
+            if mid in seen:
+                continue
+            seen.add(mid)
+            unique_ids.append(mid)
+        self._clear_vessel_of_wrath_keywords(battle_round=int(battle_round))
+        selected = []
+        for model in self._iter_army_models():
+            mid = str(get_entity_id(model))
+            if mid in seen:
+                selected.append(model)
+        if not selected:
+            return False
+        for model in selected:
+            kws = list(getattr(model, "keywords", []) or [])
+            if not any(str(k).strip().lower() == "vessel of wrath" for k in kws):
+                kws.append("Vessel of Wrath")
+                model.keywords = kws
+        self._vessel_of_wrath_model_ids = set(unique_ids)
+        self._vessel_of_wrath_round = int(battle_round)
+        return True
+
+    def has_active_wrath_of_khorne_models(self, *, battle_round: int) -> bool:
+        return bool(self._vessel_of_wrath_model_ids) and int(self._vessel_of_wrath_round or 0) == int(battle_round)
+
+    def apply_wrath_of_khorne_blessing(self, blessing_key: str, *, battle_round: int) -> bool:
+        if not self.is_vessels_of_wrath():
+            return False
+        if not self._vessel_of_wrath_model_ids:
+            return False
+        if int(self._vessel_of_wrath_round or 0) != int(battle_round):
+            return False
+        army = self.army
+        mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+        if mgr is None:
+            return False
+        key = str(blessing_key or "").strip().upper()
+        if not key:
+            return False
+        roots = []
+        seen_units = set()
+        for model in self._iter_army_models():
+            mid = str(get_entity_id(model))
+            if mid not in self._vessel_of_wrath_model_ids:
+                continue
+            unit = getattr(model, "parent_unit", None)
+            if unit is None:
+                continue
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            rid = str(get_entity_id(root))
+            if rid in seen_units:
+                continue
+            seen_units.add(rid)
+            roots.append(root)
+        if not roots:
+            return False
+        applied_any = False
+        for unit in roots:
+            if mgr.grant_unit_blessings(unit, blessing_keys=[key], battle_round=int(battle_round)):
+                applied_any = True
+        if applied_any:
+            self._wrath_of_khorne_blessing_key = key
+            self._wrath_of_khorne_blessing_round = int(battle_round)
+        return applied_any
+
+    def prompt_wrath_of_khorne_model_selection(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: Optional[int] = None,
+        source: str = "",
+    ) -> bool:
+        if game is None or player is None:
+            return False
+        if not self.is_vessels_of_wrath():
+            return False
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
+        if battle_round is None:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        if self._wrath_of_khorne_prompt_round == int(battle_round):
+            return False
+        candidates = list(self.get_wrath_of_khorne_candidates() or [])
+        if not candidates:
+            return False
+        from ..engine.decision_kinds import DECISION_SELECT_VESSEL_OF_WRATH_MODELS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_SELECT_VESSEL_OF_WRATH_MODELS:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", 0) or 0) == int(battle_round):
+                    return True
+
+        allowed_model_ids = [str(get_entity_id(m)) for m in candidates]
+        max_models = self.get_wrath_of_khorne_max_models()
+        req = DecisionRequest.create(
+            DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
+            "Select Vessels of Wrath models (optional).",
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Confirm", payload={"action": "confirm", "army_id": army_id}),
+                DecisionOption.create("None", payload={"action": "skip", "skip": True, "army_id": army_id}),
+            ],
+            context={
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "max_models": int(max_models),
+                "allowed_model_ids": allowed_model_ids,
+                "source": source,
+            },
+        )
+        self._wrath_of_khorne_prompt_round = int(battle_round)
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+            return True
+        return False
+
+    def prompt_wrath_of_khorne_blessing_selection(
+        self,
+        *,
+        game=None,
+        player=None,
+        battle_round: Optional[int] = None,
+        source: str = "",
+    ) -> bool:
+        if game is None or player is None:
+            return False
+        if not self.is_vessels_of_wrath():
+            return False
+        if not bool(getattr(game, "is_authoritative", True)):
+            return False
+        if battle_round is None:
+            battle_round = int(getattr(game, "turn", 0) or 0)
+        army = self.army
+        mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
+        if mgr is None:
+            return False
+        active = set(str(k).strip().upper() for k in (mgr.active_blessing_keys or set()))
+        available_defs = [d for d in list(getattr(mgr, "definitions", {}).values()) if d.key not in active]
+        if not available_defs:
+            return False
+        from ..engine.decision_kinds import DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        army_id = get_entity_id(self.army) if self.army is not None else None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("army_id", "")) == str(army_id) and int(ctx.get("battle_round", 0) or 0) == int(battle_round):
+                    return True
+
+        options = []
+        for d in available_defs:
+            options.append(
+                DecisionOption.create(
+                    d.name,
+                    payload={"blessing_key": d.key, "army_id": army_id, "summary": d.short_effect},
+                )
+            )
+        if not options:
+            return False
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
+            "Select a Blessing of Khorne for Vessels of Wrath.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "army_id": army_id,
+                "battle_round": int(battle_round),
+                "source": source,
+            },
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+            return True
+        return False
 
     def _unit_is_jakhals_or_goremongers(self, unit) -> bool:
         if unit is None:
