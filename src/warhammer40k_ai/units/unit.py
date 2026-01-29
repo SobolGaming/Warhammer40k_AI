@@ -5114,7 +5114,7 @@ class Unit:
 
     def get_parent_army(self) -> Optional['Army']:
         """Get the parent army of the unit."""
-        return self.parent_army
+        return getattr(self, "parent_army", None)
 
     def _publish_unit_event(self, event_name: str, **kwargs) -> None:
         if not event_name:
