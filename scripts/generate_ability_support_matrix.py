@@ -557,6 +557,44 @@ def _summary_icon(supported: int, total: int) -> str:
     return _status_icon(_summary_status(supported, total))
 
 
+def _summary_status_with_coverage(
+    supported: int,
+    total: int,
+    det_supported: int,
+    det_total: int,
+    ds_supported: int,
+    ds_total: int,
+) -> str:
+    status = _summary_status(supported, total)
+    if status != "Supported":
+        return status
+    if det_total > 0 and det_supported < det_total:
+        return "Partial"
+    if ds_total > 0 and ds_supported < ds_total:
+        return "Partial"
+    return status
+
+
+def _summary_icon_with_coverage(
+    supported: int,
+    total: int,
+    det_supported: int,
+    det_total: int,
+    ds_supported: int,
+    ds_total: int,
+) -> str:
+    return _status_icon(
+        _summary_status_with_coverage(
+            supported,
+            total,
+            det_supported,
+            det_total,
+            ds_supported,
+            ds_total,
+        )
+    )
+
+
 def _status_is_supported(status: str) -> bool:
     return _norm(status) in ("supported", "implemented")
 
@@ -5748,12 +5786,28 @@ def _build_matrix() -> str:
 
     summary_entries.sort(key=lambda t: t[0].lower())
     for faction_name, supported, total, det_supported, det_total, ds_supported, ds_total, rel_path in summary_entries:
-        status = _summary_status(supported, total)
+        status = _summary_status_with_coverage(
+            supported,
+            total,
+            det_supported,
+            det_total,
+            ds_supported,
+            ds_total,
+        )
         summary_rows.append(
             (
                 [
                     _escape(faction_name),
-                    _escape(_summary_icon(supported, total)),
+                    _escape(
+                        _summary_icon_with_coverage(
+                            supported,
+                            total,
+                            det_supported,
+                            det_total,
+                            ds_supported,
+                            ds_total,
+                        )
+                    ),
                     _escape(f"{det_supported} out of {det_total}"),
                     _escape(f"{ds_supported} out of {ds_total}"),
                     f"<a href=\"{_escape(rel_path)}\">View</a>",
