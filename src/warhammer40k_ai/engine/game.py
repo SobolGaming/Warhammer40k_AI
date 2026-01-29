@@ -1247,6 +1247,20 @@ class Game:
                                     f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
                                 )
 
+    def _on_phase_start_hallowed_ground(self, player=None, phase=None, **_kwargs) -> None:
+        if phase is None:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Hallowed Ground phase start requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Hallowed Ground requires an army for {p.name}.")
+            mgr = getattr(army, "grey_knights_detachments", None)
+            if mgr is None or not hasattr(mgr, "on_phase_start"):
+                continue
+            mgr.on_phase_start(game=self)
+
     def _on_phase_start_cabal_of_sorcerers(self, player=None, phase=None, **_kwargs) -> None:
         """Reset Cabal of Sorcerers usage at the start of the active player's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

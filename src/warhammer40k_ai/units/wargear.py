@@ -3267,6 +3267,36 @@ class WargearProfile:
                 reroll_full_reasons.append(reason)
         except Exception:
             pass
+        # Grey Knights: Hallowed Ground (Warpbane Task Force) hit rerolls.
+        unit = getattr(attacker, "parent_unit", None)
+        army = unit.get_parent_army() if unit is not None and hasattr(unit, "get_parent_army") else None
+        mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        if mgr is not None and hasattr(mgr, "hallowed_ground_hit_reroll_mods"):
+            game = getattr(getattr(army, "player", None), "game", None)
+            game_map = getattr(game, "map", None) if game is not None else None
+            target_visible = None
+            if attack_type == "ranged":
+                if game_map is not None and hasattr(unit, "_has_line_of_sight_to_target") and target is not None:
+                    target_visible = bool(unit._has_line_of_sight_to_target(attacker, target, game_map))
+                else:
+                    target_visible = not bool(attack_instance.get("indirect_fire_no_visible", False))
+            mods = mgr.hallowed_ground_hit_reroll_mods(
+                attacker,
+                target,
+                attack_type=attack_type,
+                game=game,
+                game_map=game_map,
+                target_visible=target_visible,
+            )
+            if isinstance(mods, dict):
+                for v in list(mods.get("reroll_values", ()) or ()):
+                    try:
+                        reroll_hit_values.add(int(v))
+                    except Exception:
+                        continue
+                reroll_value_reasons.extend(list(mods.get("reroll_reasons", ()) or ()))
+                if bool(mods.get("reroll_full")):
+                    reroll_full_reasons.extend(list(mods.get("reroll_full_reasons", ()) or ()))
 
         hit_result["reroll_values"] = list(sorted(reroll_hit_values))
         hit_result["reroll_value_reasons"] = list(reroll_value_reasons)

@@ -78,6 +78,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_post_shoot_leadership_debuff_cleanup"),
                 ("phase_start", "_on_phase_start_wracked_with_agonies_cleanup"),
                 ("phase_start", "_on_phase_start_engagement_battleshock"),
+                ("phase_start", "_on_phase_start_hallowed_ground"),
                 ("phase_end", "_on_phase_end_fight_phase_mortal_wounds"),
                 ("phase_end", "_on_phase_end_charge_phase_bodyguard_loss"),
                 ("phase_end", "_on_phase_end_leadership_cp_gain"),

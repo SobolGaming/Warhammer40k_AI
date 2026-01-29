@@ -306,6 +306,15 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Duty Before All": (
             r"grey knights terminator units from your army are eligible to shoot and declare a charge in a turn in which they fell back",
         ),
+        "Hallowed Ground": (
+            r"certain areas of the battlefield are within your armys hallowed ground as follows",
+            r"your deployment zone is always within your armys hallowed ground",
+            r"the area of the battlefield within \d+ of one or more purifier squad units from your army is within your armys hallowed ground",
+            r"at the start of any phase if you control at least half of the objective markers within no mans land until the end of that phase no mans land is within your armys hallowed ground",
+            r"at the start of any phase if you control at least half of the objective markers within your opponents deployment zone until the end of that phase your opponents deployment zone is within your armys hallowed ground",
+            r"each time a model in a grey knights unit from your army makes a ranged attack that targets a visible target or makes a melee attack reroll a hit roll of \d+",
+            r"if that unit is a purifier squad and or is wholly within your armys hallowed ground you can reroll the hit roll instead",
+        ),
         "Relentless Onslaught": (
             r"each time a necrons model from your army makes an attack that targets a unit within range of one or more objective markers add \d+ to the hit roll",
             r"in addition ranged weapons equipped by necrons vehicle and necrons mounted models excluding titanic models from your army have the assault ability",
@@ -1455,6 +1464,13 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Fury of Titan": (
             "Supported",
             "Brotherhood Strike: Deep Strike arrivals re-roll Hit and Wound rolls of 1 until end of turn.",
+        ),
+        "Hallowed Ground": (
+            "Supported",
+            "Warpbane Task Force: Hallowed Ground zones (own deployment zone always, 6\" of PURIFIER SQUAD units, "
+            "phase-start control of No Man's Land/opponent deployment zone objectives) grant GREY KNIGHTS hit re-rolls "
+            "of 1 on visible ranged attacks or melee; PURIFIER SQUAD or units wholly within Hallowed Ground can re-roll "
+            "the Hit roll instead.",
         ),
         "Warp Rifts": (
             "Supported",
