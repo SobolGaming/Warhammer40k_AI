@@ -45,6 +45,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             name="core",
             subscriptions=[
                 ("model_destroyed", "_on_model_destroyed_rules"),
+                ("model_destroyed", "_on_model_destroyed_phase_kill_tracking"),
                 ("unit_destroyed", "_on_unit_destroyed_rules"),
                 ("unit_destroyed", "_on_unit_destroyed_phase_kill_tracking"),
                 ("unit_destroyed", "_on_unit_destroyed_transport_rules"),
@@ -66,6 +67,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_targets_selected", "_on_fight_targets_selected_frenzy"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_frenzy"),
                 ("fight_attacks_resolved", "_on_fight_attacks_resolved_frenzy"),
+                ("fight_unit_selected", "_on_fight_unit_selected_daemonic_patrons"),
                 ("phase_start", "_on_phase_start_target_tracking"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_tracking"),
                 ("charge_declared", "_on_charge_declared_tracking"),
@@ -74,6 +76,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_fight_phase_mortal_wounds"),
                 ("phase_end", "_on_phase_end_charge_phase_bodyguard_loss"),
                 ("phase_end", "_on_phase_end_leadership_cp_gain"),
+                ("phase_end", "_on_phase_end_daemonic_patrons"),
                 ("phase_end", "_on_phase_end_setup_reactive_shoot_or_charge"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),

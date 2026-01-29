@@ -141,6 +141,8 @@ class Game:
         self.phase_charge_targets: Dict[str, set[str]] = {}
         # Phase-scoped enemy unit destruction tracking (for phase-end Leadership CP abilities).
         self._phase_enemy_unit_destroyers: Dict[str, set[str]] = {}
+        # Phase-scoped enemy model destruction tracking (for phase-end penalties like Daemonic Patrons).
+        self._phase_enemy_model_destroyers: Dict[str, set[str]] = {}
         # Return-on-death pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
@@ -1562,6 +1564,16 @@ class Game:
                         "sensational_performance_ap_bonus",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("daemonic_patrons_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "daemonic_patrons_active",
+                        "daemonic_patrons_called",
+                        "daemonic_patrons_expires_phase",
+                        "daemonic_patrons_crit_wound_threshold",
+                        "daemonic_patrons_source",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("enhancement_fight_first_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -2650,6 +2662,7 @@ class Game:
             "waaagh",
             "possessed_lord",
             "fight_phase_melee_ap_boost",
+            "daemonic_patrons",
             "power_from_pain_command",
             "power_from_pain_empower",
             "enhancement_fight_first",
@@ -2732,6 +2745,49 @@ class Game:
                 return
             ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
             model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
+            return
+
+        if ability_key == "daemonic_patrons":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if sr.get("daemonic_patrons_active"):
+                return
+            try:
+                threshold = int(payload.get("crit_wound_threshold") or ctx.get("crit_wound_threshold") or 3)
+            except Exception:
+                threshold = 3
+            if threshold < 2 or threshold > 6:
+                threshold = 3
+            source = str(payload.get("ability_name") or ctx.get("ability_name") or "Daemonic Patrons").strip() or "Daemonic Patrons"
+            sr["daemonic_patrons_active"] = True
+            sr["daemonic_patrons_called"] = True
+            sr["daemonic_patrons_expires_phase"] = "FIGHT_PHASE"
+            sr["daemonic_patrons_crit_wound_threshold"] = int(threshold)
+            sr["daemonic_patrons_source"] = source
+            root.special_rules = sr
+            try:
+                from ..utility.event_bus import append_action
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{source}: {getattr(root, 'name', 'Unit')} called upon daemonic patrons.",
+                    )
+            except Exception:
+                pass
             return
 
         if ability_key == "power_from_pain_command":
@@ -3377,6 +3433,44 @@ class Game:
             model,
             {"name": ability_name},
         )
+
+    def _maybe_apply_daemonic_patrons_loss_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_ALLOCATE_DAMAGE:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("selection_kind", "") or "") != "daemonic_patrons_loss":
+            return
+        payload = self._decision_option_payload(request, result)
+        model_id = payload.get("model_id", payload.get("model"))
+        model = self._resolve_model_by_id(str(model_id or ""))
+        if model is None:
+            return
+        try:
+            alive = getattr(model, "is_alive", True)
+            alive = alive() if callable(alive) else bool(alive)
+        except Exception:
+            alive = True
+        if not alive:
+            return
+        try:
+            model.die(game_map=getattr(self, "map", None))
+        except Exception:
+            return
+        try:
+            from ..utility.event_bus import append_action
+            unit_id = str(ctx.get("unit_id", "") or "")
+            unit = self._resolve_unit_by_id(unit_id) if unit_id else None
+            ability_name = str(ctx.get("ability_name", "") or "Daemonic Patrons").strip() or "Daemonic Patrons"
+            player = getattr(unit.get_parent_army(), "player", None) if unit is not None else None
+            if player is not None:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(model, 'name', 'Model')} is destroyed.",
+                )
+        except Exception:
+            pass
 
     def _maybe_apply_cult_ambush_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
         if request is None or result is None:
@@ -4782,6 +4876,109 @@ class Game:
 
         self._phase_enemy_unit_destroyers[pname] = set()
 
+    def _on_phase_end_daemonic_patrons(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Fight phase: destroy one model if Daemonic Patrons was called and no enemy models were destroyed."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        tracked = set(self._phase_enemy_model_destroyers.get(pname, set()) or set())
+        seen: set[str] = set()
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                uid = get_entity_id(root)
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("daemonic_patrons_active"):
+                    continue
+                if uid in tracked:
+                    continue
+
+                ability_name = str(sr.get("daemonic_patrons_source", "") or "Daemonic Patrons").strip() or "Daemonic Patrons"
+                owner = getattr(root.get_parent_army(), "player", None)
+                if owner is None:
+                    continue
+
+                existing = [
+                    req
+                    for req in list(self.decision_queue.list() or [])
+                    if getattr(req, "decision_type", None) == DECISION_ALLOCATE_DAMAGE
+                    and str(getattr(req, "context", {}).get("selection_kind", "") or "") == "daemonic_patrons_loss"
+                    and str(getattr(req, "context", {}).get("unit_id", "") or "") == uid
+                ]
+                if existing:
+                    continue
+
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                alive_models = []
+                for m in models:
+                    try:
+                        alive = getattr(m, "is_alive", True)
+                        alive = alive() if callable(alive) else bool(alive)
+                    except Exception:
+                        alive = True
+                    if alive:
+                        alive_models.append(m)
+                if not alive_models:
+                    continue
+                try:
+                    alive_models.sort(key=lambda m: str(get_entity_id(m) or ""))
+                except Exception:
+                    alive_models = list(alive_models)
+
+                options = []
+                used_labels = set()
+                for model in alive_models:
+                    label = str(getattr(model, "name", "") or "Model")
+                    base = label
+                    idx = 2
+                    while label in used_labels:
+                        label = f"{base} ({idx})"
+                        idx += 1
+                    used_labels.add(label)
+                    options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+                allowed_ids = [get_entity_id(m) for m in alive_models if get_entity_id(m)]
+                ctx = {
+                    "selection_kind": "daemonic_patrons_loss",
+                    "ability_name": ability_name,
+                    "phase": "Fight phase",
+                    "unit_id": uid,
+                    "allowed_model_ids": allowed_ids,
+                    "reason": f"{ability_name}: Destroy one model",
+                }
+                request = DecisionRequest.create(
+                    DECISION_ALLOCATE_DAMAGE,
+                    f"{ability_name}: Select model to destroy",
+                    player_id=getattr(owner, "id", None),
+                    options=options,
+                    context=ctx,
+                )
+                self.request_decision(request)
+
+        self._phase_enemy_model_destroyers[pname] = set()
+
     def _queue_transport_reactive_disembark_decisions(
         self,
         *,
@@ -5282,6 +5479,31 @@ class Game:
         tracked = self._phase_enemy_unit_destroyers.setdefault(pname, set())
         tracked.add(uid)
 
+    def _on_model_destroyed_phase_kill_tracking(
+        self,
+        attacker_unit=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        """Track units that destroyed enemy models during the Fight phase."""
+        if attacker_unit is None or target_unit is None:
+            return
+        if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+            return
+        phase = getattr(self, "phase", None)
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        uid = get_entity_id(root)
+        if not uid:
+            return
+        tracked = self._phase_enemy_model_destroyers.setdefault(pname, set())
+        tracked.add(uid)
+
     def _on_unit_destroyed_rules(self, unit=None, destroyed_by_unit=None, destroyed_by_model=None, destroyed_by_weapon_profile=None, **_kwargs) -> None:
         # Generic partial support for "... destroys an enemy <KEYWORD> unit, gain X CP".
         if unit is None or destroyed_by_unit is None:
@@ -5685,6 +5907,74 @@ class Game:
             instance_key=str(unit_id or ""),
         )
         
+    def _on_fight_unit_selected_daemonic_patrons(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        specs = root.unit_fight_selected_daemonic_patrons_specs() or []
+        if not specs:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if sr.get("daemonic_patrons_active"):
+            return
+        try:
+            specs = sorted(specs, key=lambda s: str((s or {}).get("source", "") or ""))
+        except Exception:
+            specs = list(specs)
+        spec = specs[0] if specs else {}
+        try:
+            threshold = int((spec or {}).get("crit_wound_threshold", 3) or 3)
+        except Exception:
+            threshold = 3
+        if threshold < 2 or threshold > 6:
+            threshold = 3
+        source = str((spec or {}).get("source", "") or "Daemonic Patrons").strip() or "Daemonic Patrons"
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        unit_id = maybe_entity_id(root)
+        if not unit_id:
+            return
+        ctx = {
+            "ability_name": source,
+            "phase": "Fight phase",
+            "unit": getattr(root, "name", ""),
+            "unit_id": unit_id,
+            "crit_wound_threshold": int(threshold),
+        }
+        message = f"Call upon {source} for {getattr(root, 'name', 'Unit')}?"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="daemonic_patrons",
+            ability_name=source,
+            message=message,
+            context=ctx,
+            payload={
+                "unit_id": unit_id,
+                "crit_wound_threshold": int(threshold),
+                "ability_name": source,
+            },
+            instance_key=str(unit_id or ""),
+        )
+
     def _on_fight_unit_selected_maddened_ferocity(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -6640,6 +6930,7 @@ class Game:
             self._maybe_queue_bodyguard_return_followup(request, result)
             self._maybe_apply_mortal_wounds_followup(request, result)
             self._maybe_apply_bodyguard_loss_followup(request, result)
+            self._maybe_apply_daemonic_patrons_loss_followup(request, result)
             self._maybe_apply_cult_ambush_followup(request, result)
             self._maybe_queue_code_chivalric_followup(request, result)
         return apply_result

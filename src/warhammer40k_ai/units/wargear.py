@@ -5271,6 +5271,29 @@ class WargearProfile:
                 crit_wound_reasons.extend(list(unit_wound_mods.get("crit_wound_reasons", ()) or ()))
         except Exception:
             pass
+        try:
+            if isinstance(unit_wound_mods, dict):
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                if is_melee:
+                    unit = attacker.parent_unit
+                    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                    sr = getattr(root, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("daemonic_patrons_active"):
+                        exp = str(sr.get("daemonic_patrons_expires_phase", "") or "").strip().upper()
+                        pname = ""
+                        try:
+                            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if not exp or (pname and pname == exp):
+                            val = int(sr.get("daemonic_patrons_crit_wound_threshold", 0) or 0)
+                            if val:
+                                crit_wound_threshold = val if crit_wound_threshold is None else min(int(crit_wound_threshold), val)
+                                src = str(sr.get("daemonic_patrons_source", "") or "Daemonic Patrons").strip()
+                                crit_wound_reasons.append(f"{src}: critical wound on {val}+")
+        except Exception:
+            pass
 
         wound_result["crit_threshold"] = int(crit_wound_threshold or 6)
 

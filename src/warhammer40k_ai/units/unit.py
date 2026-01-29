@@ -1117,6 +1117,13 @@ class Unit:
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _DAEMONIC_PATRONS_RE = re.compile(
+        r"each time this unit is selected to fight it can call upon (?:the )?daemonic patrons if it does until the end of the phase "
+        r"each time a model in this unit makes an attack an unmodified wound roll of (?P<thresh>\d) scores a critical wound "
+        r"at the end of the fight phase if this unit called upon (?:the )?daemonic patrons this phase and no enemy models were destroyed "
+        r"by attacks made by models in this unit this phase one model in this unit is destroyed",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_ONCE_MELEE_AP_ATTACKS_RE = re.compile(
         r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
         r"add 3 to the attacks characteristic of melee weapons equipped by this model and improve the armou?r penetration "
@@ -20852,6 +20859,62 @@ class Unit:
                     continue
                 seen.add(key)
                 specs.append({"source": source, "penalty": penalty})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_fight_selected_daemonic_patrons_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: selected to fight, optional Daemonic Patrons (critical wound on 3+);
+        end of Fight phase penalty if no enemy models destroyed.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_daemonic_patrons_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._DAEMONIC_PATRONS_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    threshold = int(m.group("thresh") or 0)
+                except Exception:
+                    threshold = 0
+                if threshold < 2 or threshold > 6:
+                    continue
+                source = str(name or "Daemonic Patrons").strip() or "Daemonic Patrons"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "crit_wound_threshold": threshold})
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

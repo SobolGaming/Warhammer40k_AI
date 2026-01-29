@@ -1796,6 +1796,7 @@ def _classify_ability_base(
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
+    daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
     conditional_lone_operative_support = _conditional_lone_operative_support(description)
@@ -1945,6 +1946,8 @@ def _classify_ability_base(
         return fight_phase_end_mortal_support
     if fight_phase_melee_ap_boost_support:
         return fight_phase_melee_ap_boost_support
+    if daemonic_patrons_support:
+        return daemonic_patrons_support
     if melee_fight_on_death_support:
         return melee_fight_on_death_support
     if return_on_death_support:
@@ -3888,6 +3891,28 @@ def _fight_phase_once_melee_attacks_ap_support(description: str) -> Optional[Tup
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "Once per battle (start of Fight phase): +3 Attacks and +1 AP for bearer melee weapons.")
+
+
+def _daemonic_patrons_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this unit is selected to fight it can call upon (?:the )?daemonic patrons if it does until the end of the phase "
+        r"each time a model in this unit makes an attack an unmodified wound roll of (?P<thresh>\d) scores a critical wound "
+        r"at the end of the fight phase if this unit called upon (?:the )?daemonic patrons this phase and no enemy models were destroyed "
+        r"by attacks made by models in this unit this phase one model in this unit is destroyed"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    thresh = m.group("thresh") or "3"
+    return (
+        "Supported",
+        f"Fight phase (selected to fight): optional critical wound on {thresh}+; end of phase, if no enemy models destroyed, destroy 1 model.",
+    )
 
 
 def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:
