@@ -5327,6 +5327,20 @@ class WargearProfile:
 
         wound_result["crit_threshold"] = int(crit_wound_threshold or 6)
 
+        # Space Marines: Dutiful Tenacity (Wrath of the Rock) -1 to wound if Strength > Toughness.
+        target_army = target.get_parent_army() if target is not None and hasattr(target, "get_parent_army") else None
+        mgr = getattr(target_army, "space_marines_detachments", None) if target_army is not None else None
+        if mgr is not None and hasattr(mgr, "dutiful_tenacity_wound_roll_penalty"):
+            penalty, reason = mgr.dutiful_tenacity_wound_roll_penalty(
+                target,
+                strength=strength,
+                target_toughness=target_toughness,
+            )
+            if penalty:
+                dice_modifier -= int(penalty)
+                label = reason or "Dutiful Tenacity"
+                wound_result['modifiers'].append(f"-{int(penalty)} to wound from {label}")
+
         # First Prince of Chaos (Shadow Legion Nurgle): -1 to wound if Strength > Toughness.
         try:
             if hasattr(target, "has_first_prince_nurgle_defense") and target.has_first_prince_nurgle_defense():

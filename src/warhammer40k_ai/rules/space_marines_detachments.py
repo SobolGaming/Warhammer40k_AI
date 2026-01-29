@@ -178,6 +178,27 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Rage-cursed Onslaught")
 
+    def is_wrath_of_the_rock(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Wrath of the Rock")
+
+    def _attached_unit_has_keyword(self, unit, keyword: str) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            if self._unit_has_keyword(member, keyword):
+                return True
+        return False
+
     def unit_is_adeptus_astartes(self, unit) -> bool:
         return self._unit_has_keyword_or_faction(unit, "ADEPTUS ASTARTES", faction_id=self.faction_id)
 
@@ -198,6 +219,21 @@ class SpaceMarinesDetachmentManager(DetachmentManagerBase):
             if self.unit_is_adeptus_astartes(member):
                 return True
         return False
+
+    def dutiful_tenacity_wound_roll_penalty(self, target_unit, *, strength=None, target_toughness=None) -> tuple[int, str]:
+        if not self.is_wrath_of_the_rock():
+            return 0, ""
+        if target_unit is None:
+            return 0, ""
+        if not self.attached_unit_is_adeptus_astartes(target_unit):
+            return 0, ""
+        if not (self._attached_unit_has_keyword(target_unit, "INFANTRY") or self._attached_unit_has_keyword(target_unit, "MOUNTED")):
+            return 0, ""
+        if not isinstance(strength, int) or not isinstance(target_toughness, int):
+            return 0, ""
+        if strength <= target_toughness:
+            return 0, ""
+        return 1, "Dutiful Tenacity"
 
     def maddened_ferocity_applies(self, unit) -> bool:
         if unit is None:

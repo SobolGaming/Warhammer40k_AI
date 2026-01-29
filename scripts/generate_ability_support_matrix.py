@@ -330,6 +330,9 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"this unit is eligible to shoot and declare a charge in a turn in which it fell back",
             r"this unit is eligible to declare a charge in a turn in which it advanced",
         ),
+        "Dutiful Tenacity": (
+            r"each time an attack targets an adeptus astartes infantry or adeptus astartes mounted unit from your army if the strength characteristic of that attack is greater than the toughness characteristic of that unit subtract \d+ from the wound roll",
+        ),
         "Mastered Doctrines": (
             r"at the start of up to three of your command phases you can select one of the combat doctrines listed below",
             r"until the start of your next command phase that combat doctrine is active and its effects apply to all adeptus astartes units from your army",
@@ -1447,6 +1450,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Mastered Doctrines": (
             "Supported",
             "Blade of Ultramar: up to three Command phase doctrine selections; doctrine reuse requires Marneus Calgar on the battlefield; doctrine effects and Ultramarines-only chapter restriction enforced.",
+        ),
+        "Dutiful Tenacity": (
+            "Supported",
+            "Wrath of the Rock: ADEPTUS ASTARTES INFANTRY/MOUNTED units take -1 to wound when attacked by higher Strength.",
         ),
         "Combat Drugs": (
             "Supported",
