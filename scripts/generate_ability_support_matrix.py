@@ -1450,17 +1450,17 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity or leading restriction."),
-        ("ADM", "Mechanicus Bodyguard"): ("Partial", "Lone Operative applied without 3\" unit proximity requirement."),
+        ("ADM", "Mechanicus Bodyguard"): ("Supported", "Conditional Lone Operative within 3\" of friendly ADEPTUS MECHANICUS units."),
         ("ADM", "Shroudpsalm (Aura)"): ("Partial", "Stealth applied to bearer only; aura not propagated."),
         ("AM", "Alchemyk Counteragents"): ("Supported", "Feel No Pain 6+ against mortal wounds."),
         ("AM", "Desert Riders"): ("Partial", "Shoot and charge after Falling Back; ignores Move/Advance/Charge modifiers not handled."),
-        ("AM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity requirement."),
+        ("AM", "Enginseer"): ("Supported", "Conditional Lone Operative within 3\" of friendly ASTRA MILITARUM VEHICLE units."),
         ("AM", "Horsemasters"): ("Supported", "Shoot and charge after Falling Back."),
         ("AM", "Malign Wardings(Psychic)"): ("Supported", "Leading: Feel No Pain 4+ against Psychic attacks."),
         ("GK", "Indomitable Spirit (Psychic)"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("GK", "Retinue"): ("Partial", "Deep Strike granted without leading restriction; Teleport Assault not implemented."),
         ("GK", "Sanctic Hood"): ("Supported", "Leading: Feel No Pain 4+ against Psychic attacks."),
-        ("GK", "Techmarine"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity requirement."),
+        ("GK", "Techmarine"): ("Supported", "Conditional Lone Operative within 3\" of friendly GREY KNIGHTS VEHICLE units."),
         ("GK", "Truesilver Aegis (Aura)"): ("Partial", "Feel No Pain 6+ against mortal wounds applies to bearer only; aura not propagated."),
         ("GK", "Untouchable Purity"): ("Partial", "Feel No Pain 4+ against mortal wounds applied without leading restriction."),
         ("AOI", "Abomination"): ("Supported", "Feel No Pain 2+ against Psychic attacks."),
@@ -1480,7 +1480,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("AE", "Way of the Blade"): ("Supported", "Leading: unit gains Fights First."),
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
-        ("AE", "Spiritseer"): ("Partial", "Lone Operative applied without 3\" Wraith Construct proximity requirement."),
+        ("AE", "Spiritseer"): ("Supported", "Conditional Lone Operative within 3\" of friendly WRAITH CONSTRUCT units."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
         ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
         ("AE", "Linked Fire"): ("Supported", "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied."),
@@ -1494,7 +1494,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
-        ("CD", "Daemonic Lord"): ("Partial", "Lone Operative applied without 3\" Legiones Daemonica Infantry proximity requirement."),
+        ("CD", "Daemonic Lord"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEGIONES DAEMONICA INFANTRY units."),
         ("CD", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit (melee) aura within 6\" for KHORNE LEGIONES DAEMONICA."),
         ("CD", "Shadow Form"): ("Supported", "Shadow Form selection each battle round with active effect tracking."),
         ("CD", "Wreathed in Shadows (Aura, Psychic)"): ("Supported", "18\" ranged targeting restriction while within 6\" of active Shadow Form source."),
@@ -1505,19 +1505,19 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "No Prey Can Evade"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("CD", "Unholy Speed"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("CD", "Pack Leader"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
-        ("CSM", "Warpsmith"): ("Partial", "Lone Operative applied without 3\" Heretic Astartes Vehicle proximity requirement."),
-        ("CSM", "Indentured Daemon Engines"): ("Partial", "Lone Operative applied without 3\" Daemon Vehicle proximity requirement."),
+        ("CSM", "Warpsmith"): ("Supported", "Conditional Lone Operative within 3\" of friendly HERETIC ASTARTES VEHICLE units."),
+        ("CSM", "Indentured Daemon Engines"): ("Supported", "Conditional Lone Operative within 3\" of friendly DAEMON VEHICLE units."),
         ("CSM", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CSM", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("EC", "Daemonic Speed"): ("Supported", "Fights First."),
         ("EC", "Duellist's Hubris"): ("Supported", "Fights First when not leading a unit."),
-        ("EC", "Lord of Excess"): ("Partial", "Lone Operative applied without 3\" Slaanesh Infantry proximity requirement."),
+        ("EC", "Lord of Excess"): ("Supported", "Conditional Lone Operative within 3\" of friendly SLAANESH INFANTRY units."),
         ("EC", "LORD OF THE HOST"): ("Partial", "Infiltrators/Scouts 6\" detected; attachment restriction not enforced."),
         ("EC", "Lethal Obsession"): ("Supported", "Same-target shooting requirement tracked; charge reroll applies vs that target until end of turn."),
         ("EC", "No Prey Can Evade"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("EC", "Unholy Speed"): ("Supported", "Re-roll Advance and Charge rolls."),
         ("EC", "Monarch of the Hunt"): ("Supported", "Quarry selection + melee reroll hooks vs quarry."),
-        ("DG", "Death Guard Defenders"): ("Partial", "Lone Operative applied without 3\" Death Guard Infantry proximity requirement."),
+        ("DG", "Death Guard Defenders"): ("Supported", "Conditional Lone Operative within 3\" of friendly DEATH GUARD INFANTRY units."),
         ("DG", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("DG", "Blinding Spray"): ("Partial", "Fights First applied without selection/once-per-battle restriction."),
         ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
@@ -1530,15 +1530,15 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("LOV", "Teleport Crest"): ("Partial", "Deep Strike granted; leading restriction not enforced where applicable."),
         ("NEC", "Adaptive Strategy"): ("Supported", "Shoot and charge after Falling Back."),
         ("NEC", "Ghostwalk Mantle"): ("Supported", "Leading: unit gains Fights First."),
-        ("NEC", "Illuminor"): ("Partial", "Lone Operative applied without 3\" proximity to friendly Necrons."),
-        ("NEC", "Protective Disciples"): ("Partial", "Lone Operative applied without 3\" proximity to Destroyer Cult units."),
+        ("NEC", "Illuminor"): ("Supported", "Conditional Lone Operative within 3\" of friendly NECRONS units."),
+        ("NEC", "Protective Disciples"): ("Supported", "Conditional Lone Operative within 3\" of friendly DESTROYER CULT units."),
         ("NEC", "VANGUARD PROTOCOLS"): ("Partial", "Scouts 8\" applied without attached-unit restriction."),
         ("NEC", "Relentless Combatants"): ("Supported", "Re-roll Charge rolls. Charge-after-Fall-Back eligibility."),
         ("NEC", "Shadowloom"): ("Supported", "Stealth."),
         ("NEC", "Gloom Prism (Aura)"): ("Partial", "Feel No Pain vs Psychic (and mortal where listed) applies to bearer only; aura not propagated."),
         ("NEC", "Nullstone Field Generator (Aura)"): ("Partial", "Feel No Pain vs mortal/psychic applies to bearer only; aura not propagated."),
         ("ORK", "Full Throttle"): ("Supported", "Charge-after-Advance and charge-after-Fall-Back eligibility."),
-        ("ORK", "Mekboy"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity requirement."),
+        ("ORK", "Mekboy"): ("Supported", "Conditional Lone Operative within 3\" of friendly ORKS VEHICLE units."),
         ("ORK", "Super Runts"): ("Partial", "Scouts 9\" applied without leading restriction; hit/wound bonus not implemented."),
         ("ORK", "Tellyporta Tech"): ("Partial", "Deep Strike granted without leading restriction."),
         ("ORK", "Drill Boss"): ("Supported", "Leading: +1 to hit for melee attacks in the unit."),
@@ -1551,7 +1551,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth applied to bearer only; aura cover/stealth to nearby units not implemented."),
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TS", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
-        ("TS", "Servile Pawns"): ("Partial", "Lone Operative applied without 3\" Thousand Sons Infantry proximity requirement."),
+        ("TS", "Servile Pawns"): ("Supported", "Conditional Lone Operative within 3\" of friendly THOUSAND SONS INFANTRY units."),
         ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
         ("WE", "Reborn in Blood"): ("Supported", "Revive + reserves placement; restricted to the next Movement phase only."),
         ("WE", "Wrathful Presence"): ("Supported", "Battle-round selection sets one of the three Wrathful Presence abilities."),
@@ -1735,6 +1735,7 @@ def _classify_ability_base(
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     return_on_death_support = _return_on_death_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
+    conditional_lone_operative_support = _conditional_lone_operative_support(description)
     charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
     daemonic_allegiance_support = _daemonic_allegiance_wargear_support(description)
     reinforcements_denial_support = _reinforcements_denial_support(description)
@@ -1759,6 +1760,8 @@ def _classify_ability_base(
 
     if battlesuit_support_system_support:
         return battlesuit_support_system_support
+    if conditional_lone_operative_support:
+        return conditional_lone_operative_support
     if move_over_friendly_support:
         return move_over_friendly_support
     if move_over_low_terrain_support:
@@ -3719,15 +3722,41 @@ def _melee_fight_on_death_after_attacks_support(description: str) -> Optional[Tu
     if not norm:
         return None
     pattern = (
-        r"each time a model in this unit is destroyed by a melee attack if that model has not fought this phase "
-        r"roll one d6 on a 3 do not remove it from play that destroyed model can fight after the attacking unit "
-        r"has finished making its attacks and is then removed from play"
+        r"(?:each time )?(?:a model in this unit|this model) is destroyed by a melee attack if (?:that model|it) has not fought this phase "
+        r"roll one d6 on a (?P<threshold>\d+) do not remove (?:it|this model|that destroyed model) from play "
+        r"(?:that destroyed model|this model) can fight after the attacking (?:unit|model s unit) has finished making its attacks "
+        r"and is then removed from play"
     )
-    if not re.fullmatch(pattern, norm):
+    m = re.fullmatch(pattern, norm)
+    if not m:
         return None
+    threshold = m.group("threshold") or "3"
     return (
         "Supported",
-        "Melee fight-on-death: roll D6 on destruction; on 3+ fight after the attacker finishes its attacks.",
+        f"Melee fight-on-death: roll D6 on destruction; on {threshold}+ fight after the attacker finishes its attacks.",
+    )
+
+
+def _conditional_lone_operative_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is within (?P<rng>\d+) of one or more (?:other )?friendly "
+        r"(?P<keywords>.+?) units (?:this model|it) has (?:the )?lone operative ability"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keywords = m.group("keywords") or ""
+    if " or " in keywords or " excluding " in keywords:
+        return None
+    rng = m.group("rng") or "3"
+    return (
+        "Supported",
+        f"Conditional Lone Operative within {rng}\" of friendly {keywords.upper()} units.",
     )
 
 

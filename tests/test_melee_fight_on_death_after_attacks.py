@@ -145,3 +145,31 @@ class TestMeleeFightOnDeathAfterAttacks(unittest.TestCase):
         with patch.object(unit, "_try_fight_on_death") as mocked:
             unit.end_attack_resolution(game_map=game.map)
         self.assertEqual(mocked.call_count, 0)
+
+    def test_fight_on_death_after_attacks_on_2_plus(self):
+        game, _p1, _p2, army1, _army2 = _build_game()
+        abilities = [
+            {
+                "name": "Death Throes",
+                "description": (
+                    "If this model is destroyed by a melee attack, if it has not fought this phase, roll one D6. "
+                    "On a 2+, do not remove it from play. This model can fight after the attacking unit has "
+                    "finished making its attacks, and is then removed from play."
+                ),
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ]
+        unit = _make_unit("Champion", abilities=abilities)
+        army1.add_unit(unit)
+        unit.deployed = True
+        unit.round_state.fought_this_phase = False
+        unit._last_destroyed_by_weapon_profile = _DummyProfile()
+        model = unit.models[0]
+        model._wounds = 0
+
+        with patch("warhammer40k_ai.units.unit.get_roll", return_value=2):
+            unit._handle_model_destroyed(model, game.map)
+
+        pending = getattr(unit, "_melee_fight_on_death_pending_models", [])
+        self.assertIn(model, pending)

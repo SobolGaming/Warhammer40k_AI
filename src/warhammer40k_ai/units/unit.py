@@ -19055,11 +19055,11 @@ class Unit:
                     and "can fight after the attacking model's unit has finished making its attacks" not in low
                 ):
                     continue
-                m = re.search(r"on a (\d+)\+", low)
+                m = re.search(r"on a (\d+)\+?", low)
                 if not m:
                     continue
                 threshold = int(m.group(1))
-                if threshold != 3:
+                if threshold < 2 or threshold > 6:
                     continue
                 source = str(name or "Fight on death").strip() or "Fight on death"
                 rule = {"threshold": threshold, "source": source}
@@ -22090,15 +22090,134 @@ class Unit:
         if isinstance(sr, dict) and sr.get("enhancement_praesidius_lone_operative"):
             return True
 
-        # Base Lone Operative (static): use cached result if available
-        if 'lone_operative' in getattr(self, '_ability_cache', {}):
-            base_found = bool(self._ability_cache['lone_operative'])
+        def _normalize_lo_text(value: str) -> str:
+            t = self._normalize_rules_text(value or "")
+            t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+            t = re.sub(r"'s\b", "s", t, flags=re.IGNORECASE)
+            t = t.lower()
+            t = re.sub(r"[^a-z0-9]+", " ", t)
+            return re.sub(r"\s+", " ", t).strip()
+
+        def _normalize_keyword_phrase(value: str) -> str:
+            t = str(value or "").lower()
+            t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+            t = re.sub(r"[^a-z0-9]+", " ", t)
+            return re.sub(r"\s+", " ", t).strip()
+
+        def _unit_matches_keyword_phrase(unit, phrase: str) -> bool:
+            key_phrase = _normalize_keyword_phrase(phrase)
+            if not key_phrase:
+                return False
+            tokens = key_phrase.split()
+            if not tokens:
+                return False
+            keywords: set[str] = set()
+            try:
+                kws = list(getattr(unit, "get_effective_keywords")() or [])
+            except Exception:
+                kws = list(getattr(unit, "keywords", []) or [])
+            try:
+                kws += list(getattr(unit, "get_effective_faction_keywords")() or [])
+            except Exception:
+                kws += list(getattr(unit, "faction_keywords", []) or [])
+            for kw in kws:
+                norm = _normalize_keyword_phrase(kw)
+                if norm:
+                    keywords.add(norm)
+            if not keywords:
+                return False
+            n = len(tokens)
+            dp = [False] * (n + 1)
+            dp[n] = True
+            for i in range(n - 1, -1, -1):
+                for j in range(i + 1, n + 1):
+                    cand = " ".join(tokens[i:j])
+                    if cand in keywords and dp[j]:
+                        dp[i] = True
+                        break
+            return dp[0]
+
+        # Base Lone Operative (static) and conditional proximity-based Lone Operative.
+        cache = getattr(self, "_ability_cache", None)
+        if not isinstance(cache, dict):
+            cache = {}
+            self._ability_cache = cache
+        base_found = cache.get("lone_operative_base")
+        conditional_rules = cache.get("lone_operative_conditional_rules")
+        if base_found is None or conditional_rules is None:
+            base_found = False
+            conditional_rules = []
+            for name, desc in self._iter_ability_entries_for_rules(model=None):
+                text_src = self._strip_eligibility_prefix(desc or name or "")
+                norm = _normalize_lo_text(text_src)
+                if "lone operative" not in norm:
+                    continue
+                m = re.search(
+                    r"while this model is within (?P<range>\d+) of one or more (?P<other>other )?friendly (?P<keywords>.+?) units? "
+                    r"(?:this model|it) has (?:the )?lone operative ability",
+                    norm,
+                    flags=re.IGNORECASE,
+                )
+                if m:
+                    kw_phrase = str(m.group("keywords") or "").strip()
+                    if " or " in kw_phrase or " excluding " in kw_phrase:
+                        base_found = True
+                        continue
+                    try:
+                        rng = int(m.group("range") or 0)
+                    except Exception:
+                        rng = 0
+                    if rng <= 0:
+                        continue
+                    conditional_rules.append(
+                        {
+                            "range": int(rng),
+                            "keywords": kw_phrase,
+                            "requires_other": bool(m.group("other")),
+                            "source": str(name or "Lone Operative").strip() or "Lone Operative",
+                        }
+                    )
+                    continue
+                base_found = True
+            cache["lone_operative_base"] = bool(base_found)
+            cache["lone_operative_conditional_rules"] = list(conditional_rules)
         else:
-            base_found, _ = self._find_ability_with_patterns(["lone operative", "loneoperative"])
-            # Cache the base result
-            if not hasattr(self, '_ability_cache'):
-                self._ability_cache = {}
-            self._ability_cache['lone_operative'] = bool(base_found)
+            base_found = bool(base_found)
+            conditional_rules = list(conditional_rules or [])
+
+        if conditional_rules:
+            game_map = None
+            try:
+                game_map = self.get_parent_army().player.game.map
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    from ..utility.aura_utils import unit_within_range_of_unit
+                    for rule in conditional_rules:
+                        try:
+                            rng = float(rule.get("range", 0) or 0)
+                        except Exception:
+                            rng = 0.0
+                        if rng <= 0:
+                            continue
+                        kw_phrase = str(rule.get("keywords") or "").strip()
+                        requires_other = bool(rule.get("requires_other"))
+                        for other in list(game_map.get_friendly_units(self)):
+                            if other is None:
+                                continue
+                            if requires_other and other is self:
+                                continue
+                            if not getattr(other, "is_alive", lambda: True)():
+                                continue
+                            if not _unit_matches_keyword_phrase(other, kw_phrase):
+                                continue
+                            if unit_within_range_of_unit(self, other, rng, use_attached_aggregate=True):
+                                return True
+                except Exception:
+                    pass
+            if not base_found:
+                return False
 
         # LORD OF MURDER (datasheet rule, not an Aura keyworded ability):
         # While this model is within 3" of one or more friendly WORLD EATERS INFANTRY units,
