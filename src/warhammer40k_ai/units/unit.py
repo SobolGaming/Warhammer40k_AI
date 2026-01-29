@@ -1094,6 +1094,13 @@ class Unit:
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,
     )
+    _POST_SHOOT_WRACKING_AGONIES_RE = re.compile(
+        r"in your shooting phase after this model has shot select one infantry unit hit by one or more of those attacks "
+        r"made with its (?P<weapon>[a-z0-9 ]+) until the start of your next turn that unit is wracked with agonies "
+        r"while a unit is wracked with agonies subtract (?P<move>\d+) from its move characteristic and subtract (?P<charge>\d+) "
+        r"from charge rolls made for it",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_LEADERSHIP_DEBUFF_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
         r"until the start of your next shooting phase each time a battle shock or leadership test is taken for that "
@@ -5768,7 +5775,12 @@ class Unit:
 
         print(f"{model.name} shoots on death into {best_target.name}")
         shots_executed = 0
-        attack_context = {"pending_mortal_wounds": {}, "defer_mortal_wounds": True}
+        hit_models_by_target_weapon: dict = {}
+        attack_context = {
+            "pending_mortal_wounds": {},
+            "defer_mortal_wounds": True,
+            "hit_models_by_target_weapon": hit_models_by_target_weapon,
+        }
         for profile in ranged_profiles:
             try:
                 shots_executed += self._execute_weapon_attacks(
@@ -6428,6 +6440,75 @@ class Unit:
             "post_shoot_leadership_debuff_turn",
             "post_shoot_leadership_debuff_value",
             "post_shoot_leadership_debuff_source",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+    def apply_wracked_with_agonies(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        move_penalty: int,
+        charge_penalty: int,
+    ) -> None:
+        """Apply wracked-with-agonies penalties (Move -X, Charge -Y) until start of owner's next turn."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if sr.get("wracked_with_agonies_active"):
+            self.clear_wracked_with_agonies()
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+        sr["wracked_with_agonies_active"] = True
+        sr["wracked_with_agonies_owner"] = str(owner_id or "")
+        sr["wracked_with_agonies_turn"] = int(turn or 0)
+        sr["wracked_with_agonies_source"] = str(source or "Wracking Agonies").strip() or "Wracking Agonies"
+        sr["wracked_with_agonies_move_penalty"] = int(move_penalty or 0)
+        sr["wracked_with_agonies_charge_penalty"] = int(charge_penalty or 0)
+
+        from ..utility.modifiers import Modifier, ModifierOp
+        self.add_characteristic_modifier(
+            "movement",
+            Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:wracked_with_agonies"),
+        )
+
+        mods = list(sr.get("charge_roll_modifiers", []) or [])
+        mods.append(
+            {
+                "value": int(charge_penalty or 0),
+                "source": sr["wracked_with_agonies_source"],
+                "tag": "ability:wracked_with_agonies",
+            }
+        )
+        sr["charge_roll_modifiers"] = mods
+        self.special_rules = sr
+
+    def clear_wracked_with_agonies(self) -> None:
+        """Clear wracked-with-agonies penalties from this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        self.remove_characteristic_modifiers_by_source("ability:wracked_with_agonies")
+        mods = list(sr.get("charge_roll_modifiers", []) or [])
+        kept = []
+        for item in mods:
+            if isinstance(item, dict) and item.get("tag") == "ability:wracked_with_agonies":
+                continue
+            kept.append(item)
+        if kept:
+            sr["charge_roll_modifiers"] = kept
+        else:
+            sr.pop("charge_roll_modifiers", None)
+        for key in (
+            "wracked_with_agonies_active",
+            "wracked_with_agonies_owner",
+            "wracked_with_agonies_turn",
+            "wracked_with_agonies_source",
+            "wracked_with_agonies_move_penalty",
+            "wracked_with_agonies_charge_penalty",
         ):
             sr.pop(key, None)
         self.special_rules = sr
@@ -13756,6 +13837,7 @@ class Unit:
                     attacker_unit=self,
                     hits_by_target=dict(hit_tracker),
                     hit_models_by_target=dict(hit_models_by_target),
+                    hit_models_by_target_weapon=dict(hit_models_by_target_weapon),
                 )
         except Exception:
             pass
@@ -14610,6 +14692,27 @@ class Unit:
                                 hit_models_by_target.setdefault(target_unit, set()).add(model)
                             except Exception:
                                 pass
+                        try:
+                            hit_by_weapon = None
+                            if isinstance(attack_context, dict):
+                                hit_by_weapon = attack_context.get("hit_models_by_target_weapon")
+                            if isinstance(hit_by_weapon, dict):
+                                weapon_name = ""
+                                try:
+                                    parent = getattr(active_profile, "parent_wargear", None)
+                                    if parent is not None:
+                                        weapon_name = str(getattr(parent, "name", "") or "")
+                                except Exception:
+                                    weapon_name = ""
+                                if not weapon_name:
+                                    weapon_name = str(getattr(active_profile, "name", "") or "")
+                                weapon_key = self._normalize_keyword_phrase(weapon_name)
+                                if weapon_key:
+                                    target_map = hit_by_weapon.setdefault(target_unit, {})
+                                    if isinstance(target_map, dict):
+                                        target_map.setdefault(weapon_key, set()).add(model)
+                        except Exception:
+                            pass
                 if attack_tracker is not None and target_unit is not None:
                     try:
                         target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
@@ -20621,6 +20724,70 @@ class Unit:
                     "dice": int(dice),
                     "threshold": int(threshold),
                     "mortal_per_success": 1,
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_wracking_agonies_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy INFANTRY unit hit by its Agonising Energies;
+        until the start of your next turn, that unit suffers Move -2" and Charge roll -2.
+
+        Returns a list of specs with keys:
+            - infantry_only: bool
+            - weapon_key: str (normalized)
+            - move_penalty: int
+            - charge_penalty: int
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_wracking_agonies:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_WRACKING_AGONIES_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_raw = str(m.group("weapon") or "agonising energies").strip()
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or "agonising energies"
+            try:
+                move_penalty = -int(m.group("move") or 0)
+            except Exception:
+                move_penalty = -2
+            try:
+                charge_penalty = -int(m.group("charge") or 0)
+            except Exception:
+                charge_penalty = -2
+            source = str(name or "Wracking Agonies").strip() or "Wracking Agonies"
+            key = (source.lower(), weapon_key, int(move_penalty), int(charge_penalty))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "infantry_only": True,
+                    "weapon_key": weapon_key,
+                    "move_penalty": int(move_penalty),
+                    "charge_penalty": int(charge_penalty),
                     "source": source,
                 }
             )

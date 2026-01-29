@@ -3063,6 +3063,7 @@ class GameView:
                 DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
                 DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
+                DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
                 DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -3587,6 +3588,7 @@ class GameView:
         if decision_type in (
             DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
             DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
+            DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
             DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
             DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
             DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -3629,6 +3631,11 @@ class GameView:
                 title = ability_name or "Post-shoot Mortals"
                 subtitle = (
                     f"{model_name or 'Model'} shot. Select a unit to suffer mortal wounds (3D6 on 4+)."
+                )
+            elif decision_type == DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET:
+                title = ability_name or "Wracking Agonies"
+                subtitle = (
+                    f"{model_name or 'Model'} shot. Select an INFANTRY unit to be wracked with agonies."
                 )
             elif decision_type == DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET:
                 title = ability_name or "Leadership Debuff"

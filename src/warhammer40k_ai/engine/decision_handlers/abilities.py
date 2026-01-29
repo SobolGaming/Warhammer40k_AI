@@ -26,6 +26,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
+    DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
     DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
@@ -1073,6 +1074,91 @@ def _apply_post_shoot_mortal_wounds_target(game: object, request: DecisionReques
     return target_unit
 
 
+def _validate_post_shoot_wracked_agonies_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Wracking Agonies requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Wracking Agonies target not found.",)
+    return ()
+
+
+def _apply_post_shoot_wracked_agonies_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Wracking Agonies target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Wracking Agonies").strip()
+    try:
+        move_penalty = int(ctx.get("move_penalty", -2) or -2)
+    except Exception:
+        move_penalty = -2
+    try:
+        charge_penalty = int(ctx.get("charge_penalty", -2) or -2)
+    except Exception:
+        charge_penalty = -2
+    turn = int(getattr(game, "turn", 0) or 0)
+
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+    owner_id = str(getattr(player, "id", "") or "")
+
+    apply_fn = getattr(target_unit, "apply_wracked_with_agonies", None)
+    if callable(apply_fn):
+        apply_fn(
+            owner_id=owner_id,
+            turn=turn,
+            source=ability_name,
+            move_penalty=move_penalty,
+            charge_penalty=charge_penalty,
+        )
+    else:
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["wracked_with_agonies_active"] = True
+        sr["wracked_with_agonies_owner"] = owner_id
+        sr["wracked_with_agonies_turn"] = int(turn or 0)
+        sr["wracked_with_agonies_source"] = ability_name
+        sr["wracked_with_agonies_move_penalty"] = int(move_penalty or 0)
+        sr["wracked_with_agonies_charge_penalty"] = int(charge_penalty or 0)
+        if hasattr(target_unit, "add_characteristic_modifier"):
+            from ...utility.modifiers import Modifier, ModifierOp
+            target_unit.add_characteristic_modifier(
+                "movement",
+                Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:wracked_with_agonies"),
+            )
+        mods = list(sr.get("charge_roll_modifiers", []) or [])
+        mods.append(
+            {
+                "value": int(charge_penalty or 0),
+                "source": ability_name,
+                "tag": "ability:wracked_with_agonies",
+            }
+        )
+        sr["charge_roll_modifiers"] = mods
+        target_unit.special_rules = sr
+
+    if player is not None:
+        from ...utility.event_bus import append_action
+        append_action(player, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} is wracked with agonies.")
+    return target_unit
+
+
 def _validate_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -2022,6 +2108,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
     validate=_validate_post_shoot_mortal_wounds_target,
     apply=_apply_post_shoot_mortal_wounds_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
+    validate=_validate_post_shoot_wracked_agonies_target,
+    apply=_apply_post_shoot_wracked_agonies_target,
 )
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,

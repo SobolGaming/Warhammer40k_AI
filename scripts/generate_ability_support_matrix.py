@@ -1792,6 +1792,7 @@ def _classify_ability_base(
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
+    post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
@@ -1939,6 +1940,8 @@ def _classify_ability_base(
         return post_shoot_battleshock_support
     if post_shoot_infantry_mortal_support:
         return post_shoot_infantry_mortal_support
+    if post_shoot_wracking_agonies_support:
+        return post_shoot_wracking_agonies_support
     if post_shoot_suppression_support:
         return post_shoot_suppression_support
     if post_shoot_leadership_debuff_support:
@@ -3815,6 +3818,25 @@ def _post_shoot_infantry_mortal_wounds_battleshock_support(description: str) -> 
     return (
         "Supported",
         "After shooting: pick a hit enemy INFANTRY unit; roll 3D6 (4+ -> 1 mortal wound). If any mortals are inflicted, it takes a Battle-shock test.",
+    )
+
+
+def _post_shoot_wracking_agonies_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this model has shot select one infantry unit hit by one or more of those attacks "
+        r"made with its agonising energies until the start of your next turn that unit is wracked with agonies "
+        r"while a unit is wracked with agonies subtract 2 from its move characteristic and subtract 2 from charge rolls made for it"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "After shooting: pick a hit enemy INFANTRY unit hit by Agonising Energies; until your next turn, it suffers -2\" Move and -2 to Charge rolls.",
     )
 
 

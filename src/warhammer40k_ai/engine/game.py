@@ -1049,6 +1049,44 @@ class Game:
                 if sr.get("post_shoot_leadership_debuff_active"):
                     unit.clear_post_shoot_leadership_debuff()
 
+    def _on_phase_start_wracked_with_agonies_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Wracked with Agonies effects at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Wracked with Agonies cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Wracked with Agonies cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("wracked_with_agonies_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("wracked_with_agonies_active"):
+                    clear_fn = getattr(unit, "clear_wracked_with_agonies", None)
+                    if callable(clear_fn):
+                        clear_fn()
+                    else:
+                        for key in (
+                            "wracked_with_agonies_active",
+                            "wracked_with_agonies_owner",
+                            "wracked_with_agonies_turn",
+                            "wracked_with_agonies_source",
+                            "wracked_with_agonies_move_penalty",
+                            "wracked_with_agonies_charge_penalty",
+                        ):
+                            sr.pop(key, None)
+                        unit.special_rules = sr
+
     def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -3999,6 +4037,114 @@ class Game:
                     "dice": int(spec.get("dice", 3) or 3),
                     "threshold": int(spec.get("threshold", 4) or 4),
                     "mortal_per_success": int(spec.get("mortal_per_success", 1) or 1),
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_wracking_agonies(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Wracking Agonies requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target_with_weapon(model, target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if not models:
+                return False
+            return model in models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_wracking_agonies_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                weapon_key = str(spec.get("weapon_key", "") or "")
+                if not weapon_key:
+                    continue
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    is_infantry_fn = getattr(target_unit, "is_infantry", None)
+                    if callable(is_infantry_fn):
+                        is_infantry = bool(is_infantry_fn())
+                    else:
+                        is_infantry = bool(getattr(target_unit, "is_infantry", False))
+                    if not is_infantry:
+                        continue
+                    if not _model_hit_target_with_weapon(model, target_unit, weapon_key):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Wracking Agonies").strip() or "Wracking Agonies"
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
+                f"{ability_name}: select a unit wracked with agonies.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                    "move_penalty": int(spec.get("move_penalty", -2) or -2),
+                    "charge_penalty": int(spec.get("charge_penalty", -2) or -2),
                 },
             )
             self.request_decision(request)

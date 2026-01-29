@@ -10,6 +10,7 @@ class _UnitStub:
         self._army = army
         self.battleshock_turns = []
         self.mortal_wounds_applied = []
+        self.wracked_with_agonies = []
 
     def get_parent_army(self):
         return self._army
@@ -23,6 +24,23 @@ class _UnitStub:
 
     def is_alive(self):
         return True
+
+    def apply_wracked_with_agonies(self, *, owner_id: str, turn: int, source: str, move_penalty: int, charge_penalty: int):
+        self.wracked_with_agonies.append(
+            {
+                "owner_id": owner_id,
+                "turn": int(turn),
+                "source": source,
+                "move_penalty": int(move_penalty),
+                "charge_penalty": int(charge_penalty),
+            }
+        )
+        self.special_rules["wracked_with_agonies_active"] = True
+        self.special_rules["wracked_with_agonies_owner"] = owner_id
+        self.special_rules["wracked_with_agonies_turn"] = int(turn)
+        self.special_rules["wracked_with_agonies_source"] = source
+        self.special_rules["wracked_with_agonies_move_penalty"] = int(move_penalty)
+        self.special_rules["wracked_with_agonies_charge_penalty"] = int(charge_penalty)
 
     def get_attached_unit_root(self):
         return self
@@ -183,3 +201,39 @@ class TestPostShootDecisions(unittest.TestCase):
             self.assertEqual(target.battleshock_turns, [5])
         finally:
             dice_mod.get_roll = orig_roll
+
+    def test_post_shoot_wracked_agonies_applies(self):
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+
+        player = SimpleNamespace(id="P1")
+        army = SimpleNamespace(player=player)
+        attacker = _UnitStub("ATK", "Attacker", army=army)
+        target = _UnitStub("TGT", "Target", army=SimpleNamespace(player=SimpleNamespace(id="P2")))
+        model = _ModelStub("M1", "Sorcerer")
+        game = _GameStub(units=[attacker, target], models=[model], turn=2)
+
+        option = DecisionOption.create("Target", payload={"unit_id": target._id})
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
+            "Select wracked with agonies target.",
+            player_id=player.id,
+            options=[option],
+            context={
+                "attacker_unit_id": attacker._id,
+                "model_id": model._id,
+                "ability_name": "Wracking Agonies",
+                "move_penalty": -2,
+                "charge_penalty": -2,
+            },
+        )
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+
+        self.assertTrue(apply_result.ok)
+        self.assertTrue(target.special_rules.get("wracked_with_agonies_active"))
+        self.assertEqual(target.special_rules.get("wracked_with_agonies_owner"), player.id)
+        self.assertEqual(target.special_rules.get("wracked_with_agonies_turn"), 2)
+        self.assertEqual(target.special_rules.get("wracked_with_agonies_move_penalty"), -2)
+        self.assertEqual(target.special_rules.get("wracked_with_agonies_charge_penalty"), -2)
