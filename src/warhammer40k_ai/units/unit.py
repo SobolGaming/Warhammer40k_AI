@@ -1213,11 +1213,11 @@ class Unit:
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(
-        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this unit, subtract 1 from the hit roll",
+        r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? targets this unit, subtract 1 from the hit roll",
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_MODEL_RE = re.compile(
-        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this model, subtract 1 from the hit roll",
+        r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? targets this model, subtract 1 from the hit roll",
         re.IGNORECASE,
     )
     _SPAWN_ONLY_ABILITY_RE = re.compile(r"^using\s+sir\s+hekhtur$", re.IGNORECASE)
@@ -8313,6 +8313,14 @@ class Unit:
                 return bool(unit_has_active_wrathful_presence(self, key))
         except Exception:
             pass
+        try:
+            from ..rules.daemon_primarch_slaanesh import ability_name_to_key, unit_has_active_daemon_primarch
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key:
+                return bool(unit_has_active_daemon_primarch(self, key))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:
@@ -12195,11 +12203,27 @@ class Unit:
             return False
         print(f"{self.name} falls back from combat")
 
+        sources = []
+        source_labels = []
         try:
-            from ..rules.wrathful_presence import overwhelming_wrath_sources_for_unit
-            sources = overwhelming_wrath_sources_for_unit(self, game_map=game_map)
+            from ..rules.wrathful_presence import overwhelming_wrath_sources_for_unit, OVERWHELMING_WRATH_NAME
+            ow_sources = overwhelming_wrath_sources_for_unit(self, game_map=game_map)
+            if ow_sources:
+                sources.extend(ow_sources)
+                source_labels.append(OVERWHELMING_WRATH_NAME)
         except Exception:
-            sources = []
+            pass
+        try:
+            from ..rules.daemon_primarch_slaanesh import (
+                enthralling_hypnosis_sources_for_unit,
+                ENTHRALLING_HYPNOSIS_NAME,
+            )
+            eh_sources = enthralling_hypnosis_sources_for_unit(self, game_map=game_map)
+            if eh_sources:
+                sources.extend(eh_sources)
+                source_labels.append(ENTHRALLING_HYPNOSIS_NAME)
+        except Exception:
+            pass
         if sources:
             try:
                 passed = bool(self.pass_leadership_check())
@@ -12214,8 +12238,11 @@ class Unit:
                     from ..utility.event_bus import append_action
                     pn = self.get_parent_army().player
                     src_names = [getattr(s, "name", "") for s in sources if getattr(s, "name", "")]
-                    src_text = ", ".join(src_names) if src_names else "Overwhelming Wrath"
-                    append_action(pn, f"Overwhelming Wrath: {self.name} failed a Leadership test and remains stationary ({src_text}).")
+                    if src_names:
+                        src_text = ", ".join(src_names)
+                    else:
+                        src_text = ", ".join(source_labels) if source_labels else "Leadership suppression"
+                    append_action(pn, f"{self.name} failed a Leadership test and remains stationary ({src_text}).")
                 except Exception:
                     pass
                 return False
@@ -20845,13 +20872,17 @@ class Unit:
                 text_src = desc or name or ""
                 if not text_src:
                     continue
+                try:
+                    key_text = self._normalize_rules_text(text_src).lower().strip()
+                except Exception:
+                    key_text = str(text_src or "").lower().strip()
                 for rule in self._parse_attack_roll_rules_from_text(text_src):
                     if rule.scope != "defensive":
                         continue
                     if atype != "any" and rule.attack_type not in ("any", atype):
                         continue
                     reason_name = str(name or "Ability").strip() or "Ability"
-                    key = f"{scope_key}:{reason_name.lower()}"
+                    key = key_text or reason_name.lower()
                     if key in seen:
                         break
                     for eff in rule.effects:
@@ -20868,6 +20899,24 @@ class Unit:
                         break
                     if key in seen:
                         break
+                reason_name = str(name or "Ability").strip() or "Ability"
+                key = key_text or reason_name.lower()
+                if key in seen:
+                    continue
+                try:
+                    text_norm = self._normalize_rules_text(text_src or "")
+                    text_norm = text_norm.replace("\u2019", "'").replace("\u0192?T", "'").strip()
+                except Exception:
+                    text_norm = str(text_src or "").strip()
+                m = self._TARGET_HIT_ROLL_PENALTY_UNIT_RE.search(text_norm) or self._TARGET_HIT_ROLL_PENALTY_MODEL_RE.search(text_norm)
+                if not m:
+                    continue
+                at = str(m.group("atype") or "any").strip().lower()
+                if atype != "any" and at not in ("any", atype):
+                    continue
+                seen.add(key)
+                penalty += 1
+                reasons.append(f"-1 to hit from {reason_name}")
 
         unit_entries = []
         for ab in root._iter_active_possible_abilities():

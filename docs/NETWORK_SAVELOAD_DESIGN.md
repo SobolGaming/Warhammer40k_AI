@@ -284,6 +284,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - quarry_selection_dialog: PICK_OBJECTIVE {objective_id} (context `ability="a_grim_warning"`)
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
+- daemon_primarch_slaanesh_dialog: CHOOSE_DAEMON_PRIMARCH_SLAANESH {choice_id} (context `unit_id`, `opponent_player_id`, `battle_round`, `expires_round`)
 - templar_vows_dialog: CHOOSE_VOW {choice_id}
 - voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
 - wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}

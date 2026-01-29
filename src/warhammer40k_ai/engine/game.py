@@ -569,6 +569,29 @@ class Game:
                 context=ctx,
             )
 
+    def _maybe_prompt_daemon_primarch_slaanesh(self, current_player) -> None:
+        if current_player is None:
+            return
+        for player in list(getattr(self, "players", []) or []):
+            if player is None or player is current_player:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            mgr = getattr(army, "daemon_primarch_slaanesh", None)
+            if mgr is None:
+                continue
+            mgr.on_opponent_command_phase_start(current_player, game=self)
+            try:
+                self.event_system.publish(
+                    "daemon_primarch_slaanesh_prompt",
+                    player=player,
+                    opponent_player=current_player,
+                    game=self,
+                )
+            except Exception:
+                pass
+
     def _maybe_prompt_waaagh(self) -> None:
         player = self.get_current_player()
         if player is None:
@@ -7279,6 +7302,9 @@ class Game:
             fn = getattr(unit, "clear_battle_shock", None)
             if callable(fn):
                 fn()
+
+        # Fulgrim: Daemon Primarch of Slaanesh selection at the start of the opponent's Command phase.
+        self._maybe_prompt_daemon_primarch_slaanesh(current_player)
 
         # Space Marines: Oath of Moment target selection at the start of your Command phase.
         mgr = getattr(army, "oath_of_moment", None)

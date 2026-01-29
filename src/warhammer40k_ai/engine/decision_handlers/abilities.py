@@ -32,6 +32,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_VOW,
     DECISION_ISSUE_ORDER,
     DECISION_CHOOSE_WRATHFUL_PRESENCE,
+    DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
     DECISION_CHOOSE_ASPECT,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
@@ -1311,6 +1312,64 @@ def _apply_choose_wrathful(game: object, request: DecisionRequest, result: Decis
     return str(choice)
 
 
+def _validate_choose_daemon_primarch_slaanesh(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit")
+    choice = payload.get("choice_key") or payload.get("key")
+    if unit_val is None or choice is None:
+        return ("Daemon Primarch of Slaanesh requires unit_id and key.",)
+    if resolve_unit(game, unit_val) is None:
+        return ("Daemon Primarch unit not found.",)
+    return ()
+
+
+def _apply_choose_daemon_primarch_slaanesh(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    from ...rules.daemon_primarch_slaanesh import set_active_daemon_primarch_slaanesh
+
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit"))
+    if unit is None:
+        raise RuntimeError("Daemon Primarch unit not found.")
+    choice = payload.get("choice_key") or payload.get("key")
+    start_round = request.context.get("battle_round")
+    if start_round is None and game is not None:
+        start_round = getattr(game, "turn", 0)
+    expires_round = request.context.get("expires_round")
+    if expires_round is None:
+        try:
+            expires_round = int(start_round or 0) + 1
+        except Exception:
+            expires_round = 0
+    opponent_player_id = request.context.get("opponent_player_id")
+    set_active_daemon_primarch_slaanesh(
+        unit,
+        str(choice),
+        start_round=int(start_round or 0),
+        expires_round=int(expires_round or 0),
+        opponent_player_id=opponent_player_id,
+    )
+    try:
+        player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+    except Exception:
+        player = None
+    try:
+        label = _option_label(request, result) or str(choice)
+        uname = str(getattr(unit, "name", "Unit") or "Unit")
+        until_txt = f"until opponent Command phase (BR {expires_round})" if expires_round else "until opponent Command phase"
+        if label:
+            _log_action_for_players(game, player, f"Daemon Primarch of Slaanesh: {uname} selected {label} ({until_txt})")
+    except Exception:
+        pass
+    return str(choice)
+
+
 def _validate_choose_aspect(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     if is_skip_choice(request, result):
         return ()
@@ -1841,6 +1900,11 @@ register_decision_handler(
     DECISION_CHOOSE_WRATHFUL_PRESENCE,
     validate=_validate_choose_wrathful,
     apply=_apply_choose_wrathful,
+)
+register_decision_handler(
+    DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
+    validate=_validate_choose_daemon_primarch_slaanesh,
+    apply=_apply_choose_daemon_primarch_slaanesh,
 )
 register_decision_handler(DECISION_CHOOSE_ASPECT, validate=_validate_choose_aspect, apply=_apply_choose_aspect)
 register_decision_handler(

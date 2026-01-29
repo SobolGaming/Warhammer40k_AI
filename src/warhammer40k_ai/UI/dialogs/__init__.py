@@ -39,6 +39,7 @@ from .templar_vows_dialog import TemplarVowsDialog
 from .nurgles_gift_plague_dialog import NurglesGiftPlagueDialog
 from .shadow_form_dialog import ShadowFormDialog
 from .wrathful_presence_dialog import WrathfulPresenceDialog
+from .daemon_primarch_slaanesh_dialog import DaemonPrimarchSlaaneshDialog
 from .daemonic_allegiance_dialog import DaemonicAllegianceDialog
 from .harbingers_of_dread_dialog import HarbingersOfDreadDialog
 from .doctrina_imperatives_dialog import DoctrinaImperativesDialog
@@ -97,6 +98,7 @@ __all__ = [
     'NurglesGiftPlagueDialog',
     'ShadowFormDialog',
     'WrathfulPresenceDialog',
+    'DaemonPrimarchSlaaneshDialog',
     'DaemonicAllegianceDialog',
     'HarbingersOfDreadDialog',
     'DoctrinaImperativesDialog',

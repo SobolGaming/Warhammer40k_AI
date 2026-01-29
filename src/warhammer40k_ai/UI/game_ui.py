@@ -207,6 +207,7 @@ class GameView:
         self.blood_tithe_dialog = None
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
+        self.daemon_primarch_slaanesh_dialog = None
         self.harbingers_of_dread_dialog = None
         self.doctrina_imperatives_dialog = None
         self.combat_doctrines_dialog = None
@@ -2340,6 +2341,8 @@ class GameView:
         self._pending_hyper_adaptations_queue = []
         # Belakor Shadow Form selection queue
         self._pending_shadow_form_queue = []
+        # Fulgrim Daemon Primarch of Slaanesh selection queue
+        self._pending_daemon_primarch_slaanesh_queue = []
         # Angron Wrathful Presence selection queue
         self._pending_wrathful_presence_queue = []
         # Daemonic Allegiance selection queue (Soul Grinder)
@@ -2486,6 +2489,8 @@ class GameView:
                 )
                 # Tyranids: Shadow in the Warp prompt (either Command phase)
                 event_system.subscribe("shadow_in_the_warp_prompt", self._on_shadow_in_the_warp_prompt)
+                # Fulgrim: Daemon Primarch of Slaanesh selection (opponent Command phase)
+                event_system.subscribe("daemon_primarch_slaanesh_prompt", self._on_daemon_primarch_slaanesh_prompt)
                 # Orks: Waaagh! prompt (start of Command phase)
                 event_system.subscribe("waaagh_prompt", self._on_waaagh_prompt)
                 # T'au Empire: For the Greater Good observer/spotter selection
@@ -8950,6 +8955,52 @@ class GameView:
         self._pending_shadow_in_the_warp_queue.append(player)
         self._open_next_shadow_in_the_warp_prompt(game)
 
+    def _on_daemon_primarch_slaanesh_prompt(self, player=None, opponent_player=None, game=None, **_kwargs):
+        if player is None:
+            return
+        try:
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+        except Exception:
+            is_human = False
+        if not is_human:
+            return
+        game = game or self.game
+        if game is None:
+            return
+        try:
+            army = player.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+        mgr = getattr(army, "daemon_primarch_slaanesh", None)
+        if mgr is None:
+            return
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        opp_id = getattr(opponent_player, "id", None) if opponent_player is not None else None
+        try:
+            from ..rules.daemon_primarch_slaanesh import (
+                daemon_primarch_slaanesh_selectable_units,
+                get_active_daemon_primarch_key,
+            )
+        except Exception:
+            return
+
+        queue = []
+        for unit in list(daemon_primarch_slaanesh_selectable_units(army) or []):
+            try:
+                if get_active_daemon_primarch_key(unit, game=game):
+                    continue
+            except Exception:
+                pass
+            queue.append((player, unit, br, opp_id))
+        if queue:
+            self._pending_daemon_primarch_slaanesh_queue = list(queue)
+            self._open_next_daemon_primarch_slaanesh_prompt()
+
     def _open_next_shadow_in_the_warp_prompt(self, game):
         q = list(getattr(self, "_pending_shadow_in_the_warp_queue", []) or [])
         if not q:
@@ -12601,6 +12652,123 @@ class GameView:
         )
         try:
             self.dialog_manager.open(self.shadow_form_dialog, modal=True)
+        except Exception:
+            pass
+
+    def _open_next_daemon_primarch_slaanesh_prompt(self) -> None:
+        if not self._pending_daemon_primarch_slaanesh_queue:
+            return
+        try:
+            player, unit, br, opp_id = self._pending_daemon_primarch_slaanesh_queue.pop(0)
+        except Exception:
+            return
+        army = player.get_army()
+        mgr = getattr(army, "daemon_primarch_slaanesh", None)
+        if mgr is None or unit is None:
+            self._open_next_daemon_primarch_slaanesh_prompt()
+            return
+        try:
+            from ..rules.daemon_primarch_slaanesh import (
+                DAEMON_PRIMARCH_SLAANESH_OPTIONS,
+                get_active_daemon_primarch_key,
+            )
+        except Exception:
+            self._open_next_daemon_primarch_slaanesh_prompt()
+            return
+
+        try:
+            if get_active_daemon_primarch_key(unit, game=self.game):
+                self._open_next_daemon_primarch_slaanesh_prompt()
+                return
+        except Exception:
+            pass
+
+        if self.daemon_primarch_slaanesh_dialog is None:
+            try:
+                from .dialogs import DaemonPrimarchSlaaneshDialog
+                sw, sh = self.screen.get_size()
+                self.daemon_primarch_slaanesh_dialog = DaemonPrimarchSlaaneshDialog(sw, sh)
+            except Exception:
+                self.daemon_primarch_slaanesh_dialog = None
+        if self.daemon_primarch_slaanesh_dialog is None:
+            self._open_next_daemon_primarch_slaanesh_prompt()
+            return
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+        from .decision_ui_utils import first_option_id
+
+        options = list(DAEMON_PRIMARCH_SLAANESH_OPTIONS)
+        unit_id = get_entity_id(unit)
+        req = None
+        queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
+        if queue is not None and hasattr(queue, "list"):
+            for pending in list(queue.list() or []):
+                if getattr(pending, "decision_type", None) != DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH:
+                    continue
+                ctx = getattr(pending, "context", {}) or {}
+                if str(ctx.get("unit_id", "")) == str(unit_id):
+                    req = pending
+                    break
+
+        if req is None and self.game is not None and bool(getattr(self.game, "is_authoritative", True)):
+            req_options = []
+            for opt in options:
+                key = getattr(opt, "key", None)
+                if not key:
+                    continue
+                name = getattr(opt, "name", None) or str(opt)
+                summary = getattr(opt, "summary", "") or getattr(opt, "effect", "")
+                req_options.append(
+                    DecisionOption.create(
+                        name,
+                        payload={"choice_key": str(key), "summary": summary, "unit_id": unit_id},
+                    )
+                )
+            if not req_options:
+                self._open_next_daemon_primarch_slaanesh_prompt()
+                return
+
+            expires_round = int(br or 0) + 1 if br else 0
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
+                "Select Daemon Primarch of Slaanesh ability.",
+                player_id=getattr(player, "id", None),
+                options=req_options,
+                context={
+                    "unit_id": unit_id,
+                    "battle_round": int(br or 0),
+                    "opponent_player_id": opp_id,
+                    "expires_round": int(expires_round or 0),
+                },
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+        if req is None:
+            self._open_next_daemon_primarch_slaanesh_prompt()
+            return
+
+        def _on_confirm(option_id: str):
+            resolve_decision_value(self.game, req, option_id)
+            self._open_next_daemon_primarch_slaanesh_prompt()
+
+        def _on_cancel():
+            default_id = first_option_id(req)
+            if default_id:
+                resolve_decision_value(self.game, req, default_id)
+            self._open_next_daemon_primarch_slaanesh_prompt()
+
+        self.daemon_primarch_slaanesh_dialog.show(
+            unit_name=getattr(unit, "name", ""),
+            battle_round=br,
+            on_confirm=_on_confirm,
+            on_cancel=_on_cancel,
+            decision_request=req,
+        )
+        try:
+            self.dialog_manager.open(self.daemon_primarch_slaanesh_dialog, modal=True)
         except Exception:
             pass
 

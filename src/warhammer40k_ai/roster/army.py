@@ -270,6 +270,7 @@ class Army:
         self.doctrina_imperatives = None
         self.voice_of_command = None
         self.gate_of_infinity = None
+        self.daemon_primarch_slaanesh = None
         self.emperors_children = None
         self.emperors_children_detachments = None
         self.deathstrike = None
@@ -394,7 +395,9 @@ class Army:
 
         if fid == "EC":
             from ..rules.emperors_children import EmperorsChildrenDetachmentManager
+            from ..rules.daemon_primarch_slaanesh import DaemonPrimarchSlaaneshManager
             self.emperors_children = EmperorsChildrenDetachmentManager(self)
+            self.daemon_primarch_slaanesh = DaemonPrimarchSlaaneshManager(self)
             self.emperors_children_detachments = self.emperors_children
             self.detachment_managers["emperors_children_detachments"] = self.emperors_children_detachments
 
