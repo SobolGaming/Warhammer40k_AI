@@ -3932,7 +3932,7 @@ def _melee_fight_on_death_after_attacks_support(description: str) -> Optional[Tu
     if not norm:
         return None
     pattern = (
-        r"(?:each time )?(?:a model in this unit|this model) is destroyed by a melee attack if (?:that model|it) has not fought this phase "
+        r"(?:each time |if )?(?:a model in this unit|this model) is destroyed by a melee attack if (?:that model|it) has not fought this phase "
         r"roll one d6 on a (?P<threshold>\d+) do not remove (?:it|this model|that destroyed model) from play "
         r"(?:that destroyed model|this model) can fight after the attacking (?:unit|model s unit) has finished making its attacks "
         r"and is then removed from play"

@@ -81,6 +81,15 @@ class _DummyProfile:
     def __init__(self):
         self.parent_wargear = _DummyWargear()
 
+class _DummyRangedWargear:
+    def is_melee(self):
+        return False
+
+
+class _DummyRangedProfile:
+    def __init__(self):
+        self.parent_wargear = _DummyRangedWargear()
+
 
 class TestMeleeFightOnDeathAfterAttacks(unittest.TestCase):
     def test_malevolent_souls_defers_fight_on_death_on_3_plus(self):
@@ -173,3 +182,30 @@ class TestMeleeFightOnDeathAfterAttacks(unittest.TestCase):
 
         pending = getattr(unit, "_melee_fight_on_death_pending_models", [])
         self.assertIn(model, pending)
+
+    def test_fight_on_death_after_attacks_requires_melee(self):
+        game, _p1, _p2, army1, _army2 = _build_game()
+        abilities = [
+            {
+                "name": "Death Throes",
+                "description": (
+                    "If this model is destroyed by a melee attack, if it has not fought this phase, roll one D6: "
+                    "on a 2+, do not remove it from play. This model can fight after the attacking unit has "
+                    "finished making its attacks, and is then removed from play."
+                ),
+                "type": "Datasheet",
+                "parameter": "",
+            }
+        ]
+        unit = _make_unit("Champion", abilities=abilities)
+        army1.add_unit(unit)
+        unit.deployed = True
+        unit.round_state.fought_this_phase = False
+        unit._last_destroyed_by_weapon_profile = _DummyRangedProfile()
+        model = unit.models[0]
+        model._wounds = 0
+
+        with patch("warhammer40k_ai.units.unit.get_roll", return_value=6):
+            unit._handle_model_destroyed(model, game.map)
+
+        self.assertFalse(getattr(unit, "_melee_fight_on_death_pending_models", []))
