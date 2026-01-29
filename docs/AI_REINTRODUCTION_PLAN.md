@@ -768,20 +768,224 @@ Time management is a concrete subsystem, not an open question.
 
 ## Engineering Roadmap (Incremental PRs)
 
-1. Ruleset/version plumbing and deterministic replay.
-2. Unified Decision API with action masking.
-3. DecisionRecord logging + dual-view observation + HumanActionCandidate injection + deterministic replayer.
-4. State encoding foundation with canonical perspectives.
-5. Tier 1 Plan schema integrated into decision contexts.
-6. Compute Budget / Time Manager (caps, multipliers, anytime fallback).
-7. MovementIntent schema and solver hooks.
-8. PathWitness artifacts with continuous validation.
-9. Tight clearance detection and pivot constraints.
-10. Tier 2 orchestration scaffolding.
-11. Training harness with league self-play.
-12. Army muster generator and evaluator prototype.
+Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and replayable without any ML stack installed.
+
+1. Ruleset/version plumbing + deterministic replay
+   - Goal: make the engine replayable and patch-versioned before any AI logic lands.
+   - Ruleset identity:
+     - Plumb ruleset_id, dataslate_id, points_id into game state snapshots, event log records, and decision contexts.
+     - Enforce a single active ruleset bundle per game instance.
+   - Deterministic RNG:
+     - Centralize RNG into an injectable, seedable service (no random.* scattered).
+     - Ensure all stochastic resolution uses that RNG (dice, random target selection, any sampling).
+   - Deterministic iteration:
+     - Eliminate nondeterminism from iteration over sets/maps where it affects ordering.
+     - Sort entity IDs before enumerating candidates or events.
+   - Replay primitive:
+     - Create a replayer that can replay a game from event log or decision log.
+   - Tests:
+     - Same seed -> identical event log hash.
+     - Replay produces identical end state.
+   - Docs:
+     - Document the canonical source of ruleset IDs and where they are stored.
+   - Policy: no ML libs.
+
+2. Unified Decision API + action masking
+   - Goal: every human/AI choice becomes the same deterministic Decision -> chosen CandidateAction interface.
+   - Decision objects:
+     - Every choice in all phases emits a Decision with decision_id, decision_type, context, candidates[], mask[].
+   - CandidateAction invariants:
+     - Deterministic ordering of candidates with a stable sort key.
+     - Stable action_id format derived from canonical params (or a canonical hash).
+   - Masking:
+     - Provide legality mask + optional mask_reasons[] (useful for UI and debugging).
+   - Controller boundary:
+     - Introduce a controller interface used by human UI, remote/network, and heuristic AI (no ML).
+   - Tests:
+     - Decision candidate set matches golden snapshot.
+     - Mask length == candidates length.
+     - Chosen action rejected if mask is false.
+   - Docs:
+     - Add or refresh a Decision types catalog (even if partial initially).
+   - Policy: no ML libs.
+
+3. DecisionRecord logging + dual-view observation + HumanActionCandidate injection + deterministic replayer
+   - Goal: make human games a first-class dataset source aligned to candidate-based RL later.
+   - DecisionRecord writer:
+     - Emit DecisionRecord for every decision: include global_seed, decision_seed, full candidates, mask, timing, outcome.
+   - Dual view observation:
+     - Store omniscient_state snapshot/delta and player_obs_state[player_id] snapshot/delta.
+   - Schema enforcement:
+     - Validate every record against DECISION_RECORD_SCHEMA.json in debug/test builds.
+     - Add schema version bump rules if fields change.
+   - HumanActionCandidate injection:
+     - For freeform UI actions (movement especially): validate, compute required witnesses, append candidate if not present, select it.
+   - Invalid attempt telemetry (optional but high value):
+     - When UI rejects a human action, log valid=false with invalid_attempt + rejection_reason.
+   - Deterministic replay:
+     - Add a replayer mode: replay by DecisionRecords.
+     - Assert candidate sets match recorded candidates (or fail loudly).
+   - Tests:
+     - Round-trip: play -> log -> replay -> identical end state.
+     - HumanActionCandidate injection yields chosen_action_id present in candidates.
+   - Docs:
+     - Add a telemetry contract appendix pointing to the JSON schema.
+   - Policy: no ML libs.
+
+4. State encoding foundation with canonical perspectives
+   - Goal: define stable, patch-resilient state blobs and feature extraction without ML.
+   - Canonicalization:
+     - Define StateBlob contents (full JSON snapshot or delta reference path).
+     - Ensure serialization is deterministic and versioned.
+   - Perspective transform:
+     - Implement player_obs_state(P1) / player_obs_state(P2) consistently.
+     - Define hidden vs public information (tactical cards, secret objectives, etc).
+   - Derived features (engine-side):
+     - Precompute deterministic derived facts (engagement range, objective control, threat range flags).
+   - Tests:
+     - Canonical snapshot stable under serialization.
+     - Perspective transform does not leak hidden info.
+   - Docs:
+     - StateBlob schema description (even if not JSON-schema yet).
+   - Policy: no ML libs.
+
+5. Tier 1 Plan schema integrated into decision contexts
+   - Goal: make the Plan real and plumb it end-to-end, even if heuristic initially.
+   - Plan schema:
+     - Implement Plan object exactly as documented: primary/deny, secondary posture, risk, CP posture, unit tiers.
+   - Heuristic Tier-1 baseline (recommended):
+     - Add a simple rule-based planner producing hold/contest suggestions, CP reserve posture, priority tiers.
+   - Integration:
+     - Plan is attached into Decision.context for later tiers.
+   - Tests:
+     - Plan exists for each turn start.
+     - Plan ID threads through decisions for that turn.
+   - Docs:
+     - Plan schema + example.
+   - Policy: no ML libs.
+
+6. Compute Budget / Time Manager
+   - Goal: make tournament-speed a hard contract now, not a later optimization.
+   - Time manager:
+     - Per decision type caps + tier multipliers (P0/P1/P2).
+   - Anytime cut-off:
+     - Return best candidate so far or fallback to simpler intent when time expires.
+   - Telemetry:
+     - Record time_budget_ms and wall_clock_ms in DecisionRecord.
+   - Performance harness:
+     - Benchmarks for candidate generation time and movement solve time.
+   - Tests:
+     - Hard cap respected (no runaway solve).
+   - Docs:
+     - Time manager policies and timeout behavior.
+   - Policy: no ML libs.
+
+7. MovementIntent schema + solver hooks
+   - Goal: encode intent and let the solver generate legal candidates.
+   - MovementIntent implementation:
+     - Objective targets, deny regions, weights, anchors (0-3), constraint toggles.
+   - Intent -> solver objective weights:
+     - Objective proximity scoring, screen/deny coverage scoring (grid approximation allowed),
+       coherency robustness scoring, threat exposure penalty.
+   - Candidate generation:
+     - Produce top-K candidates with metadata (solver_ms, screen coverage, threat score, etc).
+   - Tests:
+     - Same intent + same seed -> same candidates.
+     - Candidate metadata present.
+   - Docs:
+     - MovementIntent examples and expected candidate metrics.
+   - Policy: no ML libs.
+
+8. PathWitness artifacts + continuous validation
+   - Goal: enforce path legality and support deterministic replay/training.
+   - Witness formats:
+     - CorridorWitness per base profile group.
+     - ModelPathWitness per model (translate, pivot, floor_transition).
+   - Continuous checks:
+     - Segment/volume intersections (not endpoint sampling).
+   - Distance accounting:
+     - Translation cost + pivot cost once-per-move.
+   - Storage:
+     - Use *_ref strings in candidates so DecisionRecords stay compact.
+   - Tests:
+     - Witness contiguous; ends match final pose.
+     - Illegal engagement range crossing during Normal move is caught.
+   - Docs:
+     - PathWitness contract (ensure implementation matches).
+   - Policy: no ML libs.
+
+9. Tight clearance detection + pivot/orientation constraints
+   - Goal: make oval bases and hull footprints behave credibly in tight gaps.
+   - Clearance profiling:
+     - Compute local clearance along corridor.
+   - Tight interval tagging:
+     - Ellipse: b <= clearance < a.
+     - Hull: w <= clearance < sqrt(l^2 + w^2).
+   - Adaptive segment length:
+     - 0.5 inch default, 0.25 inch in tight, 0.1 inch escalation.
+   - Orientation constraints:
+     - Enforce yaw-band restriction (conservative first pass ok).
+   - Tests:
+     - Regression scenarios for threading cases (major does not fit, minor does).
+   - Policy: no ML libs.
+
+10. Tier 2 orchestration scaffolding
+   - Goal: turn Plan into per-unit tasks and intents, with compute tiers.
+   - Task schema:
+     - SCORE / SCREEN / STAGE / TRADE / DENY / PROTECT / BAIT.
+   - Heuristic Tier-2 baseline (recommended):
+     - Deterministic orchestrator assigns tasks based on Plan + board control and emits MovementIntent weights.
+   - Resource posture stub:
+     - CP reserve policy enforcement at Tier 2 (Tier 0 still enumerates legal stratagems).
+   - Tests:
+     - Tasking emitted each phase/turn with Plan.
+     - Compute tiers map to time manager multipliers.
+   - Policy: no ML libs.
+
+11. Training harness with league self-play (no ML)
+   - Goal: build the harness in two sub-phases so ML can be delayed.
+   - 11A) Harness and league skeleton (no ML):
+     - Headless match runner for human, heuristic, and random controllers.
+     - League manager (minimal) with opponent snapshots (heuristics/configs first).
+     - Dataset generator: write DecisionRecords to disk for every match.
+     - Offline evaluation: VP delta, decision counts by type, time usage vs budget.
+   - Tests:
+     - 10 game batch completes and produces valid DecisionRecords.
+   - Policy: no ML libs.
+
+12. Army muster generator + evaluator prototype
+   - Goal: provide a meta-game roster search loop without ML dependencies initially.
+   - Roster generator:
+     - Legal 2000-point rosters from in-repo structured data.
+   - Evaluator:
+     - Heuristic scoring (robustness, OC mass, threat mix, scoring tools).
+   - Integration:
+     - Output playbook prior inputs to Tier 1/2 (risk posture defaults, CP posture defaults).
+   - Tests:
+     - Generates legal rosters deterministically with the same seed.
+   - Docs:
+     - Muster evaluator assumptions.
+   - Policy: no ML libs.
+
+## Add-on PRs to explicitly delay PyTorch
+
+13. Optional ML dependency boundary (no training yet)
+   - Strict dependency rule: core engine must import without torch installed.
+   - Create warhammer40k_ai/ml/ package guarded behind optional extras.
+   - Implement DecisionRecord dataset loader (pure Python).
+   - Feature extraction pipeline (pure Python; outputs numpy arrays or JSON).
+   - Add a tiny null model interface for inference that returns uniform scores.
+
+14. First learned component: Tier 3 candidate ranker (offline supervised)
+   - Only now bring in PyTorch (and later TorchRL/PyG if needed).
+   - Train on DecisionRecords from human games and heuristic self-play:
+     - Learning-to-rank or classification over candidates.
+   - Verify deterministic inference (seeded, no dropout during eval).
+   - Regression suite: model cannot propose illegal actions because it only ranks legal candidates.
 
 ## ML Framework Recommendation
+
+Note: PyTorch and supporting ML libraries are intentionally deferred until the optional ML boundary and first learned component milestones (PR 13/14). Do not add ML dependencies to core before then.
 
 ### Primary Framework
 

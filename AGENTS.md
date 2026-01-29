@@ -250,6 +250,65 @@ Practical expectation:
 
 ---
 
+## AI reintroduction non-negotiables
+
+- All player decisions MUST emit a DecisionRecord conforming to `docs/DECISION_RECORD_SCHEMA.json`.
+- DecisionRecords must include: global_seed, decision_seed, candidates, mask, chosen_action_id (when valid), wall_clock_ms, outcome.
+- HumanActionCandidate injection is required whenever the UI allows freeform actions that may not appear in solver top-K (movement first).
+- If an attempted human action is rejected: log valid=false with invalid_attempt + rejection_reason (schema supports).
+
+---
+
+## Candidate determinism requirements
+
+- Candidate lists must be deterministically ordered.
+- CandidateAction.action_id must be stable across replays and derived from canonical params (or a canonical hash).
+- If candidate generation uses randomness (sampling placements), it must use injected RNG and be reproducible from decision_seed.
+
+---
+
+## Time manager enforcement for solvers/candidate enumeration
+
+- Any solver used to produce candidates must accept a time_budget_ms and obey it.
+- When time expires: return best-so-far candidates and mark fallback mode in metadata.
+- Log time_budget_ms and wall_clock_ms for each DecisionRecord.
+
+---
+
+## PathWitness requirement for movement decisions
+
+- Any MOVE_UNIT / CHARGE_MOVE / FALL_BACK decision must produce a full PathWitness artifact (or a ref).
+- Legality must be validated continuously along the path; no endpoint-only legality checks.
+
+---
+
+## Tool descriptor requirement for stratagems/enhancements
+
+- New stratagem/enhancement implementations must include or update their structured tool descriptor
+  (timing, target constraints, cost, effect params, duration).
+- Avoid hardcoding bespoke effects without going through the tool descriptor layer (unless explicitly approved).
+
+---
+
+## Dependency policy for AI/ML libraries
+
+- Do not add PyTorch/TorchRL/PyG/Ray/W&B to core dependencies until the dedicated ML boundary milestone.
+- All ML dependencies must be optional extras and isolated to a dedicated module (e.g., warhammer40k_ai/ml/).
+- The engine must run headless and replay games without any ML stack installed.
+
+---
+
+## PR checklist for AI compatibility
+
+- All new choices route through the Decision API and are network-parity compatible.
+- DecisionRecords emitted for new decision types; schema validated.
+- Candidate ordering and action_ids are deterministic.
+- Time budgets enforced for any new candidate generation.
+- Movement changes maintain PathWitness invariants.
+- Docs updated in `docs/` (and network save/load mapping if UI changed).
+
+---
+
 ## Handling ambiguity and rules questions (mandatory)
 If you have **any questions** about:
 - rules accuracy
