@@ -337,6 +337,35 @@ class Model:
         )
         return True
 
+    def _activate_once_per_battle_melee_buff(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        attacks_bonus: int = 0,
+        ap_bonus: int = 0,
+        devastating_wounds: bool = False,
+    ) -> bool:
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        if self.has_used_once_per_battle(key):
+            return False
+        effects = getattr(self, "_temporary_effects", None)
+        if not isinstance(effects, dict):
+            effects = {}
+            self._temporary_effects = effects
+        entry = {"expires_phase": "FIGHT_PHASE"}
+        if attacks_bonus:
+            entry["melee_attacks_bonus"] = int(attacks_bonus)
+        if ap_bonus:
+            entry["melee_ap_bonus"] = int(ap_bonus)
+        if devastating_wounds:
+            entry["devastating_wounds_melee"] = True
+        effects[key] = entry
+        self.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
+        return True
+
     def activate_possessed_lord(self) -> bool:
         """
         Possessed Lord (Slaughterbound / similar):
@@ -347,25 +376,60 @@ class Model:
 
         Engine note: we expose this as an explicit activation API. A controller can call it at the appropriate timing.
         """
-        key = "possessed_lord"
-        if self.has_used_once_per_battle(key):
-            return False
-        # Install effect until end of Fight phase
-        self._temporary_effects["possessed_lord"] = {
-            "melee_attacks_bonus": 3,
-            "devastating_wounds_melee": True,
-            "expires_phase": "FIGHT_PHASE",
-        }
-        self.mark_used_once_per_battle(key, ability_name="Possessed Lord", source="datasheet")
-        return True
+        return self._activate_once_per_battle_melee_buff(
+            key="possessed_lord",
+            ability_name="Possessed Lord",
+            attacks_bonus=3,
+            devastating_wounds=True,
+        )
+
+    def activate_fight_phase_melee_ap_boost(
+        self,
+        *,
+        key: str = "fight_phase_melee_ap_boost",
+        ability_name: str = "",
+    ) -> bool:
+        """
+        Once per battle, at the start of the Fight phase, this model can use this ability.
+        If it does, until the end of the phase:
+        - add 3 to the Attacks characteristic of melee weapons equipped by this model
+        - improve the Armour Penetration characteristic of those weapons by 1
+        """
+        label = str(ability_name or "").strip() or "Fight phase melee boost"
+        return self._activate_once_per_battle_melee_buff(
+            key=key,
+            ability_name=label,
+            attacks_bonus=3,
+            ap_bonus=1,
+        )
 
     def get_temporary_melee_attacks_bonus(self) -> int:
         eff = getattr(self, "_temporary_effects", {}) or {}
-        try:
-            v = eff.get("possessed_lord", {})
-            return int(v.get("melee_attacks_bonus", 0) or 0)
-        except Exception:
+        if not isinstance(eff, dict) or not eff:
             return 0
+        total = 0
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            try:
+                total += int(v.get("melee_attacks_bonus", 0) or 0)
+            except Exception:
+                continue
+        return total
+
+    def get_temporary_melee_ap_bonus(self) -> int:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0
+        total = 0
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            try:
+                total += int(v.get("melee_ap_bonus", 0) or 0)
+            except Exception:
+                continue
+        return total
 
     def has_temporary_devastating_wounds_melee(self) -> bool:
         eff = getattr(self, "_temporary_effects", {}) or {}

@@ -533,6 +533,13 @@ class WargearProfile:
             bearer_bonus = int(sr.get("enhancement_bearer_melee_ap_bonus", 0) or 0)
             if bearer_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                 ap_val -= bearer_bonus
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                bonus = int(getattr(attacker, "get_temporary_melee_ap_bonus", lambda: 0)() or 0)
+                if bonus:
+                    ap_val -= bonus
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             from ..utility.aura_effects import get_aura_melee_ap_bonus
             aura_ap, _ = get_aura_melee_ap_bonus(getattr(attacker, "parent_unit", None), self)

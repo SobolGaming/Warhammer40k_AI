@@ -1795,6 +1795,7 @@ def _classify_ability_base(
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
+    fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
     return_on_death_support = _return_on_death_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
     conditional_lone_operative_support = _conditional_lone_operative_support(description)
@@ -1942,6 +1943,8 @@ def _classify_ability_base(
         return fight_phase_engagement_battleshock_support
     if fight_phase_end_mortal_support:
         return fight_phase_end_mortal_support
+    if fight_phase_melee_ap_boost_support:
+        return fight_phase_melee_ap_boost_support
     if melee_fight_on_death_support:
         return melee_fight_on_death_support
     if return_on_death_support:
@@ -3869,6 +3872,22 @@ def _fight_phase_end_mortal_wounds_support(description: str) -> Optional[Tuple[s
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "End of Fight phase: pick an engaged enemy; roll 8D6, each 4+ inflicts 1 mortal wound.")
+
+
+def _fight_phase_once_melee_attacks_ap_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"add 3 to the attacks characteristic of melee weapons equipped by this model and improve the armou?r penetration "
+        r"characteristic of those weapons by 1"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "Once per battle (start of Fight phase): +3 Attacks and +1 AP for bearer melee weapons.")
 
 
 def _return_on_death_support(description: str) -> Optional[Tuple[str, str]]:

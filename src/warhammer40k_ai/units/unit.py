@@ -1117,6 +1117,12 @@ class Unit:
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_ONCE_MELEE_AP_ATTACKS_RE = re.compile(
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"add 3 to the attacks characteristic of melee weapons equipped by this model and improve the armou?r penetration "
+        r"characteristic of those weapons by 1",
+        re.IGNORECASE,
+    )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
         r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
@@ -20735,6 +20741,59 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"source": source, "penalty": penalty})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_fight_phase_melee_attacks_ap_boost_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of the Fight phase, add 3 Attacks and improve AP by 1.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - attacks_bonus: int
+            - ap_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_melee_ap_boost:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._FIGHT_PHASE_ONCE_MELEE_AP_ATTACKS_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Fight phase melee boost").strip() or "Fight phase melee boost"
+            key_seed = self._normalize_keyword_phrase(source)
+            if not key_seed:
+                key_seed = "fight_phase_melee_ap_boost"
+            key = f"fight_phase_melee_ap_boost:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "attacks_bonus": 3,
+                    "ap_bonus": 1,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

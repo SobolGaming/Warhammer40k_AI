@@ -841,6 +841,7 @@ class Game:
 
         Currently supported:
         - Possessed Lord (Once per battle, start of Fight phase): prompt to activate.
+        - Fight phase melee AP boost (Once per battle, start of Fight phase): +3 Attacks and +1 AP for bearer.
         - Enhancements that grant Fight First (Once per battle, start of Fight phase).
         """
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -901,6 +902,51 @@ class Game:
                         payload={"unit_id": unit_id, "model_id": model_id},
                     )
                     break
+            # Once per battle: start of Fight phase -> +3 Attacks and +1 AP (melee) for this model.
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    specs = []
+                    try:
+                        specs = list(unit.model_start_fight_phase_melee_attacks_ap_boost_specs(m) or [])
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "fight_phase_melee_ap_boost").strip().lower()
+                        if not key:
+                            key = "fight_phase_melee_ap_boost"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(spec.get("source", "") or "Fight phase melee boost").strip()
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(unit, 'name', 'Unit')})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="fight_phase_melee_ap_boost",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
+                            instance_key=f"{model_id}:{key}",
+                        )
             # Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
             for unit in list(army.units):
                 if not unit.is_alive():
@@ -2603,6 +2649,7 @@ class Game:
             "shadow_in_the_warp",
             "waaagh",
             "possessed_lord",
+            "fight_phase_melee_ap_boost",
             "power_from_pain_command",
             "power_from_pain_empower",
             "enhancement_fight_first",
@@ -2659,24 +2706,7 @@ class Game:
             model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
             if not model_id:
                 return
-            model = None
-            registry = getattr(self, "entity_registry", None)
-            if registry is not None:
-                model = registry.get(str(model_id), kind="model")
-            if model is None:
-                for p in list(self.players or []):
-                    army = p.get_army()
-                    if army is None:
-                        continue
-                    for unit in list(getattr(army, "units", []) or []):
-                        for candidate in list(getattr(unit, "models", []) or []):
-                            if str(getattr(candidate, "_id", "")) == str(model_id):
-                                model = candidate
-                                break
-                        if model is not None:
-                            break
-                    if model is not None:
-                        break
+            model = self._resolve_model_by_id(model_id)
             if model is None:
                 return
             if getattr(model, "has_used_once_per_battle", lambda _k: False)("possessed_lord"):
@@ -2684,6 +2714,24 @@ class Game:
             if not getattr(model, "is_alive", True):
                 return
             model.activate_possessed_lord()
+            return
+
+        if ability_key == "fight_phase_melee_ap_boost":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(payload.get("buff_key") or ctx.get("buff_key") or "fight_phase_melee_ap_boost").strip().lower()
+            if not key:
+                key = "fight_phase_melee_ap_boost"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
+            model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
             return
 
         if ability_key == "power_from_pain_command":

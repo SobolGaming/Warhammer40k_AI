@@ -172,6 +172,46 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
 
         self.assertTrue(model.has_used_once_per_battle("possessed_lord"))
 
+    def test_fight_phase_melee_ap_boost_queues_and_applies(self):
+        army = Army("Test", detachment_type="Other")
+        army.faction_id = "TEST"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, at the start of the Fight phase, this model can use this ability. If it does, until the "
+            "end of the phase, add 3 to the Attacks characteristic of melee weapons equipped by this model and improve "
+            "the Armour Penetration characteristic of those weapons by 1."
+        )
+        ability = Ability("Ruinous Assault", "TEST", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Ruinous Assault Unit", army, abilities=[ability])
+        model = self._make_model("Ruinous Assault Model", unit)
+        unit.models = [model]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_optional_abilities(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "fight_phase_melee_ap_boost")
+        self.assertEqual(ctx.get("model_id"), get_entity_id(model))
+
+        self._resolve_yes(game, request, player)
+
+        self.assertEqual(int(model.get_temporary_melee_attacks_bonus()), 3)
+        self.assertEqual(int(model.get_temporary_melee_ap_bonus()), 1)
+
     def test_power_from_pain_command_phase_queues_and_applies(self):
         army = Army("Drukhari", detachment_type="Other")
         army.faction_id = "DRU"
