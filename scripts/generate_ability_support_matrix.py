@@ -1430,6 +1430,10 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
         "Collar of Khorne": ("Supported", "Feel No Pain 3+ against Psychic attacks."),
         "Flip Belt": ("Supported", "Ignore vertical distance for Move/Advance/Fall Back/Charge movement."),
         "Conversion": ("Supported", "Conversion keyword supported: 4+ successful hits become critical hits beyond the Conversion distance."),
+        "Reverberating Summons": (
+            "Supported",
+            "Weapon ability: when this weapon destroys a model, select a friendly Plaguebearers unit within 12\" to return 1 destroyed model.",
+        ),
     }
     return {_norm(name): val for name, val in raw.items()}
 
