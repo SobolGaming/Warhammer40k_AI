@@ -1605,6 +1605,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Declare Battle Formations: Support Weapon can join one Guardian Defenders unit (max 1), counts as part of that unit, and joined unit cannot embark.",
         ),
+        ("AE", "Support Weapon"): (
+            "Supported",
+            "When targeted, if the unit contains other models, the Support Weapon model uses Toughness 3 for that attack.",
+        ),
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),

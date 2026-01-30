@@ -7400,6 +7400,57 @@ class Unit:
             pass
         return False
 
+    def has_support_weapon_ability(self) -> bool:
+        """True if this unit has the Support Weapon toughness override rule."""
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name == "support weapon":
+                    return True
+                desc = str(getattr(ab, "description", "") or "").lower()
+                if (
+                    "toughness characteristic of 3" in desc
+                    and "attack targets this model" in desc
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _support_weapon_has_other_models(self) -> bool:
+        """Return True if this Support Weapon model's unit contains other models."""
+        try:
+            if not self.has_support_weapon_ability():
+                return False
+        except Exception:
+            return False
+        try:
+            unit_models = [
+                m for m in list(getattr(self, "models", []) or [])
+                if getattr(m, "is_alive", True) and not getattr(m, "_pending_placement", False)
+            ]
+        except Exception:
+            unit_models = []
+        unit_alive = len(unit_models)
+        if unit_alive <= 0:
+            return False
+        if unit_alive >= 2:
+            return True
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is self:
+            return False
+        try:
+            all_models = [
+                m for m in list(root.get_attached_unit_models() or [])
+                if getattr(m, "is_alive", True) and not getattr(m, "_pending_placement", False)
+            ]
+        except Exception:
+            all_models = unit_models
+        return len(all_models) > unit_alive
+
     def is_guardian_defenders_unit(self) -> bool:
         try:
             return str(getattr(self, "name", "") or "").strip().lower() == "guardian defenders"
@@ -8152,6 +8203,13 @@ class Unit:
                 t = getattr(self, "_last_bodyguard_toughness", None)
                 if t is not None:
                     return int(t)
+        except Exception:
+            pass
+
+        # Support Weapon: if this model's unit contains other models, use T3 for this model.
+        try:
+            if self._support_weapon_has_other_models():
+                return 3
         except Exception:
             pass
 
