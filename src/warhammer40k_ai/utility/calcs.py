@@ -270,6 +270,14 @@ def _movement_type_allows_flip_belt(movement_type) -> bool:
     return mt in ("move", "advance", "fall_back", "charge")
 
 def _unit_ignores_vertical_distance(unit: 'Unit', movement_type=None) -> bool:
+    mt = _movement_type_tag(movement_type)
+    if mt == "advance":
+        try:
+            fn = getattr(unit, "advance_ignores_vertical_distance", None)
+            if callable(fn) and fn():
+                return True
+        except Exception:
+            pass
     if not _movement_type_allows_flip_belt(movement_type):
         return False
     try:

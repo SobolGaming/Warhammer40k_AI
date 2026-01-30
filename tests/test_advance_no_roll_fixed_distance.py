@@ -3,12 +3,26 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from warhammer40k_ai.units.unit import Unit
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.utility.calcs import measure_path_distance
 
 
 _ADVANCE_NO_ROLL_TEXT = (
     'Each time this unit Advances, do not make an Advance roll. Instead, until the end of the '
     'phase, add 6" to the Move characteristic of models in this unit.'
 )
+_LEADING_ADVANCE_VERTICAL_TEXT = (
+    'While this model is leading a unit, each time that unit Advances, do not make an Advance roll. '
+    'Instead, until the end of the phase, add 6" to the Move characteristic of models in that unit '
+    'and each time a model in that unit makes an Advance move, ignore any vertical distance when '
+    'determining the total distance that model can be moved during that move.'
+)
+
+
+class _DummyPlayer:
+    def __init__(self, name: str = "P1") -> None:
+        self.name = name
+        self.game = None
 
 
 class _MockDatasheet:
@@ -51,6 +65,44 @@ def _make_unit(ability_text: str = _ADVANCE_NO_ROLL_TEXT) -> Unit:
     return Unit(_MockDatasheet(ability_text))
 
 
+class _LeaderDatasheet(_MockDatasheet):
+    def __init__(self) -> None:
+        super().__init__(_LEADING_ADVANCE_VERTICAL_TEXT)
+        self.id = "leader-advance"
+        self.name = "Leader"
+        self.attached_to = ["bodyguard-advance"]
+
+
+class _BodyguardDatasheet:
+    def __init__(self) -> None:
+        self.id = "bodyguard-advance"
+        self.name = "Bodyguard"
+        self.faction_data = {"name": "Test"}
+        self.keywords = ["INFANTRY"]
+        self.faction_keywords = ["TEST"]
+        self.attached_to = []
+        self.attached_to_names = []
+        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "M": "6",
+                "T": "4",
+                "Sv": "3",
+                "W": "2",
+                "Ld": "7",
+                "OC": "2",
+                "base_size": "32mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = []
+        self.loadout = "This model is equipped with: nothing"
+
+
 def test_advance_no_roll_is_parsed_and_skips_roll():
     unit = _make_unit()
     effect = unit._get_advance_no_roll_effect()
@@ -74,3 +126,28 @@ def test_advance_no_roll_ignores_advance_roll_modifiers():
 
     assert unit._apply_advance_roll_modifiers(1) == 6
 
+
+def test_leading_advance_ignore_vertical_distance():
+    leader = Unit(_LeaderDatasheet())
+    bodyguard = Unit(_BodyguardDatasheet())
+
+    army = Army(faction="Test", detachment_type="Test", points_limit=2000)
+    army.player = _DummyPlayer()
+    army.units = [leader, bodyguard]
+    for u in army.units:
+        u.parent_army = army
+
+    assert bodyguard._get_advance_no_roll_effect() is None
+    assert not bodyguard.advance_ignores_vertical_distance()
+
+    leader.attach_to_unit(bodyguard)
+    effect = bodyguard._get_advance_no_roll_effect()
+    assert effect is not None
+    assert int(effect.get("distance", 0) or 0) == 6
+    assert bodyguard.advance_ignores_vertical_distance()
+
+    path = [(0.0, 0.0, 0.0), (0.0, 6.0, 5.0)]
+    advance_dist = measure_path_distance(path, bodyguard, movement_type="advance")
+    assert abs(advance_dist - 6.0) < 1e-6
+    move_dist = measure_path_distance(path, bodyguard, movement_type="move")
+    assert move_dist > 6.0

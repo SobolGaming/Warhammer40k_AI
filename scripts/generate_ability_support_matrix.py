@@ -1609,6 +1609,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When targeted, if the unit contains other models, the Support Weapon model uses Toughness 3 for that attack.",
         ),
+        ("AE", "Whirling Death"): (
+            "Supported",
+            "Leading: Advance without roll; +6\" Move; ignore vertical distance during Advance moves.",
+        ),
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),

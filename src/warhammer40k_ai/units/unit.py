@@ -907,6 +907,10 @@ class Unit:
         r"do\s+not\s+make\s+an?\s+advance\s+roll.*?add\s+(\d+)\s*(?:\"|inches)?\s+to\s+the\s+move\s+characteristic",
         re.IGNORECASE,
     )
+    _ADVANCE_IGNORE_VERTICAL_RE = re.compile(
+        r"ignore\s+(?:any\s+)?vertical\s+distance",
+        re.IGNORECASE,
+    )
     _ENEMY_FALLBACK_DESPERATE_ESCAPE_RE = re.compile(
         r"each\s+time\s+an?\s+enemy\s+unit.*?within\s+engagement\s+range.*?falls?\s+back.*?desperate\s+escape",
         re.IGNORECASE,
@@ -2786,6 +2790,14 @@ class Unit:
             return None
         return int(dist)
 
+    def _parse_advance_ignore_vertical_distance(self, text: str) -> bool:
+        if not text:
+            return False
+        low = str(text).lower().replace("\u2019", "'").replace("\u0192?T", "'")
+        if "advance" not in low:
+            return False
+        return bool(self._ADVANCE_IGNORE_VERTICAL_RE.search(low))
+
     def _refresh_advance_no_roll_flags(self) -> None:
         """Parse fixed Advance distance rules that replace the Advance roll."""
         try:
@@ -2800,6 +2812,7 @@ class Unit:
             members = [root]
 
         ability_tag = "ability:advance_no_roll"
+        ignore_tag = "ability:advance_ignore_vertical_distance"
 
         # Clear previous ability-derived entries while preserving other sources (e.g., stratagems).
         for u in members:
@@ -2812,39 +2825,65 @@ class Unit:
                 sr["advance_no_roll_effects"] = kept
             else:
                 sr.pop("advance_no_roll_effects", None)
+            ignore_effects = list(sr.get("advance_ignore_vertical_distance_effects", []) or [])
+            kept_ignore = [
+                e for e in ignore_effects if not (isinstance(e, dict) and e.get("tag") == ignore_tag)
+            ]
+            if kept_ignore:
+                sr["advance_ignore_vertical_distance_effects"] = kept_ignore
+            else:
+                sr.pop("advance_ignore_vertical_distance_effects", None)
             u.special_rules = sr
 
         parsed: list[tuple[int, str]] = []
+        parsed_ignore: list[str] = []
         for u in members:
             for name, desc in u._iter_ability_entries_for_rules(model=None):
                 text_src = u._strip_eligibility_prefix(desc or name or "")
                 text = u._normalize_rules_text(text_src or "")
                 dist = u._parse_advance_no_roll_distance(text)
                 if not dist:
-                    continue
+                    dist = None
                 source = str(name or "Advance no-roll ability").strip() or "Advance no-roll ability"
-                parsed.append((int(dist), source))
+                if dist:
+                    parsed.append((int(dist), source))
+                if u._parse_advance_ignore_vertical_distance(text):
+                    parsed_ignore.append(source)
 
-        if not parsed:
-            return
+        if parsed:
+            best_dist = max(dist for dist, _src in parsed)
+            sources = sorted({src for dist, src in parsed if dist == best_dist})
+            source_label = ", ".join(sources) if sources else "Advance no-roll ability"
+            entry = {
+                "distance": int(best_dist),
+                "source": source_label,
+                "tag": ability_tag,
+            }
 
-        best_dist = max(dist for dist, _src in parsed)
-        sources = sorted({src for dist, src in parsed if dist == best_dist})
-        source_label = ", ".join(sources) if sources else "Advance no-roll ability"
-        entry = {
-            "distance": int(best_dist),
-            "source": source_label,
-            "tag": ability_tag,
-        }
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                effects = list(sr.get("advance_no_roll_effects", []) or [])
+                effects.append(dict(entry))
+                sr["advance_no_roll_effects"] = effects
+                u.special_rules = sr
 
-        for u in members:
-            sr = getattr(u, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            effects = list(sr.get("advance_no_roll_effects", []) or [])
-            effects.append(dict(entry))
-            sr["advance_no_roll_effects"] = effects
-            u.special_rules = sr
+        if parsed_ignore:
+            sources = sorted({src for src in parsed_ignore if src})
+            source_label = ", ".join(sources) if sources else "Advance vertical distance ignore"
+            entry = {
+                "source": source_label,
+                "tag": ignore_tag,
+            }
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                effects = list(sr.get("advance_ignore_vertical_distance_effects", []) or [])
+                effects.append(dict(entry))
+                sr["advance_ignore_vertical_distance_effects"] = effects
+                u.special_rules = sr
 
     def _get_advance_no_roll_effect(self) -> Optional[dict]:
         """Return the best active fixed-Advance effect that replaces the Advance roll."""
@@ -2888,6 +2927,34 @@ class Unit:
                     "expires_phase": exp,
                 }
         return best
+
+    def advance_ignores_vertical_distance(self) -> bool:
+        """Return True if this unit ignores vertical distance when Advancing."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        effects = sr.get("advance_ignore_vertical_distance_effects") if isinstance(sr, dict) else None
+        if not isinstance(effects, list) or not effects:
+            return False
+
+        phase_name = ""
+        try:
+            army = root.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+
+        for effect in effects:
+            if not isinstance(effect, dict):
+                continue
+            exp = str(effect.get("expires_phase", "") or "").strip().upper()
+            if exp and phase_name and exp != phase_name:
+                continue
+            return True
+        return False
 
     def _refresh_bearer_keyword_flags(self) -> None:
         """Parse bearer-only keyword additions (e.g., SMOKE) into special_rules."""
