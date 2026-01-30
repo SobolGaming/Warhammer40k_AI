@@ -302,6 +302,46 @@ class BattleFocusManager:
         self.tokens = int(self.tokens) - 1
         return True
 
+    def _maybe_refund_token_on_agile_maneuver(self, unit, game, maneuver: str) -> None:
+        if unit is None or game is None:
+            return
+        try:
+            specs = list(unit.leading_battle_focus_token_refund_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return
+        try:
+            specs.sort(key=lambda s: str(s.get("source", "") or "").lower())
+        except Exception:
+            pass
+        try:
+            from ..utility.dice import get_roll
+        except Exception:
+            get_roll = None
+        for spec in specs:
+            try:
+                threshold = int(spec.get("threshold", 3) or 3)
+            except Exception:
+                threshold = 3
+            if threshold <= 0:
+                threshold = 3
+            try:
+                roll = int(get_roll("D6")) if callable(get_roll) else 1
+            except Exception:
+                roll = 1
+            if roll < threshold:
+                continue
+            self.tokens = int(self.tokens) + 1
+            try:
+                from ..utility.event_bus import append_action
+                player = getattr(self.army, "player", None)
+                unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+                source = str(spec.get("source", "") or "Battle Focus").strip() or "Battle Focus"
+                append_action(player, f"{source}: regained 1 Battle Focus token ({unit_name}, roll {roll}).")
+            except Exception:
+                pass
+
     def _should_use(self, player, key: str, ctx: dict) -> bool:
         try:
             return bool(player._should_use_optional_ability(key, ctx))
@@ -723,6 +763,7 @@ class BattleFocusManager:
             return
         if not self._spend_token():
             return
+        self._maybe_refund_token_on_agile_maneuver(unit, game, maneuver)
 
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
@@ -767,6 +808,7 @@ class BattleFocusManager:
             return
         if not self._spend_token():
             return
+        self._maybe_refund_token_on_agile_maneuver(unit, game, maneuver)
 
         try:
             from ..utility.dice import get_roll

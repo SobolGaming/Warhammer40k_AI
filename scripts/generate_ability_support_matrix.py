@@ -1923,6 +1923,7 @@ def _classify_ability_base(
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
+    battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
@@ -2091,6 +2092,8 @@ def _classify_ability_base(
         return movement_phase_speed_mortal_support
     if movement_phase_visible_wound_bonus_support:
         return movement_phase_visible_wound_bonus_support
+    if battle_focus_token_refund_support:
+        return battle_focus_token_refund_support
     if start_of_battle_keyword_reroll_support:
         return start_of_battle_keyword_reroll_support
     if daemonic_patrons_support:
@@ -3068,6 +3071,26 @@ def _start_of_battle_keyword_reroll_ones_support(description: str) -> Optional[T
     else:
         note = "Start of battle: select a keyword; re-roll Hit/Wound rolls of 1 vs that keyword."
     return ("Supported", note)
+
+
+def _battle_focus_agile_maneuver_token_refund_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit each time you spend a battle focus token to enable that unit to perform "
+        r"an agile (?:manoeuvre|maneuver) roll (?:one|1|a) d6 on a (?P<threshold>\d) you gain 1 battle focus token"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    threshold = m.group("threshold") or "3"
+    return (
+        "Supported",
+        f"While leading: when spending a Battle Focus token for an Agile Manoeuvre, roll a D6; on {threshold}+ gain 1 token.",
+    )
 
 
 def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:

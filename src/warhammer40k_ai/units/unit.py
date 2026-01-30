@@ -1283,6 +1283,11 @@ class Unit:
         r"add (?P<bonus>\d+) to the wound rolls?",
         re.IGNORECASE,
     )
+    _BATTLE_FOCUS_TOKEN_REFUND_ON_AGILE_MANEUVER_RE = re.compile(
+        r"while this model is leading a unit each time you spend a battle focus token to enable that unit to perform "
+        r"an agile (?:manoeuvre|maneuver) roll (?:one|1) d6 on a (?P<threshold>\d)\+? you gain 1 battle focus token",
+        re.IGNORECASE,
+    )
     _START_OF_BATTLE_KEYWORD_REROLL_ONES_RE = re.compile(
         r"at the start of the battle select one of the following keywords (?P<keywords>[a-z0-9 ]+) "
         r"each time this model makes an attack(?:s)? that targets? a unit with the selected keyword "
@@ -9652,6 +9657,69 @@ class Unit:
                     yield ds
             except Exception:
                 continue
+
+    def leading_battle_focus_token_refund_specs(self) -> list[dict]:
+        """
+        Leading ability: refund Battle Focus tokens on Agile Manoeuvre spend.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - threshold: int (D6 roll needed)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_battle_focus_token_refund_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = str(ab or "")
+                    desc = str(ab or "")
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text_src = leader._strip_eligibility_prefix(desc or "")
+            normalized = leader._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._BATTLE_FOCUS_TOKEN_REFUND_ON_AGILE_MANEUVER_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                threshold = int(m.group("threshold") or 3)
+            except Exception:
+                threshold = 3
+            if threshold <= 0:
+                threshold = 3
+            source = str(name or "Battle Focus token refund").strip() or "Battle Focus token refund"
+            key = (source.lower(), threshold)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "threshold": int(threshold),
+                }
+            )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
 
     def _iter_reroll_scan_texts(self):
         """Yield ability texts for reroll detection."""
