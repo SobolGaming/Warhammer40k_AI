@@ -794,6 +794,16 @@ class Unit:
                 del self.special_rules["allocated_damage_reductions"]
         except Exception:
             pass
+        try:
+            entries = self.special_rules.get("defensive_wound_mods")
+            if isinstance(entries, list):
+                kept = [e for e in entries if not isinstance(e, dict) or e.get("tag") != "ability:strength_gt_toughness_wound_penalty"]
+                if kept:
+                    self.special_rules["defensive_wound_mods"] = kept
+                elif "defensive_wound_mods" in self.special_rules:
+                    del self.special_rules["defensive_wound_mods"]
+        except Exception:
+            pass
 
         # Collect all rules text from unit abilities.
         entries = []
@@ -810,6 +820,7 @@ class Unit:
             if not t:
                 continue
             tl = t.lower()
+            sentences = [part.strip() for part in re.split(r"[.;]\s*", raw or "") if part.strip()]
 
             # Save bonus vs allocated attacks with Damage characteristic of N.
             # Example: "Each time an attack with a Damage characteristic of 1 is allocated to a model in this unit,
@@ -887,6 +898,59 @@ class Unit:
                     }
                 )
                 sr["allocated_damage_reductions"] = items
+                self.special_rules = sr
+
+            # Wound roll penalty when incoming attack Strength exceeds target Toughness.
+            seen_wound_mods = set()
+            for sentence in sentences:
+                if not sentence:
+                    continue
+                norm = self._normalize_rules_text(sentence)
+                if not norm:
+                    continue
+                norm = norm.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = norm.lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if not norm.startswith("each time"):
+                    continue
+                pattern = (
+                    r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
+                    r"(?:targets|target|is allocated to) "
+                    r"(?:this model|this unit|a model in this unit) "
+                    r"if (?:the )?(?:strength characteristic of that attack|that attacks strength characteristic) "
+                    r"is greater than "
+                    r"(?:the toughness characteristic of (?:this model|this unit|that model)|(?:this model|this unit|that model)s toughness characteristic) "
+                    r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
+                )
+                m = re.fullmatch(pattern, norm)
+                if not m:
+                    continue
+                try:
+                    val = int(m.group("val"))
+                except Exception:
+                    val = 0
+                if not val:
+                    continue
+                atype = (m.group("atype") or "any").strip().lower()
+                label = (name or "Defensive ability").strip() or "Defensive ability"
+                key = (label.lower(), atype, int(val))
+                if key in seen_wound_mods:
+                    continue
+                seen_wound_mods.add(key)
+                sr = self.special_rules
+                items = list(sr.get("defensive_wound_mods", []) or [])
+                items.append(
+                    {
+                        "value": int(val),
+                        "attack_type": atype,
+                        "source": label,
+                        "requires_strength_gt_toughness": True,
+                        "tag": "ability:strength_gt_toughness_wound_penalty",
+                    }
+                )
+                sr["defensive_wound_mods"] = items
                 self.special_rules = sr
 
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)

@@ -1891,6 +1891,7 @@ def _classify_ability_base(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
+    strength_gt_toughness_wound_penalty_support = _defensive_strength_gt_toughness_wound_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
@@ -2022,6 +2023,8 @@ def _classify_ability_base(
         return unit_wound_reroll_support
     if target_hit_penalty_support:
         return target_hit_penalty_support
+    if strength_gt_toughness_wound_penalty_support:
+        return strength_gt_toughness_wound_penalty_support
     if melee_damage_support:
         return melee_damage_support
     if two_melee_weapons_support:
@@ -3017,6 +3020,37 @@ def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Model attacks vs FLY targets gain +{m.group('amt')} to hit.")
+
+
+def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
+        r"(?:targets|target|is allocated to) "
+        r"(?P<scope>this model|this unit|a model in this unit) "
+        r"if (?:the )?(?:strength characteristic of that attack|that attacks strength characteristic) "
+        r"is greater than "
+        r"(?:the toughness characteristic of (?:this model|this unit|that model)|(?:this model|this unit|that model)s toughness characteristic) "
+        r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = m.group("val")
+    scope_raw = m.group("scope") or "this model"
+    scope_text = "Model" if "model" in scope_raw else "Unit"
+    atype = (m.group("atype") or "").strip().lower()
+    if atype == "melee":
+        attack_scope = "melee"
+    elif atype == "ranged":
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+    return ("Supported", f"{scope_text} targeted: -{val} to wound vs {attack_scope} attacks when S > T.")
 
 
 def _model_attack_roll_bonus_support(description: str) -> Optional[Tuple[str, str]]:
