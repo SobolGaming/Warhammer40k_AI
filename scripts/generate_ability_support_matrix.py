@@ -1601,6 +1601,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "War Construct"): ("Supported", "Shoot after Falling Back."),
         ("AE", "Flawless Poise"): ("Supported", "Shoot and charge after Falling Back."),
         ("AE", "Into the Foe"): ("Partial", "Charge-after-Advance applies to the transport; disembark timing/target unit requirement not enforced."),
+        ("AE", "SUPPORT ARTILLERY"): (
+            "Supported",
+            "Declare Battle Formations: Support Weapon can join one Guardian Defenders unit (max 1), counts as part of that unit, and joined unit cannot embark.",
+        ),
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
