@@ -403,6 +403,53 @@ class Model:
             ap_bonus=1,
         )
 
+    def activate_movement_phase_move_weapon_bonus(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        move_bonus_dice: str,
+        weapon_name: str,
+        attacks_bonus: int,
+    ) -> bool:
+        """
+        Once per battle, before a Normal move in the Movement phase:
+        add Move (dice) and weapon Attacks bonus until end of turn.
+        """
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        if self.has_used_once_per_battle(key):
+            return False
+        bonus = 0
+        move_bonus_dice = str(move_bonus_dice or "").strip().upper()
+        if move_bonus_dice:
+            try:
+                bonus = int(get_roll(move_bonus_dice) or 0)
+            except Exception:
+                bonus = 0
+        try:
+            attacks_bonus = int(attacks_bonus or 0)
+        except Exception:
+            attacks_bonus = 0
+        if bonus <= 0 and attacks_bonus <= 0:
+            return False
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        entry = {"expires_phase": "FIGHT_PHASE"}
+        if bonus:
+            entry["movement_bonus"] = int(bonus)
+            entry["movement_bonus_source"] = str(ability_name or "").strip() or "Movement bonus"
+            if move_bonus_dice:
+                entry["movement_bonus_dice"] = move_bonus_dice
+        weapon_name = str(weapon_name or "").strip()
+        if weapon_name and attacks_bonus:
+            entry["weapon_attacks_bonus"] = {weapon_name: int(attacks_bonus)}
+            entry["weapon_attacks_bonus_source"] = str(ability_name or "").strip() or "Weapon attacks bonus"
+        self._temporary_effects[key] = entry
+        self.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
+        return True
+
     def get_temporary_melee_attacks_bonus(self) -> int:
         eff = getattr(self, "_temporary_effects", {}) or {}
         if not isinstance(eff, dict) or not eff:
@@ -442,6 +489,59 @@ class Model:
             except Exception:
                 continue
         return False
+
+    def get_temporary_movement_bonus(self) -> int:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0
+        total = 0
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            try:
+                total += int(v.get("movement_bonus", 0) or 0)
+            except Exception:
+                continue
+        return total
+
+    @staticmethod
+    def _normalize_weapon_name(value: str) -> str:
+        t = str(value or "").lower()
+        t = t.replace("\u2019", "'")
+        t = re.sub(r"[^a-z0-9]+", " ", t)
+        return re.sub(r"\s+", " ", t).strip()
+
+    def get_temporary_weapon_attacks_bonus(self, weapon_name: str) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_attacks_bonus")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_attacks_bonus_source") or "").strip()
+            for key, bonus in bonus_map.items():
+                try:
+                    bonus_val = int(bonus or 0)
+                except Exception:
+                    bonus_val = 0
+                if bonus_val == 0:
+                    continue
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm == target or key_norm in target or target in key_norm:
+                    total += int(bonus_val)
+                    label = source or str(key or weapon_name)
+                    reasons.append(f"{label} +{bonus_val}A ({key_norm}) [temporary]")
+        return int(total), reasons
 
     # ---------------- Code Chivalric helpers ----------------
 

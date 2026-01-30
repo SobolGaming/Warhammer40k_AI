@@ -472,6 +472,12 @@ class Unit:
             applies_fn = getattr(mgr, "idols_of_khorne_burning_wrath_applies", None) if mgr is not None else None
             if callable(applies_fn) and applies_fn(self, game_map=game_map):
                 mods.append(Modifier(ModifierOp.ADD, 1, source="idols_of_khorne:burning_wrath"))
+            try:
+                bonus = int(getattr(model, "get_temporary_movement_bonus", lambda: 0)() or 0)
+            except Exception:
+                bonus = 0
+            if bonus:
+                mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_movement_add"))
 
         if ckey == "leadership":
             if game_map is None:
@@ -1227,6 +1233,12 @@ class Unit:
         r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
         r"add 3 to the attacks characteristic of melee weapons equipped by this model and improve the armou?r penetration "
         r"characteristic of those weapons by 1",
+        re.IGNORECASE,
+    )
+    _MOVEMENT_PHASE_ONCE_NORMAL_MOVE_WEAPON_ATTACKS_RE = re.compile(
+        r"once per battle (?:in|during) your movement phase before this model makes (?:a )?normal move it can use this ability "
+        r"if it does until the end of the turn add (?P<move>\d+d\d+) to this model s move characteristic "
+        r"and add (?P<attacks>\d+) to the attacks characteristic of this model s (?P<weapon>[a-z0-9 ]+? weapon(?:s)?)",
         re.IGNORECASE,
     )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
@@ -21505,6 +21517,74 @@ class Unit:
                     "key": key,
                     "attacks_bonus": 3,
                     "ap_bonus": 1,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_normal_move_weapon_attacks_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, before a Normal move in the Movement phase, add Move (dice) and weapon Attacks.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - move_bonus_dice: str (e.g., "2D6")
+            - attacks_bonus: int
+            - weapon_name: str (weapon name pattern)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_normal_move_weapon_attacks_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_ONCE_NORMAL_MOVE_WEAPON_ATTACKS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            move_dice = str(m.group("move") or "").strip().upper()
+            if not move_dice:
+                continue
+            try:
+                attacks_bonus = int(m.group("attacks") or 0)
+            except Exception:
+                attacks_bonus = 0
+            if attacks_bonus <= 0:
+                continue
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            source = str(name or "Movement phase normal move boost").strip() or "Movement phase normal move boost"
+            key_seed = self._normalize_keyword_phrase(source)
+            if not key_seed:
+                key_seed = "movement_phase_normal_move_bonus"
+            key = f"movement_phase_normal_move_bonus:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "move_bonus_dice": move_dice,
+                    "attacks_bonus": int(attacks_bonus),
+                    "weapon_name": weapon_name,
                 }
             )
 

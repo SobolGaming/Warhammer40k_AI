@@ -869,6 +869,22 @@ class WargearProfile:
             pass
 
         try:
+            if self.parent_wargear:
+                bonus, reasons = getattr(attacker, "get_temporary_weapon_attacks_bonus", lambda _n: (0, []))(
+                    getattr(self.parent_wargear, "name", "")
+                )
+                if bonus:
+                    atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_weapon_attacks_add"))
+                    if reasons:
+                        attack_result.attacks_special_modifiers.extend(list(reasons))
+                    else:
+                        attack_result.attacks_special_modifiers.append(
+                            f"Ability +{bonus}A ({getattr(self.parent_wargear, 'name', 'weapon')}) [temporary]"
+                        )
+        except Exception:
+            pass
+
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None

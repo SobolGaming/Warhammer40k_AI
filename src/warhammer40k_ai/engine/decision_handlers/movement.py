@@ -166,6 +166,17 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                 raise RuntimeError(f"Advance roll request failed: {exc}") from exc
     elif action in ("move", "fall_back"):
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
+        if action == "move":
+            try:
+                player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                queue_fn = getattr(game, "_queue_movement_phase_normal_move_weapon_attacks_bonus", None)
+                if callable(queue_fn):
+                    queue_fn(player=player, unit=unit)
+            except Exception:
+                pass
     return None
 
 

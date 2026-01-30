@@ -2290,6 +2290,93 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _queue_movement_phase_normal_move_weapon_attacks_bonus(
+        self,
+        *,
+        player,
+        unit,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        phase = getattr(self, "phase", None)
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname and pname != "MOVEMENT_PHASE":
+            return None
+        if player is not self.get_current_player():
+            return None
+        if not getattr(unit, "is_alive", lambda: False)():
+            return None
+        if not getattr(unit, "deployed", True):
+            return None
+        try:
+            if unit.is_in_reserves() or unit.is_embarked:
+                return None
+        except Exception:
+            pass
+
+        try:
+            models = list(getattr(unit, "models", []) or [])
+        except Exception:
+            models = []
+        if not models:
+            return None
+
+        for m in models:
+            if not getattr(m, "is_alive", True):
+                continue
+            try:
+                specs = list(unit.model_movement_phase_normal_move_weapon_attacks_bonus_specs(m) or [])
+            except Exception:
+                specs = []
+            if not specs:
+                continue
+            for spec in specs:
+                key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
+                if not key:
+                    key = "movement_phase_normal_move_bonus"
+                if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                    continue
+                unit_id = maybe_entity_id(unit)
+                model_id = maybe_entity_id(m)
+                if not unit_id or not model_id:
+                    continue
+                ability_name = str(spec.get("source", "") or "Movement phase normal move boost").strip()
+                ctx = {
+                    "ability_name": ability_name,
+                    "phase": "Movement phase",
+                    "unit": getattr(unit, "name", "") or "",
+                    "model": getattr(m, "name", "") or "",
+                    "unit_id": unit_id,
+                    "model_id": model_id,
+                    "move_bonus_dice": str(spec.get("move_bonus_dice", "") or ""),
+                    "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
+                    "buff_key": key,
+                }
+                message = (
+                    f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                    f"({getattr(unit, 'name', 'Unit')}) before Normal move?"
+                )
+                return self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="movement_phase_move_weapon_bonus",
+                    ability_name=ability_name,
+                    message=message,
+                    context=ctx,
+                    payload={
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "move_bonus_dice": ctx["move_bonus_dice"],
+                        "attacks_bonus": ctx["attacks_bonus"],
+                        "weapon_name": ctx["weapon_name"],
+                        "buff_key": key,
+                    },
+                    instance_key=f"{model_id}:{key}",
+                )
+        return None
+
     def _queue_mortal_wounds_target_decision(
         self,
         *,
@@ -2803,6 +2890,7 @@ class Game:
             "waaagh",
             "possessed_lord",
             "fight_phase_melee_ap_boost",
+            "movement_phase_move_weapon_bonus",
             "daemonic_patrons",
             "power_from_pain_command",
             "power_from_pain_empower",
@@ -2886,6 +2974,36 @@ class Game:
                 return
             ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
             model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
+            return
+
+        if ability_key == "movement_phase_move_weapon_bonus":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(payload.get("buff_key") or ctx.get("buff_key") or "movement_phase_normal_move_bonus").strip().lower()
+            if not key:
+                key = "movement_phase_normal_move_bonus"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Movement phase normal move boost").strip()
+            move_bonus_dice = str(payload.get("move_bonus_dice") or ctx.get("move_bonus_dice") or "")
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "")
+            try:
+                attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0)
+            except Exception:
+                attacks_bonus = 0
+            model.activate_movement_phase_move_weapon_bonus(
+                key=key,
+                ability_name=ability_name,
+                move_bonus_dice=move_bonus_dice,
+                weapon_name=weapon_name,
+                attacks_bonus=attacks_bonus,
+            )
             return
 
         if ability_key == "daemonic_patrons":

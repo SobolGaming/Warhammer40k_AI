@@ -2801,7 +2801,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         except Exception:
             cb = None
         try:
-            from ...engine.decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES
+            from ...engine.decision_kinds import DECISION_CHOOSE_MOVE_MODIFIER_IGNORES, DECISION_CONFIRM_YES_NO
             if getattr(request, "decision_type", None) == DECISION_CHOOSE_MOVE_MODIFIER_IGNORES:
                 unit_id = str(getattr(request, "context", {}).get("unit_id", "") or "")
                 if unit_id:
@@ -2814,6 +2814,12 @@ class BattlePhaseHandler(BasePhaseHandler):
                                 self._handle_advance_roll_ready(unit_obj)
                     except Exception:
                         pass
+            if getattr(request, "decision_type", None) == DECISION_CONFIRM_YES_NO:
+                ctx = dict(getattr(request, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") == "movement_phase_move_weapon_bonus":
+                    unit_id = str(ctx.get("unit_id", "") or "")
+                    if unit_id:
+                        self._resume_pending_pre_move_ability_action(unit_id)
         except Exception:
             pass
         if cb is None:
@@ -2846,6 +2852,19 @@ class BattlePhaseHandler(BasePhaseHandler):
         if not unit_id:
             return
         entry = self._pending_move_modifier_actions.pop(str(unit_id), None)
+        if entry is None:
+            return
+        callback = entry.get("callback")
+        if callable(callback):
+            try:
+                callback()
+            except Exception:
+                pass
+
+    def _resume_pending_pre_move_ability_action(self, unit_id: str) -> None:
+        if not unit_id:
+            return
+        entry = self._pending_pre_move_ability_actions.pop(str(unit_id), None)
         if entry is None:
             return
         callback = entry.get("callback")
@@ -4090,10 +4109,110 @@ class BattlePhaseHandler(BasePhaseHandler):
                     return
             _begin_movement()
 
-        if choice in ("move", "advance", "fall_back"):
-            self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement_with_move_choice)
-        else:
+        def _maybe_prompt_pre_normal_move_ability(next_step) -> bool:
+            if choice != "move":
+                return False
+            if self.game is None or unit is None:
+                return False
+            try:
+                from ...utility.entity_ids import get_entity_id
+                unit_id = get_entity_id(unit)
+            except Exception:
+                unit_id = ""
+
+            has_ability = False
+            try:
+                models = list(getattr(unit, "models", []) or [])
+            except Exception:
+                models = []
+            for m in models:
+                if not getattr(m, "is_alive", True):
+                    continue
+                try:
+                    specs = unit.model_movement_phase_normal_move_weapon_attacks_bonus_specs(m) or []
+                except Exception:
+                    specs = []
+                if not specs:
+                    continue
+                for spec in specs:
+                    key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
+                    if not key:
+                        key = "movement_phase_normal_move_bonus"
+                    if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                        continue
+                    has_ability = True
+                    break
+                if has_ability:
+                    break
+            if not has_ability:
+                return False
+
+            if bool(getattr(self.game, "is_authoritative", True)):
+                try:
+                    queue_fn = getattr(self.game, "_queue_movement_phase_normal_move_weapon_attacks_bonus", None)
+                    if callable(queue_fn):
+                        queue_fn(player=self.game.get_current_player(), unit=unit)
+                except Exception:
+                    pass
+
+            pending_req = None
+            queue = getattr(self.game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                from ...engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                for req in list(queue.list() or []):
+                    if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("ability", "") or "") != "movement_phase_move_weapon_bonus":
+                        continue
+                    if unit_id and str(ctx.get("unit_id", "")) != str(unit_id):
+                        continue
+                    pending_req = req
+                    break
+
+            if unit_id:
+                self._pending_pre_move_ability_actions[str(unit_id)] = {"callback": next_step}
+
+            if pending_req is not None:
+                try:
+                    player = self.game.get_current_player()
+                except Exception:
+                    player = None
+                try:
+                    if player is not None and getattr(player, "has_control", lambda: False)():
+                        dlg = getattr(self.game_view, "yes_no_dialog", None)
+                        if dlg is not None and not (dlg.visible and getattr(dlg, "decision_request", None) is pending_req):
+                            from ...utility.decision_utils import resolve_decision_command
+                            title = str(getattr(pending_req, "prompt", "") or "Confirm")
+                            ctx = dict(getattr(pending_req, "context", {}) or {})
+                            message = str(ctx.get("message", "") or ctx.get("ability_name", "") or title)
+
+                            def _done(option_id: str):
+                                if option_id:
+                                    resolve_decision_command(self.game, pending_req, option_id, player_id=getattr(player, "id", None))
+                                try:
+                                    dlg.hide()
+                                except Exception:
+                                    pass
+
+                            dlg.show(title, message, _done, decision_request=pending_req)
+                            try:
+                                self.game_view.dialog_manager.open(dlg, modal=True)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            return True
+
+        def _begin_movement_with_pre_ability():
+            if _maybe_prompt_pre_normal_move_ability(_begin_movement_with_move_choice):
+                return
             _begin_movement_with_move_choice()
+
+        if choice in ("move", "advance", "fall_back"):
+            self.game_view._maybe_prompt_battle_focus_move(unit, choice, _begin_movement_with_pre_ability)
+        else:
+            _begin_movement_with_pre_ability()
 
     def _on_roll_made(self, player=None, unit=None, roll_type: str = "", **kwargs) -> None:
         if unit is None:
@@ -4886,6 +5005,7 @@ class PhaseManager:
         self._pending_advance_units: set[str] = set()
         self._pending_charge_units: Dict[str, dict] = {}
         self._pending_move_modifier_actions: Dict[str, dict] = {}
+        self._pending_pre_move_ability_actions: Dict[str, dict] = {}
         try:
             if self.game is not None and getattr(self.game, "event_system", None) is not None:
                 self.game.event_system.subscribe("roll_made", self._on_roll_made)
