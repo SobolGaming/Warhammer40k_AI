@@ -2816,7 +2816,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         pass
             if getattr(request, "decision_type", None) == DECISION_CONFIRM_YES_NO:
                 ctx = dict(getattr(request, "context", {}) or {})
-                if str(ctx.get("ability", "") or "") == "movement_phase_move_weapon_bonus":
+                if str(ctx.get("ability", "") or "") in ("movement_phase_move_weapon_bonus", "flickerjump"):
                     unit_id = str(ctx.get("unit_id", "") or "")
                     if unit_id:
                         self._resume_pending_pre_move_ability_action(unit_id)
@@ -4121,35 +4121,48 @@ class BattlePhaseHandler(BasePhaseHandler):
                 unit_id = ""
 
             has_ability = False
+            ability_key = ""
+            queue_method = None
             try:
-                models = list(getattr(unit, "models", []) or [])
+                specs = unit.unit_movement_phase_normal_move_speed_mortal_wounds_specs() or []
             except Exception:
-                models = []
-            for m in models:
-                if not getattr(m, "is_alive", True):
-                    continue
+                specs = []
+            if specs:
+                has_ability = True
+                ability_key = "flickerjump"
+                queue_method = "_queue_movement_phase_flickerjump"
+            if not has_ability:
                 try:
-                    specs = unit.model_movement_phase_normal_move_weapon_attacks_bonus_specs(m) or []
+                    models = list(getattr(unit, "models", []) or [])
                 except Exception:
-                    specs = []
-                if not specs:
-                    continue
-                for spec in specs:
-                    key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
-                    if not key:
-                        key = "movement_phase_normal_move_bonus"
-                    if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                    models = []
+                for m in models:
+                    if not getattr(m, "is_alive", True):
                         continue
-                    has_ability = True
-                    break
-                if has_ability:
-                    break
+                    try:
+                        specs = unit.model_movement_phase_normal_move_weapon_attacks_bonus_specs(m) or []
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "movement_phase_normal_move_bonus").strip().lower()
+                        if not key:
+                            key = "movement_phase_normal_move_bonus"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        has_ability = True
+                        ability_key = "movement_phase_move_weapon_bonus"
+                        queue_method = "_queue_movement_phase_normal_move_weapon_attacks_bonus"
+                        break
+                    if has_ability:
+                        break
             if not has_ability:
                 return False
 
             if bool(getattr(self.game, "is_authoritative", True)):
                 try:
-                    queue_fn = getattr(self.game, "_queue_movement_phase_normal_move_weapon_attacks_bonus", None)
+                    queue_fn = getattr(self.game, queue_method or "", None)
                     if callable(queue_fn):
                         queue_fn(player=self.game.get_current_player(), unit=unit)
                 except Exception:
@@ -4163,7 +4176,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     if getattr(req, "decision_type", None) != DECISION_CONFIRM_YES_NO:
                         continue
                     ctx = getattr(req, "context", {}) or {}
-                    if str(ctx.get("ability", "") or "") != "movement_phase_move_weapon_bonus":
+                    if str(ctx.get("ability", "") or "") != ability_key:
                         continue
                     if unit_id and str(ctx.get("unit_id", "")) != str(unit_id):
                         continue

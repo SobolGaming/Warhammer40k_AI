@@ -478,6 +478,23 @@ class Unit:
                 bonus = 0
             if bonus:
                 mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_movement_add"))
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("flickerjump_move_set_value"):
+                    move_value = int(sr.get("flickerjump_move_set_value", 0) or 0)
+                    owner = str(sr.get("flickerjump_move_set_turn_owner", "") or "")
+                    turn = int(sr.get("flickerjump_move_set_turn", 0) or 0)
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    if (
+                        move_value > 0
+                        and owner
+                        and game is not None
+                        and str(getattr(game.get_current_player(), "id", "") or "") == owner
+                        and int(getattr(game, "turn", 0) or 0) == turn
+                    ):
+                        mods.append(Modifier(ModifierOp.SET, int(move_value), source="ability:flickerjump_move_set"))
+            except Exception:
+                pass
 
         if ckey == "leadership":
             if game_map is None:
@@ -1239,6 +1256,13 @@ class Unit:
         r"once per battle (?:in|during) your movement phase before this model makes (?:a )?normal move it can use this ability "
         r"if it does until the end of the turn add (?P<move>\d+d\d+) to this model s move characteristic "
         r"and add (?P<attacks>\d+) to the attacks characteristic of this model s (?P<weapon>[a-z0-9 ]+? weapon(?:s)?)",
+        re.IGNORECASE,
+    )
+    _MOVEMENT_PHASE_NORMAL_MOVE_SPEED_MORTAL_WOUNDS_RE = re.compile(
+        r"in your movement phase each time this unit is selected to make (?:a )?normal move it can use this ability "
+        r"if it does until the end of the turn this unit is not eligible to declare a charge and models in it have a move characteristic of (?P<move>\d+) "
+        r"each time this unit uses this ability at the end of the phase roll (?:one|1) d6 for each model in this unit for each 1 "
+        r"this unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
@@ -18783,6 +18807,18 @@ class Unit:
                         return False
         except Exception:
             pass
+
+        # Flickerjump: cannot charge until end of turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("flickerjump_no_charge_turn_owner"):
+                owner = str(sr.get("flickerjump_no_charge_turn_owner") or "")
+                turn = int(sr.get("flickerjump_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
             
         if self._thrill_seekers_restriction_reason(target_unit, game):
             return False
@@ -21585,6 +21621,57 @@ class Unit:
                     "move_bonus_dice": move_dice,
                     "attacks_bonus": int(attacks_bonus),
                     "weapon_name": weapon_name,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_movement_phase_normal_move_speed_mortal_wounds_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: optional pre-Normal move speed set with end-of-phase mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - move_value: int (movement set value)
+        """
+        cache_key = "unit_movement_phase_normal_move_speed_mortal_wounds_specs"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_NORMAL_MOVE_SPEED_MORTAL_WOUNDS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                move_value = int(m.group("move") or 0)
+            except Exception:
+                move_value = 0
+            if move_value <= 0:
+                continue
+            source = str(name or "Movement phase speed boost").strip() or "Movement phase speed boost"
+            key = self._normalize_keyword_phrase(source) or source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "move_value": int(move_value),
                 }
             )
 

@@ -1899,6 +1899,20 @@ class Game:
                     if str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") == owner_id:
                         for k in ("fire_and_fade_no_embark_turn_owner", "fire_and_fade_no_embark_turn"):
                             sr.pop(k, None)
+                    if str(sr.get("flickerjump_no_charge_turn_owner", "") or "") == owner_id:
+                        for k in ("flickerjump_no_charge_turn_owner", "flickerjump_no_charge_turn"):
+                            sr.pop(k, None)
+                    if str(sr.get("flickerjump_move_set_turn_owner", "") or "") == owner_id:
+                        for k in ("flickerjump_move_set_turn_owner", "flickerjump_move_set_turn", "flickerjump_move_set_value"):
+                            sr.pop(k, None)
+                    if str(sr.get("flickerjump_pending_uses_owner", "") or "") == owner_id:
+                        for k in (
+                            "flickerjump_pending_uses_owner",
+                            "flickerjump_pending_uses_turn",
+                            "flickerjump_pending_uses",
+                            "flickerjump_source",
+                        ):
+                            sr.pop(k, None)
                     if str(sr.get("goretrack_onslaught_turn_owner", "") or "") == owner_id:
                         for k in ("goretrack_onslaught_active", "goretrack_onslaught_turn_owner", "goretrack_onslaught_turn"):
                             sr.pop(k, None)
@@ -2375,6 +2389,71 @@ class Game:
                     },
                     instance_key=f"{model_id}:{key}",
                 )
+        return None
+
+    def _queue_movement_phase_flickerjump(
+        self,
+        *,
+        player,
+        unit,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        phase = getattr(self, "phase", None)
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname and pname != "MOVEMENT_PHASE":
+            return None
+        if player is not self.get_current_player():
+            return None
+        if not getattr(unit, "is_alive", lambda: False)():
+            return None
+        if not getattr(unit, "deployed", True):
+            return None
+        try:
+            if unit.is_in_reserves() or unit.is_embarked:
+                return None
+        except Exception:
+            pass
+
+        try:
+            specs = list(unit.unit_movement_phase_normal_move_speed_mortal_wounds_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return None
+
+        for spec in specs:
+            move_value = int(spec.get("move_value", 0) or 0)
+            if move_value <= 0:
+                continue
+            unit_id = maybe_entity_id(unit)
+            if not unit_id:
+                continue
+            ability_name = str(spec.get("source", "") or "Flickerjump").strip()
+            ctx = {
+                "ability_name": ability_name,
+                "phase": "Movement phase",
+                "unit": getattr(unit, "name", "") or "",
+                "unit_id": unit_id,
+                "move_value": int(move_value),
+            }
+            message = (
+                f"Activate {ability_name} for {getattr(unit, 'name', 'Unit')} before Normal move?"
+            )
+            return self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="flickerjump",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={
+                    "unit_id": unit_id,
+                    "move_value": int(move_value),
+                },
+                instance_key=f"{unit_id}:flickerjump",
+            )
         return None
 
     def _queue_mortal_wounds_target_decision(
@@ -2891,6 +2970,7 @@ class Game:
             "possessed_lord",
             "fight_phase_melee_ap_boost",
             "movement_phase_move_weapon_bonus",
+            "flickerjump",
             "daemonic_patrons",
             "power_from_pain_command",
             "power_from_pain_empower",
@@ -3004,6 +3084,44 @@ class Game:
                 weapon_name=weapon_name,
                 attacks_bonus=attacks_bonus,
             )
+            return
+
+        if ability_key == "flickerjump":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                move_value = int(payload.get("move_value") or ctx.get("move_value") or 0)
+            except Exception:
+                move_value = 0
+            if move_value <= 0:
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Flickerjump").strip()
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            owner_id = str(getattr(request, "player_id", "") or getattr(result, "player_id", "") or "")
+            if not owner_id:
+                try:
+                    owner_id = str(unit.get_parent_army().player.id)
+                except Exception:
+                    owner_id = ""
+            turn = int(getattr(self, "turn", 0) or 0)
+            sr["flickerjump_move_set_value"] = int(move_value)
+            sr["flickerjump_move_set_turn"] = int(turn)
+            if owner_id:
+                sr["flickerjump_move_set_turn_owner"] = owner_id
+                sr["flickerjump_no_charge_turn_owner"] = owner_id
+                sr["flickerjump_pending_uses_owner"] = owner_id
+            sr["flickerjump_no_charge_turn"] = int(turn)
+            sr["flickerjump_pending_uses_turn"] = int(turn)
+            sr["flickerjump_pending_uses"] = int(sr.get("flickerjump_pending_uses", 0) or 0) + 1
+            if ability_name:
+                sr["flickerjump_source"] = ability_name
+            unit.special_rules = sr
             return
 
         if ability_key == "daemonic_patrons":
@@ -5187,6 +5305,74 @@ class Game:
                 player,
                 f"{ability_name}: {getattr(model, 'name', 'Model')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
             )
+
+    def _on_phase_end_flickerjump_mortal_wounds(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: Flickerjump mortal wound rolls for units that used the ability."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None:
+            return
+        army = player.get_army() if player is not None else None
+        if army is None:
+            return
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            if not unit.is_alive() or not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            owner = str(sr.get("flickerjump_pending_uses_owner", "") or "")
+            turn = int(sr.get("flickerjump_pending_uses_turn", 0) or 0)
+            if owner and owner != str(getattr(player, "id", "") or ""):
+                continue
+            if int(getattr(self, "turn", 0) or 0) != turn:
+                continue
+            uses = int(sr.get("flickerjump_pending_uses", 0) or 0)
+            if uses <= 0:
+                continue
+            ability_name = str(sr.get("flickerjump_source", "") or "Flickerjump").strip() or "Flickerjump"
+
+            for _ in range(int(uses)):
+                models = [m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
+                if not models:
+                    break
+                rolls = []
+                ones = 0
+                for _m in models:
+                    r = int(get_roll("D6") or 0)
+                    rolls.append(r)
+                    if r == 1:
+                        ones += 1
+                if ones > 0:
+                    unit._apply_mortal_wounds_to_unit(unit, int(ones), game_map=getattr(self, "map", None))
+                append_dice(
+                    player,
+                    f"{ability_name}: rolls {rolls} => {int(ones)} mortal wounds to {getattr(unit, 'name', 'Unit')}.",
+                )
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffered {int(ones)} mortal wounds.",
+                )
+
+            for k in (
+                "flickerjump_pending_uses",
+                "flickerjump_pending_uses_turn",
+                "flickerjump_pending_uses_owner",
+                "flickerjump_source",
+            ):
+                sr.pop(k, None)
+            unit.special_rules = sr
 
     def _on_phase_end_fight_phase_mortal_wounds(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: optional mortal wounds against an engaged enemy unit."""

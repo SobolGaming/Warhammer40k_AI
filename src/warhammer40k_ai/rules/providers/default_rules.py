@@ -84,6 +84,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_leadership_cp_gain"),
                 ("phase_end", "_on_phase_end_daemonic_patrons"),
                 ("phase_end", "_on_phase_end_setup_reactive_shoot_or_charge"),
+                ("phase_end", "_on_phase_end_flickerjump_mortal_wounds"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),
                 ("phase_start", "_on_phase_start_optional_abilities"),

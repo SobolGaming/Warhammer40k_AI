@@ -1919,6 +1919,7 @@ def _classify_ability_base(
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
+    movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
@@ -2078,6 +2079,8 @@ def _classify_ability_base(
         return fight_phase_melee_ap_boost_support
     if movement_phase_normal_move_weapon_attacks_bonus_support:
         return movement_phase_normal_move_weapon_attacks_bonus_support
+    if movement_phase_speed_mortal_support:
+        return movement_phase_speed_mortal_support
     if daemonic_patrons_support:
         return daemonic_patrons_support
     if melee_fight_on_death_support:
@@ -4156,6 +4159,28 @@ def _movement_phase_once_normal_move_weapon_attacks_bonus_support(description: s
     return (
         "Supported",
         f"Once per battle (before Normal move): add {move} Move and +{attacks} Attacks to {weapon}.",
+    )
+
+
+def _movement_phase_normal_move_speed_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your movement phase each time this unit is selected to make (?:a )?normal move it can use this ability "
+        r"if it does until the end of the turn this unit is not eligible to declare a charge and models in it have a move characteristic of (?P<move>\d+) "
+        r"each time this unit uses this ability at the end of the phase roll (?:one|1) d6 for each model in this unit for each 1 "
+        r"this unit suffers 1 mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    move = m.group("move") or "24"
+    return (
+        "Supported",
+        f"Movement phase (Normal move): optional; set Move to {move}\", cannot charge; end of phase roll D6 per model, each 1 causes 1 mortal wound.",
     )
 
 

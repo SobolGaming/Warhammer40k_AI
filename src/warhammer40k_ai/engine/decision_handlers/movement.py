@@ -177,6 +177,12 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                     queue_fn(player=player, unit=unit)
             except Exception:
                 pass
+            try:
+                queue_fn = getattr(game, "_queue_movement_phase_flickerjump", None)
+                if callable(queue_fn):
+                    queue_fn(player=player, unit=unit)
+            except Exception:
+                pass
     return None
 
 

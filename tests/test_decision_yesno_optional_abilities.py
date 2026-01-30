@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
@@ -28,7 +29,8 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         unit.possible_abilities = list(abilities or [])
         unit.status_effects = []
         unit.special_rules = {}
-        unit.round_state = SimpleNamespace()
+        unit.round_state = SimpleNamespace(num_lost_models_this_round=0)
+        unit.models_lost = []
         unit.attached_leaders = []
         unit.attached_to = None
         unit.can_be_attached_to = []
@@ -44,13 +46,13 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         )
         return unit
 
-    def _make_model(self, name, unit):
+    def _make_model(self, name, unit, *, wounds: int = 2):
         model = Model(
             name=name,
             movement=6,
             toughness=4,
             save=3,
-            wounds=2,
+            wounds=int(wounds),
             leadership=7,
             objective_control=1,
             model_base=Base(BaseType.CIRCULAR, 1.0),
@@ -257,6 +259,57 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         buff_key = str(ctx.get("buff_key") or "")
         if buff_key:
             self.assertTrue(model.has_used_once_per_battle(buff_key))
+
+    def test_flickerjump_queues_and_applies(self):
+        army = Army("Aeldari", detachment_type="Other")
+        army.faction_id = "AE"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "In your Movement phase, each time this unit is selected to make a Normal move, it can use this ability. "
+            "If it does, until the end of the turn, this unit is not eligible to declare a charge and models in it have "
+            "a Move characteristic of 24\". Each time this unit uses this ability, at the end of the phase, roll one D6 "
+            "for each model in this unit: for each 1, this unit suffers 1 mortal wound."
+        )
+        ability = Ability("Flickerjump", "AE", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Warp Spiders", army, abilities=[ability])
+        model_a = self._make_model("Spider A", unit, wounds=1)
+        model_b = self._make_model("Spider B", unit, wounds=1)
+        unit.models = [model_a, model_b]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._queue_movement_phase_flickerjump(player=player, unit=unit)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "flickerjump")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+
+        self.assertEqual(int(model_a.movement), 24)
+        sr = getattr(unit, "special_rules", {}) or {}
+        self.assertEqual(int(sr.get("flickerjump_move_set_value", 0) or 0), 24)
+        self.assertEqual(int(sr.get("flickerjump_pending_uses", 0) or 0), 1)
+
+        game.is_authoritative = False
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=1):
+            game._on_phase_end_flickerjump_mortal_wounds(player=player, phase=game.phase)
+
+        alive = [m for m in unit.models if m.is_alive]
+        self.assertEqual(len(alive), 0)
 
     def test_power_from_pain_command_phase_queues_and_applies(self):
         army = Army("Drukhari", detachment_type="Other")
