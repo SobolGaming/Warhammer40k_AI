@@ -1713,6 +1713,14 @@ class Game:
                 if exp and exp == pname:
                     for k in ("exquisite_swordsmanship_choice", "exquisite_swordsmanship_expires_phase"):
                         sr.pop(k, None)
+                exp = str(sr.get("post_shoot_no_cover_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_no_cover_active",
+                        "post_shoot_no_cover_expires_phase",
+                        "post_shoot_no_cover_source",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("fury_of_titan_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("fury_of_titan_active", "fury_of_titan_expires_phase"):
@@ -4704,6 +4712,101 @@ class Game:
                     "attacker_unit_id": get_entity_id(attacker_unit),
                     "model_id": get_entity_id(model),
                     "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_no_cover(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot no-cover requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _target_hit_with_weapon(target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if models:
+                return True
+            if weapon_key.endswith("s"):
+                alt_key = weapon_key[:-1]
+                models = target_map.get(alt_key)
+                if models:
+                    return True
+            return False
+
+        specs = attacker_unit.unit_post_shoot_no_cover_specs() or []
+        if not specs:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            weapon_key = str(spec.get("weapon_key", "") or "")
+            if not weapon_key:
+                continue
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                if not _target_hit_with_weapon(target_unit, weapon_key):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "No Cover").strip() or "No Cover"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_no_cover",
+                    "ability_name": ability_name,
+                    "weapon_key": weapon_key,
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
                 },
             )
             self.request_decision(request)

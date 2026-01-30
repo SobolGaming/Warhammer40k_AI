@@ -2220,6 +2220,12 @@ class WargearProfile:
                     attack_instance["ignores_cover"] = True
             except Exception:
                 pass
+            try:
+                tsr = getattr(target, "special_rules", None)
+                if isinstance(tsr, dict) and tsr.get("post_shoot_no_cover_active"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
         
         bonus_lethal = False
         bonus_sustained_value = 0

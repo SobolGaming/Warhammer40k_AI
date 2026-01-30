@@ -1104,6 +1104,28 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_no_cover":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_no_cover_active"] = True
+            sr["post_shoot_no_cover_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_no_cover_source"] = str(ctx.get("ability_name", "") or "No Cover").strip()
+            target_root.special_rules = sr
+            try:
+                player = None
+                attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+                if attacker_unit is not None:
+                    player = getattr(attacker_unit.get_parent_army(), "player", None)
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
+            except Exception:
+                pass
     if ctx.get("necrons_command_phase_enhancement"):
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "necrons_detachments", None) if army is not None else None

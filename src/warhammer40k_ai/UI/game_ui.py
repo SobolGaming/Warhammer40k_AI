@@ -4092,6 +4092,57 @@ class GameView:
                     pass
                 return
 
+            if ability == "post_shoot_no_cover":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "post_shoot_no_cover_dialog") or self.post_shoot_no_cover_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.post_shoot_no_cover_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.post_shoot_no_cover_dialog = None
+                dlg = self.post_shoot_no_cover_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "No Cover").strip()
+                weapon_name = str(ctx.get("weapon_name", "") or "").strip()
+                header = "Select an enemy unit."
+                subtitle = "Target loses Benefit of Cover until end of phase."
+                if weapon_name:
+                    subtitle = f"Hit by {weapon_name}: {subtitle}"
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability == "bondsman":
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import option_id_for_action, first_option_id

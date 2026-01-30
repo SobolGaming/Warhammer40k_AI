@@ -1914,6 +1914,7 @@ def _classify_ability_base(
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
+    post_shoot_no_cover_support = _post_shoot_no_cover_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
@@ -2070,6 +2071,8 @@ def _classify_ability_base(
         return post_shoot_wracking_agonies_support
     if post_shoot_suppression_support:
         return post_shoot_suppression_support
+    if post_shoot_no_cover_support:
+        return post_shoot_no_cover_support
     if post_shoot_leadership_debuff_support:
         return post_shoot_leadership_debuff_support
     if fight_phase_engagement_battleshock_support:
@@ -4062,6 +4065,23 @@ def _post_shoot_suppression_support(description: str) -> Optional[Tuple[str, str
     if "excluding monsters and vehicles" in norm:
         return ("Supported", "After shooting, suppress a hit enemy unit (not MONSTER/VEHICLE) for -1 to hit until your next turn.")
     return ("Supported", "After shooting, suppress a hit enemy unit for -1 to hit until your next turn.")
+
+
+def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
+        r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the end of the phase that enemy unit cannot have the benefit of cover"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = (m.group("weapon") or "weapon").strip()
+    return ("Supported", f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until phase end.")
 
 
 def _post_shoot_leadership_debuff_support(description: str) -> Optional[Tuple[str, str]]:
