@@ -2,10 +2,10 @@ import unittest
 
 
 class _MockDatasheet:
-    def __init__(self, name, *, abilities=None, model_count=1, wounds=2):
+    def __init__(self, name, *, abilities=None, model_count=1, wounds=2, keywords=None):
         self.name = name
         self.faction_data = {"name": "Test Faction"}
-        self.keywords = []
+        self.keywords = list(keywords or [])
         self.faction_keywords = []
         self.datasheets_unit_composition = [{"description": f"{model_count} Test Model"}]
         self.datasheets_models_cost = [{"description": f"{model_count} models", "cost": 100}]
@@ -30,10 +30,10 @@ class _MockDatasheet:
         self.transport = ""
 
 
-def _make_unit(name, *, abilities=None, model_count=1, wounds=2):
+def _make_unit(name, *, abilities=None, model_count=1, wounds=2, keywords=None):
     from warhammer40k_ai.units.unit import Unit
 
-    datasheet = _MockDatasheet(name, abilities=abilities, model_count=model_count, wounds=wounds)
+    datasheet = _MockDatasheet(name, abilities=abilities, model_count=model_count, wounds=wounds, keywords=keywords)
     return Unit(datasheet)
 
 
@@ -159,6 +159,32 @@ class TestLeadingAttackRollBonuses(unittest.TestCase):
         mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="melee", target=None)
         self.assertEqual(int(mods.get("hit", 0)), 1)
         self.assertEqual(int(mods.get("wound", 0)), 1)
+
+    def test_model_attack_roll_bonus_vs_fly(self):
+        ability = {
+            "name": "Skyfire",
+            "description": (
+                "Each time this model makes a ranged attack that targets a unit that can FLY, "
+                "add 1 to the Hit roll and add 1 to the Wound roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Skyfire Platform", abilities=[ability], model_count=1)
+        model = unit.models[0]
+        target = _make_unit("Target", model_count=1)
+        mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="ranged", target=target)
+        self.assertEqual(int(mods.get("hit", 0)), 0)
+        self.assertEqual(int(mods.get("wound", 0)), 0)
+
+        fly_target = _make_unit("Flyer", model_count=1, keywords=["FLY"])
+        mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="ranged", target=fly_target)
+        self.assertEqual(int(mods.get("hit", 0)), 1)
+        self.assertEqual(int(mods.get("wound", 0)), 1)
+
+        mods = unit.model_attack_roll_modifiers_vs_weakened_target(model, attack_type="melee", target=fly_target)
+        self.assertEqual(int(mods.get("hit", 0)), 0)
+        self.assertEqual(int(mods.get("wound", 0)), 0)
 
 
 if __name__ == "__main__":

@@ -1936,6 +1936,7 @@ def _classify_ability_base(
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
+    model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
@@ -2105,6 +2106,8 @@ def _classify_ability_base(
         return model_target_strength_support
     if model_self_strength_support:
         return model_self_strength_support
+    if model_attack_roll_bonus_support:
+        return model_attack_roll_bonus_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
     if charge_end_mortal_support:
@@ -3014,6 +3017,46 @@ def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Model attacks vs FLY targets gain +{m.group('amt')} to hit.")
+
+
+def _model_attack_roll_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    chunks, remaining = _split_attack_roll_chunks(description)
+    if not chunks or remaining:
+        return None
+    rules: list[Any] = []
+    for chunk in chunks:
+        rule = parse_attack_roll_text(chunk)
+        if rule is None:
+            return None
+        if rule.subject != "this_model":
+            return None
+        if rule.scope not in ("unit", "leading"):
+            return None
+        if rule.attack_type not in ("melee", "ranged", "any"):
+            return None
+        for eff in rule.effects:
+            if eff.roll not in ("hit", "wound"):
+                return None
+            if eff.kind not in ("add", "sub"):
+                return None
+        rules.append(rule)
+    if not rules:
+        return None
+    hit = any(eff.roll == "hit" for rule in rules for eff in rule.effects)
+    wound = any(eff.roll == "wound" for rule in rules for eff in rule.effects)
+    if not (hit or wound):
+        return None
+    scopes = {r.scope for r in rules}
+    prefix = "Leading: " if scopes == {"leading"} else ""
+    if hit and wound:
+        note = f"{prefix}Model attack roll modifiers (+hit/+wound) supported."
+    elif hit:
+        note = f"{prefix}Model attack roll modifiers (+hit) supported."
+    else:
+        note = f"{prefix}Model attack roll modifiers (+wound) supported."
+    return ("Supported", note)
 
 
 def _model_target_strength_hit_wound_support(description: str) -> Optional[Tuple[str, str]]:

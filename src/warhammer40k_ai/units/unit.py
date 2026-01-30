@@ -20953,7 +20953,7 @@ class Unit:
         target: Optional['Unit'] = None,
     ) -> dict:
         """
-        Model-specific rule: add to Hit/Wound rolls vs weakened targets or while the model is damaged.
+        Model-specific rule: add/subtract to Hit/Wound rolls when parsed attack-roll conditions are met.
         """
         mods = {
             "hit": 0,
@@ -20997,10 +20997,11 @@ class Unit:
             if cond.target_can_fly is False:
                 parts.append("vs non-FLY targets")
             if cond.target_keywords_any:
-                if set(cond.target_keywords_any) == {"character"}:
-                    parts.append("vs CHARACTER targets")
-                elif set(cond.target_keywords_any) == {"monster", "vehicle"}:
-                    parts.append("vs MONSTER/VEHICLE targets")
+                kw = "/".join(k.upper() for k in cond.target_keywords_any)
+                parts.append(f"vs {kw} targets")
+            if cond.target_keywords_all:
+                kw = " & ".join(k.upper() for k in cond.target_keywords_all)
+                parts.append(f"vs {kw} targets")
             if cond.target_below_starting_strength:
                 parts.append("vs targets below Starting Strength")
             if cond.target_below_half_strength:
@@ -21022,13 +21023,6 @@ class Unit:
                 if eff.kind not in ("add", "sub"):
                     continue
                 cond = eff.condition
-                if not cond or not (
-                    cond.target_below_starting_strength
-                    or cond.target_below_half_strength
-                    or cond.attacker_below_starting_strength
-                    or cond.attacker_below_half_strength
-                ):
-                    continue
                 if not self._attack_condition_met(cond, target=target, source_unit=root):
                     continue
                 try:
