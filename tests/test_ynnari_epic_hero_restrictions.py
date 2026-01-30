@@ -49,6 +49,15 @@ class TestYnnariEpicHeroRestrictions(unittest.TestCase):
         with self.assertRaises(ArmyValidationError):
             army.validate_ynnari_epic_hero_restrictions()
 
+    def test_yncarne_blocks_non_ynnari_epic_heroes(self):
+        units = [
+            StubUnit("The Yncarne", keywords=["YNNARI"], epic_hero=True),
+            StubUnit("Asurmen", keywords=["AELDARI"], epic_hero=True),
+        ]
+        army = self._make_army(units)
+        with self.assertRaises(ArmyValidationError):
+            army.validate_ynnari_epic_hero_restrictions()
+
     def test_ynnari_epic_heroes_allowed_together(self):
         units = [
             StubUnit("The Visarch", keywords=["YNNARI"], epic_hero=True),

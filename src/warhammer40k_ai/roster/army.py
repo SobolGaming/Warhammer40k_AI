@@ -1062,7 +1062,8 @@ class Army:
 
         visarch_present = any(_norm_name(getattr(u, "name", "")) == "the visarch" for u in units)
         yvraine_present = any(_norm_name(getattr(u, "name", "")) == "yvraine" for u in units)
-        if not visarch_present and not yvraine_present:
+        yncarne_present = any(_norm_name(getattr(u, "name", "")) == "the yncarne" for u in units)
+        if not visarch_present and not yvraine_present and not yncarne_present:
             return
 
         non_ynnari_epic = [
@@ -1079,6 +1080,10 @@ class Army:
         if yvraine_present:
             raise ArmyValidationError(
                 f"Yvraine restriction: cannot include non-Ynnari Epic Hero units ({names})."
+            )
+        if yncarne_present:
+            raise ArmyValidationError(
+                f"The Yncarne restriction: cannot include non-Ynnari Epic Hero units ({names})."
             )
 
     def validate_leaders(self):
