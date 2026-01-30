@@ -1052,6 +1052,58 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"Monarch of the Hunt: {sname} selected {tname} as quarry.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "movement_phase_visible_wound_bonus":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            keyword = str(ctx.get("keyword", "") or "").strip()
+            try:
+                bonus = int(ctx.get("bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            source = str(ctx.get("ability_name", "") or ctx.get("ability", "") or "Movement phase wound bonus").strip()
+            model_id = ctx.get("model_id")
+            apply_fn = getattr(chosen, "apply_movement_phase_visible_wound_bonus", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=turn,
+                    source=source,
+                    keyword=keyword,
+                    bonus=bonus,
+                    source_model_id=model_id,
+                )
+            else:
+                sr = getattr(chosen, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["movement_phase_visible_wound_bonus_active"] = True
+                sr["movement_phase_visible_wound_bonus_owner"] = owner_id
+                sr["movement_phase_visible_wound_bonus_turn"] = int(turn or 0)
+                sr["movement_phase_visible_wound_bonus_source"] = source
+                sr["movement_phase_visible_wound_bonus_keyword"] = keyword
+                sr["movement_phase_visible_wound_bonus_value"] = int(bonus or 0)
+                if model_id:
+                    sr["movement_phase_visible_wound_bonus_model_id"] = str(model_id)
+                chosen.special_rules = sr
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{source}: {sname} selected {tname} (wound +{int(bonus)}).",
+                )
+            except Exception:
+                pass
     if ctx.get("necrons_command_phase_enhancement"):
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "necrons_detachments", None) if army is not None else None

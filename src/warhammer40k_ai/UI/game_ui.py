@@ -4008,6 +4008,90 @@ class GameView:
                     pass
                 return
 
+            if ability == "movement_phase_visible_wound_bonus":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "movement_phase_wound_bonus_dialog") or self.movement_phase_wound_bonus_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.movement_phase_wound_bonus_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.movement_phase_wound_bonus_dialog = None
+                dlg = self.movement_phase_wound_bonus_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                model_name = ""
+                unit_name = ""
+                try:
+                    model_id = str(ctx.get("model_id", "") or "")
+                    if model_id:
+                        reg = getattr(game, "entity_registry", None)
+                        if reg is not None:
+                            model = reg.get(model_id, kind="model")
+                            if model is not None:
+                                model_name = getattr(model, "name", "") or ""
+                                unit = getattr(model, "parent_unit", None)
+                                if unit is not None:
+                                    unit_name = getattr(unit, "name", "") or ""
+                except Exception:
+                    model_name = ""
+                    unit_name = ""
+
+                ability_name = str(ctx.get("ability_name", "") or "Movement phase wound bonus").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                keyword = str(ctx.get("keyword", "") or "").strip().upper()
+                try:
+                    bonus = int(ctx.get("bonus", 0) or 0)
+                except Exception:
+                    bonus = 0
+
+                header = "Select an enemy unit."
+                if model_name and unit_name:
+                    header = f"{model_name} ({unit_name})"
+                elif unit_name:
+                    header = unit_name
+
+                subtitle = "Select an enemy unit visible to this model."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+                if keyword and bonus:
+                    subtitle = f"{subtitle} Friendly {keyword} models: +{bonus} to wound."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability == "bondsman":
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import option_id_for_action, first_option_id

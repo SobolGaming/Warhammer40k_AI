@@ -1265,6 +1265,12 @@ class Unit:
         r"this unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_END_VISIBLE_WOUND_BONUS_RE = re.compile(
+        r"at the end of your movement phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"until the start of your next command phase each time a friendly (?P<keyword>[a-z0-9 ]+) models? make(?:s)? an attack that targets that enemy unit "
+        r"add (?P<bonus>\d+) to the wound rolls?",
+        re.IGNORECASE,
+    )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
         r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
@@ -6704,6 +6710,93 @@ class Unit:
         ):
             sr.pop(key, None)
         self.special_rules = sr
+
+    def apply_movement_phase_visible_wound_bonus(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        keyword: str,
+        bonus: int,
+        source_model_id: Optional[str] = None,
+    ) -> None:
+        """Apply a temporary +wound bonus vs this unit until the start of owner's next Command phase."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["movement_phase_visible_wound_bonus_active"] = True
+        sr["movement_phase_visible_wound_bonus_owner"] = str(owner_id or "")
+        sr["movement_phase_visible_wound_bonus_turn"] = int(turn or 0)
+        sr["movement_phase_visible_wound_bonus_source"] = str(source or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
+        sr["movement_phase_visible_wound_bonus_keyword"] = str(keyword or "").strip()
+        sr["movement_phase_visible_wound_bonus_value"] = int(bonus or 0)
+        if source_model_id:
+            sr["movement_phase_visible_wound_bonus_model_id"] = str(source_model_id)
+        self.special_rules = sr
+
+    def clear_movement_phase_visible_wound_bonus(self) -> None:
+        """Clear temporary movement-phase wound bonus from this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "movement_phase_visible_wound_bonus_active",
+            "movement_phase_visible_wound_bonus_owner",
+            "movement_phase_visible_wound_bonus_turn",
+            "movement_phase_visible_wound_bonus_source",
+            "movement_phase_visible_wound_bonus_keyword",
+            "movement_phase_visible_wound_bonus_value",
+            "movement_phase_visible_wound_bonus_model_id",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+    def get_movement_phase_visible_wound_bonus(self, attacker_unit=None, game=None) -> tuple[int, str]:
+        """Return bonus/label if this unit is marked by a movement-phase wound bonus."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0, ""
+        if not sr.get("movement_phase_visible_wound_bonus_active"):
+            return 0, ""
+        owner_id = str(sr.get("movement_phase_visible_wound_bonus_owner", "") or "")
+        # Expire at the start of the owner's Command phase.
+        if game is not None and owner_id:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            try:
+                current_player = game.get_current_player()
+                current_id = str(getattr(current_player, "id", "") or "")
+            except Exception:
+                current_id = ""
+            if phase_name == "COMMAND_PHASE" and current_id == owner_id:
+                self.clear_movement_phase_visible_wound_bonus()
+                return 0, ""
+        if attacker_unit is not None:
+            try:
+                army = attacker_unit.get_parent_army()
+                player = getattr(army, "player", None)
+            except Exception:
+                player = None
+            if owner_id and player is not None and str(getattr(player, "id", "") or "") != owner_id:
+                return 0, ""
+            keyword = str(sr.get("movement_phase_visible_wound_bonus_keyword", "") or "").strip()
+            if keyword:
+                try:
+                    if not attacker_unit.has_any_keyword(keyword):
+                        return 0, ""
+                except Exception:
+                    return 0, ""
+        try:
+            bonus = int(sr.get("movement_phase_visible_wound_bonus_value", 0) or 0)
+        except Exception:
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(sr.get("movement_phase_visible_wound_bonus_source", "") or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
+        return int(bonus), f"+{int(bonus)} to wound from {source}"
 
     def _post_shoot_leadership_debuff_modifier(self, game=None) -> int:
         """Return persistent post-shoot Leadership/Battle-shock test modifier, clearing on expiry."""
@@ -21672,6 +21765,73 @@ class Unit:
                 {
                     "source": source,
                     "move_value": int(move_value),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_end_visible_wound_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, select a visible enemy within range;
+        friendly keyword models gain +wound vs that target until next Command phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+            - keyword: str (friendly keyword)
+            - bonus: int (wound roll bonus)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_visible_wound_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_END_VISIBLE_WOUND_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            keyword = str(m.group("keyword") or "").strip()
+            if not keyword:
+                continue
+            try:
+                bonus = int(m.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "keyword": keyword,
+                    "bonus": int(bonus),
                 }
             )
 

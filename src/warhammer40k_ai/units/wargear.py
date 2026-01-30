@@ -5101,6 +5101,17 @@ class WargearProfile:
                 wound_result['modifiers'].append("+1 to wound from Oath of Moment")
         except Exception:
             pass
+        # Movement phase selected target wound bonus (e.g., Aeldari).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, reason = target.get_movement_phase_visible_wound_bonus(attacker_unit, game=game)
+            if bonus:
+                dice_modifier += int(bonus)
+                wound_result['modifiers'].append(reason or f"+{int(bonus)} to wound from Movement phase bonus")
+        except Exception:
+            pass
         # Thousand Sons: Grand Coven (Psychic Maelstrom).
         try:
             army = attacker.parent_unit.get_parent_army()

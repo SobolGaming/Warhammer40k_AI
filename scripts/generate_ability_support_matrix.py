@@ -1920,6 +1920,7 @@ def _classify_ability_base(
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
+    movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
@@ -2081,6 +2082,8 @@ def _classify_ability_base(
         return movement_phase_normal_move_weapon_attacks_bonus_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
+    if movement_phase_visible_wound_bonus_support:
+        return movement_phase_visible_wound_bonus_support
     if daemonic_patrons_support:
         return daemonic_patrons_support
     if melee_fight_on_death_support:
@@ -4181,6 +4184,29 @@ def _movement_phase_normal_move_speed_mortal_wounds_support(description: str) ->
     return (
         "Supported",
         f"Movement phase (Normal move): optional; set Move to {move}\", cannot charge; end of phase roll D6 per model, each 1 causes 1 mortal wound.",
+    )
+
+
+def _movement_phase_end_visible_wound_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your movement phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"until the start of your next command phase each time a friendly (?P<keyword>[a-z0-9 ]+) models? make(?:s)? an attack that targets that enemy unit "
+        r"add (?P<bonus>\d+) to the wound rolls?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "18"
+    keyword = (m.group("keyword") or "friendly").strip().upper()
+    bonus = m.group("bonus") or "1"
+    return (
+        "Supported",
+        f"End of Movement phase: select visible enemy within {range_val}\"; friendly {keyword} models gain +{bonus} to wound vs that target until next Command phase.",
     )
 
 

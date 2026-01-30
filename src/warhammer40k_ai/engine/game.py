@@ -1158,6 +1158,45 @@ class Game:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
+    def _on_phase_start_movement_phase_visible_wound_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear movement-phase wound bonus markers at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Movement phase wound bonus cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Movement phase wound bonus cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("movement_phase_visible_wound_bonus_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("movement_phase_visible_wound_bonus_active"):
+                    clear_fn = getattr(unit, "clear_movement_phase_visible_wound_bonus", None)
+                    if callable(clear_fn):
+                        clear_fn()
+                    else:
+                        for key in (
+                            "movement_phase_visible_wound_bonus_active",
+                            "movement_phase_visible_wound_bonus_owner",
+                            "movement_phase_visible_wound_bonus_turn",
+                            "movement_phase_visible_wound_bonus_source",
+                            "movement_phase_visible_wound_bonus_keyword",
+                            "movement_phase_visible_wound_bonus_value",
+                            "movement_phase_visible_wound_bonus_model_id",
+                        ):
+                            sr.pop(key, None)
+                        unit.special_rules = sr
+
     def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2455,6 +2494,88 @@ class Game:
                 instance_key=f"{unit_id}:flickerjump",
             )
         return None
+
+    def _queue_movement_phase_visible_wound_bonus(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "movement_phase_visible_wound_bonus":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        options = []
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        keyword = str(spec.get("keyword", "") or "").strip()
+        try:
+            bonus = int(spec.get("bonus", 0) or 0)
+        except Exception:
+            bonus = 0
+        ctx = {
+            "ability": "movement_phase_visible_wound_bonus",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "keyword": keyword,
+            "bonus": int(bonus),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
 
     def _queue_mortal_wounds_target_decision(
         self,
@@ -5138,6 +5259,147 @@ class Game:
                     allow_skip=True,
                     phase="Movement phase",
                 )
+
+    def _on_phase_end_movement_phase_visible_wound_bonus(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select a visible enemy unit to receive a temporary wound bonus vs friendly keyword attacks."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+        from ..utility.aura_utils import distance_between_models_bases_3d
+
+        enemy_units = list(self.get_enemy_units(player) or [])
+        enemy_roots = []
+        seen = set()
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None or not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                rid = str(get_entity_id(root))
+            except Exception:
+                rid = ""
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            enemy_roots.append(root)
+
+        def _enemy_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_enemy_sort_key)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                specs = root.model_movement_phase_end_visible_wound_bonus_specs(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = []
+                    for enemy_root in enemy_roots:
+                        try:
+                            target_models = list(enemy_root.get_models_for_collision() or [])
+                        except Exception:
+                            target_models = list(getattr(enemy_root, "models", []) or [])
+                        target_models = [tm for tm in target_models if getattr(tm, "is_alive", True)]
+                        if not target_models:
+                            continue
+                        min_dist = float("inf")
+                        for tm in target_models:
+                            try:
+                                dist = float(distance_between_models_bases_3d(model, tm))
+                            except Exception:
+                                dist = float("inf")
+                            if dist < min_dist:
+                                min_dist = dist
+                        if min_dist > float(range_value):
+                            continue
+                        has_los = False
+                        try:
+                            has_los = bool(source_unit._has_line_of_sight_to_target(model, enemy_root, game_map))
+                        except Exception:
+                            has_los = False
+                        if not has_los:
+                            continue
+                        candidates.append(enemy_root)
+                    if not candidates:
+                        continue
+                    self._queue_movement_phase_visible_wound_bonus(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
 
     def _resolve_charge_phase_bodyguard_loss(self, leader_unit, bodyguard, model, ability):
         if model is None:
