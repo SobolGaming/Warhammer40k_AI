@@ -91,7 +91,7 @@ class TestModelHitBonusVsFly(unittest.TestCase):
 
         self.assertTrue(result["hit"])
         self.assertEqual(int(result.get("final_needed", 0)), 2)
-        self.assertIn("+1 to hit vs FLY from Skyhunter", result.get("modifiers", []))
+        self.assertIn("+1 to hit from Skyhunter (vs FLY targets)", result.get("modifiers", []))
 
     def test_no_bonus_vs_non_fly_target(self):
         from warhammer40k_ai.units.wargear import WargearProfile
@@ -132,7 +132,7 @@ class TestModelHitBonusVsFly(unittest.TestCase):
 
         self.assertFalse(result["hit"])
         self.assertEqual(int(result.get("final_needed", 0)), 3)
-        self.assertNotIn("+1 to hit vs FLY from Skyhunter", result.get("modifiers", []))
+        self.assertNotIn("+1 to hit from Skyhunter (vs FLY targets)", result.get("modifiers", []))
 
 
 if __name__ == "__main__":
