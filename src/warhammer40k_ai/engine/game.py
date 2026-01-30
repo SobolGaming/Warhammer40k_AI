@@ -1158,6 +1158,44 @@ class Game:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
+    def _on_phase_start_snared_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Snared effects at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Snared cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Snared cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("snared_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("snared_active"):
+                    clear_fn = getattr(unit, "clear_snared", None)
+                    if callable(clear_fn):
+                        clear_fn()
+                    else:
+                        for key in (
+                            "snared_active",
+                            "snared_owner",
+                            "snared_turn",
+                            "snared_source",
+                            "snared_weapon_key",
+                            "snared_weapon_name",
+                        ):
+                            sr.pop(key, None)
+                        unit.special_rules = sr
+
     def _on_phase_start_movement_phase_visible_wound_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear movement-phase wound bonus markers at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -4617,6 +4655,109 @@ class Game:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_snare(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot snare requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target_with_weapon(model, target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models:
+                return False
+            return model in models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_snare_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                weapon_key = str(spec.get("weapon_key", "") or "")
+                if not weapon_key:
+                    continue
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if not _model_hit_target_with_weapon(model, target_unit, weapon_key):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Snare").strip() or "Snare"
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a snare target.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability": "post_shoot_snare",
+                    "ability_name": ability_name,
+                    "weapon_key": str(spec.get("weapon_key", "") or ""),
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_post_shoot_suppression(
         self,
         attacker_unit=None,
@@ -5362,6 +5503,61 @@ class Game:
                     allow_skip=True,
                     phase="Movement phase",
                 )
+
+    def _on_unit_move_ended_snared_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back"):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("snared_active"):
+            return
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        models = [m for m in models if getattr(m, "is_alive", True)]
+        if not models:
+            return
+
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        rolls = []
+        ones = 0
+        for _m in models:
+            r = int(get_roll("D6") or 0)
+            rolls.append(r)
+            if r == 1:
+                ones += 1
+
+        if ones > 0:
+            root._apply_mortal_wounds_to_unit(root, int(ones), game_map=getattr(self, "map", None))
+
+        owner = self._resolve_player_by_id(str(sr.get("snared_owner", "") or ""))
+        ability_name = str(sr.get("snared_source", "") or "Snared").strip() or "Snared"
+        if owner is not None:
+            append_dice(
+                owner,
+                f"{ability_name}: rolls {rolls} => {int(ones)} mortal wounds to {getattr(root, 'name', 'Unit')}.",
+            )
+            append_action(
+                owner,
+                f"{ability_name}: {getattr(root, 'name', 'Unit')} suffered {int(ones)} mortal wounds.",
+            )
 
     def _on_phase_end_movement_phase_visible_wound_bonus(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: select a visible enemy unit to receive a temporary wound bonus vs friendly keyword attacks."""

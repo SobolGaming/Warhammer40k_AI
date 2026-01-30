@@ -1915,6 +1915,7 @@ def _classify_ability_base(
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
     post_shoot_no_cover_support = _post_shoot_no_cover_support(description)
+    post_shoot_snare_support = _post_shoot_snare_support(description)
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
@@ -2073,6 +2074,8 @@ def _classify_ability_base(
         return post_shoot_suppression_support
     if post_shoot_no_cover_support:
         return post_shoot_no_cover_support
+    if post_shoot_snare_support:
+        return post_shoot_snare_support
     if post_shoot_leadership_debuff_support:
         return post_shoot_leadership_debuff_support
     if fight_phase_engagement_battleshock_support:
@@ -4082,6 +4085,28 @@ def _post_shoot_no_cover_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     weapon = (m.group("weapon") or "weapon").strip()
     return ("Supported", f"After shooting: select a hit enemy unit hit by {weapon}; it cannot gain Benefit of Cover until phase end.")
+
+
+def _post_shoot_snare_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks made with "
+        r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) until the start of your next turn that enemy unit is snared "
+        r"while a unit is snared each time that unit makes a normal advance or fall back move roll (?:one|1) d6 for each model in that unit "
+        r"for each 1 that unit suffers 1 mortal wounds?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    weapon = (m.group("weapon") or "weapon").strip()
+    return (
+        "Supported",
+        f"After shooting: select a hit enemy unit hit by {weapon}; it is snared until your next turn and suffers mortals on Normal/Advance/Fall Back moves.",
+    )
 
 
 def _post_shoot_leadership_debuff_support(description: str) -> Optional[Tuple[str, str]]:

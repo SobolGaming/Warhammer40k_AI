@@ -1126,6 +1126,50 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_snare":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            source = str(ctx.get("ability_name", "") or "Snared").strip() or "Snared"
+            weapon_key = str(ctx.get("weapon_key", "") or "").strip()
+            weapon_name = str(ctx.get("weapon_name", "") or "").strip()
+            apply_fn = getattr(target_root, "apply_snared", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=turn,
+                    source=source,
+                    weapon_key=weapon_key,
+                    weapon_name=weapon_name,
+                )
+            else:
+                sr = getattr(target_root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["snared_active"] = True
+                sr["snared_owner"] = owner_id
+                sr["snared_turn"] = int(turn or 0)
+                sr["snared_source"] = source
+                sr["snared_weapon_key"] = weapon_key
+                sr["snared_weapon_name"] = weapon_name
+                target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{source}: {tname} is snared until your next turn.")
+            except Exception:
+                pass
     if ctx.get("necrons_command_phase_enhancement"):
         army = _resolve_army(game, request, payload)
         mgr = getattr(army, "necrons_detachments", None) if army is not None else None

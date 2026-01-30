@@ -1203,6 +1203,13 @@ class Unit:
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,
     )
+    _POST_SHOOT_SNARE_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks made with "
+        r"(?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) until the start of your next turn that enemy unit is snared "
+        r"while a unit is snared each time that unit makes a normal advance or fall back move roll (?:one|1) d6 for each model in that unit "
+        r"for each 1 that unit suffers 1 mortal wounds?",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
         r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the end of the phase that enemy unit cannot have the benefit of cover",
@@ -6712,6 +6719,43 @@ class Unit:
             "wracked_with_agonies_source",
             "wracked_with_agonies_move_penalty",
             "wracked_with_agonies_charge_penalty",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+    def apply_snared(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        weapon_key: str,
+        weapon_name: str,
+    ) -> None:
+        """Apply snared effect to this unit until the start of the owner's next turn."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["snared_active"] = True
+        sr["snared_owner"] = str(owner_id or "")
+        sr["snared_turn"] = int(turn or 0)
+        sr["snared_source"] = str(source or "Snared").strip() or "Snared"
+        sr["snared_weapon_key"] = str(weapon_key or "").strip()
+        sr["snared_weapon_name"] = str(weapon_name or "").strip()
+        self.special_rules = sr
+
+    def clear_snared(self) -> None:
+        """Clear snared effect from this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for key in (
+            "snared_active",
+            "snared_owner",
+            "snared_turn",
+            "snared_source",
+            "snared_weapon_key",
+            "snared_weapon_name",
         ):
             sr.pop(key, None)
         self.special_rules = sr
@@ -21456,6 +21500,53 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_snare_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy unit hit by a weapon; target is snared.
+
+        Returns a list of specs with keys:
+            - weapon_key: str (normalized weapon name)
+            - weapon_name: str (display)
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_snare:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_SNARE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            weapon_raw = str(m.group("weapon") or "").strip()
+            if not weapon_raw:
+                continue
+            weapon_key = self._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+            source = str(name or "Snare").strip() or "Snare"
+            key = (source.lower(), weapon_key)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"weapon_key": weapon_key, "weapon_name": weapon_raw, "source": source})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
