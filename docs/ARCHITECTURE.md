@@ -65,6 +65,7 @@ Key responsibilities:
 - Game state lifecycle (`game.py`, `phase.py`, `turn_manager.py`, setup/deployment managers)
 - Command validation & dispatch (`command_dispatcher.py`, `commands.py`, `command_kinds.py`)
 - Decision system (`decision_requests.py`, `decisions.py`, `decision_kinds.py`, `decision_dispatcher.py`, `decision_handlers/`)
+- Decision controllers & routing (`decision_controller.py`) for UI/AI/network integration
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)
 - Persistence/replay (`snapshot.py`, `ref_codec.py`, `event_log.py`, `replay.py`, `session_store.py`)
 

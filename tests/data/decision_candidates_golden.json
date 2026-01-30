@@ -1,0 +1,69 @@
+{
+  "candidates": [
+    {
+      "action_id": "CONFIRM_EXAMPLE:16733b023de3dbbb697cf18d5a1df952e0b7ed3efaee83ebaf37633807b6f935",
+      "metadata": {
+        "label": "Alpha"
+      },
+      "params": {
+        "tags": [
+          "a",
+          "b"
+        ],
+        "x": 1
+      }
+    },
+    {
+      "action_id": "CONFIRM_EXAMPLE:c786eed6759508f6b8dab681458d138218abb916366681088ed88a0c143e54c0",
+      "metadata": {
+        "label": "Beta"
+      },
+      "params": {
+        "tags": [
+          "c"
+        ],
+        "x": 2
+      }
+    }
+  ],
+  "context": {
+    "phase": "COMMAND",
+    "unit_id": "unit_1"
+  },
+  "created_at": 0.0,
+  "decision_id": "dec_test",
+  "decision_type": "CONFIRM_EXAMPLE",
+  "mask": [
+    true,
+    true
+  ],
+  "mask_reasons": [],
+  "options": [
+    {
+      "label": "Alpha",
+      "option_id": "opt_alpha",
+      "payload": {
+        "action_id": "CONFIRM_EXAMPLE:16733b023de3dbbb697cf18d5a1df952e0b7ed3efaee83ebaf37633807b6f935",
+        "tags": [
+          "a",
+          "b"
+        ],
+        "x": 1
+      }
+    },
+    {
+      "label": "Beta",
+      "option_id": "opt_beta",
+      "payload": {
+        "action_id": "CONFIRM_EXAMPLE:c786eed6759508f6b8dab681458d138218abb916366681088ed88a0c143e54c0",
+        "tags": [
+          "c"
+        ],
+        "x": 2
+      }
+    }
+  ],
+  "player_id": "player_test",
+  "prompt": "Test prompt",
+  "timeout_seconds": 5.0
+}

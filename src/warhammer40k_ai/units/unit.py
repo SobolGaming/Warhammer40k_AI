@@ -5540,7 +5540,8 @@ class Unit:
                             try:
                                 if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
                                     from ..utility.damage_allocation import _is_character_model
-                                    roll = int(get_roll("D6"))
+                                    from ..utility import dice as dice_module
+                                    roll = int(dice_module.get_roll("D6"))
                                     is_char = bool(_is_character_model(model))
                                     total = roll + (2 if is_char else 0)
                                     try:

@@ -2477,7 +2477,15 @@ class GameView:
             if self.game and getattr(self.game, "event_system", None) is not None:
                 event_system = self.game.event_system
                 event_system.subscribe("battle_round_started", self._on_battle_round_started)
-                event_system.subscribe("decision_requested", self._on_decision_requested)
+                add_controller = getattr(self.game, "add_decision_controller", None)
+                if callable(add_controller):
+                    from .decision_controller import UIDecisionController
+
+                    if not hasattr(self, "_decision_controller") or self._decision_controller is None:
+                        self._decision_controller = UIDecisionController(self)
+                    add_controller(self._decision_controller)
+                else:
+                    event_system.subscribe("decision_requested", self._on_decision_requested)
                 # Optional ability prompts (phase-start timing windows)
                 event_system.subscribe("phase_start", self._on_phase_start_optional_ability_prompts)
                 # Oath of Moment target selection (start of Command phase)

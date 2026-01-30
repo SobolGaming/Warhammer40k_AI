@@ -226,6 +226,13 @@ class NetworkGameSession:
         game = self.game
         if game is None:
             return
+        add_controller = getattr(game, "add_decision_controller", None)
+        if callable(add_controller):
+            from .decision_controller import AutoDiceDecisionController
+
+            self._auto_dice_controller = AutoDiceDecisionController(self)
+            add_controller(self._auto_dice_controller)
+            return
         event_system = getattr(game, "event_system", None)
         if event_system is None:
             return
@@ -233,83 +240,84 @@ class NetworkGameSession:
             event_system.unsubscribe_group(self._auto_dice_group)
         except Exception:
             pass
+        event_system.subscribe("decision_requested", self._on_decision_requested, group=self._auto_dice_group)
 
-        def _on_decision_requested(request: DecisionRequest | None = None, **_kwargs):
-            if request is None:
-                return
-            if not self.allow_commands:
-                return
-            if not bool(getattr(game, "auto_resolve_dice_rolls", False)):
-                return
-            dtype = getattr(request, "decision_type", None)
-            if dtype not in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
-                return
-            player_id = getattr(request, "player_id", None)
+    def _on_decision_requested(self, request: DecisionRequest | None = None, **_kwargs):
+        if request is None:
+            return
+        game = self.game
+        if game is None:
+            return
+        if not self.allow_commands:
+            return
+        if not bool(getattr(game, "auto_resolve_dice_rolls", False)):
+            return
+        dtype = getattr(request, "decision_type", None)
+        if dtype not in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
+            return
+        player_id = getattr(request, "player_id", None)
+        player = None
+        try:
+            registry = getattr(game, "entity_registry", None)
+            if registry is not None:
+                player = registry.get(str(player_id), kind="player")
+        except Exception:
             player = None
-            try:
-                registry = getattr(game, "entity_registry", None)
-                if registry is not None:
-                    player = registry.get(str(player_id), kind="player")
-            except Exception:
-                player = None
-            if player is None:
-                try:
-                    for p in list(getattr(game, "players", []) or []):
-                        if getattr(p, "id", None) == player_id:
-                            player = p
-                            break
-                except Exception:
-                    player = None
-            try:
-                if player is not None and not player.has_control():
-                    return
-            except Exception:
+        if player is None:
+            for p in list(getattr(game, "players", []) or []):
+                if getattr(p, "id", None) == player_id:
+                    player = p
+                    break
+        if player is None:
+            return
+        try:
+            if not player.has_control():
                 return
-            option_id = None
-            result_payload = {}
-            if dtype == DECISION_REQUEST_DICE_ROLL:
-                for opt in list(getattr(request, "options", []) or []):
-                    payload = dict(getattr(opt, "payload", {}) or {})
-                    if str(payload.get("action_id", "")) == "roll":
-                        option_id = opt.option_id
-                        break
-                if option_id is None and getattr(request, "options", None):
-                    option_id = request.options[0].option_id
-            else:
-                mgr = getattr(game, "roll_manager", None)
-                ctx = dict(getattr(request, "context", {}) or {})
-                roll_id = ctx.get("roll_id")
-                state = None
+        except Exception:
+            return
+        option_id = None
+        result_payload = {}
+        if dtype == DECISION_REQUEST_DICE_ROLL:
+            for opt in list(getattr(request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action_id", "")) == "roll":
+                    option_id = opt.option_id
+                    break
+            if option_id is None and getattr(request, "options", None):
+                option_id = request.options[0].option_id
+        else:
+            mgr = getattr(game, "roll_manager", None)
+            ctx = dict(getattr(request, "context", {}) or {})
+            roll_id = ctx.get("roll_id")
+            state = None
+            if mgr is not None and roll_id is not None:
                 try:
-                    if mgr is not None and roll_id is not None:
-                        state = mgr.get_roll(int(roll_id))
+                    state = mgr.get_roll(int(roll_id))
                 except Exception:
                     state = None
-                action_id, selected = ("none", [])
+            action_id, selected = ("none", [])
+            if mgr is not None and state is not None:
                 try:
-                    if mgr is not None and state is not None:
-                        action_id, selected = mgr._auto_pick_reroll_action(game, state)
+                    action_id, selected = mgr._auto_pick_reroll_action(game, state)
                 except Exception:
                     action_id, selected = ("none", [])
-                for opt in list(getattr(request, "options", []) or []):
-                    payload = dict(getattr(opt, "payload", {}) or {})
-                    if str(payload.get("action_id", "")) == str(action_id):
-                        option_id = opt.option_id
-                        break
-                if option_id is None and getattr(request, "options", None):
-                    option_id = request.options[0].option_id
-                if selected is not None:
-                    result_payload["selected_die_ids"] = list(selected)
-            if not option_id:
-                return
-            cmd = GameCommand.create(
-                CMD_RESOLVE_DECISION,
-                player_id=player_id,
-                payload={"decision_id": request.decision_id, "option_id": option_id, "result_payload": result_payload},
-            )
-            self.queue_command(cmd)
-
-        event_system.subscribe("decision_requested", _on_decision_requested, group=self._auto_dice_group)
+            for opt in list(getattr(request, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action_id", "")) == str(action_id):
+                    option_id = opt.option_id
+                    break
+            if option_id is None and getattr(request, "options", None):
+                option_id = request.options[0].option_id
+            if selected is not None:
+                result_payload["selected_die_ids"] = list(selected)
+        if not option_id:
+            return
+        cmd = GameCommand.create(
+            CMD_RESOLVE_DECISION,
+            player_id=player_id,
+            payload={"decision_id": request.decision_id, "option_id": option_id, "result_payload": result_payload},
+        )
+        self.queue_command(cmd)
 
     async def request_resync(self) -> None:
         token = self.client.session_token

@@ -770,7 +770,7 @@ Time management is a concrete subsystem, not an open question.
 
 Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and replayable without any ML stack installed.
 
-1. Ruleset/version plumbing + deterministic replay
+1. ✅ Ruleset/version plumbing + deterministic replay
    - Goal: make the engine replayable and patch-versioned before any AI logic lands.
    - Ruleset identity:
      - Plumb ruleset_id, dataslate_id, points_id into game state snapshots, event log records, and decision contexts.
@@ -790,7 +790,7 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Document the canonical source of ruleset IDs and where they are stored.
    - Policy: no ML libs.
 
-2. Unified Decision API + action masking
+2. ✅ Unified Decision API + action masking
    - Goal: every human/AI choice becomes the same deterministic Decision -> chosen CandidateAction interface.
    - Decision objects:
      - Every choice in all phases emits a Decision with decision_id, decision_type, context, candidates[], mask[].

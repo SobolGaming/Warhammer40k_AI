@@ -3,13 +3,15 @@ from __future__ import annotations
 from typing import Optional
 
 from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
+from .decision_controller import DecisionController
 from ..utility.decision_utils import resolve_decision_command
 
 
-class HeadlessDecisionAgent:
+class HeadlessDecisionAgent(DecisionController):
     """Auto-resolve dice roll decisions for authoritative/headless games."""
 
     def __init__(self, game: object, *, group: str = "headless:auto_decisions") -> None:
+        super().__init__(player_id=None)
         self._game = game
         self._group = str(group or "headless:auto_decisions")
         self._attached = False
@@ -17,6 +19,11 @@ class HeadlessDecisionAgent:
 
     def attach(self) -> None:
         if self._attached:
+            return
+        add_controller = getattr(self._game, "add_decision_controller", None)
+        if callable(add_controller):
+            add_controller(self)
+            self._attached = True
             return
         event_system = getattr(self._game, "event_system", None)
         if event_system is None:
@@ -35,6 +42,9 @@ class HeadlessDecisionAgent:
         except Exception:
             pass
         self._attached = False
+
+    def on_decision_requested(self, game: object, request) -> None:
+        self._on_decision_requested(request=request, game=game)
 
     def _on_decision_requested(self, request=None, game=None, **_kwargs) -> None:
         game = game or self._game

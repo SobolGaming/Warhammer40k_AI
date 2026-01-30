@@ -40,6 +40,7 @@ from .decision_kinds import (
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
 from .random_source import RandomSource
+from .decision_controller import DecisionController, DecisionControllerHub
 from .ruleset import RulesetBundle
 from .dice_rolls import DiceRollManager
 from .attack_resolution import AttackResolutionManager
@@ -84,6 +85,8 @@ class Game:
         self.event_system = EventSystem()
         self.event_log = DeterministicEventLog()
         self.event_log.attach(self)
+        self.decision_controller_hub = DecisionControllerHub(self)
+        self.decision_controller_hub.attach()
         self.objectives = []
         self.commands = []
         self.command_queue: list[GameCommand] = []
@@ -188,6 +191,14 @@ class Game:
         self.army_muster_requests: Dict[str, Any] = {}
         self.entity_registry = EntityRegistry()
         self.rebuild_entity_registry()
+
+    def add_decision_controller(self, controller: DecisionController) -> None:
+        if controller is None:
+            return
+        hub = getattr(self, "decision_controller_hub", None)
+        if hub is None:
+            return
+        hub.add_controller(controller)
 
     @property
     def ruleset_bundle(self) -> RulesetBundle | None:
