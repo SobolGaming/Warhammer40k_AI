@@ -3069,6 +3069,7 @@ class GameView:
                 DECISION_CHOOSE_GRAND_COVEN,
                 DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
                 DECISION_CHOOSE_CHIVALRIC_OATH,
+                DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
                 DECISION_CHOOSE_DOCTRINA,
                 DECISION_CHOOSE_HARBINGER,
                 DECISION_CHOOSE_HYPER_ADAPTATION,
@@ -3464,6 +3465,86 @@ class GameView:
             self.nurgles_gift_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, decision_request=request)
             try:
                 self.dialog_manager.open(self.nurgles_gift_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_START_OF_BATTLE_KEYWORD:
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            dlg = getattr(self, "start_of_battle_keyword_dialog", None)
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    self.start_of_battle_keyword_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    dlg = self.start_of_battle_keyword_dialog
+                except Exception:
+                    dlg = None
+            if dlg is None:
+                default_id = first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_name = str(ctx.get("ability_name", "") or "Select Keyword").strip()
+            unit_name = ""
+            model_name = ""
+            try:
+                unit_id = str(ctx.get("unit_id", "") or "")
+                if unit_id:
+                    unit_obj = self._resolve_unit_by_id(unit_id)
+                    if unit_obj is not None:
+                        unit_name = getattr(unit_obj, "name", "") or ""
+            except Exception:
+                unit_name = ""
+            try:
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    reg = getattr(game, "entity_registry", None)
+                    if reg is not None:
+                        model_obj = reg.get(model_id, kind="model")
+                        if model_obj is not None:
+                            model_name = getattr(model_obj, "name", "") or ""
+            except Exception:
+                model_name = ""
+
+            title = ability_name or "Select Keyword"
+            header = "Select a keyword for this battle."
+            if model_name:
+                header = f"{model_name} selects a keyword for this battle."
+            elif unit_name:
+                header = f"{unit_name} selects a keyword for this battle."
+            subtitle = "Re-roll Hit and Wound rolls of 1 vs units with the chosen keyword."
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                default_id = first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title=title,
+                header=header,
+                subtitle=subtitle,
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+                show_cancel=True,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
             except Exception:
                 pass
             return

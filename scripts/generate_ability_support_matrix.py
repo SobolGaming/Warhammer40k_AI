@@ -1923,6 +1923,7 @@ def _classify_ability_base(
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
+    start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
@@ -2090,6 +2091,8 @@ def _classify_ability_base(
         return movement_phase_speed_mortal_support
     if movement_phase_visible_wound_bonus_support:
         return movement_phase_visible_wound_bonus_support
+    if start_of_battle_keyword_reroll_support:
+        return start_of_battle_keyword_reroll_support
     if daemonic_patrons_support:
         return daemonic_patrons_support
     if melee_fight_on_death_support:
@@ -3037,6 +3040,34 @@ def _model_hit_bonus_vs_fly_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Model attacks vs FLY targets gain +{m.group('amt')} to hit.")
+
+
+def _start_of_battle_keyword_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the battle select one of the following keywords (?P<keywords>[a-z0-9 ]+) "
+        r"each time this model makes an attack that targets a unit with the selected keyword reroll a hit roll of 1 "
+        r"and reroll a wound roll of 1"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    tokens = [t for t in str(m.group("keywords") or "").split() if t]
+    allowed = {"infantry", "monster", "mounted", "vehicle"}
+    found = []
+    for token in tokens:
+        if token in allowed and token.upper() not in found:
+            found.append(token.upper())
+    if found:
+        keywords_label = ", ".join(found)
+        note = f"Start of battle: select one of {keywords_label}; re-roll Hit/Wound rolls of 1 vs that keyword."
+    else:
+        note = "Start of battle: select a keyword; re-roll Hit/Wound rolls of 1 vs that keyword."
+    return ("Supported", note)
 
 
 def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:

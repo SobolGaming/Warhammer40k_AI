@@ -11,6 +11,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
     DECISION_CHOOSE_RITUALS,
     DECISION_CHOOSE_CHIVALRIC_OATH,
+    DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_CHOOSE_DAEMONIC_ALLEGIANCE,
     DECISION_CHOOSE_DARK_PACT,
     DECISION_CHOOSE_DOCTRINA,
@@ -961,6 +962,76 @@ def _apply_choose_plague(game: object, request: DecisionRequest, result: Decisio
     choice = payload.get("choice_key") or payload.get("key")
     mgr.active_plague_key = str(choice)
     return str(choice)
+
+
+def _validate_choose_start_of_battle_keyword(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    keyword = payload.get("keyword") or _option_label(request, result)
+    if not keyword:
+        return ("Start-of-battle keyword selection requires keyword.",)
+    model = resolve_model(game, payload.get("model_id") or request.context.get("model_id"))
+    if model is None:
+        return ("Start-of-battle keyword selection model not found.",)
+    unit = getattr(model, "parent_unit", None)
+    if unit is None:
+        unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    if unit is None:
+        return ("Start-of-battle keyword selection unit not found.",)
+    ability_key = payload.get("ability_key") or request.context.get("ability_key")
+    specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) if hasattr(unit, "model_start_of_battle_keyword_reroll_ones_specs") else []
+    if not specs:
+        return ("Start-of-battle keyword selection ability not found.",)
+    if ability_key:
+        for spec in list(specs or []):
+            if str(spec.get("ability_key", "") or "").strip().lower() == str(ability_key).strip().lower():
+                if str(keyword).strip().upper() not in {str(k).strip().upper() for k in (spec.get("keywords", []) or [])}:
+                    return ("Selected keyword is not valid for this ability.",)
+                return ()
+        return ("Start-of-battle keyword selection ability key not found.",)
+    return ()
+
+
+def _apply_choose_start_of_battle_keyword(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    keyword = payload.get("keyword") or _option_label(request, result)
+    if not keyword:
+        raise RuntimeError("Start-of-battle keyword selection requires keyword.")
+    model = resolve_model(game, payload.get("model_id") or request.context.get("model_id"))
+    if model is None:
+        raise RuntimeError("Start-of-battle keyword selection model not found.")
+    unit = getattr(model, "parent_unit", None)
+    if unit is None:
+        unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Start-of-battle keyword selection unit not found.")
+    source = payload.get("ability_name") or request.context.get("ability_name") or "Start of battle keyword selection"
+    ability_key = payload.get("ability_key") or request.context.get("ability_key")
+    applied = False
+    try:
+        applied = bool(
+            unit.apply_start_of_battle_keyword_reroll_choice(
+                model,
+                keyword=str(keyword),
+                source=str(source),
+                ability_key=str(ability_key or ""),
+            )
+        )
+    except Exception:
+        applied = False
+    try:
+        player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+    except Exception:
+        player = None
+    try:
+        mname = str(getattr(model, "name", "Model") or "Model")
+        if applied:
+            _log_action_for_players(game, player, f"{mname} selected {str(keyword).upper()} for {source}.")
+    except Exception:
+        pass
+    return str(keyword)
 
 
 def _resolve_emperors_children_manager(army: object):
@@ -2386,6 +2457,11 @@ register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_cho
 register_decision_handler(DECISION_CHOOSE_RED_WRATH, validate=_validate_choose_red_wrath, apply=_apply_choose_red_wrath)
 register_decision_handler(DECISION_USE_MIRACLE_DIE, validate=_validate_use_miracle_die, apply=_apply_use_miracle_die)
 register_decision_handler(DECISION_CHOOSE_PLAGUE, validate=_validate_choose_plague, apply=_apply_choose_plague)
+register_decision_handler(
+    DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
+    validate=_validate_choose_start_of_battle_keyword,
+    apply=_apply_choose_start_of_battle_keyword,
+)
 register_decision_handler(DECISION_CHOOSE_PLEDGE, validate=_validate_choose_pledge, apply=_apply_choose_pledge)
 register_decision_handler(DECISION_CHOOSE_QUARRY, validate=_validate_choose_quarry, apply=_apply_choose_quarry)
 register_decision_handler(

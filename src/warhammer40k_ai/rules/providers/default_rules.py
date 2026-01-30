@@ -93,6 +93,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_flickerjump_mortal_wounds"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),
+                ("battle_round_started", "_on_battle_round_started_start_of_battle_keyword_rerolls"),
                 ("phase_start", "_on_phase_start_optional_abilities"),
                 ("phase_start", "_on_phase_start_custodes_enhancements"),
             ],

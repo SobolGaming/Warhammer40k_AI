@@ -1283,6 +1283,12 @@ class Unit:
         r"add (?P<bonus>\d+) to the wound rolls?",
         re.IGNORECASE,
     )
+    _START_OF_BATTLE_KEYWORD_REROLL_ONES_RE = re.compile(
+        r"at the start of the battle select one of the following keywords (?P<keywords>[a-z0-9 ]+) "
+        r"each time this model makes an attack(?:s)? that targets? a unit with the selected keyword "
+        r"re ?roll a hit roll of 1 and re ?roll a wound roll of 1",
+        re.IGNORECASE,
+    )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
         r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
@@ -6846,6 +6852,71 @@ class Unit:
             return 0, ""
         source = str(sr.get("movement_phase_visible_wound_bonus_source", "") or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
         return int(bonus), f"+{int(bonus)} to wound from {source}"
+
+    def apply_start_of_battle_keyword_reroll_choice(
+        self,
+        model: Optional['Model'],
+        *,
+        keyword: str,
+        source: str = "",
+        ability_key: Optional[str] = None,
+    ) -> bool:
+        """Persist a start-of-battle keyword reroll selection on the model."""
+        if model is None:
+            return False
+        kw = str(keyword or "").strip().upper()
+        if not kw:
+            return False
+        if not isinstance(getattr(model, "_temporary_effects", None), dict):
+            model._temporary_effects = {}
+        data = model._temporary_effects.get("start_of_battle_keyword_rerolls", {})
+        if not isinstance(data, dict):
+            data = {}
+        key = str(ability_key or source or kw).strip().lower()
+        if not key:
+            key = kw.lower()
+        data[key] = {
+            "keyword": kw,
+            "source": str(source or ""),
+            "ability_key": key,
+        }
+        model._temporary_effects["start_of_battle_keyword_rerolls"] = data
+        return True
+
+    def get_start_of_battle_keyword_reroll_choice(
+        self,
+        model: Optional['Model'],
+        *,
+        ability_key: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Return a stored keyword reroll selection for the model (if any)."""
+        if model is None:
+            return None
+        eff = getattr(model, "_temporary_effects", {}) or {}
+        data = eff.get("start_of_battle_keyword_rerolls", {})
+        if not isinstance(data, dict):
+            return None
+        if ability_key is not None:
+            key = str(ability_key or "").strip().lower()
+            if key:
+                return data.get(key)
+        if len(data) == 1:
+            try:
+                return next(iter(data.values()))
+            except Exception:
+                return None
+        return None
+
+    def _iter_start_of_battle_keyword_reroll_choices(self, model: Optional['Model']) -> list[dict]:
+        if model is None:
+            return []
+        eff = getattr(model, "_temporary_effects", {}) or {}
+        data = eff.get("start_of_battle_keyword_rerolls", {})
+        if isinstance(data, dict):
+            return [v for v in data.values() if isinstance(v, dict)]
+        if isinstance(data, list):
+            return [v for v in data if isinstance(v, dict)]
+        return []
 
     def _post_shoot_leadership_debuff_modifier(self, game=None) -> int:
         """Return persistent post-shoot Leadership/Battle-shock test modifier, clearing on expiry."""
@@ -21086,22 +21157,86 @@ class Unit:
         mods["reroll_full"] = bool(reroll_full_reasons)
         return mods
 
+    def _start_of_battle_keyword_reroll_ones_reasons(
+        self,
+        model: Optional['Model'],
+        target: Optional['Unit'],
+        *,
+        roll: str,
+    ) -> list[str]:
+        if model is None or target is None:
+            return []
+        roll_key = str(roll or "").strip().lower()
+        if roll_key not in ("hit", "wound"):
+            return []
+        reasons: list[str] = []
+        entries = self._iter_start_of_battle_keyword_reroll_choices(model)
+        for entry in list(entries or []):
+            if not isinstance(entry, dict):
+                continue
+            keyword = str(entry.get("keyword", "") or "").strip()
+            if not keyword:
+                continue
+            target_ok = False
+            try:
+                if hasattr(target, "has_keyword"):
+                    target_ok = bool(target.has_keyword(keyword))
+                elif hasattr(target, "has_any_keyword"):
+                    target_ok = bool(target.has_any_keyword(keyword))
+            except Exception:
+                target_ok = False
+            if not target_ok:
+                continue
+            source = str(entry.get("source", "") or "Start of battle selection").strip() or "Start of battle selection"
+            reasons.append(f"{source}: re-roll {roll_key.title()} rolls of 1 vs {keyword.upper()} targets")
+        return reasons
+
     def get_model_hit_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="hit")
+        reroll_values = set(mods.get("reroll_values", ()) or ())
+        reroll_reasons = list(mods.get("reroll_reasons", ()) or ())
+        reroll_full_reasons = list(mods.get("reroll_full_reasons", ()) or ())
+        extra_reasons = self._start_of_battle_keyword_reroll_ones_reasons(model, target, roll="hit")
+        if extra_reasons:
+            reroll_values.add(1)
+            reroll_reasons.extend(extra_reasons)
+        seen = set()
+        deduped_reasons: list[str] = []
+        for reason in reroll_reasons:
+            key = str(reason or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped_reasons.append(str(reason))
         return {
-            "reroll_hit_values": mods.get("reroll_values", ()),
+            "reroll_hit_values": tuple(sorted(reroll_values)),
             "reroll_hit_full": bool(mods.get("reroll_full")),
-            "reroll_hit_reasons": mods.get("reroll_reasons", ()),
-            "reroll_hit_full_reasons": mods.get("reroll_full_reasons", ()),
+            "reroll_hit_reasons": tuple(deduped_reasons),
+            "reroll_hit_full_reasons": tuple(reroll_full_reasons),
         }
 
     def get_model_wound_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="wound")
+        reroll_values = set(mods.get("reroll_values", ()) or ())
+        reroll_reasons = list(mods.get("reroll_reasons", ()) or ())
+        reroll_full_reasons = list(mods.get("reroll_full_reasons", ()) or ())
+        extra_reasons = self._start_of_battle_keyword_reroll_ones_reasons(model, target, roll="wound")
+        if extra_reasons:
+            reroll_values.add(1)
+            reroll_reasons.extend(extra_reasons)
+        seen = set()
+        deduped_reasons: list[str] = []
+        for reason in reroll_reasons:
+            key = str(reason or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped_reasons.append(str(reason))
         return {
-            "reroll_wound_values": mods.get("reroll_values", ()),
+            "reroll_wound_values": tuple(sorted(reroll_values)),
             "reroll_wound_full": bool(mods.get("reroll_full")),
-            "reroll_wound_reasons": mods.get("reroll_reasons", ()),
-            "reroll_wound_full_reasons": mods.get("reroll_full_reasons", ()),
+            "reroll_wound_reasons": tuple(deduped_reasons),
+            "reroll_wound_full_reasons": tuple(reroll_full_reasons),
         }
 
     def model_hit_bonus_vs_fly(self, model: Optional['Model'] = None, *, attack_type: str = "any") -> tuple[int, Optional[str]]:
@@ -21985,6 +22120,66 @@ class Unit:
                     "range": int(range_value),
                     "keyword": keyword,
                     "bonus": int(bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_of_battle_keyword_reroll_ones_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the battle, select a keyword; re-roll Hit/Wound rolls of 1
+        vs targets with the selected keyword.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: normalized key for storing selections
+            - keywords: list[str] of selectable keywords (uppercased)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_of_battle_keyword_reroll_ones:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        allowed = {"infantry", "monster", "mounted", "vehicle"}
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_OF_BATTLE_KEYWORD_REROLL_ONES_RE.fullmatch(normalized)
+            if not m:
+                continue
+            raw = str(m.group("keywords") or "").strip()
+            if not raw:
+                continue
+            keywords: list[str] = []
+            for token in raw.split():
+                if token in allowed and token not in keywords:
+                    keywords.append(token)
+            if not keywords:
+                continue
+            source = str(name or "Start of battle keyword selection").strip() or "Start of battle keyword selection"
+            key = self._normalize_keyword_phrase(source) or source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "ability_key": key,
+                    "keywords": [kw.upper() for kw in keywords],
                 }
             )
 

@@ -166,6 +166,7 @@ Deployment / Pre-battle:
 - hover_mode_prompt (yes_no_dialog): CONFIRM_YES_NO {unit_id, choice} (context `ability="hover_mode"`)
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id} (context `army_id`) (Declare Battle Formations)
 - daemonic_allegiance_dialog: CHOOSE_DAEMONIC_ALLEGIANCE {unit_id, keyword}
+- start_of_battle_keyword_dialog: CHOOSE_START_OF_BATTLE_KEYWORD {keyword} (context `model_id`, `unit_id`, `ability_name`, `ability_key`)
 - scout_choice_dialog: SCOUT_MOVE {unit_id, destination}
 - floor_selection_dialog: SELECT_FLOOR {unit_id, floor_id}
 - deployment_placement_dialog: MOVE_UNIT {unit_id, model_positions} (context `placement_kind="deployment"`, engine finalizes deployment + advances deployment turn)

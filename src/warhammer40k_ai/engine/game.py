@@ -32,6 +32,7 @@ from .decision_kinds import (
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_CHOOSE_QUARRY,
     DECISION_CHOOSE_CHIVALRIC_OATH,
+    DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
     DECISION_MOVE_UNIT,
     DECISION_ALLOCATE_DAMAGE,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
@@ -7010,6 +7011,93 @@ class Game:
                     default_value=default_value,
                     manager=mgr,
                 )
+
+    def _on_battle_round_started_start_of_battle_keyword_rerolls(
+        self,
+        game=None,
+        battle_round: int = 0,
+        **_kwargs,
+    ) -> None:
+        br = int(battle_round or getattr(self, "turn", 0) or 0)
+        if br != 1:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        queue = getattr(self, "decision_queue", None)
+
+        def _has_pending(model_id: str, ability_key: str) -> bool:
+            if queue is None:
+                return False
+            for req in list(getattr(queue, "list", lambda: [])() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_START_OF_BATTLE_KEYWORD:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("model_id", "") or "") != str(model_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "") != str(ability_key):
+                    continue
+                return True
+            return False
+
+        for player in list(getattr(self, "players", []) or []):
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                for model in list(getattr(unit, "models", []) or []):
+                    if model is None or not bool(getattr(model, "is_alive", True)):
+                        continue
+                    specs = unit.model_start_of_battle_keyword_reroll_ones_specs(model) or []
+                    if not specs:
+                        continue
+                    unit_id = get_entity_id(unit)
+                    model_id = get_entity_id(model)
+                    for spec in list(specs or []):
+                        ability_key = str(spec.get("ability_key", "") or spec.get("source", "") or "").strip().lower()
+                        if not ability_key:
+                            ability_key = f"{model_id}:start_of_battle_keyword_rerolls"
+                        if unit.get_start_of_battle_keyword_reroll_choice(model, ability_key=ability_key):
+                            continue
+                        if _has_pending(model_id, ability_key):
+                            continue
+                        keywords = list(spec.get("keywords", []) or [])
+                        if not keywords:
+                            continue
+                        options = [
+                            DecisionOption.create(
+                                kw,
+                                payload={
+                                    "keyword": kw,
+                                    "unit_id": unit_id,
+                                    "model_id": model_id,
+                                    "ability_key": ability_key,
+                                    "ability_name": spec.get("source", ""),
+                                },
+                            )
+                            for kw in keywords
+                        ]
+                        if not options:
+                            continue
+                        prompt = f"Select keyword for {getattr(model, 'name', 'Model')}."
+                        context = {
+                            "ability": "start_of_battle_keyword_reroll",
+                            "ability_name": spec.get("source", ""),
+                            "ability_key": ability_key,
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "battle_round": br,
+                        }
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_START_OF_BATTLE_KEYWORD,
+                            prompt,
+                            player_id=getattr(player, "id", None),
+                            options=options,
+                            context=context,
+                        )
+                        self.request_decision(request)
 
     def _on_unit_destroyed_emperors_children(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         if unit is None or destroyed_by_unit is None:
