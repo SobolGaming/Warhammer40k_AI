@@ -324,17 +324,22 @@ class DeploymentManager:
                 return bool(getattr(u, "is_leader", False)) and getattr(u, "attached_to", None) is not None
             except Exception:
                 return False
+        def _is_joined_support(u) -> bool:
+            try:
+                return bool(getattr(u, "is_joined_support", False))
+            except Exception:
+                return False
 
         # Get units to deploy (not in reserves). Attached Leaders deploy as part of their Bodyguard.
         defender_units = [
             unit for unit in self.defender.get_army().units
-            if (not _is_attached_leader(unit))
+            if (not _is_attached_leader(unit)) and (not _is_joined_support(unit))
             and deployment_results['reserves'][self.defender.id].get(unit.id, 'deploy') == 'deploy'
             and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]
         attacker_units = [
             unit for unit in self.attacker.get_army().units
-            if (not _is_attached_leader(unit))
+            if (not _is_attached_leader(unit)) and (not _is_joined_support(unit))
             and deployment_results['reserves'][self.attacker.id].get(unit.id, 'deploy') == 'deploy'
             and not bool(getattr(unit, "must_start_in_reserves", lambda: False)())
         ]

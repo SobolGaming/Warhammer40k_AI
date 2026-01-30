@@ -1380,9 +1380,18 @@ class CullTheHordeSecondary(SecondaryMissionCard):
             leaders = list(getattr(unit, "attached_leaders", []) or [])
         except Exception:
             leaders = []
+        try:
+            supports = list(getattr(unit, "attached_support_units", []) or [])
+        except Exception:
+            supports = []
         for l in leaders:
             try:
                 base += int(getattr(l, "starting_model_count", 0) or 0)
+            except Exception:
+                continue
+        for s in supports:
+            try:
+                base += int(getattr(s, "starting_model_count", 0) or 0)
             except Exception:
                 continue
         return int(base)

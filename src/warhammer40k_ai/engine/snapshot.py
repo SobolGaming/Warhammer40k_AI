@@ -41,7 +41,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -56,7 +56,9 @@ _UNIT_STATE_EXCLUDE = {
     "transport_passengers",
     "embarked_in",
     "attached_leaders",
+    "attached_support_units",
     "attached_to",
+    "support_joined_to",
     "parent_army",
     "round_state",
     "_ability_cache",
@@ -436,6 +438,8 @@ def _serialize_unit(unit: Unit) -> dict:
         "round_state": _serialize_round_state(unit),
         "attached_to_id": get_entity_id(unit.attached_to) if getattr(unit, "attached_to", None) else None,
         "attached_leader_ids": [get_entity_id(u) for u in list(getattr(unit, "attached_leaders", []) or [])],
+        "attached_support_ids": [get_entity_id(u) for u in list(getattr(unit, "attached_support_units", []) or [])],
+        "support_joined_to_id": get_entity_id(unit.support_joined_to) if getattr(unit, "support_joined_to", None) else None,
         "transport_passenger_ids": [get_entity_id(u) for u in list(getattr(unit, "transport_passengers", []) or [])],
         "embarked_in_id": get_entity_id(unit.embarked_in) if getattr(unit, "embarked_in", None) else None,
         "models": [_serialize_model(m) for m in list(getattr(unit, "models", []) or [])],
@@ -1342,8 +1346,21 @@ def load_game_snapshot(snapshot: dict) -> Game:
         unit.attached_leaders = [
             units_by_id[uid] for uid in udata.get("attached_leader_ids", []) or [] if uid in units_by_id
         ]
+        unit.attached_support_units = [
+            units_by_id[uid] for uid in udata.get("attached_support_ids", []) or [] if uid in units_by_id
+        ]
         attached_to_id = udata.get("attached_to_id")
         unit.attached_to = units_by_id.get(attached_to_id) if attached_to_id else None
+        support_joined_to_id = udata.get("support_joined_to_id")
+        unit.support_joined_to = units_by_id.get(support_joined_to_id) if support_joined_to_id else None
+        if unit.support_joined_to is not None:
+            try:
+                supports = list(getattr(unit.support_joined_to, "attached_support_units", []) or [])
+            except Exception:
+                supports = []
+            if unit not in supports:
+                supports.append(unit)
+            unit.support_joined_to.attached_support_units = supports
         unit.transport_passengers = [
             units_by_id[uid] for uid in udata.get("transport_passenger_ids", []) or [] if uid in units_by_id
         ]

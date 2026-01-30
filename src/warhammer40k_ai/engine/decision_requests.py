@@ -5,6 +5,7 @@ from typing import Iterable, List, Optional
 from .decisions import DecisionOption, DecisionRequest
 from .decision_kinds import (
     DECISION_ATTACH_LEADER,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
@@ -80,7 +81,11 @@ def build_leader_attachment_requests(
 ) -> List[DecisionRequest]:
     all_units = _iter_units(units)
     leaders = [u for u in all_units if bool(getattr(u, "is_leader", False))]
-    bodyguards = [u for u in all_units if not bool(getattr(u, "is_leader", False))]
+    bodyguards = [
+        u for u in all_units
+        if not bool(getattr(u, "is_leader", False))
+        and not bool(getattr(u, "is_joined_support", False))
+    ]
     requests: List[DecisionRequest] = []
     for leader in leaders:
         options = _leader_attachment_options(leader, bodyguards)
@@ -91,6 +96,62 @@ def build_leader_attachment_requests(
             player_id=_player_id_for_unit(leader),
             options=options,
             context={"leader_id": get_entity_id(leader)},
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+    return requests
+
+
+def _support_artillery_attachment_options(support_unit, bodyguards: List[object]) -> List[DecisionOption]:
+    support_id = get_entity_id(support_unit)
+    options = [DecisionOption.create("Unattached", payload={"support_unit_id": support_id, "bodyguard_id": None})]
+    current = getattr(support_unit, "support_joined_to", None)
+    for bg in bodyguards:
+        try:
+            if not support_unit.can_join_support_artillery(bg):
+                continue
+        except Exception:
+            continue
+        if bg is not current:
+            try:
+                supports = list(getattr(bg, "attached_support_units", []) or [])
+            except Exception:
+                supports = []
+            if supports:
+                continue
+        label = str(getattr(bg, "name", "Bodyguard"))
+        options.append(
+            DecisionOption.create(
+                label,
+                payload={"support_unit_id": support_id, "bodyguard_id": get_entity_id(bg)},
+            )
+        )
+    return options
+
+
+def build_support_artillery_attachment_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    supports = [
+        u for u in all_units
+        if bool(getattr(u, "has_support_artillery_ability", lambda: False)())
+    ]
+    bodyguards = [u for u in all_units if bool(getattr(u, "is_guardian_defenders_unit", lambda: False)())]
+    requests: List[DecisionRequest] = []
+    for support_unit in supports:
+        options = _support_artillery_attachment_options(support_unit, bodyguards)
+        prompt = f"Attach support weapon {getattr(support_unit, 'name', 'Support Weapon')}"
+        request = DecisionRequest.create(
+            DECISION_ATTACH_SUPPORT_ARTILLERY,
+            prompt,
+            player_id=_player_id_for_unit(support_unit),
+            options=options,
+            context={"support_unit_id": get_entity_id(support_unit)},
         )
         requests.append(request)
         if queue_requests and hasattr(game, "request_decision"):
@@ -111,6 +172,8 @@ def build_transport_assignment_requests(
         if bool(getattr(unit, "is_transport", False)):
             continue
         if bool(getattr(unit, "is_attached_leader", False)):
+            continue
+        if bool(getattr(unit, "is_joined_support", False)):
             continue
         if getattr(unit, "deployed", False):
             continue

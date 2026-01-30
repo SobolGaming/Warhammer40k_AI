@@ -13529,6 +13529,11 @@ class GameView:
                             continue
                     except Exception:
                         pass
+                    try:
+                        if bool(getattr(u, "is_joined_support", False)):
+                            continue
+                    except Exception:
+                        pass
                     visible.append(u)
                 return visible
 
@@ -15460,6 +15465,12 @@ class GameView:
                         try:
                             if bool(getattr(parent_unit, "is_leader", False)) and getattr(parent_unit, "attached_to", None) is not None:
                                 parent_unit = parent_unit.attached_to
+                        except Exception:
+                            pass
+                        # If hovering a model from a joined Support Weapon, redirect to its bodyguard
+                        try:
+                            if bool(getattr(parent_unit, "is_joined_support", False)) and getattr(parent_unit, "support_joined_to", None) is not None:
+                                parent_unit = parent_unit.support_joined_to
                         except Exception:
                             pass
                         # Determine which roster the unit belongs to (only if armies are loaded)

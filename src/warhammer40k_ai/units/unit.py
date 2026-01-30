@@ -121,6 +121,10 @@ class Unit:
         # For Bodyguard units: track Leaders attached to this unit (in 10e, this forms an Attached Unit).
         # We keep the Leader units as real units for combat/abilities, but UI + movement can treat the group as one.
         self.attached_leaders: List['Unit'] = []
+        # Support Artillery: track non-Leader units joined to this unit (e.g., Support Weapon platforms).
+        self.attached_support_units: List['Unit'] = []
+        # For Support Artillery units: track which unit this model is joined to (if any).
+        self.support_joined_to = None
 
         if hasattr(datasheet, 'damaged_w') and datasheet.damaged_w:
             self.damaged_profile = self._parse_range(datasheet.damaged_w)
@@ -6238,8 +6242,14 @@ class Unit:
     def update_coherency(self) -> None:
         # Coherency thresholds depend on the number of models in the unit.
         # Use alive model count so casualties adjust the requirement correctly.
+        models = list(getattr(self, "models", []) or [])
+        try:
+            if self is self.get_attached_unit_root():
+                models = list(self._get_bodyguard_support_models() or [])
+        except Exception:
+            pass
         alive_count = len([
-            m for m in self.models
+            m for m in models
             if getattr(m, 'is_alive', True) and not getattr(m, "_pending_placement", False)
         ])
         if alive_count <= 1:
@@ -6706,6 +6716,25 @@ class Unit:
     def is_embarked(self) -> bool:
         return self.embarked_in is not None
 
+    def cannot_embark(self) -> bool:
+        """Return True if this unit is forbidden from embarking in a Transport."""
+        try:
+            if self.has_support_artillery_ability():
+                return True
+        except Exception:
+            pass
+        try:
+            if list(getattr(self, "attached_support_units", []) or []):
+                return True
+        except Exception:
+            pass
+        try:
+            if getattr(self, "support_joined_to", None) is not None:
+                return True
+        except Exception:
+            pass
+        return False
+
     def _parse_transport_capacity(self, datasheet) -> int:
         """
         Best-effort parsing for 10th edition Transport Capacity.
@@ -6894,6 +6923,11 @@ class Unit:
             return False
         if passenger_unit.is_embarked:
             return False
+        try:
+            if callable(getattr(passenger_unit, "cannot_embark", None)) and passenger_unit.cannot_embark():
+                return False
+        except Exception:
+            pass
         # Must be a friendly unit
         try:
             if self.get_parent_army() is None or passenger_unit.get_parent_army() is None:
@@ -6988,6 +7022,24 @@ class Unit:
         """True if this Leader is currently attached to a Bodyguard unit."""
         return bool(self.is_leader and getattr(self, "attached_to", None) is not None)
 
+    @property
+    def is_support_artillery_joined(self) -> bool:
+        """True if this Support Artillery model is joined to a unit."""
+        return bool(getattr(self, "support_joined_to", None) is not None)
+
+    @property
+    def is_joined_support(self) -> bool:
+        """Alias for support artillery joined status (used for UI filtering)."""
+        return self.is_support_artillery_joined
+
+    def get_attachment_target(self):
+        """Return the unit this model is attached/joined to, if any."""
+        if self.is_leader:
+            return getattr(self, "attached_to", None)
+        if self.has_support_artillery_ability():
+            return getattr(self, "support_joined_to", None)
+        return None
+
     def get_datasheet_id(self) -> Optional[str]:
         try:
             return getattr(self._datasheet, "id", None)
@@ -6998,6 +7050,8 @@ class Unit:
         """Return the 'root' unit for this attached unit group (Bodyguard if attached, else self)."""
         if self.is_leader and getattr(self, "attached_to", None) is not None:
             return self.attached_to
+        if getattr(self, "support_joined_to", None) is not None:
+            return self.support_joined_to
         return self
 
     def get_attached_unit_members(self) -> List['Unit']:
@@ -7007,8 +7061,12 @@ class Unit:
             leaders = list(getattr(root, "attached_leaders", []) or [])
         except Exception:
             leaders = []
+        try:
+            supports = list(getattr(root, "attached_support_units", []) or [])
+        except Exception:
+            supports = []
         # Root first, then leaders
-        return [root] + [u for u in leaders if u is not None]
+        return [root] + [u for u in supports if u is not None] + [u for u in leaders if u is not None]
 
     def get_attached_unit_models(self) -> List['Model']:
         """Flatten models across the attached unit members (bodyguard + leaders)."""
@@ -7021,6 +7079,26 @@ class Unit:
                     models.append(m)
             except Exception:
                 continue
+        return models
+
+    def _get_bodyguard_support_models(self) -> List['Model']:
+        """Return bodyguard models plus any joined support-artillery models (root only)."""
+        root = self.get_attached_unit_root()
+        if root is not self:
+            try:
+                return root._get_bodyguard_support_models()
+            except Exception:
+                return list(getattr(root, "models", []) or [])
+        models: List['Model'] = []
+        try:
+            models.extend(list(getattr(root, "models", []) or []))
+        except Exception:
+            pass
+        try:
+            for su in list(getattr(root, "attached_support_units", []) or []):
+                models.extend(list(getattr(su, "models", []) or []))
+        except Exception:
+            pass
         return models
 
     def get_kill_team_majority_toughness(self) -> Optional[int]:
@@ -7143,9 +7221,18 @@ class Unit:
                 return []
         except Exception:
             pass
+        # If this is a joined Support Artillery model, allocation is handled by the bodyguard unit.
+        try:
+            if bool(getattr(self, "is_support_artillery_joined", False)):
+                return []
+        except Exception:
+            pass
 
         # Bodyguard models first
-        bodyguards = list(getattr(self, "models", []) or [])
+        try:
+            bodyguards = list(self._get_bodyguard_support_models() or [])
+        except Exception:
+            bodyguards = list(getattr(self, "models", []) or [])
         bodyguards_alive = [
             m for m in bodyguards
             if getattr(m, "is_alive", True) and not getattr(m, "_pending_placement", False)
@@ -7294,6 +7381,111 @@ class Unit:
         except Exception:
             pass
         return max_leaders
+
+    def has_support_artillery_ability(self) -> bool:
+        """True if this unit has the Support Artillery join rule."""
+        try:
+            for ab in getattr(self, "possible_abilities", []) or []:
+                name = str(getattr(ab, "name", "") or "").strip().lower()
+                if name == "support artillery":
+                    return True
+                desc = str(getattr(ab, "description", "") or "").lower()
+                if (
+                    "declare battle formations" in desc
+                    and "guardian defenders" in desc
+                    and "support weapon model" in desc
+                ):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def is_guardian_defenders_unit(self) -> bool:
+        try:
+            return str(getattr(self, "name", "") or "").strip().lower() == "guardian defenders"
+        except Exception:
+            return False
+
+    def can_join_support_artillery(self, bodyguard: "Unit") -> bool:
+        """Validate Support Artillery join eligibility."""
+        if bodyguard is None or bodyguard is self:
+            return False
+        if not self.has_support_artillery_ability():
+            return False
+        # Same army
+        try:
+            if self.get_parent_army() is None or bodyguard.get_parent_army() is None:
+                return False
+            if self.get_parent_army() != bodyguard.get_parent_army():
+                return False
+        except Exception:
+            return False
+        # Only Guardian Defenders can be joined
+        if not bodyguard.is_guardian_defenders_unit():
+            return False
+        # Don't allow joining a leader unit
+        try:
+            if bool(getattr(bodyguard, "is_leader", False)):
+                return False
+        except Exception:
+            pass
+        # One support weapon per unit
+        try:
+            supports = list(getattr(bodyguard, "attached_support_units", []) or [])
+        except Exception:
+            supports = []
+        if supports and self not in supports:
+            return False
+        return True
+
+    def attach_support_artillery_to(self, bodyguard: "Unit") -> None:
+        """Join this Support Weapon model to a Guardian Defenders unit."""
+        if not self.can_join_support_artillery(bodyguard):
+            raise ValueError(f"Support artillery '{self.name}' cannot join '{getattr(bodyguard, 'name', 'Unknown')}'.")
+        # Detach from any prior bodyguard first
+        current = getattr(self, "support_joined_to", None)
+        if current is not None and current is not bodyguard:
+            self.detach_support_artillery()
+        # Attach
+        self.support_joined_to = bodyguard
+        try:
+            supports = list(getattr(bodyguard, "attached_support_units", []) or [])
+        except Exception:
+            supports = []
+        if self not in supports:
+            supports.append(self)
+        bodyguard.attached_support_units = supports
+        # Refresh caches
+        try:
+            self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            bodyguard._invalidate_ability_cache()
+        except Exception:
+            pass
+
+    def detach_support_artillery(self) -> None:
+        """Detach this Support Weapon model from its joined unit (if any)."""
+        bodyguard = getattr(self, "support_joined_to", None)
+        if bodyguard is None:
+            return
+        try:
+            supports = list(getattr(bodyguard, "attached_support_units", []) or [])
+        except Exception:
+            supports = []
+        if self in supports:
+            supports.remove(self)
+        bodyguard.attached_support_units = supports
+        self.support_joined_to = None
+        try:
+            self._invalidate_ability_cache()
+        except Exception:
+            pass
+        try:
+            bodyguard._invalidate_ability_cache()
+        except Exception:
+            pass
 
     def _normalize_attached_unit_name(self, text: str) -> str:
         raw = html.unescape(str(text or ""))
@@ -15685,6 +15877,13 @@ class Unit:
                 if current_player.id == owner and int(getattr(game, "turn", 0) or 0) == turn:
                     print(f"{self.name} cannot embark this turn (Fire and Fade)")
                     return
+
+        try:
+            if self.cannot_embark():
+                print(f"{self.name} cannot embark (rule restriction).")
+                return
+        except Exception:
+            pass
 
         if self.round_state.disembarked_this_round:
             print(f"{self.name} cannot embark after disembarking this turn")

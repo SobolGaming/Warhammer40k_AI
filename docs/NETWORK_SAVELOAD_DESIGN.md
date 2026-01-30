@@ -160,6 +160,7 @@ Setup / Mission:
 
 Deployment / Pre-battle:
 - leader_attachment_dialog: ATTACH_LEADER {leader_unit_id, bodyguard_unit_id}
+- support_artillery_attachment_dialog: ATTACH_SUPPORT_ARTILLERY {support_unit_id, bodyguard_unit_id}
 - reserves_allocation_dialog: DECLARE_RESERVES {unit_ids_by_bucket}
 - transport_assignment_dialog: ASSIGN_TRANSPORT {unit_id, transport_id}
 - hover_mode_prompt (yes_no_dialog): CONFIRM_YES_NO {unit_id, choice} (context `ability="hover_mode"`)

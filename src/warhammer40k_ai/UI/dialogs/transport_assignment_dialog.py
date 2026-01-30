@@ -91,6 +91,9 @@ class TransportAssignmentDialog(BaseDialog):
             # Don't show attached leader units separately
             if bool(getattr(u, "is_attached_leader", False)):
                 continue
+            # Don't show joined support artillery units separately
+            if bool(getattr(u, "is_joined_support", False)):
+                continue
             # Setup only: units that are not yet deployed. (Still allow if deployed = False.)
             # If you want to allow later "re-declare", we can relax this.
             if getattr(u, "deployed", False):

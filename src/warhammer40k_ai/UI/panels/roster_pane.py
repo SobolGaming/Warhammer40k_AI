@@ -198,6 +198,13 @@ class RosterPane(pygame.sprite.Sprite):
                                 return
                         except Exception:
                             pass
+                        # Joined support artillery models deploy with their bodyguard
+                        try:
+                            if bool(getattr(unit, "is_joined_support", False)):
+                                print(f"INFO: {self.get_unit_display_name(unit)} is a joined Support Weapon and deploys with its Bodyguard.")
+                                return
+                        except Exception:
+                            pass
 
                         # Directly open per-model deployment dialog (no deploy/reserves choice here)
                         print(f"INFO: Deploying {unit.name} - enabling per-model deployment mode")
@@ -270,7 +277,7 @@ class RosterPane(pygame.sprite.Sprite):
         player_text = self.font_medium.render(player_display_name, True, TEXT_PRIMARY)
         surface.blit(player_text, (self.rect.left + 10, self.rect.top + 5))
         
-        # Army points total (include attached leaders with their bodyguard for display)
+        # Army points total (include attached leaders/support with their bodyguard for display)
         if self.roster:
             def _unit_group_cost(u: Unit) -> int:
                 try:
@@ -280,6 +287,11 @@ class RosterPane(pygame.sprite.Sprite):
                 try:
                     for l in list(getattr(u, "attached_leaders", []) or []):
                         cost += int(l.get_unit_cost())
+                except Exception:
+                    pass
+                try:
+                    for s in list(getattr(u, "attached_support_units", []) or []):
+                        cost += int(s.get_unit_cost())
                 except Exception:
                     pass
                 return cost
@@ -345,7 +357,7 @@ class RosterPane(pygame.sprite.Sprite):
         name_text = self.font_medium.render(unit_name, True, TEXT_PRIMARY)
         surface.blit(name_text, (x_left + icon_size + 8, y_offset))
 
-        # For attached units, show leaders on their own line under the name (not on the name line).
+        # For attached units, show leaders/support on their own line under the name (not on the name line).
         leader_line = ""
         try:
             leaders = list(getattr(unit, "attached_leaders", []) or [])
@@ -360,8 +372,26 @@ class RosterPane(pygame.sprite.Sprite):
                 leader_line = "Leaders: " + ", ".join(names[:2]) + (f" +{len(names)-2}" if len(names) > 2 else "")
         except Exception:
             leader_line = ""
+        support_line = ""
+        try:
+            supports = list(getattr(unit, "attached_support_units", []) or [])
+            if supports:
+                names = []
+                for s in supports:
+                    try:
+                        names.append(self.get_unit_display_name(s))
+                    except Exception:
+                        names.append(getattr(s, "name", "Support"))
+                support_line = "Support: " + ", ".join(names[:1])
+        except Exception:
+            support_line = ""
+        if support_line:
+            if leader_line:
+                leader_line = f"{leader_line} | {support_line}"
+            else:
+                leader_line = support_line
         
-        # Unit cost (include attached leaders with their bodyguard for display)
+        # Unit cost (include attached leaders/support with their bodyguard for display)
         cost_val = 0
         try:
             cost_val += int(unit.get_unit_cost())
@@ -370,6 +400,11 @@ class RosterPane(pygame.sprite.Sprite):
         try:
             for l in list(getattr(unit, "attached_leaders", []) or []):
                 cost_val += int(l.get_unit_cost())
+        except Exception:
+            pass
+        try:
+            for s in list(getattr(unit, "attached_support_units", []) or []):
+                cost_val += int(s.get_unit_cost())
         except Exception:
             pass
         cost_text = self.font_small.render(f"{cost_val}pts", True, TEXT_ACCENT)
@@ -416,6 +451,11 @@ class RosterPane(pygame.sprite.Sprite):
                 try:
                     for l in list(getattr(u, "attached_leaders", []) or []):
                         all_models.extend(list(getattr(l, "models", []) or []))
+                except Exception:
+                    pass
+                try:
+                    for s in list(getattr(u, "attached_support_units", []) or []):
+                        all_models.extend(list(getattr(s, "models", []) or []))
                 except Exception:
                     pass
                 alive_models = [m for m in (all_models or []) if getattr(m, 'is_alive', True)]
@@ -524,6 +564,11 @@ class RosterPane(pygame.sprite.Sprite):
             try:
                 for l in list(getattr(unit, "attached_leaders", []) or []):
                     all_models.extend(list(getattr(l, "models", []) or []))
+            except Exception:
+                pass
+            try:
+                for s in list(getattr(unit, "attached_support_units", []) or []):
+                    all_models.extend(list(getattr(s, "models", []) or []))
             except Exception:
                 pass
             total_wounds = sum(getattr(m, '_base_wounds', getattr(m, 'wounds', 0)) for m in (all_models or []))

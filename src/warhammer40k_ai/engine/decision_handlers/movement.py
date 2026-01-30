@@ -698,10 +698,11 @@ def _finalize_deployment_move(game: object, unit: object, model_positions: list[
         return
     unit.deployed = True
     leaders = list(getattr(unit, "attached_leaders", []) or [])
-    for leader in leaders:
-        leader.deployed = True
-        leader.reserve_status = getattr(unit, "reserve_status", "deployed")
-        leader.reserve_turn_deployed = getattr(unit, "reserve_turn_deployed", None)
+    supports = list(getattr(unit, "attached_support_units", []) or [])
+    for member in leaders + supports:
+        member.deployed = True
+        member.reserve_status = getattr(unit, "reserve_status", "deployed")
+        member.reserve_turn_deployed = getattr(unit, "reserve_turn_deployed", None)
 
     game_map = getattr(game, "map", None)
     if game_map is not None:

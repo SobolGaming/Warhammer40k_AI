@@ -20,6 +20,7 @@ from ..engine.commands import GameCommand
 from ..engine.command_dispatcher import CommandResult
 from ..engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
+    DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
@@ -30,6 +31,7 @@ from ..engine.decision_kinds import (
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
     build_leader_attachment_requests,
+    build_support_artillery_attachment_requests,
     build_hover_mode_requests,
     build_transport_assignment_requests,
     build_reserves_allocation_request,
@@ -102,6 +104,7 @@ class NetworkServer:
         self._suppress_decision_broadcast: set[str] = set()
         self._formation_decision_types = {
             DECISION_ATTACH_LEADER,
+            DECISION_ATTACH_SUPPORT_ARTILLERY,
             DECISION_ASSIGN_TRANSPORT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
@@ -485,6 +488,7 @@ class NetworkServer:
             return []
 
         pending_attach = self._pending_by_context(DECISION_ATTACH_LEADER, "leader_id")
+        pending_support = self._pending_by_context(DECISION_ATTACH_SUPPORT_ARTILLERY, "support_unit_id")
         pending_transport = self._pending_by_context(DECISION_ASSIGN_TRANSPORT, "unit_id")
         pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
         pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
@@ -512,6 +516,14 @@ class NetworkServer:
             for req in leader_requests:
                 leader_id = str(getattr(req, "context", {}).get("leader_id", "") or "")
                 if leader_id and leader_id in pending_attach:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+
+            support_requests = build_support_artillery_attachment_requests(game, units, queue_requests=False)
+            for req in support_requests:
+                support_id = str(getattr(req, "context", {}).get("support_unit_id", "") or "")
+                if support_id and support_id in pending_support:
                     continue
                 await self._send_decision_request(req)
                 created.append(req)

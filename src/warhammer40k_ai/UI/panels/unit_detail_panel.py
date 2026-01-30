@@ -88,7 +88,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         unit_name = self.font_large.render(root.name, True, TEXT_PRIMARY)
         surface.blit(unit_name, (x_left, y_pos))
         
-        # Cost: include attached leaders with their bodyguard
+        # Cost: include attached leaders/support with their bodyguard
         cost_val = 0
         try:
             cost_val += int(root.get_unit_cost())
@@ -97,6 +97,11 @@ class UnitDetailPanel(pygame.sprite.Sprite):
         try:
             for l in list(getattr(root, "attached_leaders", []) or []):
                 cost_val += int(l.get_unit_cost())
+        except Exception:
+            pass
+        try:
+            for s in list(getattr(root, "attached_support_units", []) or []):
+                cost_val += int(s.get_unit_cost())
         except Exception:
             pass
         cost_text = self.font_medium.render(f"{cost_val} points", True, TEXT_ACCENT)
@@ -131,7 +136,7 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             surface.blit(keyword_text, (x_left, y_pos))
             y_pos += line_tiny + 2
 
-        # Attached leaders summary
+        # Attached leaders/support summary
         try:
             leaders = list(getattr(root, "attached_leaders", []) or [])
         except Exception:
@@ -141,6 +146,16 @@ class UnitDetailPanel(pygame.sprite.Sprite):
             line = "Leaders: " + ", ".join(names)
             leaders_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
             surface.blit(leaders_text, (x_left, y_pos))
+            y_pos += line_tiny + 2
+        try:
+            supports = list(getattr(root, "attached_support_units", []) or [])
+        except Exception:
+            supports = []
+        if supports:
+            names = [getattr(s, "name", "Support") for s in supports]
+            line = "Support: " + ", ".join(names)
+            support_text = self.font_tiny.render(line, True, TEXT_SECONDARY)
+            surface.blit(support_text, (x_left, y_pos))
             y_pos += line_tiny + 2
 
         # Aspect Shrine tokens HUD (read-only indicators)

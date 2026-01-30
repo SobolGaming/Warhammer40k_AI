@@ -576,6 +576,8 @@ class SetupPhaseHandler(BasePhaseHandler):
                     for u in list(getattr(army, "units", []) or []):
                         if bool(getattr(u, "is_attached_leader", False)):
                             u.deployed = True
+                        if bool(getattr(u, "is_joined_support", False)):
+                            u.deployed = True
                 except Exception:
                     pass
 
@@ -604,7 +606,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                         except Exception:
                             pass
                         modal.hide()
-                        _show_transports()
+                        _show_support_artillery()
 
                 def _left_done(selected_option_ids):
                     for leader_id, option_id in (selected_option_ids or {}).items():
@@ -678,6 +680,133 @@ class SetupPhaseHandler(BasePhaseHandler):
                     leader_requests=r_requests,
                     on_confirm=_right_done,
                     on_cancel=lambda: None,
+                )
+
+                modal.show()
+                try:
+                    self.game_view.dialog_manager.open(modal, modal=True)
+                except Exception:
+                    pass
+
+            def _show_support_artillery():
+                # Step 2: Support Artillery joins (both at once)
+                from ..dialogs import LeaderAttachmentDialog
+                from ...engine.command_kinds import CMD_RESOLVE_DECISION
+                from ...engine.commands import GameCommand
+                from ...engine.decision_kinds import DECISION_ATTACH_SUPPORT_ARTILLERY
+                from ...engine.decision_requests import build_support_artillery_attachment_requests
+
+                left_support = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                right_support = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+                left_support.title = f"Attach Support Weapons - {p_left.name}"
+                right_support.title = f"Attach Support Weapons - {p_right.name}"
+
+                modal = SideBySideModal(self.game_view.screen.get_width(), self.game_view.screen.get_height(), left_support, right_support)
+                _position_two(left_support, right_support)
+
+                def _maybe_advance_from_support():
+                    if modal.left_done and modal.right_done:
+                        try:
+                            self.game_view.refresh_roster_panes()
+                        except Exception:
+                            pass
+                        modal.hide()
+                        _show_transports()
+
+                def _left_done(selected_option_ids):
+                    for support_id, option_id in (selected_option_ids or {}).items():
+                        req = l_requests.get(support_id)
+                        if req is None:
+                            continue
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": option_id,
+                            "result_payload": {},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        self.game.apply_command(cmd)
+                    try:
+                        a_left.validate_support_artillery()
+                    except Exception as e:
+                        print(f"  {p_left.name} support artillery validation failed: {e}")
+                        return
+                    _mark_attached_leaders_handled(a_left)
+                    modal.left_done = True
+                    _maybe_advance_from_support()
+
+                def _right_done(selected_option_ids):
+                    for support_id, option_id in (selected_option_ids or {}).items():
+                        req = r_requests.get(support_id)
+                        if req is None:
+                            continue
+                        payload = {
+                            "decision_id": req.decision_id,
+                            "option_id": option_id,
+                            "result_payload": {},
+                        }
+                        cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                        self.game.apply_command(cmd)
+                    try:
+                        a_right.validate_support_artillery()
+                    except Exception as e:
+                        print(f"  {p_right.name} support artillery validation failed: {e}")
+                        return
+                    _mark_attached_leaders_handled(a_right)
+                    modal.right_done = True
+                    _maybe_advance_from_support()
+
+                pending = {
+                    str(getattr(req, "context", {}).get("support_unit_id", "")): req
+                    for req in list(self.game.decision_queue.list() or [])
+                    if getattr(req, "decision_type", None) == DECISION_ATTACH_SUPPORT_ARTILLERY
+                }
+                l_units = _army_units(p_left)
+                r_units = _army_units(p_right)
+                from ...utility.entity_ids import get_entity_id
+                l_ids = {get_entity_id(u) for u in l_units}
+                r_ids = {get_entity_id(u) for u in r_units}
+                l_requests = {uid: req for uid, req in pending.items() if uid in l_ids}
+                r_requests = {uid: req for uid, req in pending.items() if uid in r_ids}
+                if not l_requests:
+                    l_reqs = build_support_artillery_attachment_requests(self.game, l_units)
+                    l_requests = {str(getattr(req, "context", {}).get("support_unit_id", "")): req for req in l_reqs}
+                if not r_requests:
+                    r_reqs = build_support_artillery_attachment_requests(self.game, r_units)
+                    r_requests = {str(getattr(req, "context", {}).get("support_unit_id", "")): req for req in r_reqs}
+
+                if not l_requests and not r_requests:
+                    _show_transports()
+                    return
+
+                def _support_units(units):
+                    return [u for u in units if bool(getattr(u, "has_support_artillery_ability", lambda: False)())]
+
+                def _guardian_units(units):
+                    return [u for u in units if bool(getattr(u, "is_guardian_defenders_unit", lambda: False)())]
+
+                left_support.show(
+                    l_units,
+                    leaders=_support_units(l_units),
+                    bodyguards=_guardian_units(l_units),
+                    leader_requests=l_requests,
+                    on_confirm=_left_done,
+                    on_cancel=lambda: None,
+                    title=f"Attach Support Weapons - {p_left.name}",
+                    subtitle="Select a Support Weapon, then choose a Guardian Defenders unit (or Unattached).",
+                    left_label="Support Weapons",
+                    right_label="Guardian Defenders Units",
+                )
+                right_support.show(
+                    r_units,
+                    leaders=_support_units(r_units),
+                    bodyguards=_guardian_units(r_units),
+                    leader_requests=r_requests,
+                    on_confirm=_right_done,
+                    on_cancel=lambda: None,
+                    title=f"Attach Support Weapons - {p_right.name}",
+                    subtitle="Select a Support Weapon, then choose a Guardian Defenders unit (or Unattached).",
+                    left_label="Support Weapons",
+                    right_label="Guardian Defenders Units",
                 )
 
                 modal.show()
@@ -1107,6 +1236,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         from ..dialogs import LeaderAttachmentDialog, TransportAssignmentDialog, ReservesAllocationDialog, NurglesGiftPlagueDialog
         from ...engine.decision_kinds import (
             DECISION_ATTACH_LEADER,
+            DECISION_ATTACH_SUPPORT_ARTILLERY,
             DECISION_ASSIGN_TRANSPORT,
             DECISION_DECLARE_RESERVES,
             DECISION_CHOOSE_PLAGUE,
@@ -1114,6 +1244,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         )
         from ...engine.decision_requests import (
             build_leader_attachment_requests,
+            build_support_artillery_attachment_requests,
             build_transport_assignment_requests,
             build_reserves_allocation_request,
         )
@@ -1245,6 +1376,70 @@ class SetupPhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
 
+        def _show_support_artillery():
+            support_ids = {
+                get_entity_id(u)
+                for u in units
+                if bool(getattr(u, "has_support_artillery_ability", lambda: False)())
+            }
+            pending = _pending_requests(
+                DECISION_ATTACH_SUPPORT_ARTILLERY,
+                context_key="support_unit_id",
+                valid_ids=support_ids,
+            )
+            if not pending:
+                requests = build_support_artillery_attachment_requests(self.game, units)
+                pending = {str(getattr(req, "context", {}).get("support_unit_id", "")): req for req in requests}
+                pending = {sid: req for sid, req in pending.items() if sid in support_ids}
+            if not pending:
+                _show_transports()
+                return
+            dlg = LeaderAttachmentDialog(self.game_view.screen.get_width(), self.game_view.screen.get_height())
+            self.game_view.leader_attachment_dialog = dlg
+
+            def _on_done(selected_option_ids):
+                for support_id, option_id in (selected_option_ids or {}).items():
+                    req = pending.get(support_id)
+                    if req is None:
+                        continue
+                    payload = {
+                        "decision_id": req.decision_id,
+                        "option_id": option_id,
+                        "result_payload": {},
+                    }
+                    cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=req.player_id, payload=payload)
+                    self.game.apply_command(cmd)
+                try:
+                    army.validate_support_artillery()
+                except Exception as e:
+                    print(f"  {player.name} support artillery validation failed: {e}")
+                    return
+                try:
+                    self.game_view.refresh_roster_panes()
+                except Exception:
+                    pass
+                _show_transports()
+
+            support_units = [u for u in units if bool(getattr(u, "has_support_artillery_ability", lambda: False)())]
+            guardian_units = [u for u in units if bool(getattr(u, "is_guardian_defenders_unit", lambda: False)())]
+            dlg.show(
+                units,
+                leaders=support_units,
+                bodyguards=guardian_units,
+                leader_requests=pending,
+                on_confirm=_on_done,
+                on_cancel=lambda: None,
+                title=f"Attach Support Weapons - {player.name}",
+                subtitle="Select a Support Weapon, then choose a Guardian Defenders unit (or Unattached).",
+                left_label="Support Weapons",
+                right_label="Guardian Defenders Units",
+            )
+            dlg.visible = True
+            try:
+                self.game_view.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
         def _show_leaders():
             leader_ids = {get_entity_id(u) for u in units if bool(getattr(u, "is_leader", False))}
             pending = _pending_requests(DECISION_ATTACH_LEADER, context_key="leader_id", valid_ids=leader_ids)
@@ -1279,7 +1474,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     self.game_view.refresh_roster_panes()
                 except Exception:
                     pass
-                _show_transports()
+                _show_support_artillery()
 
             dlg.show(units, leader_requests=pending, on_confirm=_on_done, on_cancel=lambda: None)
             dlg.visible = True

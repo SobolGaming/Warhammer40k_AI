@@ -19,6 +19,9 @@ class LeaderAttachmentDialog(BaseDialog):
     def __init__(self, screen_width: int, screen_height: int):
         super().__init__(screen_width, screen_height, width=820, height=520, draggable=True, center=True)
         self.title = "Attach Leaders (Declare Battle Formations)"
+        self.subtitle = "Select a Leader, then choose an eligible unit to attach (or Unattached)."
+        self.left_label = "Leaders"
+        self.right_label = "Eligible Bodyguard Units"
 
         self.army_units: List = []
         self.leaders: List = []
@@ -53,10 +56,35 @@ class LeaderAttachmentDialog(BaseDialog):
         leader_requests: Dict[str, object],
         on_confirm: Callable[[Dict[str, str]], None],
         on_cancel: Optional[Callable[[], None]] = None,
+        leaders: Optional[List] = None,
+        bodyguards: Optional[List] = None,
+        title: Optional[str] = None,
+        subtitle: Optional[str] = None,
+        left_label: Optional[str] = None,
+        right_label: Optional[str] = None,
     ) -> None:
         self.army_units = list(army_units or [])
-        self.leaders = [u for u in self.army_units if bool(getattr(u, "is_leader", False))]
-        self.bodyguards = [u for u in self.army_units if not bool(getattr(u, "is_leader", False))]
+        # Reset defaults every time (support artillery override may set custom labels)
+        self.title = "Attach Leaders (Declare Battle Formations)"
+        self.subtitle = "Select a Leader, then choose an eligible unit to attach (or Unattached)."
+        self.left_label = "Leaders"
+        self.right_label = "Eligible Bodyguard Units"
+        if leaders is not None:
+            self.leaders = list(leaders or [])
+        else:
+            self.leaders = [u for u in self.army_units if bool(getattr(u, "is_leader", False))]
+        if bodyguards is not None:
+            self.bodyguards = list(bodyguards or [])
+        else:
+            self.bodyguards = [u for u in self.army_units if not bool(getattr(u, "is_leader", False))]
+        if title is not None:
+            self.title = title
+        if subtitle is not None:
+            self.subtitle = subtitle
+        if left_label is not None:
+            self.left_label = left_label
+        if right_label is not None:
+            self.right_label = right_label
         self._recompute_display_names()
         self.selected_leader_idx = 0 if self.leaders else None
         self.leader_scroll = 0
@@ -240,7 +268,7 @@ class LeaderAttachmentDialog(BaseDialog):
             leader_id = get_entity_id(leader)
             request = self.decision_requests.get(leader_id)
             options = list(getattr(request, "options", []) or []) if request is not None else []
-            attached = getattr(leader, "attached_to", None)
+            attached = getattr(leader, "get_attachment_target", lambda: getattr(leader, "attached_to", None))()
             attached_id = get_entity_id(attached) if attached is not None else None
             chosen = None
             for opt in options:
@@ -313,13 +341,12 @@ class LeaderAttachmentDialog(BaseDialog):
             return
 
         self.draw_dialog_background(screen)
-        subtitle = "Select a Leader, then choose an eligible unit to attach (or Unattached)."
-        self.draw_title_bar(screen, self.title, subtitle=subtitle)
+        self.draw_title_bar(screen, self.title, subtitle=self.subtitle)
 
         # Sections
-        header = self.font_medium.render("Leaders", True, TEXT_PRIMARY)
+        header = self.font_medium.render(self.left_label, True, TEXT_PRIMARY)
         screen.blit(header, (self.x + 20, self.y + self.title_bar_height + 30))
-        header2 = self.font_medium.render("Eligible Bodyguard Units", True, TEXT_PRIMARY)
+        header2 = self.font_medium.render(self.right_label, True, TEXT_PRIMARY)
         screen.blit(header2, (self.x + 400, self.y + self.title_bar_height + 30))
 
         leader_rect = self._leader_list_rect()
@@ -343,7 +370,7 @@ class LeaderAttachmentDialog(BaseDialog):
             else:
                 pygame.draw.rect(screen, PANEL_BORDER, rect, 1)
             leader = self.leaders[i]
-            attached_to = getattr(leader, "attached_to", None)
+            attached_to = getattr(leader, "get_attachment_target", lambda: getattr(leader, "attached_to", None))()
             # ASCII-only arrow for broad font support
             status = f" -> {self._get_display_name(attached_to)}" if attached_to is not None else ""
             txt = self.font_small.render(f"{self._get_display_name(leader)}{status}", True, TEXT_SECONDARY)

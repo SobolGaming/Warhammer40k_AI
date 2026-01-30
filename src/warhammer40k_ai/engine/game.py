@@ -7262,7 +7262,11 @@ class Game:
             try:
                 roots = list(getattr(army, "_reserve_group_roots")() or [])
             except Exception:
-                roots = [u for u in getattr(army, "units", []) or [] if not getattr(u, "is_attached_leader", False)]
+                roots = [
+                    u for u in getattr(army, "units", []) or []
+                    if not getattr(u, "is_attached_leader", False)
+                    and not bool(getattr(u, "is_joined_support", False))
+                ]
 
             for root in roots:
                 rid = str(getattr(root, "_id", None) or "")
@@ -7458,6 +7462,9 @@ class Game:
 
             # Attached leaders deploy with their bodyguard
             if u.is_attached_leader:
+                continue
+            # Joined support artillery models deploy with their bodyguard
+            if bool(getattr(u, "is_joined_support", False)):
                 continue
 
             # Embarked units deploy with their transport
@@ -11533,6 +11540,10 @@ class Game:
             if army is None:
                 raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
             army.validate_leaders()
+            try:
+                army.validate_support_artillery()
+            except AttributeError:
+                pass
 
         # Nurgle's Gift (Aura): select a Plague during Declare Battle Formations.
         for p in list(self.players or []):

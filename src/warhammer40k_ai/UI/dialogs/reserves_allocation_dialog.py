@@ -118,6 +118,11 @@ class ReservesAllocationDialog(BaseDialog):
             except Exception:
                 pass
             try:
+                if bool(getattr(u, "is_joined_support", False)):
+                    continue
+            except Exception:
+                pass
+            try:
                 if bool(getattr(u, "is_embarked", False)) or getattr(u, "embarked_in", None) is not None:
                     continue
             except Exception:
@@ -158,6 +163,14 @@ class ReservesAllocationDialog(BaseDialog):
             for l in list(getattr(root, "attached_leaders", []) or []):
                 try:
                     total += int(l.get_unit_cost())
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        try:
+            for s in list(getattr(root, "attached_support_units", []) or []):
+                try:
+                    total += int(s.get_unit_cost())
                 except Exception:
                     pass
         except Exception:
