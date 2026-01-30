@@ -1,61 +1,122 @@
-# Decision Types Catalog (Partial)
+# Decision Types Catalog
 
-Status: Draft (partial list; see `src/warhammer40k_ai/engine/decision_kinds.py` for the authoritative set).
+Status: Complete; keep in sync with `src/warhammer40k_ai/engine/decision_kinds.py`.
 
-This catalog is a quick reference for engine decision types emitted by the rules engine.
+This catalog enumerates all decision types currently emitted by the engine.
 Each decision is represented as a `DecisionRequest` with `candidates[]` and `mask[]`.
+For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 
-## Setup & Mission
+## Mission & Secondaries
 
-- `CHOOSE_MISSION` — Select mission combination and layout.
-- `DECLARE_RESERVES` — Confirm reserves allocation.
-- `ATTACH_LEADER` — Attach a leader to a bodyguard (or keep unattached).
-- `ASSIGN_TRANSPORT` — Assign a transport to a unit (or none).
+- `CHOOSE_MISSION` — Select mission combination/layout.
+- `DISCARD_SECONDARY` — Discard a secondary objective.
+
+## Deployment & Pre-game
+
+- `ATTACH_LEADER` — Attach leader to bodyguard (or none).
+- `DECLARE_RESERVES` — Declare units in reserve.
+- `ASSIGN_TRANSPORT` — Assign transport to a unit (or none).
+- `SCOUT_MOVE` — Resolve pre-game scout move.
+- `SELECT_SETUP_REACTIVE_TARGET` — Choose target for setup-reactive effects.
+- `CHOOSE_SETUP_REACTIVE_ACTION` — Choose which setup-reactive action to use.
 
 ## Movement & Positioning
 
 - `SELECT_MOVEMENT_ACTION` — Choose move/advance/fall back/remain.
-- `MOVE_UNIT` — Provide movement target or path.
-- `SCOUT_MOVE` — Pre-game scout move.
-- `RESOLVE_COHERENCY` — Resolve unit coherency positioning.
-- `EMBARK` / `DISEMBARK` — Embark/disembark from a transport.
-- `PICK_POINT` / `PICK_OBJECTIVE` — Generic point/objective selections.
+- `MOVE_UNIT` — Choose movement target/path.
+- `RESOLVE_COHERENCY` — Resolve unit coherency placement.
+- `EMBARK` — Embark unit into transport.
+- `DISEMBARK` — Disembark unit from transport.
+- `PICK_POINT` — Choose a point on the battlefield.
+- `PICK_OBJECTIVE` — Choose an objective marker.
+- `SELECT_FLOOR` — Choose a floor/level for placement.
 
-## Shooting & Attacks
+## Shooting & Ranged Attacks
 
-- `SELECT_WEAPON` — Choose weapon or profile.
+- `SELECT_WEAPON` — Choose weapon/profile to use.
 - `DECLARE_SHOTS` — Declare shooting targets.
 - `DECLARE_FIRING_DECK` — Select firing deck participants.
 - `SELECT_OVERWATCH_SHOOTER` — Choose unit to fire Overwatch.
 
-## Charges & Fight
+## Charges
 
 - `DECLARE_CHARGE` — Declare charge targets.
+
+## Fight & Damage Allocation
+
 - `SELECT_FIGHTER` — Choose unit to fight.
 - `SELECT_FIGHT_TARGETS` — Choose fight targets.
-- `DECLARE_MELEE_WEAPONS` — Select melee weapons or profiles.
-- `ALLOCATE_MELEE_TARGETS` / `ALLOCATE_TARGETS` / `SPLIT_ATTACKS` — Allocate attacks and split fire.
-- `SELECT_TARGET_MODEL` / `SELECT_PRECISION_TARGET` — Choose specific target models.
+- `DECLARE_MELEE_WEAPONS` — Select melee weapons/profiles.
+- `ALLOCATE_MELEE_TARGETS` — Allocate melee attacks to targets.
+- `ALLOCATE_TARGETS` — Allocate attacks to targets (general).
+- `SPLIT_ATTACKS` — Split attacks across targets.
+- `SELECT_TARGET_MODEL` — Select target model within a unit.
+- `SELECT_PRECISION_TARGET` — Select precision target model.
 - `ALLOCATE_DAMAGE` — Allocate damage to models.
 
 ## Dice & Rerolls
 
 - `REQUEST_DICE_ROLL` — Resolve a dice roll.
-- `SELECT_DICE_REROLL` — Select dice to re-roll (if available).
+- `SELECT_DICE_REROLL` — Select dice to re-roll.
+- `REROLL_ROLL` — Reroll a roll (generic).
+
+## Reactive & Special Targeting
+
+- `SELECT_RISE_TO_CHALLENGE` — Choose Rise to Challenge target.
+- `DEATHSTRIKE_ACTION` — Choose Deathstrike action/targeting.
+- `SELECT_REVERBERATING_SUMMONS_UNIT` — Choose unit for Reverberating Summons.
+- `SELECT_EXPLODING_HORRORS_TARGET` — Choose Exploding Horrors target.
+- `SELECT_EXPLODING_HORRORS_MODELS` — Choose models for Exploding Horrors.
+- `CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET` — Choose post-shoot Battle-shock target.
+- `CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET` — Choose post-shoot mortal wounds target.
+- `CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET` — Choose post-shoot Wracked Agonies target.
+- `CHOOSE_POST_SHOOT_SUPPRESSION_TARGET` — Choose post-shoot suppression target.
+- `CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET` — Choose post-shoot leadership debuff target.
+- `CHOOSE_DAEMONIC_POISONS_TARGET` — Choose Daemonic Poisons target.
 
 ## Faction / Detachment / Ability Choices
 
-- `CHOOSE_BLESSINGS`, `CHOOSE_BLOOD_TITHE`, `CHOOSE_RITUALS`, `CHOOSE_PLAGUE`
-- `CHOOSE_CHIVALRIC_OATH`, `CHOOSE_DARK_PACT`, `CHOOSE_DOCTRINA`
-- `CHOOSE_COMBAT_DOCTRINE`, `CHOOSE_COMBAT_DRUGS`, `CHOOSE_HYPER_ADAPTATION`
-- `CHOOSE_VOW`, `CHOOSE_ASPECT`, `CHOOSE_SHADOW_FORM`
+- `CHOOSE_BLESSINGS` — Choose Blessings of Khorne options.
+- `CHOOSE_BLOOD_TITHE` — Choose Blood Tithe reward.
+- `CHOOSE_IDOL_OF_KHORNE` — Choose Idol of Khorne effect.
+- `SELECT_VESSEL_OF_WRATH_MODELS` — Choose Vessel of Wrath models.
+- `CHOOSE_VESSEL_OF_WRATH_BLESSING` — Choose Vessel of Wrath blessing.
+- `CHOOSE_RITUALS` — Choose rituals.
+- `CHOOSE_CHIVALRIC_OATH` — Choose Chivalric Oath.
+- `CHOOSE_DAEMONIC_ALLEGIANCE` — Choose Daemonic Allegiance.
+- `CHOOSE_DARK_PACT` — Choose Dark Pact.
+- `CHOOSE_DOCTRINA` — Choose Doctrina Imperative.
+- `CHOOSE_COMBAT_DOCTRINE` — Choose Combat Doctrine.
+- `CHOOSE_GRAND_COVEN` — Choose Grand Coven option.
+- `CHOOSE_COMBAT_DRUGS` — Choose Combat Drugs.
+- `CHOOSE_HYPER_ADAPTATION` — Choose Hyper-adaptation.
+- `CHOOSE_FRENZY_TARGET` — Choose Frenzy target.
+- `CHOOSE_HARBINGER` — Choose Harbinger.
+- `USE_GILDED_CHAMPION` — Use Gilded Champion.
+- `CHOOSE_MARTIAL_KATAH` — Choose Martial Katah.
+- `CHOOSE_LIMB_FROM_LIMB` — Choose Limb from Limb target.
+- `CHOOSE_RED_WRATH` — Choose Red Wrath option.
+- `USE_MIRACLE_DIE` — Use Miracle Die.
+- `CHOOSE_PLAGUE` — Choose Plague.
+- `CHOOSE_PLEDGE` — Choose Pledge.
+- `CHOOSE_QUARRY` — Choose Quarry.
+- `CHOOSE_SHADOW_FORM` — Choose Shadow Form.
+- `CHOOSE_VOW` — Choose Vow.
+- `ISSUE_ORDER` — Issue an Order.
+- `CHOOSE_WRATHFUL_PRESENCE` — Choose Wrathful Presence.
+- `CHOOSE_DAEMON_PRIMARCH_SLAANESH` — Choose Slaanesh primarch option.
+- `USE_CAREEN` — Use Careen!
+- `CHOOSE_ASPECT` — Choose Aspect.
+- `CHOOSE_HIT_MODIFIER_IGNORES` — Choose hit modifier ignores.
+- `CHOOSE_SKILL_MODIFIER_IGNORES` — Choose skill modifier ignores.
+- `CHOOSE_MOVE_MODIFIER_IGNORES` — Choose move modifier ignores.
+- `CHOOSE_ADVANCE_MODIFIER_IGNORES` — Choose advance modifier ignores.
+- `CHOOSE_CHARGE_MODIFIER_IGNORES` — Choose charge modifier ignores.
+- `CHOOSE_BATTLE_FOCUS_MANEUVER` — Choose Battle Focus maneuver.
+- `CHOOSE_POWER_FROM_PAIN_OPTION` — Choose Power from Pain option.
 
 ## Generic Confirmations
 
+- `CONFIRM_MODAL` — Generic modal confirmation.
 - `CONFIRM_YES_NO` — Yes/No confirmation.
 - `CONFIRM_EXAMPLE` — Test/example confirmation.
-
-## Notes
-
-- This list is intentionally incomplete. Always reference `src/warhammer40k_ai/engine/decision_kinds.py`.
-- For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
