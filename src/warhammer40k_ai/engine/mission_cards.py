@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Callable, Dict, List, Optional, Tuple
 
 from ..utility.entity_ids import get_entity_id
+from ..utility.rng import resolve_rng
 
 
 @dataclass
@@ -486,8 +487,8 @@ class SupplyDropPrimary(PrimaryMissionCard):
                 continue
             candidates.append(obj)
         if len(candidates) >= 2:
-            import random
-            a, b = random.sample(candidates, 2)
+            rng = resolve_rng(game)
+            a, b = rng.sample(candidates, 2)
             self.alpha = a
             self.omega = b
         self.initialized = True
@@ -1733,7 +1734,7 @@ class SecureNoMansLandSecondary(SecondaryMissionCard):
 
 # ---------- Deck helpers ----------
 
-def default_secondary_deck() -> List[SecondaryMissionCard]:
+def default_secondary_deck(*, rng=None) -> List[SecondaryMissionCard]:
     # Build full deck and shuffle for randomness each game
     deck: List[SecondaryMissionCard] = [
         BringItDownSecondary(),
@@ -1756,11 +1757,8 @@ def default_secondary_deck() -> List[SecondaryMissionCard]:
         AreaDenialSecondary(),
         SecureNoMansLandSecondary(),
     ]
-    try:
-        import random
-        random.shuffle(deck)
-    except Exception:
-        pass
+    if rng is not None:
+        rng.shuffle(deck)
     return deck
 
 

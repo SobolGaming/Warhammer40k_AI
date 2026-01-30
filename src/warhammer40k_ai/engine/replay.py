@@ -4,6 +4,7 @@ from typing import Iterable, List
 
 from .commands import GameCommand
 from .event_log import DeterministicEventLog
+from .decisions import DecisionResult
 from .snapshot import load_game_snapshot
 
 
@@ -33,4 +34,30 @@ def replay_commands(
         else:
             cmd_obj = cmd
         results.append(game.apply_command(cmd_obj))
+    return game, results
+
+
+def replay_from_event_log(
+    snapshot: dict,
+    event_tail: Iterable[dict],
+    commands: Iterable[GameCommand | dict],
+) -> tuple["Game", List[object]]:
+    return replay_commands(snapshot, event_tail, commands)
+
+
+def replay_decisions(
+    snapshot: dict,
+    decisions: Iterable[DecisionResult | dict],
+    *,
+    event_tail: Iterable[dict] | None = None,
+) -> tuple["Game", List[object]]:
+    tail = list(event_tail or [])
+    game = prepare_replay(snapshot, tail)
+    results: List[object] = []
+    for entry in list(decisions or []):
+        if isinstance(entry, dict):
+            result = DecisionResult.from_dict(entry)
+        else:
+            result = entry
+        results.append(game.resolve_decision(result))
     return game, results

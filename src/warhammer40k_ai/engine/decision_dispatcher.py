@@ -90,6 +90,13 @@ def _validate_choice_from_options(request: DecisionRequest, result: DecisionResu
         return ("Decision has no options to choose from.",)
     if result.option_id not in {opt.option_id for opt in options}:
         return ("Selected option_id is not valid for this decision.",)
+    action_id = request.action_id_for_option_id(result.option_id)
+    if action_id:
+        masked = request.candidate_mask_for_action_id(action_id)
+        if masked is False:
+            return ("Selected action is masked as illegal.",)
+        if request.candidates and masked is None:
+            return ("Selected action_id is not present in candidates.",)
     return ()
 
 

@@ -17,6 +17,7 @@ It is intended to complement `docs/NETWORK_GAMEPLAY.md` and the decision mapping
 - **Waiting**: “server waits” means it does not advance to the next step until required decisions are resolved.
 - **Headless auto-decisions**: optional server-side headless agent can auto-resolve **dice roll + dice reroll** decisions via `RESOLVE_DECISION` when `auto_resolve_dice_rolls` is enabled; otherwise no auto-decisions are performed.
 - **Decision timeouts**: `DecisionRequest` supports `timeout_seconds` (payload field). Enforcement is a planned server feature; see “Decision Timeouts” below.
+- **Candidates + mask**: every DecisionRequest includes deterministic `candidates[]` and a `mask[]` (false = illegal).
 
 **Simultaneous vs Sequential**
 - **Simultaneous**: both players can decide independently at the same time (e.g., formations).

@@ -28,6 +28,7 @@ def test_dice_roll_replay_from_event_log():
     assert [e["payload"]["value"] for e in dice_events] == rolls
 
     replay_game = Game(Battlefield(width=60, height=44), players=[])
+    replay_game.random_source.seed(123)
     replay_game.event_log.detach()
     replay_log = DeterministicEventLog.from_payload(events, mode="replay")
     replay_log.attach(replay_game)
@@ -219,3 +220,50 @@ def test_objective_control_changed_logged():
     assert payload["objective_id"] == point.id
     assert payload["previous_controller_id"] == player.id
     assert payload["controller_id"] is None
+
+
+def test_event_log_hash_deterministic_with_seed():
+    game1 = Game(Battlefield(width=60, height=44), players=[])
+    game1.turn = 1
+    game1.random_source.seed(123)
+    with game_context(game1):
+        _ = [dice_mod.get_dice_roll(6) for _ in range(5)]
+    hash1 = game1.event_log.compute_hash()
+
+    game2 = Game(Battlefield(width=60, height=44), players=[])
+    game2.turn = 1
+    game2.random_source.seed(123)
+    with game_context(game2):
+        _ = [dice_mod.get_dice_roll(6) for _ in range(5)]
+    hash2 = game2.event_log.compute_hash()
+
+    assert hash1 == hash2
+
+
+def test_replay_produces_identical_end_state():
+    player = Player("P1", control=PlayerControl.LOCAL)
+    game = Game(Battlefield(width=60, height=44), players=[player])
+    game.turn = 1
+    game.setup_complete = True
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.random_source.seed(42)
+
+    snapshot = snapshot_game(game)
+
+    with game_context(game):
+        _ = dice_mod.get_dice_roll(6)
+    cmd = GameCommand.create(CMD_NEXT_PHASE, player_id=player.id)
+    game.apply_command(cmd)
+    end_snapshot = snapshot_game(game)
+
+    tail = game.event_log.serialize_events()
+    replay_game = prepare_replay(snapshot, tail)
+
+    with game_context(replay_game):
+        _ = dice_mod.get_dice_roll(6)
+    replay_cmd = GameCommand.create(CMD_NEXT_PHASE, player_id=replay_game.get_current_player().id)
+    replay_game.apply_command(replay_cmd)
+    replay_game.event_log.assert_consumed()
+
+    replay_snapshot = snapshot_game(replay_game)
+    assert replay_snapshot == end_snapshot

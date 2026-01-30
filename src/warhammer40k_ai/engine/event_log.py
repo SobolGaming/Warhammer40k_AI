@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any, Iterable, List
 
 from .ref_codec import encode_refs
@@ -11,6 +13,43 @@ ANGLE_SCALE = 10000
 
 
 EVENT_LOG_GROUP = "deterministic_event_log"
+
+
+_ID_KEY_EXACT = {
+    "actor_id",
+    "command_id",
+    "decision_id",
+    "option_id",
+    "player_id",
+}
+
+
+def _is_id_key(key: str | None) -> bool:
+    if key is None:
+        return False
+    key = str(key)
+    if key in _ID_KEY_EXACT:
+        return True
+    if key == "event_id":
+        return False
+    if key.endswith("_id") or key.endswith("_ids"):
+        return True
+    return False
+
+
+def _normalize_ids(value: Any, id_map: dict[str, str], *, key: str | None = None) -> Any:
+    if isinstance(value, dict):
+        normalized: dict[str, Any] = {}
+        for k, v in value.items():
+            normalized[str(k)] = _normalize_ids(v, id_map, key=str(k))
+        return normalized
+    if isinstance(value, list):
+        return [_normalize_ids(v, id_map, key=key) for v in value]
+    if isinstance(value, str) and _is_id_key(key):
+        if value not in id_map:
+            id_map[value] = f"id_{len(id_map) + 1}"
+        return id_map[value]
+    return value
 
 
 @dataclass(frozen=True)
@@ -49,6 +88,34 @@ class DeterministicEventLog:
             self.next_id = max(e.event_id for e in self.events) + 1
         else:
             self.next_id = 1
+
+    def _ruleset_context(self) -> dict:
+        game = self._attached_game
+        if game is None:
+            return {}
+        bundle = getattr(game, "ruleset_bundle", None)
+        if bundle is None:
+            return {}
+        to_dict = getattr(bundle, "to_dict", None)
+        if callable(to_dict):
+            return dict(to_dict() or {})
+        return {
+            "ruleset_id": getattr(bundle, "ruleset_id", None),
+            "dataslate_id": getattr(bundle, "dataslate_id", None),
+            "points_id": getattr(bundle, "points_id", None),
+        }
+
+    def _inject_ruleset(self, payload: dict | None) -> dict:
+        enriched = dict(payload or {})
+        ruleset_ctx = self._ruleset_context()
+        if not ruleset_ctx:
+            return enriched
+        for key, value in ruleset_ctx.items():
+            if key not in enriched:
+                enriched[key] = value
+            elif enriched.get(key) != value:
+                raise ValueError(f"Event payload ruleset mismatch for {key}: {enriched.get(key)} != {value}")
+        return enriched
 
     def attach(self, game: object) -> None:
         if game is None:
@@ -97,7 +164,8 @@ class DeterministicEventLog:
         payload: dict | None = None,
         validate_payload: bool = True,
     ) -> GameEvent:
-        encoded_payload = encode_refs(payload or {})
+        enriched_payload = self._inject_ruleset(payload)
+        encoded_payload = encode_refs(enriched_payload or {})
         if self.mode == "replay":
             event = self._consume_expected(event_type, actor_id=actor_id, payload=encoded_payload, validate_payload=validate_payload)
             return event
@@ -110,6 +178,13 @@ class DeterministicEventLog:
         self.events.append(event)
         self.next_id += 1
         return event
+
+    def compute_hash(self, *, normalize_ids: bool = True) -> str:
+        events = [e.to_dict() for e in list(self.events or [])]
+        if normalize_ids:
+            events = _normalize_ids(events, {})
+        blob = json.dumps(events, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
     def consume(self, expected_type: str) -> GameEvent:
         if self.mode != "replay":
@@ -246,6 +321,9 @@ class DeterministicEventLog:
             "prompt": getattr(request, "prompt", ""),
             "options": options,
             "context": dict(getattr(request, "context", {}) or {}),
+            "candidates": [c.to_dict() for c in list(getattr(request, "candidates", []) or [])],
+            "mask": list(getattr(request, "mask", []) or []),
+            "mask_reasons": list(getattr(request, "mask_reasons", []) or []),
             "timeout_seconds": getattr(request, "timeout_seconds", None),
         }
         self.record(

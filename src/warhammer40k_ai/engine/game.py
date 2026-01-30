@@ -40,6 +40,7 @@ from .decision_kinds import (
     DECISION_SELECT_REVERBERATING_SUMMONS_UNIT,
 )
 from .random_source import RandomSource
+from .ruleset import RulesetBundle
 from .dice_rolls import DiceRollManager
 from .attack_resolution import AttackResolutionManager
 from .ref_codec import encode_refs
@@ -64,7 +65,16 @@ if TYPE_CHECKING:
     from ..roster.army_muster import ArmyMusterRequest
 
 class Game:
-    def __init__(self, battlefield: Battlefield, players: List[Player] | None = None):
+    def __init__(
+        self,
+        battlefield: Battlefield,
+        players: List[Player] | None = None,
+        *,
+        ruleset_bundle: RulesetBundle | None = None,
+        ruleset_id: str | None = None,
+        dataslate_id: str | None = None,
+        points_id: str | None = None,
+    ):
         self.battlefield = battlefield
         # Avoid mutable default arg: always create a fresh list per Game instance.
         self.players = list(players) if players else []
@@ -80,6 +90,25 @@ class Game:
         self._command_context_depth = 0
         self.decision_queue = DecisionQueue()
         self.random_source = RandomSource()
+        self._ruleset_bundle: RulesetBundle | None = None
+        if ruleset_bundle is None:
+            ruleset_bundle = RulesetBundle.from_values(
+                ruleset_id=ruleset_id,
+                dataslate_id=dataslate_id,
+                points_id=points_id,
+            )
+        else:
+            override = RulesetBundle.from_values(
+                ruleset_id=ruleset_id,
+                dataslate_id=dataslate_id,
+                points_id=points_id,
+            )
+            if (
+                (ruleset_id or dataslate_id or points_id)
+                and ruleset_bundle != override
+            ):
+                raise ValueError("Ruleset bundle values conflict with explicit ids.")
+        self.ruleset_bundle = ruleset_bundle
         self.roll_manager = DiceRollManager()
         self.attack_manager = AttackResolutionManager()
         # Headless/test default: auto-resolve dice roll decisions via headless agent.
@@ -159,6 +188,35 @@ class Game:
         self.army_muster_requests: Dict[str, Any] = {}
         self.entity_registry = EntityRegistry()
         self.rebuild_entity_registry()
+
+    @property
+    def ruleset_bundle(self) -> RulesetBundle | None:
+        return self._ruleset_bundle
+
+    @ruleset_bundle.setter
+    def ruleset_bundle(self, bundle: RulesetBundle) -> None:
+        if bundle is None:
+            raise ValueError("Ruleset bundle cannot be None.")
+        existing = getattr(self, "_ruleset_bundle", None)
+        if existing is not None and existing != bundle:
+            allow_replace = getattr(existing, "is_placeholder", lambda: False)()
+            has_events = bool(getattr(getattr(self, "event_log", None), "events", []))
+            if not allow_replace or has_events:
+                raise ValueError("Ruleset bundle already set for this game.")
+        self._ruleset_bundle = bundle
+
+    def get_ruleset_context(self) -> dict:
+        bundle = getattr(self, "ruleset_bundle", None)
+        if bundle is None:
+            return {}
+        to_dict = getattr(bundle, "to_dict", None)
+        if callable(to_dict):
+            return dict(to_dict() or {})
+        return {
+            "ruleset_id": getattr(bundle, "ruleset_id", None),
+            "dataslate_id": getattr(bundle, "dataslate_id", None),
+            "points_id": getattr(bundle, "points_id", None),
+        }
 
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
@@ -7093,6 +7151,7 @@ class Game:
         """Queue a decision request (interrupt window)."""
         if request is None:
             return
+        request.finalize_candidates()
         # Ensure dice roll state exists on clients for dice roll decisions.
         try:
             from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
@@ -7111,6 +7170,14 @@ class Game:
                         )
         except Exception:
             pass
+        ctx = dict(getattr(request, "context", {}) or {})
+        ruleset_ctx = self.get_ruleset_context()
+        for key, value in ruleset_ctx.items():
+            if key not in ctx:
+                ctx[key] = value
+            elif ctx.get(key) != value:
+                raise ValueError(f"Decision context ruleset mismatch for {key}: {ctx.get(key)} != {value}")
+        request.context = ctx
         self.decision_queue.add(request)
         self.event_system.publish("decision_requested", request=request, game=self)
 

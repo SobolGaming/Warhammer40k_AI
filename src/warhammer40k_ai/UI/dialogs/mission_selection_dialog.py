@@ -4,10 +4,10 @@ Displays approved combinations of Primary Mission, Deployment, and Terrain Layou
 """
 
 import pygame
-import random
 from typing import Optional, Tuple, Dict, List, Iterable
 from .base_dialog import BaseDialog
 from ..ui_fonts import get_ui_font
+from ...utility.rng import resolve_rng
 
 
 class MissionSelectionDialog(BaseDialog):
@@ -185,12 +185,13 @@ class MissionSelectionDialog(BaseDialog):
     
     def pick_random_mission(self):
         """Randomly select a mission combination and terrain layout."""
+        rng = resolve_rng()
         # Pick a random combination from A-T
-        self.selected_combination = random.randint(0, len(self.combinations) - 1)
+        self.selected_combination = rng.randint(0, len(self.combinations) - 1)
         
         # Pick a random terrain layout from the available options
         combination = self.combinations[self.selected_combination]
-        self.selected_layout = random.choice(combination["layouts"])
+        self.selected_layout = rng.choice(combination["layouts"])
         
         print(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
     

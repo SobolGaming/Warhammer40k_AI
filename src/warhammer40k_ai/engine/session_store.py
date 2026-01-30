@@ -76,6 +76,8 @@ def _build_manifest(game: Game, session_id: str, *, label: str | None = None) ->
     get_current_player = getattr(game, "get_current_player", None)
     if callable(get_current_player):
         current_player = get_current_player()
+    ruleset_bundle = getattr(game, "ruleset_bundle", None)
+    ruleset_payload = ruleset_bundle.to_dict() if ruleset_bundle is not None else {}
     return {
         "session_id": str(session_id),
         "label": str(label) if label is not None else None,
@@ -84,6 +86,7 @@ def _build_manifest(game: Game, session_id: str, *, label: str | None = None) ->
         "battle_round": int(getattr(game, "get_battle_round", lambda: 0)() or 0),
         "phase": _phase_name(getattr(game, "phase", None)),
         "current_player_id": getattr(current_player, "id", None),
+        "ruleset": ruleset_payload,
         "players": [_player_stub(p) for p in players],
     }
 

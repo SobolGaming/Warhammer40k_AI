@@ -31,6 +31,18 @@ Status: Draft
 - All ordering over collections is deterministic (stable ID ordering).
 - Coordinates are serialized in fixed-point units (1/1000 inch for positions/lengths; 1/10000 radians for facing).
 - Derived/cached values are never serialized; they are recomputed on load.
+- Every game carries a single active ruleset bundle (`ruleset_id`, `dataslate_id`, `points_id`).
+
+## Ruleset Bundle Versioning
+
+Canonical ID source:
+- Use the version string on page 1 of each official PDF.
+- If the Core Rules PDF has no explicit version string, use the date token in the filename (e.g., `core_rules_24.09`).
+
+Storage locations:
+- Snapshot: `game.ruleset` includes `ruleset_id`, `dataslate_id`, `points_id`.
+- Event log: every deterministic event payload includes the same three fields.
+- Decision context: every DecisionRequest context includes the same three fields.
 
 ## Entity Identity & Registries
 
@@ -56,6 +68,7 @@ Top-level:
 - fixed_point_scale
 - angle_scale
 - game: battle_round, phase, step, active_player_id
+- game.ruleset: ruleset_id, dataslate_id, points_id
 - players: CP, victory points, stratagem usage, once-per-battle flags
 - map: terrain, objectives, boundaries, mission metadata
 - units: state, positions, attachment relationships, embarked status
@@ -109,7 +122,7 @@ DecisionResult command:
 - `RESOLVE_DECISION` payload: `decision_id`, `option_id`, `result_payload` (optional dict)
 
 DecisionRequest command:
-- `REQUEST_DECISION` payload: `decision` (DecisionRequest dict with decision_id, decision_type, options, context)
+- `REQUEST_DECISION` payload: `decision` (DecisionRequest dict with decision_id, decision_type, options, candidates, mask, context)
 
 Command execution:
 - `Game.apply_command(...)` validates and dispatches commands through the engine dispatcher.
@@ -122,8 +135,11 @@ DecisionRequest:
 - request_id
 - actor_player_id
 - decision_type (enum)
-- context (phase, unit_id, target_id, weapon_id, etc)
+- context (phase, unit_id, target_id, weapon_id, ruleset_id, etc)
 - options (list of valid options with IDs and parameters)
+- candidates (list of CandidateAction: action_id, params, metadata)
+- mask (bool list aligned to candidates; false = illegal)
+- mask_reasons (optional list aligned to candidates)
 - constraints (range, min/max, count limits)
 
 DecisionResult:

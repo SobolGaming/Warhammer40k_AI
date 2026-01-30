@@ -9,11 +9,12 @@ from shapely.geometry import Polygon
 
 from .battlefield import Battlefield
 from .commands import GameCommand
-from .decisions import DecisionQueue, DecisionRequest
+from .decisions import CandidateAction, DecisionQueue, DecisionRequest
 from .game import Game
 from .mission_cards import MissionCard, PrimaryMissionCard, SecondaryMissionCard
 from .phase import BattleRoundPhases, SetupPhase
 from .ref_codec import decode_refs, encode_refs, serialize_modifier, deserialize_modifier
+from .ruleset import RulesetBundle
 from ..battlefield.map import (
     BarricadeTerrain,
     CraterTerrain,
@@ -40,7 +41,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -735,6 +736,14 @@ def _serialize_decision(request: DecisionRequest) -> dict:
         }
         for opt in data.get("options", []) or []
     ]
+    data["candidates"] = [
+        {
+            "action_id": cand.get("action_id"),
+            "params": encode_refs(cand.get("params", {}) or {}),
+            "metadata": encode_refs(cand.get("metadata", {}) or {}),
+        }
+        for cand in data.get("candidates", []) or []
+    ]
     return data
 
 
@@ -749,6 +758,15 @@ def _deserialize_decision(data: dict) -> DecisionRequest:
                 "payload": opt_payload,
             }
         )
+    candidates = []
+    for cand in data.get("candidates", []) or []:
+        candidates.append(
+            {
+                "action_id": cand.get("action_id"),
+                "params": cand.get("params", {}) or {},
+                "metadata": cand.get("metadata", {}) or {},
+            }
+        )
     return DecisionRequest.from_dict(
         {
             "decision_id": data.get("decision_id"),
@@ -757,6 +775,9 @@ def _deserialize_decision(data: dict) -> DecisionRequest:
             "prompt": data.get("prompt"),
             "options": options,
             "context": data.get("context", {}),
+            "candidates": candidates,
+            "mask": list(data.get("mask", []) or []),
+            "mask_reasons": list(data.get("mask_reasons", []) or []),
             "created_at": data.get("created_at"),
             "timeout_seconds": data.get("timeout_seconds"),
         }
@@ -1031,8 +1052,11 @@ def _serialize_game_state(game: Game) -> dict:
     skip_turns = []
     for idx, count in (getattr(game, "deployment_skip_turns", {}) or {}).items():
         skip_turns.append({"player_index": int(idx), "skip_count": int(count or 0)})
+    ruleset_bundle = getattr(game, "ruleset_bundle", None)
+    ruleset_payload = ruleset_bundle.to_dict() if ruleset_bundle is not None else RulesetBundle.from_values().to_dict()
 
     return {
+        "ruleset": ruleset_payload,
         "battle_round": int(getattr(game, "turn", 0) or 0),
         "phase": getattr(getattr(game, "phase", None), "name", None),
         "setup_phase": getattr(getattr(game, "setup_phase", None), "name", None),
@@ -1075,6 +1099,8 @@ def _serialize_game_state(game: Game) -> dict:
 
 
 def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
+    ruleset_payload = data.get("ruleset") or {}
+    game.ruleset_bundle = RulesetBundle.from_dict(ruleset_payload)
     game.turn = int(data.get("battle_round", 0) or 0)
     phase = data.get("phase")
     if phase:
@@ -1189,7 +1215,8 @@ def load_game_snapshot(snapshot: dict) -> Game:
         player._id = str(pdata.get("id") or player._id)
         players.append(player)
 
-    game = Game(battlefield, players=players)
+    game_ruleset = RulesetBundle.from_dict(dict(snapshot.get("game", {}) or {}).get("ruleset", {}))
+    game = Game(battlefield, players=players, ruleset_bundle=game_ruleset)
     roll_mgr_payload = snapshot.get("roll_manager")
     if isinstance(roll_mgr_payload, dict):
         try:
@@ -1392,6 +1419,17 @@ def load_game_snapshot(snapshot: dict) -> Game:
         req.context = decode_refs(req.context, game.entity_registry)
         for opt in req.options:
             opt.payload = decode_refs(opt.payload, game.entity_registry)
+        if req.candidates:
+            decoded_candidates = []
+            for cand in list(req.candidates or []):
+                decoded_candidates.append(
+                    CandidateAction(
+                        action_id=cand.action_id,
+                        params=decode_refs(cand.params, game.entity_registry),
+                        metadata=decode_refs(cand.metadata, game.entity_registry),
+                    )
+                )
+            req.candidates = decoded_candidates
         decision_queue.add(req)
     game.decision_queue = decision_queue
 

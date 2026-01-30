@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import math
-import random
 import uuid
 from dataclasses import dataclass
 from typing import Optional
@@ -10,6 +9,7 @@ from ..utility.ability_support import ABILITY_CULT_AMBUSH, army_has_ability_id
 from ..utility.entity_ids import get_entity_id
 from ..utility.aura_utils import horizontal_distance_point_to_model_base_2d
 from ..utility.model_base import Base, BaseType
+from ..utility.rng import resolve_rng
 
 
 MARKER_RADIUS_INCHES = 0.63  # 32mm diameter marker approx 1.26" across
@@ -424,9 +424,10 @@ class CultAmbushManager:
             h = float(getattr(getattr(game, "battlefield", None), "height", 0.0))
         except Exception:
             return None
+        rng = resolve_rng(game)
         for _ in range(int(attempts or 0)):
-            x = random.uniform(0.5, max(0.5, w - 0.5))
-            y = random.uniform(0.5, max(0.5, h - 0.5))
+            x = rng.uniform(0.5, max(0.5, w - 0.5))
+            y = rng.uniform(0.5, max(0.5, h - 0.5))
             if self._marker_position_valid(game, x, y):
                 return float(x), float(y)
         return None

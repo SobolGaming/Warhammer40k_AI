@@ -8,6 +8,7 @@ from .army import Army
 from ..units.unit import Unit
 from ..battlefield.map import Objective
 from ..engine.mission_cards import PrimaryMissionCard, SecondaryMissionCard, default_secondary_deck
+from ..utility.rng import resolve_rng
 from warhammer40k_ai.utility.calcs import get_dist
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
@@ -826,37 +827,35 @@ class Player:
     def set_primary_mission(self, primary: PrimaryMissionCard) -> None:
         self.primary_mission = primary
 
-    def set_secondary_deck(self, cards: list[SecondaryMissionCard] | None = None) -> None:
+    def set_secondary_deck(self, cards: list[SecondaryMissionCard] | None = None, *, game=None) -> None:
         # Use provided or default deck
         if cards is not None:
             self.secondary_deck = list(cards)
         else:
-            self.secondary_deck = default_secondary_deck()
-            # Shuffle for randomness if not already shuffled upstream
-            import random
-            random.shuffle(self.secondary_deck)
+            rng = resolve_rng(game)
+            self.secondary_deck = default_secondary_deck(rng=rng)
         self.active_secondaries = []
         self.discarded_secondaries = []
 
-    def ensure_secondary_deck_initialized(self) -> None:
+    def ensure_secondary_deck_initialized(self, game=None) -> None:
         if not self.secondary_deck and not self.active_secondaries and not self.discarded_secondaries:
-            self.set_secondary_deck()
+            self.set_secondary_deck(game=game)
 
     def can_draw_secondary(self) -> bool:
         return len(self.secondary_deck) > 0
 
     def draw_secondary_until_two(self, game) -> None:
         # Initialize deck if needed
-        self.ensure_secondary_deck_initialized()
+        self.ensure_secondary_deck_initialized(game)
         # Draw until two active if deck allows
         while len(self.active_secondaries) < 2 and self.secondary_deck:
             card = self.secondary_deck.pop(0)
             if hasattr(card, 'can_be_drawn') and not card.can_be_drawn(game, self):
                 # Not eligible on draw. Some cards specify: redraw and shuffle this card back into deck.
                 if bool(getattr(card, "shuffle_back_on_ineligible_draw", False)):
-                    import random
+                    rng = resolve_rng(game)
                     # Shuffle back into the remaining deck at a random position.
-                    idx = random.randint(0, len(self.secondary_deck))
+                    idx = int(rng.randint(0, len(self.secondary_deck)))
                     self.secondary_deck.insert(idx, card)
                     print(
                         f"INFO: {self.name} cannot draw Secondary: {card.name} (ineligible); shuffled back into deck"

@@ -17,6 +17,13 @@ def get_dice_roll(size: int = 6) -> int:
             if getattr(event_log, "mode", "record") == "replay":
                 event = event_log.consume("dice_roll")
                 value = int(event.payload.get("value", 0) or 0)
+                rng = getattr(game, "random_source", None)
+                if rng is not None:
+                    expected = int(rng.randint(1, size))
+                    if expected != value:
+                        raise ValueError(
+                            f"Replay dice roll mismatch: expected {expected}, got {value}."
+                        )
                 return value
             roll_context = get_roll_context()
             value = int(getattr(game, "random_source").randint(1, size))
