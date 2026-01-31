@@ -4226,6 +4226,64 @@ class GameView:
                     pass
                 return
 
+            if ability == "post_shoot_ap_bonus":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "post_shoot_ap_bonus_dialog") or self.post_shoot_ap_bonus_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.post_shoot_ap_bonus_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.post_shoot_ap_bonus_dialog = None
+                dlg = self.post_shoot_ap_bonus_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "AP Bonus").strip()
+                keyword = str(ctx.get("keyword", "") or "").strip()
+                attack_type = str(ctx.get("attack_type", "") or "any").strip().lower() or "any"
+                try:
+                    ap_bonus = int(ctx.get("ap_bonus", 0) or 0)
+                except Exception:
+                    ap_bonus = 0
+                header = "Select an enemy unit."
+                keyword_label = keyword.upper() if keyword else "friendly"
+                attack_label = "attacks"
+                if attack_type in ("ranged", "melee"):
+                    attack_label = f"{attack_type} attacks"
+                subtitle = f"{keyword_label} {attack_label} vs target: AP +{int(ap_bonus)} until end of phase."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability == "post_shoot_snare":
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import first_option_id

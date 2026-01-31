@@ -1760,6 +1760,30 @@ class Game:
                         "post_shoot_no_cover_source",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("post_shoot_ap_bonus_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_ap_bonus_active",
+                        "post_shoot_ap_bonus_expires_phase",
+                        "post_shoot_ap_bonus_source",
+                        "post_shoot_ap_bonus_value",
+                        "post_shoot_ap_bonus_keyword",
+                        "post_shoot_ap_bonus_attack_type",
+                        "post_shoot_ap_bonus_owner",
+                        "post_shoot_ap_bonus_turn",
+                    ):
+                        sr.pop(k, None)
+                    selected_scope = str(sr.get("post_shoot_ap_bonus_selected_scope", "") or "").strip().lower()
+                    if selected_scope == "phase":
+                        selected_phase = str(sr.get("post_shoot_ap_bonus_selected_phase", "") or "").strip().upper()
+                        if not selected_phase or selected_phase == pname:
+                            for k in (
+                                "post_shoot_ap_bonus_selected_owner",
+                                "post_shoot_ap_bonus_selected_turn",
+                                "post_shoot_ap_bonus_selected_scope",
+                                "post_shoot_ap_bonus_selected_phase",
+                            ):
+                                sr.pop(k, None)
                 exp = str(sr.get("fury_of_titan_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("fury_of_titan_active", "fury_of_titan_expires_phase"):
@@ -4951,6 +4975,126 @@ class Game:
                     "ability_name": ability_name,
                     "weapon_key": weapon_key,
                     "weapon_name": str(spec.get("weapon_name", "") or ""),
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_ap_bonus(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot AP bonus requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _target_already_selected(unit, owner_id: str, turn: int, scope: str, phase_name: str) -> bool:
+            if unit is None or not scope:
+                return False
+            try:
+                target_root = unit.get_attached_unit_root()
+            except Exception:
+                target_root = unit
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                return False
+            existing_scope = str(sr.get("post_shoot_ap_bonus_selected_scope", "") or "").strip().lower()
+            if not existing_scope:
+                return False
+            if existing_scope not in ("turn", "phase"):
+                return False
+            selected_owner = str(sr.get("post_shoot_ap_bonus_selected_owner", "") or "")
+            if selected_owner and owner_id and selected_owner != owner_id:
+                return False
+            selected_turn = int(sr.get("post_shoot_ap_bonus_selected_turn", 0) or 0)
+            if selected_turn and turn and selected_turn != turn:
+                return False
+            if existing_scope == "phase":
+                selected_phase = str(sr.get("post_shoot_ap_bonus_selected_phase", "") or "").strip().upper()
+                if selected_phase and phase_name and selected_phase != phase_name:
+                    return False
+            return True
+
+        specs = attacker_unit.unit_post_shoot_ap_bonus_specs() or []
+        if not specs:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_QUARRY
+
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+
+        for spec in specs:
+            keyword = str(spec.get("keyword", "") or "").strip()
+            attack_type = str(spec.get("attack_type", "") or "any").strip().lower() or "any"
+            try:
+                ap_bonus = int(spec.get("value", 0) or 0)
+            except Exception:
+                ap_bonus = 0
+            limit_scope = str(spec.get("limit_scope", "") or "").strip().lower()
+            if not keyword or ap_bonus <= 0:
+                continue
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                if limit_scope and _target_already_selected(target_unit, owner_id, turn, limit_scope, phase_name):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "AP Bonus").strip() or "AP Bonus"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_ap_bonus",
+                    "ability_name": ability_name,
+                    "keyword": keyword,
+                    "attack_type": attack_type,
+                    "ap_bonus": int(ap_bonus),
+                    "limit_scope": limit_scope,
                 },
             )
             self.request_decision(request)
@@ -9976,6 +10120,25 @@ class Game:
                         ):
                             sr.pop(key, None)
                         unit.special_rules = sr
+                if str(sr.get("post_shoot_ap_bonus_selected_scope", "") or "").strip().lower() == "turn":
+                    owner = str(sr.get("post_shoot_ap_bonus_selected_owner", "") or "")
+                    current_owner = ""
+                    try:
+                        current_owner = get_entity_id(turn_ending_player)
+                    except Exception:
+                        current_owner = str(getattr(turn_ending_player, "id", "") or "")
+                    if (not owner) or (current_owner and owner == current_owner):
+                        selected_turn = int(sr.get("post_shoot_ap_bonus_selected_turn", 0) or 0)
+                        current_turn = int(getattr(self, "turn", 0) or 0)
+                        if (not selected_turn) or (current_turn and selected_turn == current_turn):
+                            for key in (
+                                "post_shoot_ap_bonus_selected_owner",
+                                "post_shoot_ap_bonus_selected_turn",
+                                "post_shoot_ap_bonus_selected_scope",
+                                "post_shoot_ap_bonus_selected_phase",
+                            ):
+                                sr.pop(key, None)
+                            unit.special_rules = sr
 
         # Imperial Knights: Code Chivalric deed completion at end of turn.
         for p in list(getattr(self, "players", []) or []):

@@ -1300,6 +1300,13 @@ class Unit:
         r"(?:enemy )?unit subtract 1 from that test",
         re.IGNORECASE,
     )
+    _POST_SHOOT_AP_BONUS_RE = re.compile(
+        r"in your shooting phase after this (?:unit|model) has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes an (?:(?P<atype>ranged|melee) )?attack "
+        r"that targets that enemy unit improve the armou?r penetration characteristic of that attack by (?P<val>\d+)"
+        r"(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)| each unit can only be selected for this ability once per turn)?",
+        re.IGNORECASE,
+    )
     _DAEMONIC_POISONS_RE = re.compile(
         r"in your shooting phase and the fight phase after this model has finished making its attacks "
         r"select one enemy unit hit by one or more of those attacks until the end of the battle that enemy unit "
@@ -22396,6 +22403,85 @@ class Unit:
                     continue
                 seen.add(key)
                 specs.append({"source": source, "weapon_key": weapon_key, "weapon_name": weapon_raw})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_ap_bonus_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit; friendly keyword attacks vs that unit improve AP.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - keyword: str (normalized)
+            - attack_type: str (any|ranged|melee)
+            - value: int (AP improvement)
+            - limit_scope: Optional[str] ("turn"|"phase")
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_ap_bonus_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str, int]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._POST_SHOOT_AP_BONUS_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                if not keyword_raw:
+                    continue
+                keyword = unit._normalize_keyword_phrase(keyword_raw) or keyword_raw.lower()
+                attack_type = str(m.group("atype") or "any").strip().lower() or "any"
+                try:
+                    value = int(m.group("val") or 0)
+                except Exception:
+                    value = 0
+                if value <= 0:
+                    continue
+                limit_scope = None
+                if "once per turn" in normalized:
+                    limit_scope = "turn"
+                elif "once per phase" in normalized:
+                    limit_scope = "phase"
+                source = str(name or "Post-shoot AP bonus").strip() or "Post-shoot AP bonus"
+                key = (source.lower(), keyword, attack_type, int(value))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "keyword": keyword,
+                        "attack_type": attack_type,
+                        "value": int(value),
+                        "limit_scope": limit_scope,
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

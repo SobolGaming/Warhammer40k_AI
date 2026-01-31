@@ -232,6 +232,7 @@ Shooting:
 - post_shoot_wracked_agonies_target_dialog: CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `move_penalty`, `charge_penalty`)
 - post_shoot_suppression_target_dialog: CHOOSE_POST_SHOOT_SUPPRESSION_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`)
 - post_shoot_no_cover_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_no_cover"`, `attacker_unit_id`, `ability_name`, `weapon_key`)
+- post_shoot_ap_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_ap_bonus"`, `attacker_unit_id`, `ability_name`, `keyword`, `attack_type`, `ap_bonus`, `limit_scope`)
 - post_shoot_snare_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_snare"`, `attacker_unit_id`, `model_id`, `ability_name`, `weapon_key`)
 - post_shoot_leadership_debuff_target_dialog: CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET {target_unit_id} (context `attacker_unit_id`, `ability_name`)
 - daemonic_poisons_target_dialog: CHOOSE_DAEMONIC_POISONS_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `phase`)

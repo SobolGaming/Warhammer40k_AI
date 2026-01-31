@@ -1626,6 +1626,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Bearer has a 4+ invulnerable save and reduces allocated attack damage by 1.",
         ),
+        ("AE", "Crystalline Targeting"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly AELDARI attacks vs it improve AP by 1 until end of phase (per-target once per turn).",
+        ),
         ("AE", "Whirling Death"): (
             "Supported",
             "Leading: Advance without roll; +6\" Move; ignore vertical distance during Advance moves.",

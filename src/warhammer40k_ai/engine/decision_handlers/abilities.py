@@ -1198,6 +1198,60 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_ap_bonus":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "AP Bonus").strip() or "AP Bonus"
+            keyword = str(ctx.get("keyword", "") or "").strip()
+            attack_type = str(ctx.get("attack_type", "") or "any").strip().lower() or "any"
+            try:
+                ap_bonus = int(ctx.get("ap_bonus", 0) or 0)
+            except Exception:
+                ap_bonus = 0
+            limit_scope = str(ctx.get("limit_scope", "") or "").strip().lower()
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_ap_bonus_active"] = True
+            sr["post_shoot_ap_bonus_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_ap_bonus_source"] = ability_name
+            sr["post_shoot_ap_bonus_value"] = int(ap_bonus)
+            sr["post_shoot_ap_bonus_keyword"] = keyword
+            sr["post_shoot_ap_bonus_attack_type"] = attack_type
+            sr["post_shoot_ap_bonus_owner"] = owner_id
+            sr["post_shoot_ap_bonus_turn"] = int(turn or 0)
+            if limit_scope in ("turn", "phase"):
+                sr["post_shoot_ap_bonus_selected_owner"] = owner_id
+                sr["post_shoot_ap_bonus_selected_turn"] = int(turn or 0)
+                sr["post_shoot_ap_bonus_selected_scope"] = limit_scope
+                if limit_scope == "phase":
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if phase_name:
+                        sr["post_shoot_ap_bonus_selected_phase"] = phase_name
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                display_keyword = keyword.upper() if keyword else "friendly"
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {tname} marked ({display_keyword} AP +{int(ap_bonus)} this phase).",
+                )
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "post_shoot_snare":
         if chosen is not None:
             try:

@@ -664,7 +664,6 @@ class WargearProfile:
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
-        # Defensive stratagems that worsen AP for attacks against a specific target.
         try:
             target_root = target.get_attached_unit_root() if target is not None else target
         except Exception:
@@ -673,6 +672,72 @@ class WargearProfile:
             attacker_unit = getattr(attacker, "parent_unit", None)
         except Exception:
             attacker_unit = None
+        # Post-shoot AP bonus applied to a marked target for friendly keyword attacks.
+        if target_root is not None and attacker_unit is not None:
+            sr = getattr(target_root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("post_shoot_ap_bonus_active"):
+                apply_bonus = True
+                exp = str(sr.get("post_shoot_ap_bonus_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+                    if phase_key and phase_key != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    owner_id = str(sr.get("post_shoot_ap_bonus_owner", "") or "")
+                    if owner_id:
+                        attacker_player = None
+                        try:
+                            army = attacker_unit.get_parent_army()
+                            attacker_player = getattr(army, "player", None) if army is not None else None
+                        except Exception:
+                            attacker_player = None
+                        attacker_id = ""
+                        if attacker_player is not None:
+                            try:
+                                attacker_id = get_entity_id(attacker_player)
+                            except Exception:
+                                attacker_id = str(getattr(attacker_player, "id", "") or "")
+                        if attacker_id and owner_id != attacker_id:
+                            apply_bonus = False
+                if apply_bonus:
+                    try:
+                        turn = int(sr.get("post_shoot_ap_bonus_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if turn:
+                        game = None
+                        try:
+                            army = attacker_unit.get_parent_army()
+                            game = getattr(getattr(army, "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        cur_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        if cur_turn and cur_turn != turn:
+                            apply_bonus = False
+                if apply_bonus:
+                    keyword = str(sr.get("post_shoot_ap_bonus_keyword", "") or "").strip()
+                    if keyword and not attacker_unit.has_any_keyword(keyword):
+                        apply_bonus = False
+                if apply_bonus:
+                    attack_type = str(sr.get("post_shoot_ap_bonus_attack_type", "") or "any").strip().lower() or "any"
+                    if attack_type in ("ranged", "melee"):
+                        try:
+                            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+                        except Exception:
+                            is_ranged = False
+                        try:
+                            is_melee = bool(self.parent_wargear and self.parent_wargear.is_melee())
+                        except Exception:
+                            is_melee = False
+                        if attack_type == "ranged" and not is_ranged:
+                            apply_bonus = False
+                        elif attack_type == "melee" and not is_melee:
+                            apply_bonus = False
+                if apply_bonus:
+                    bonus = int(sr.get("post_shoot_ap_bonus_value", 0) or 0)
+                    if bonus:
+                        ap_val -= bonus
+        # Defensive stratagems that worsen AP for attacks against a specific target.
         try:
             if target_root is not None and attacker_unit is not None:
                 try:
