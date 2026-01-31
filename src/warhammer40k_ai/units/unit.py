@@ -21640,6 +21640,52 @@ class Unit:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_d_cannon_damage_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model makes an attack with its D-cannon, re-roll a Damage roll of 1.
+        If that attack targets a TITANIC unit, you can re-roll the Damage roll instead."
+        """
+        if model is None:
+            return None
+        cache_key = f"d_cannon_damage_reroll_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower()
+                if "d-cannon" not in low and "d cannon" not in low:
+                    continue
+                if "damage roll" not in low:
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+                if "damage roll of 1" not in low:
+                    continue
+                reroll_full_vs_titanic = False
+                if "titanic" in low and re.search(r"re-?roll\s+the\s+damage\s+roll", low):
+                    reroll_full_vs_titanic = True
+                source = str(name or "D-cannon").strip() or "D-cannon"
+                rule = {
+                    "source": source,
+                    "reroll_damage_ones": True,
+                    "reroll_damage_full_vs_titanic": bool(reroll_full_vs_titanic),
+                    "weapon_match": "d-cannon",
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_selected_to_shoot_reroll_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
         """
         Return rule info for abilities like:

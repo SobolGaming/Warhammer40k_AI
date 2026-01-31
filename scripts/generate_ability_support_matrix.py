@@ -1640,6 +1640,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When targeted, if the unit contains other models, the Support Weapon model uses Toughness 3 for that attack.",
         ),
+        ("AE", "Structural Collapse"): (
+            "Supported",
+            "D-cannon attacks re-roll Damage rolls of 1; vs TITANIC targets you can re-roll the Damage roll instead.",
+        ),
         ("AE", "Treacherous Illusion (Psychic)"): (
             "Supported",
             "Enemy melee weapons targeting this unit gain Hazardous.",

@@ -7737,10 +7737,105 @@ class WargearProfile:
             damage_result['damage_dice_rolls'] = []
         damage_result['damage_rolled'] = damage_value
 
+        # D-cannon: re-roll Damage roll of 1; vs TITANIC you can re-roll the Damage roll instead.
+        try:
+            if rerolls_allowed and isinstance(self.damage, DiceCollection):
+                unit = getattr(attacker, "parent_unit", None)
+                rule = None
+                if unit is not None and getattr(unit, "get_d_cannon_damage_reroll_rule", None):
+                    rule = unit.get_d_cannon_damage_reroll_rule(attacker)
+                if rule and "reroll" not in damage_result:
+                    weapon_name = ""
+                    try:
+                        if getattr(self, "parent_wargear", None) is not None:
+                            weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                        else:
+                            weapon_name = str(getattr(self, "name", "") or "")
+                    except Exception:
+                        weapon_name = ""
+                    if rule.get("weapon_match") and str(rule.get("weapon_match") or "").lower() not in weapon_name.lower():
+                        rule = None
+                if rule and "reroll" not in damage_result:
+                    is_titanic = False
+                    try:
+                        target_unit = getattr(target_model, "parent_unit", None)
+                        if target_unit is not None:
+                            is_titanic = bool(
+                                target_unit.has_any_keyword("TITANIC") or target_unit.has_keyword("TITANIC")
+                            )
+                        else:
+                            is_titanic = bool(
+                                getattr(target_model, "has_any_keyword", lambda *_a, **_k: False)("TITANIC")
+                                or getattr(target_model, "has_keyword", lambda *_a, **_k: False)("TITANIC")
+                            )
+                    except Exception:
+                        is_titanic = False
+
+                    source = str(rule.get("source", "") or "D-cannon").strip() or "D-cannon"
+                    if is_titanic and rule.get("reroll_damage_full_vs_titanic"):
+                        do_reroll = False
+                        try:
+                            unit = attacker.parent_unit
+                            game = unit.get_parent_army().player.game
+                            player = unit.get_parent_army().player
+                            is_human = bool(getattr(player, "has_control", lambda: False)())
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="damage",
+                                    value=damage_value,
+                                    dice=damage_result.get("damage_dice_rolls", None),
+                                    reason=source,
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            try:
+                                avg = float(self.damage.stat_average())
+                                do_reroll = float(damage_value) < avg
+                            except Exception:
+                                do_reroll = False
+                        if do_reroll:
+                            new_val, new_rolls = _reroll_damage()
+                            damage_value = new_val
+                            damage_result['damage_dice_rolls'] = new_rolls
+                            damage_result['damage_rolled'] = new_val
+                            damage_result.setdefault('special_effects', []).append(
+                                f"{source}: re-roll Damage roll"
+                            )
+                            damage_result['reroll'] = new_val
+                    else:
+                        base_roll = None
+                        try:
+                            rolls = damage_result.get("damage_dice_rolls", None)
+                            if isinstance(rolls, list) and len(rolls) == 1:
+                                base_roll = int(rolls[0])
+                        except Exception:
+                            base_roll = None
+                        if base_roll == 1:
+                            new_val, new_rolls = _reroll_damage()
+                            damage_value = new_val
+                            damage_result['damage_dice_rolls'] = new_rolls
+                            damage_result['damage_rolled'] = new_val
+                            damage_result.setdefault('special_effects', []).append(
+                                f"{source}: re-roll Damage roll of 1"
+                            )
+                            damage_result['reroll'] = new_val
+                            damage_result['reroll_of_one'] = 1
+        except Exception:
+            pass
+
         # Closest eligible MONSTER/VEHICLE target: re-roll Damage roll (optional).
         try:
             rule = attack_instance.get("closest_monster_vehicle_reroll_rule")
-            if rerolls_allowed and rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection):
+            if rerolls_allowed and rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:
                 do_reroll = False
                 try:
                     unit = attacker.parent_unit
@@ -7786,7 +7881,7 @@ class WargearProfile:
         # MONSTER/VEHICLE target: re-roll Damage roll (optional).
         try:
             rule = attack_instance.get("monster_vehicle_reroll_rule")
-            if rerolls_allowed and rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection):
+            if rerolls_allowed and rule and rule.get("reroll_damage") and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:
                 do_reroll = False
                 try:
                     unit = attacker.parent_unit
@@ -7831,7 +7926,7 @@ class WargearProfile:
 
         # Selected to shoot: re-roll one Damage roll (one per selection).
         try:
-            if rerolls_allowed and isinstance(self.damage, DiceCollection):
+            if rerolls_allowed and isinstance(self.damage, DiceCollection) and "reroll" not in damage_result:
                 is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
                 if is_ranged and getattr(attacker, "can_use_selected_to_shoot_reroll", None) and attacker.can_use_selected_to_shoot_reroll("damage"):
                     do_reroll = False
