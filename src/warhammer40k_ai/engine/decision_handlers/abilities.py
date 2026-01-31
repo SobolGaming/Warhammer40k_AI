@@ -1176,6 +1176,87 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 )
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "aeldari_guiding_presence":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            tsr = getattr(chosen, "special_rules", None)
+            if not isinstance(tsr, dict):
+                tsr = {}
+            ability_name = str(ctx.get("ability_name", "") or "Guiding Presence").strip()
+            tsr["guiding_presence_active"] = True
+            try:
+                tsr["guiding_presence_bonus"] = int(ctx.get("bonus", 1) or 1)
+            except Exception:
+                tsr["guiding_presence_bonus"] = 1
+            tsr["guiding_presence_expires_phase"] = "SHOOTING_PHASE"
+            tsr["guiding_presence_source"] = ability_name
+            tsr["guiding_presence_owner"] = str(getattr(player, "id", "") or "")
+            chosen.special_rules = tsr
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} (+1 to hit).")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "aeldari_spirit_stone_heal":
+        if is_skip_choice(request, result):
+            return None
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                from ...utility.dice import get_roll
+                from ...utility.event_bus import append_dice
+            except Exception:
+                get_roll = None
+                append_dice = None
+            ability_name = str(ctx.get("ability_name", "") or "Spirit Stone of Raelyth").strip()
+            heal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            if callable(append_dice) and player is not None:
+                append_dice(player, f"{ability_name} roll: {heal}")
+            if heal <= 0:
+                return chosen
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                models = list(target_root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(target_root, "models", []) or [])
+            wounded = []
+            for m in models:
+                try:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
+                if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
+                    wounded.append(m)
+            if not wounded:
+                return chosen
+            try:
+                wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
+            except Exception:
+                wounded = list(wounded)
+            target_model = wounded[0]
+            try:
+                target_model.heal(int(heal))
+            except Exception:
+                pass
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} regains up to {int(heal)} wounds.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "post_shoot_no_cover":
         if chosen is not None:
             try:

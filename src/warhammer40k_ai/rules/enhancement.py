@@ -199,6 +199,14 @@ class Enhancement:
         except Exception:
             is_warhost = False
         try:
+            is_armoured_warhost = bool(ae_mgr and ae_mgr.is_armoured_warhost())
+        except Exception:
+            is_armoured_warhost = False
+        try:
+            is_aspect_host = bool(ae_mgr and ae_mgr.is_aspect_host())
+        except Exception:
+            is_aspect_host = False
+        try:
             is_virulent_vectorium = bool(dg_mgr and dg_mgr.is_virulent_vectorium())
         except Exception:
             is_virulent_vectorium = False
@@ -289,6 +297,45 @@ class Enhancement:
             unit.special_rules["enhancement_timeless_strategist_battle_focus_bonus"] = int(
                 unit.special_rules.get("enhancement_timeless_strategist_battle_focus_bonus", 0) or 0
             ) + 1
+
+        if name == "guiding presence" or enh_id == "000009769002":
+            if not is_armoured_warhost:
+                return
+            unit.special_rules["enhancement_guiding_presence"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "harmonisation matrix" or enh_id == "000009769003":
+            if not is_armoured_warhost:
+                return
+            unit.special_rules["enhancement_harmonisation_matrix"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "spirit stone of raelyth" or enh_id == "000009769004":
+            if not is_armoured_warhost:
+                return
+            unit.special_rules["enhancement_spirit_stone_of_raelyth"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "guileful strategist" or enh_id == "000009769005":
+            if not is_armoured_warhost:
+                return
+            unit.special_rules["enhancement_guileful_strategist"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "aspect of murder" or enh_id == "000009927002":
+            if not is_aspect_host:
+                return
+            unit.special_rules["enhancement_aspect_of_murder"] = True
+            unit.special_rules["enhancement_bearer_melee_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_damage_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "faultless opportunist" or enh_id == "000010002002":
             unit.special_rules["enhancement_faultless_opportunist"] = True

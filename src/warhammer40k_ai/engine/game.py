@@ -1446,6 +1446,263 @@ class Game:
         if subs.get("for_the_greater_good_prompt"):
             es.publish("for_the_greater_good_prompt", player=player, game=self)
 
+    def _on_phase_start_aeldari_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Aeldari enhancements that trigger at the start of Command or Shooting phases."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname not in ("COMMAND_PHASE", "SHOOTING_PHASE"):
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Aeldari enhancement hooks require an army for {player.name}.")
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Aeldari enhancement hooks require a game map.")
+
+        from ..utility.aura_utils import distance_between_models_bases_3d
+        from ..utility.dice import get_roll
+        from ..utility.entity_ids import get_entity_id
+        from ..utility.event_bus import append_action, append_dice
+
+        def _unit_active(unit, *, allow_embarked: bool = False) -> bool:
+            if unit is None:
+                return False
+            try:
+                if hasattr(unit, "is_alive") and callable(unit.is_alive) and not unit.is_alive():
+                    return False
+            except Exception:
+                return False
+            try:
+                if hasattr(unit, "deployed") and not bool(getattr(unit, "deployed", False)):
+                    return False
+            except Exception:
+                return False
+            try:
+                if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+                    return False
+            except Exception:
+                pass
+            try:
+                if hasattr(unit, "is_in_reserves") and callable(unit.is_in_reserves):
+                    if bool(unit.is_in_reserves()):
+                        return False
+            except Exception:
+                pass
+            if not allow_embarked:
+                try:
+                    if bool(getattr(unit, "is_embarked", False)):
+                        return False
+                except Exception:
+                    pass
+                try:
+                    if getattr(unit, "embarked_in", None) is not None:
+                        return False
+                except Exception:
+                    pass
+            return True
+
+        def _iter_unique_roots(units):
+            seen = set()
+            for u in list(units or []):
+                try:
+                    root = u.get_attached_unit_root()
+                except Exception:
+                    root = u
+                if root is None:
+                    continue
+                uid = get_entity_id(root) or id(root)
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                yield root
+
+        def _model_in_unit_range(model, target_unit, range_inches: float) -> bool:
+            try:
+                target_models = list(target_unit.get_attached_unit_models() or [])
+            except Exception:
+                target_models = list(getattr(target_unit, "models", []) or [])
+            target_models = [m for m in target_models if getattr(m, "is_alive", True)]
+            if not target_models:
+                return False
+            for tm in target_models:
+                try:
+                    if distance_between_models_bases_3d(model, tm) <= float(range_inches) + 1e-6:
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        def _model_within_objective(model, objective_point) -> bool:
+            if model is None or objective_point is None:
+                return False
+            try:
+                from shapely.geometry import Point as _ShPoint
+                area = _ShPoint(objective_point.x, objective_point.y).buffer(
+                    float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+                )
+            except Exception:
+                area = None
+            try:
+                if area is not None:
+                    base = model.model_base.get_base_shape()
+                    if base.intersects(area):
+                        return True
+            except Exception:
+                pass
+            try:
+                pos = model.get_location()
+            except Exception:
+                pos = None
+            if not pos:
+                return False
+            try:
+                dx = float(pos[0]) - float(getattr(objective_point, "x", 0.0))
+                dy = float(pos[1]) - float(getattr(objective_point, "y", 0.0))
+                radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+                base_r = float(getattr(model.model_base, "get_radius", lambda: 1.0)())
+                return (dx * dx + dy * dy) ** 0.5 <= (radius + base_r)
+            except Exception:
+                return False
+
+        def _within_controlled_objective(bearer_model, unit) -> bool:
+            if bearer_model is None:
+                return False
+            objectives = list(getattr(game_map, "objectives", []) or [])
+            for obj in objectives:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                loc.update_control(self)
+                if getattr(loc, "controlling_player", None) is not player:
+                    continue
+                if _model_within_objective(bearer_model, loc):
+                    return True
+                transport = getattr(unit, "embarked_in", None)
+                if transport is not None:
+                    try:
+                        if transport.is_within_objective_range(loc):
+                            return True
+                    except Exception:
+                        continue
+            return False
+
+        if pname == "SHOOTING_PHASE":
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_guiding_presence")):
+                    continue
+                if not _unit_active(unit):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                candidates = []
+                for root in _iter_unique_roots(getattr(army, "units", []) or []):
+                    if not _unit_active(root):
+                        continue
+                    try:
+                        if not root.has_any_keyword("AELDARI"):
+                            continue
+                        if not root.has_any_keyword("VEHICLE"):
+                            continue
+                    except Exception:
+                        continue
+                    if not _model_in_unit_range(bearer, root, 9.0):
+                        continue
+                    candidates.append(root)
+
+                if not candidates:
+                    continue
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Guiding Presence").strip()
+                if len(candidates) == 1:
+                    target = candidates[0]
+                    tsr = getattr(target, "special_rules", None)
+                    if not isinstance(tsr, dict):
+                        tsr = {}
+                    tsr["guiding_presence_active"] = True
+                    tsr["guiding_presence_bonus"] = 1
+                    tsr["guiding_presence_expires_phase"] = "SHOOTING_PHASE"
+                    tsr["guiding_presence_source"] = ability_name
+                    tsr["guiding_presence_owner"] = str(getattr(player, "id", "") or "")
+                    target.special_rules = tsr
+                    try:
+                        tname = str(getattr(target, "name", "Unit") or "Unit")
+                        append_action(player, f"{ability_name}: {tname} gains +1 to hit this phase.")
+                    except Exception:
+                        pass
+                    continue
+
+                self._queue_aeldari_guiding_presence(
+                    player=player,
+                    source_unit=unit,
+                    model=bearer,
+                    candidates=candidates,
+                    ability_name=ability_name,
+                    range_inches=9,
+                    hit_bonus=1,
+                )
+
+        if pname == "COMMAND_PHASE":
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_harmonisation_matrix")):
+                    continue
+                if not _unit_active(unit, allow_embarked=True):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                if not _within_controlled_objective(bearer, unit):
+                    continue
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Harmonisation Matrix").strip()
+                roll = int(get_roll("D6") or 0)
+                append_dice(player, f"{ability_name} roll: {roll}")
+                if roll >= 3:
+                    gained = int(player.gain_command_points(1, reason=ability_name) or 0)
+                    if gained:
+                        append_action(player, f"{ability_name}: gained {gained} CP.")
+
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_spirit_stone_of_raelyth")):
+                    continue
+                if not _unit_active(unit):
+                    continue
+                bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                bearer = bearer() if callable(bearer) else None
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+                candidates = []
+                for root in _iter_unique_roots(getattr(army, "units", []) or []):
+                    if not _unit_active(root):
+                        continue
+                    try:
+                        if not root.has_any_keyword("AELDARI"):
+                            continue
+                        if not root.has_any_keyword("VEHICLE"):
+                            continue
+                    except Exception:
+                        continue
+                    if not _model_in_unit_range(bearer, root, 3.0):
+                        continue
+                    candidates.append(root)
+
+                if not candidates:
+                    continue
+                ability_name = str(getattr(getattr(unit, "enhancement", None), "name", "") or "Spirit Stone of Raelyth").strip()
+                self._queue_aeldari_spirit_stone_heal(
+                    player=player,
+                    source_unit=unit,
+                    model=bearer,
+                    candidates=candidates,
+                    ability_name=ability_name,
+                    range_inches=3,
+                    allow_skip=True,
+                )
+
     def _on_phase_start_voice_of_command(self, player=None, phase=None, **_kwargs) -> None:
         """Astra Militarum: issue Orders at the start of the Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -1758,6 +2015,16 @@ class Game:
                         "post_shoot_no_cover_active",
                         "post_shoot_no_cover_expires_phase",
                         "post_shoot_no_cover_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("guiding_presence_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "guiding_presence_active",
+                        "guiding_presence_bonus",
+                        "guiding_presence_expires_phase",
+                        "guiding_presence_source",
+                        "guiding_presence_owner",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("post_shoot_ap_bonus_expires_phase", "") or "").strip().upper()
@@ -2641,6 +2908,155 @@ class Game:
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
             f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_aeldari_guiding_presence(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        ability_name: str,
+        range_inches: int,
+        hit_bonus: int,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "aeldari_guiding_presence":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+        ]
+        if not options:
+            return None
+        ctx = {
+            "ability": "aeldari_guiding_presence",
+            "ability_name": str(ability_name or "Guiding Presence").strip(),
+            "phase": "Shooting phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_inches),
+            "bonus": int(hit_bonus),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ctx['ability_name']}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_aeldari_spirit_stone_heal(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        ability_name: str,
+        range_inches: int,
+        allow_skip: bool = True,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "aeldari_spirit_stone_heal":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = []
+        if allow_skip:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ctx = {
+            "ability": "aeldari_spirit_stone_heal",
+            "ability_name": str(ability_name or "Spirit Stone of Raelyth").strip(),
+            "phase": "Command phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_inches),
+            "allow_skip": bool(allow_skip),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ctx['ability_name']}: select a target.",
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,

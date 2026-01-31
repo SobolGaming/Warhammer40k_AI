@@ -11196,6 +11196,14 @@ class Unit:
         except Exception:
             pass
         try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "skilled_crews_reroll_advance_applies", None):
+                if mgr.skilled_crews_reroll_advance_applies(self):
+                    return True
+        except Exception:
+            pass
+        try:
             for u in list(self.get_attached_unit_members() or []):
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
@@ -14264,6 +14272,15 @@ class Unit:
             mgr = getattr(army, "necrons_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "relentless_onslaught_assault_applies", None):
                 if mgr.relentless_onslaught_assault_applies(self):
+                    if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                        return True
+        except Exception:
+            pass
+        try:
+            army = self.get_parent_army()
+            mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+            if mgr is not None and getattr(mgr, "skilled_crews_assault_applies", None):
+                if mgr.skilled_crews_assault_applies(self):
                     if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
                         return True
         except Exception:
@@ -18829,6 +18846,7 @@ class Unit:
             "twin_linked": False,
             "heavy": False,
             "lance": False,
+            "precision": False,
             "anti_specs": [],
         }
         sources: list[str] = []
@@ -18869,6 +18887,9 @@ class Unit:
             elif kw == "LANCE":
                 bonuses["lance"] = True
                 sources.append(f"Lance ({source})")
+            elif kw == "PRECISION":
+                bonuses["precision"] = True
+                sources.append(f"Precision ({source})")
             elif kw.startswith("ANTI-"):
                 m = re.search(r"ANTI-([A-Z0-9 \-]+)\s+(\d)\+", kw)
                 if m:
@@ -18886,6 +18907,7 @@ class Unit:
             or bonuses["twin_linked"]
             or bonuses["heavy"]
             or bonuses["lance"]
+            or bonuses["precision"]
             or int(bonuses["sustained_hits_value"] or 0) > 0
             or bool(bonuses.get("anti_specs"))
         ):
@@ -24826,6 +24848,43 @@ class Unit:
         sr = getattr(self, "special_rules", None)
         if isinstance(sr, dict) and sr.get("enhancement_praesidius_lone_operative"):
             return True
+        if isinstance(sr, dict) and sr.get("enhancement_spirit_stone_of_raelyth"):
+            try:
+                game_map = self.get_parent_army().player.game.map
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                try:
+                    from ..utility.aura_utils import distance_between_models_bases_3d
+                    bearer = self._get_enhancement_bearer_model()
+                    if bearer is not None and getattr(bearer, "is_alive", True):
+                        for other in list(game_map.get_friendly_units(self)):
+                            if other is None or other is self:
+                                continue
+                            try:
+                                if not other.has_any_keyword("AELDARI"):
+                                    continue
+                                if not other.has_any_keyword("VEHICLE"):
+                                    continue
+                            except Exception:
+                                continue
+                            try:
+                                models = list(other.get_attached_unit_models() or [])
+                            except Exception:
+                                models = list(getattr(other, "models", []) or [])
+                            for tm in models:
+                                try:
+                                    if not getattr(tm, "is_alive", True):
+                                        continue
+                                except Exception:
+                                    continue
+                                try:
+                                    if distance_between_models_bases_3d(bearer, tm) <= 3.0 + 1e-6:
+                                        return True
+                                except Exception:
+                                    continue
+                except Exception:
+                    pass
 
         normalize_rules_text = getattr(self, "_normalize_rules_text", None)
         if not callable(normalize_rules_text):
@@ -24882,8 +24941,8 @@ class Unit:
                 if "lone operative" not in norm:
                     continue
                 m = re.search(
-                    r"while this model is within (?P<range>\d+) of one or more (?P<other>other )?friendly (?P<keywords>.+?) units? "
-                    r"(?:this model|it) has (?:the )?lone operative ability",
+                    r"while (?:this model|the bearer) is within (?P<range>\d+) of one or more (?P<other>other )?friendly (?P<keywords>.+?) units? "
+                    r"(?:this model|the bearer|it) has (?:the )?lone operative ability",
                     norm,
                     flags=re.IGNORECASE,
                 )

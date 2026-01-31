@@ -231,6 +231,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time a unit from your army performs the swift as the wind agile manoeuvre until the end of the phase add an additional \d+ to the move characteristic of models in that unit",
             r"each time a unit from your army performs an agile manoeuvre that involves rolling a d6 add \d+ to the result",
         ),
+        "Skilled Crews": (
+            r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability and you can reroll advance rolls made for aeldari vehicle fly units from your army",
+            r"ranged weapons equipped by aeldari vehicle models from your army have the assault ability",
+            r"you can reroll advance rolls made for aeldari vehicle fly units from your army",
+        ),
         "Ruthless Discipline": (
             r"add \d+ to the number of orders each astra militarum officer model from your army can issue as stated on their datasheet",
             r"while an astra militarum unit from your army is affected by an order each time a model in that unit makes an attack reroll a hit roll of \d+",
@@ -1418,6 +1423,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Exquisite Swordsmanship": ("Supported", "Peerless Bladesmen: on charge choose Lethal or Sustained for melee."),
         "Mechanised Murder": ("Supported", "Rapid Evisceration: reroll Hit/Wound rolls of 1 for eligible units."),
         "Daemonic Empowerment": ("Supported", "Carnival of Excess: empowered units gain Sustained Hits."),
+        "Skilled Crews": (
+            "Supported",
+            "Armoured Warhost: AELDARI VEHICLE ranged weapons count as [ASSAULT]; AELDARI VEHICLE FLY units can re-roll Advance rolls.",
+        ),
         "Pledges to the Dark Prince": (
             "Supported",
             "Coterie of the Conceited: start-of-round pledge decision, destroyed-unit tracking, end-of-round resolution, and pact point bonuses are implemented.",
@@ -5175,6 +5184,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009899003": "Timeless Strategist: +1 Battle Focus token if bearer on battlefield.",
         "000009899004": "Gift of Foresight: Command Re-roll for 0CP once per battle round.",
         "000009899005": "Psychic Destroyer: +1 Damage to bearer ranged Psychic weapons.",
+        "000009769002": "Guiding Presence: start of Shooting phase select friendly AELDARI VEHICLE within 9\" to gain +1 to hit until end of phase.",
+        "000009769003": "Harmonisation Matrix: Command phase roll D6 if bearer/transport is within a controlled objective; on 3+, gain 1 CP.",
+        "000009769004": "Spirit Stone of Raelyth: Lone Operative within 3\" of friendly AELDARI VEHICLE; Command phase select friendly AELDARI VEHICLE within 3\" to regain up to D3 lost wounds.",
+        "000009927002": "Aspect of Murder: bearer melee weapons gain +1 Damage and [Precision].",
         "000008348005": "Adaptive Biology: bearer gains Feel No Pain 5+; at the start of any turn, if below starting wounds, upgrade to Feel No Pain 4+ for the rest of the battle.",
         "000010002002": "Faultless Opportunist: Heroic Intervention for 0CP even if another unit was targeted this phase.",
         "000010002005": "Rise to the Challenge: end of Fight phase (once per battle) fight one additional time and choose an Exquisite Swordsmanship ability.",

@@ -2613,6 +2613,7 @@ class WargearProfile:
         bonus_lance_label = ""
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
+        bonus_precision = False
         def _set_bonus_sustained(value: int, label: str) -> None:
             nonlocal bonus_sustained_value, bonus_sustained_label
             try:
@@ -2648,11 +2649,13 @@ class WargearProfile:
         def _apply_keyword_bonus(bonus, *, sustained_label: str = "", heavy_label: str = "", lance_label: str = "") -> None:
             nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label
             nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
-            nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs
+            nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
             if not isinstance(bonus, dict):
                 return
             if bool(bonus.get("lethal_hits")):
                 bonus_lethal = True
+            if bool(bonus.get("precision")):
+                bonus_precision = True
             bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
             if bonus_sustained_val:
                 _set_bonus_sustained(bonus_sustained_val, sustained_label)
@@ -2724,6 +2727,8 @@ class WargearProfile:
                     attack_instance["bonus_lance_source"] = bonus_lance_label
             if bonus_anti_specs:
                 attack_instance["bonus_anti_specs"] = bonus_anti_specs
+            if bonus_precision:
+                attack_instance["bonus_precision"] = True
         except Exception:
             bonus_lethal = False
             bonus_sustained_value = 0
@@ -2736,6 +2741,17 @@ class WargearProfile:
             bonus_lance_label = ""
             bonus_anti_specs = ()
             bonus_precision_on_crit = False
+            bonus_precision = False
+
+        # Enhancement: Aspect of Murder grants Precision to bearer melee weapons.
+        try:
+            if attack_is_melee:
+                sr = self._unit_special_rules(attacker)
+                if isinstance(sr, dict) and sr.get("enhancement_bearer_melee_precision"):
+                    if self._attacker_is_enhancement_bearer(attacker, sr):
+                        attack_instance["bonus_precision"] = True
+        except Exception:
+            pass
 
         try:
             unit = getattr(attacker, "parent_unit", None)
@@ -3201,6 +3217,20 @@ class WargearProfile:
                         _add_hit_mod(bonus, "+1 to hit from Bondsman (Crusader's Duty)")
                 if is_ranged and sr.get("bondsman_ignores_cover_ranged"):
                     attack_instance["ignores_cover"] = True
+        except Exception:
+            pass
+
+        # Aeldari: Guiding Presence (+1 to hit for selected Vehicle unit).
+        try:
+            unit = attacker.parent_unit
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("guiding_presence_active"):
+                is_ranged = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_ranged())
+                if is_ranged:
+                    bonus = int(sr.get("guiding_presence_bonus", 1) or 1)
+                    if bonus:
+                        source = str(sr.get("guiding_presence_source", "") or "Guiding Presence").strip()
+                        _add_hit_mod(bonus, f"+{bonus} to hit from {source}")
         except Exception:
             pass
 

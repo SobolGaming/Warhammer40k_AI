@@ -134,6 +134,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_battle_focus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_aspect_shrine"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_aspect_shrine"),
+                ("phase_start", "_on_phase_start_aeldari_enhancements"),
             ],
         )
     )
