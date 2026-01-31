@@ -1307,6 +1307,11 @@ class Unit:
         r"(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)| each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,
     )
+    _RANGED_TARGETING_RESTRICTION_RE = re.compile(
+        r"(?:can only be selected as the target of (?:a )?ranged attacks? if the attacking model is within (?P<range>\d+)"
+        r"|cannot be targeted by ranged attacks unless the attacking model is within (?P<range2>\d+))",
+        re.IGNORECASE,
+    )
     _DAEMONIC_POISONS_RE = re.compile(
         r"in your shooting phase and the fight phase after this model has finished making its attacks "
         r"select one enemy unit hit by one or more of those attacks until the end of the battle that enemy unit "
@@ -15408,18 +15413,10 @@ class Unit:
             if not has_los:
                 return False
 
-        # Check Lone Operative restriction
-        if target_unit.has_lone_operative():
-            # Lone Operative units can only be targeted if the attacking model is within 12 inches
-            if min_distance > 12.0:
-                return False
-
-        # Wreathed in Shadows (Belakor Shadow Form): 18" ranged targeting restriction.
         try:
-            from ..rules.shadow_form import target_unit_has_wreathed_in_shadows
-            if target_unit_has_wreathed_in_shadows(target_unit, game_map=game_map):
-                if min_distance > 18.0:
-                    return False
+            limit, _sources = target_unit.get_ranged_targeting_restriction(game_map=game_map)
+            if limit is not None and min_distance > float(limit):
+                return False
         except Exception:
             pass
 
@@ -24758,3 +24755,147 @@ class Unit:
                     pass
 
         return bool(base_found)
+
+    def ranged_targeting_restriction_specs(self) -> List[dict]:
+        """
+        Return specs for abilities that restrict ranged targeting to within a distance.
+
+        Specs contain:
+            - source: ability name
+            - range: int (max distance for ranged targeting)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "ranged_targeting_restriction_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        def _normalize_segment(text: str) -> str:
+            if not text:
+                return ""
+            norm = root._normalize_rules_text(text)
+            norm = norm.replace("\u2019", "'").replace("\u0192?T", "'")
+            norm = re.sub(r"'s\b", "s", norm, flags=re.IGNORECASE)
+            norm = norm.lower()
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            return re.sub(r"\s+", " ", norm).strip()
+
+        allowed_prefixes = (
+            "this unit",
+            "that unit",
+            "this model s unit",
+            "this models unit",
+            "the bearer s unit",
+            "the bearers unit",
+            "models in this unit",
+            "models in that unit",
+            "models in the bearer s unit",
+            "models in the bearers unit",
+            "while this model is leading a unit",
+            "while the bearer is leading a unit",
+        )
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                segments = []
+                try:
+                    segments = unit._iter_conditioned_text_segments(text_src)
+                except Exception:
+                    segments = [text_src]
+                for segment in segments:
+                    if not segment:
+                        continue
+                    for clause in re.split(r"\band\b", segment, flags=re.IGNORECASE):
+                        clause = str(clause or "").strip()
+                        if not clause:
+                            continue
+                        normalized = _normalize_segment(clause)
+                        if not normalized:
+                            continue
+                        if not any(normalized.startswith(prefix) for prefix in allowed_prefixes):
+                            continue
+                        m = unit._RANGED_TARGETING_RESTRICTION_RE.search(normalized)
+                        if not m:
+                            continue
+                        raw = m.group("range") or m.group("range2") or ""
+                        try:
+                            rng = int(raw or 0)
+                        except Exception:
+                            rng = 0
+                        if rng <= 0:
+                            continue
+                        source = str(name or "Ranged targeting restriction").strip() or "Ranged targeting restriction"
+                        key = (source.lower(), int(rng))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        specs.append({"source": source, "range": int(rng)})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def get_ranged_targeting_restriction(self, *, game_map=None) -> tuple[Optional[float], list[str]]:
+        """
+        Return the strictest ranged targeting distance restriction and sources, if any.
+
+        Returns:
+            (distance, sources) where distance is the max allowed distance (inches) for ranged targeting.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        best_dist: Optional[float] = None
+        sources: list[str] = []
+
+        def _consider(dist: float, src: str) -> None:
+            nonlocal best_dist, sources
+            if dist <= 0:
+                return
+            if best_dist is None or dist < best_dist:
+                best_dist = float(dist)
+                sources = [str(src or "").strip() or "Ranged targeting restriction"]
+            elif best_dist == float(dist):
+                src_name = str(src or "").strip() or "Ranged targeting restriction"
+                if src_name not in sources:
+                    sources.append(src_name)
+
+        try:
+            if root.has_lone_operative():
+                _consider(12.0, "Lone Operative")
+        except Exception:
+            pass
+
+        for spec in root.ranged_targeting_restriction_specs():
+            try:
+                dist = float(spec.get("range", 0) or 0)
+            except Exception:
+                dist = 0.0
+            _consider(dist, spec.get("source", "Ranged targeting restriction"))
+
+        try:
+            from ..rules.shadow_form import target_unit_has_wreathed_in_shadows
+            if target_unit_has_wreathed_in_shadows(root, game_map=game_map):
+                _consider(18.0, "Wreathed in Shadows")
+        except Exception:
+            pass
+
+        return best_dist, sources

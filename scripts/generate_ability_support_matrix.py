@@ -1573,6 +1573,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("GK", "Techmarine"): ("Supported", "Conditional Lone Operative within 3\" of friendly GREY KNIGHTS VEHICLE units."),
         ("GK", "Truesilver Aegis (Aura)"): ("Partial", "Feel No Pain 6+ against mortal wounds applies to bearer only; aura not propagated."),
         ("GK", "Untouchable Purity"): ("Partial", "Feel No Pain 4+ against mortal wounds applied without leading restriction."),
+        ("GK", "Haloed in Soulfire (Psychic)"): (
+            "Supported",
+            "Leading: attached unit can only be targeted by ranged attacks within 18\".",
+        ),
         ("AOI", "Abomination"): ("Supported", "Feel No Pain 2+ against Psychic attacks."),
         ("AOI", "Backroom Deals"): ("Partial", "Infiltrators applied without formation selection/leading restriction."),
         ("AOI", "Frenzon"): ("Supported", "Shoot and charge after Advancing."),
@@ -1629,6 +1633,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Crystalline Targeting"): (
             "Supported",
             "After shooting: select a hit enemy unit; friendly AELDARI attacks vs it improve AP by 1 until end of phase (per-target once per turn).",
+        ),
+        ("AE", "Fog of Dreams (Psychic)"): (
+            "Supported",
+            "Leading: attached unit can only be targeted by ranged attacks within 18\".",
+        ),
+        ("AE", "Polychromatic Camouflage"): (
+            "Supported",
+            "Ranged attacks can only target this unit within 18\".",
         ),
         ("AE", "Whirling Death"): (
             "Supported",
@@ -1699,9 +1711,13 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("DG", "Death Guard Defenders"): ("Supported", "Conditional Lone Operative within 3\" of friendly DEATH GUARD INFANTRY units."),
         ("DG", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("DG", "Blinding Spray"): ("Partial", "Fights First applied without selection/once-per-battle restriction."),
+        ("DG", "Shroud of Disease"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 18\"."),
         ("DRU", "ARCHON'S RETINUE"): ("Partial", "Scouts 7\" applied without leader/attachment restriction (affects unit)."),
         ("DRU", "Blur of Blades"): ("Supported", "Leading: unit gains Fights First."),
         ("DRU", "Blur of Movement"): ("Supported", "Charge-after-Advance eligibility."),
+        ("DRU", "Fog of Dreams (Psychic)"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 18\"."),
+        ("DRU", "Polychromatic Camouflage"): ("Supported", "Ranged attacks can only target this unit within 18\"."),
+        ("DRU", "Shade Weavers"): ("Supported", "Ranged attacks can only target this unit within 18\"."),
         ("GC", "Sudden Assault"): ("Supported", "Leading: unit gains Fights First."),
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
         ("LOV", "Brōkhyr Guild Support"): ("Partial", "Lone Operative applied without 3\" Vehicle/Ironkin proximity or attached-unit restriction."),
@@ -1747,6 +1763,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When no Pink Horrors remain, unit swaps to Blue Horrors datasheet; Blue abilities are suppressed while Pink models remain.",
         ),
+        ("TS", "Illusions of Tzeentch (Psychic)"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 18\"."),
         ("WE", "Furious Onslaught"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
         ("WE", "Reborn in Blood"): ("Supported", "Revive + reserves placement; restricted to the next Movement phase only."),
         ("WE", "Wrathful Presence"): ("Supported", "Battle-round selection sets one of the three Wrathful Presence abilities."),
@@ -1775,6 +1792,11 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("WE", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit in melee aura within 6\" for BLOOD LEGIONS."),
         ("WE", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
         ("WE", "Frenzy"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
+        ("SM", "Shadowmaster"): ("Supported", "Leading: attached unit can only be targeted by ranged attacks within 12\"."),
+        ("SM", "Shrouding (Psychic)"): (
+            "Partial",
+            "Leading: ranged targeting restriction within 12\" supported; Stealth grant not implemented.",
+        ),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
     }

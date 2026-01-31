@@ -711,15 +711,18 @@ class ShootingDeclarationDialog(BaseDialog):
         if hasattr(self.unit, '_can_model_shoot_weapon_at_target') and self.game_map is not None:
             # If validator returns False, try to infer common reasons
             if not self.unit._can_model_shoot_weapon_at_target(shooting_model, weapon_profile, target_unit, self.game_map):
-                # Lone Operative common reason
-                if target_unit.has_lone_operative():
-                    # Measure to nearest target model again for 12" check
-                    # Ensure we have a specific target model reference for distance display
+                # Ranged targeting restriction (e.g., Lone Operative or other range caps).
+                try:
+                    limit, sources = target_unit.get_ranged_targeting_restriction(game_map=self.game_map)
+                except Exception:
+                    limit, sources = (None, [])
+                if limit is not None:
                     tm_ref = target_model if 'target_model' in locals() and target_model is not None else best_pair[1]
                     from ...utility.aura_utils import distance_between_models_bases_3d
-                    dist12 = float(distance_between_models_bases_3d(shooting_model, tm_ref))
-                    if dist12 > 12.0:
-                        return (False, "Lone Operative beyond 12\"")
+                    dist_limit = float(distance_between_models_bases_3d(shooting_model, tm_ref))
+                    if dist_limit > float(limit):
+                        label = str((sources or ["Ranged targeting restriction"])[0] or "Ranged targeting restriction")
+                        return (False, f"{label} beyond {int(limit)}\"")
                 # Engagement restrictions
                 if not self.unit._can_shoot_while_engaged(shooting_model, weapon_profile, target_unit, self.game_map):
                     return (False, "Engaged: weapon cannot fire or target invalid")
