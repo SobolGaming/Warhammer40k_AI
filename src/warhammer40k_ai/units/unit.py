@@ -23951,9 +23951,10 @@ class Unit:
             if needle in txt:
                 target_keywords.append(kw)
 
-        # If there are no keywords, we can't safely implement the intent.
+        # If there are no keywords, allow only if the text explicitly references an enemy.
         if not target_keywords:
-            return []
+            if "enemy" not in txt:
+                return []
 
         target_keyword_mode = "all"
         try:

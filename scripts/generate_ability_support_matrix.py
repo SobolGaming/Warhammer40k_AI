@@ -1648,6 +1648,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy melee weapons targeting this unit gain Hazardous.",
         ),
+        ("AE", "Ethereal Form"): (
+            "Supported",
+            "Each time this model destroys an enemy unit, it regains D3 lost wounds (no choice; capped by missing wounds).",
+        ),
         ("AE", "Scattershield"): (
             "Supported",
             "Bearer has a 4+ invulnerable save and reduces allocated attack damage by 1.",
