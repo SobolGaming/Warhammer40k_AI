@@ -2350,6 +2350,21 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"Unit gains Feel No Pain {m.group(1)}+.")
 
     m = re.search(
+        r"(?:models?\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+"
+        r"(?:have|has)\s+(?:a\s+|the\s+)?([1-6])\+?\s+invulnerable\s+save",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        match_text = m.group(0)
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Invulnerable save {m.group(1)}+.")
+        elif "bearer" in match_text:
+            notes.append(f"Bearer's unit gains a {m.group(1)}+ invulnerable save.")
+        else:
+            notes.append(f"Unit gains a {m.group(1)}+ invulnerable save.")
+
+    m = re.search(
         r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?"
         r"sustained\s+hits\s*(\d+)",
         low,
@@ -2458,6 +2473,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks and mortal wounds?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
+        rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save",
+        rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
         rf"{lead_prefix}add \d+ to the range characteristic of melta weapons equipped by models in {unit_ref}",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",

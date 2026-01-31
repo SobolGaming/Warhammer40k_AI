@@ -146,6 +146,20 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), unit.has_feel_no_pain())
 
+    def test_bearer_unit_invulnerable_save_applies(self):
+        ability = {
+            "name": "Serpent Shield",
+            "description": "Models in the bearer's unit have a 5+ invulnerable save.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Herald", abilities=[ability])
+        unit.models[0].optional_wargear.append("Serpent Shield")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        inv_val, _source = unit.get_model_invulnerable_save_override(unit.models[0])
+        self.assertEqual(inv_val, 5)
+
     def test_leading_unit_fnp_applies(self):
         ability = {
             "name": "Grim Guardian",

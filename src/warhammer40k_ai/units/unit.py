@@ -1032,7 +1032,7 @@ class Unit:
         re.IGNORECASE,
     )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
-        r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
+        r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,
     )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
