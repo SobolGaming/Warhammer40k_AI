@@ -1288,6 +1288,11 @@ class Unit:
         r"an agile (?:manoeuvre|maneuver) roll (?:one|1) d6 on a (?P<threshold>\d)\+? you gain 1 battle focus token",
         re.IGNORECASE,
     )
+    _CREWED_PLATFORM_RE = re.compile(
+        r"when the last (?P<crew>guardian defender|storm guardian) model in this unit is destroyed "
+        r"any remaining (?P<platform>heavy weapon platform|serpent s scale platform|serpents scale platform) models in this unit are also destroyed",
+        re.IGNORECASE,
+    )
     _LEADING_UNMODIFIED_SIX_ROLL_RE = re.compile(
         r"while this model is leading a unit once per phase you can change the result of one hit roll one wound roll or one "
         r"damage roll made for a model in (?:that|this|the bearer s) unit(?: (?P<exclude>excluding support weapon models?))? "
@@ -5604,6 +5609,9 @@ class Unit:
                 )
                 break
 
+        # Crewed Platform: destroy platform models when the last crew model is destroyed.
+        self._maybe_handle_crewed_platform(model, game_map=game_map)
+
         # WORLD EATERS: Total Carnage (Blessings of Khorne) - deferred "fight on death" after attacker finishes attacks.
         # Trigger: a model is destroyed by a MELEE attack, model's unit benefits from Total Carnage, and unit has not fought this phase.
         try:
@@ -7807,6 +7815,92 @@ class Unit:
         except Exception:
             pass
         return False
+
+    def _get_crewed_platform_spec(self) -> Optional[dict]:
+        """Return parsed crewed platform ability info, or None if not present."""
+        cache_key = "crewed_platform_spec"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return cache.get(cache_key)
+
+        spec = None
+        for ab in getattr(self, "possible_abilities", []) or []:
+            name = str(getattr(ab, "name", "") or "")
+            desc = str(getattr(ab, "description", "") or "") or name
+            text_src = self._normalize_rules_text(desc or "")
+            if not text_src:
+                continue
+            normalized = text_src.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._CREWED_PLATFORM_RE.fullmatch(normalized)
+            if not m:
+                continue
+            crew = str(m.group("crew") or "").strip()
+            platform = str(m.group("platform") or "").strip()
+            platform = platform.replace("serpents ", "serpent s ")
+            if crew and platform:
+                spec = {
+                    "crew": crew,
+                    "platform": platform,
+                    "source": str(name or "Crewed Platform").strip() or "Crewed Platform",
+                }
+            break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = spec
+        self._ability_cache = cache
+        return spec
+
+    def _maybe_handle_crewed_platform(self, model: Optional[Model], game_map: Optional['Map'] = None) -> None:
+        """Crewed Platform: destroy platform models when last crew model dies."""
+        if model is None:
+            return
+        spec = self._get_crewed_platform_spec()
+        if not spec:
+            return
+
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if sr.get("crewed_platform_resolved", False):
+            return
+
+        crew_key = str(spec.get("crew", "") or "").strip()
+        platform_key = str(spec.get("platform", "") or "").strip()
+        if not crew_key or not platform_key:
+            return
+
+        def _is_role(m: Model, role: str) -> bool:
+            return self._normalize_model_name(getattr(m, "name", "")) == role
+
+        models = list(getattr(self, "models", []) or [])
+        crew_present = any(_is_role(m, crew_key) for m in models)
+        if not crew_present:
+            return
+
+        alive_crew = [
+            m for m in models
+            if _is_role(m, crew_key) and getattr(m, "is_alive", False) and not getattr(m, "_pending_placement", False)
+        ]
+        if alive_crew:
+            return
+
+        platform_models = [
+            m for m in models
+            if _is_role(m, platform_key) and getattr(m, "is_alive", False) and not getattr(m, "_pending_placement", False)
+        ]
+        if not platform_models:
+            return
+
+        sr["crewed_platform_resolved"] = True
+        self.special_rules = sr
+
+        for platform_model in list(platform_models):
+            platform_model.wounds = 0
+            platform_model.die(game_map=game_map)
 
     def _support_weapon_has_other_models(self) -> bool:
         """Return True if this Support Weapon model's unit contains other models."""

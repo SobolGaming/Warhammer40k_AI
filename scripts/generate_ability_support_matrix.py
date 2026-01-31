@@ -1927,6 +1927,7 @@ def _classify_ability_base(
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
+    crewed_platform_support = _crewed_platform_support(description)
     melee_fight_on_death_support = _melee_fight_on_death_after_attacks_support(description)
     conditional_lone_operative_support = _conditional_lone_operative_support(description)
     charge_target_strength_bonus_support = _charge_target_strength_bonus_support(description)
@@ -2102,6 +2103,8 @@ def _classify_ability_base(
         return melee_fight_on_death_support
     if return_on_death_support:
         return return_on_death_support
+    if crewed_platform_support:
+        return crewed_platform_support
     if charge_target_strength_bonus_support:
         return charge_target_strength_bonus_support
     if daemonic_allegiance_support:
@@ -4191,6 +4194,26 @@ def _post_shoot_leadership_debuff_support(description: str) -> Optional[Tuple[st
         "Supported",
         "After shooting, pick a hit enemy unit; until your next Shooting phase, it suffers -1 to Battle-shock/Leadership tests.",
     )
+
+
+def _crewed_platform_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"when the last (guardian defender|storm guardian) model in this unit is destroyed "
+        r"any remaining (heavy weapon platform|serpent s scale platform|serpents scale platform) models in this unit are also destroyed"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    crew = m.group(1)
+    platform = m.group(2)
+    crew_label = "Guardian Defender" if crew == "guardian defender" else "Storm Guardian"
+    platform_label = "Heavy Weapon Platform" if "heavy weapon" in platform else "Serpent's Scale Platform"
+    return ("Supported", f"When the last {crew_label} model is destroyed, remaining {platform_label} models in the unit are destroyed.")
 
 
 def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
