@@ -2685,6 +2685,168 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _unit_on_battlefield_for_reposition(self, unit) -> bool:
+        if unit is None:
+            return False
+        is_alive = getattr(unit, "is_alive", None)
+        if callable(is_alive) and not is_alive():
+            return False
+        if not getattr(unit, "deployed", True):
+            return False
+        if str(getattr(unit, "reserve_status", "deployed") or "deployed") != "deployed":
+            return False
+        if bool(getattr(unit, "embarked_in", None)) or bool(getattr(unit, "is_embarked", False)):
+            return False
+        is_in_reserves = getattr(unit, "is_in_reserves", None)
+        if callable(is_in_reserves) and is_in_reserves():
+            return False
+        return True
+
+    def _opponent_turn_destroyed_reposition_used(self, unit, *, turn_owner_id: str | None) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        used_turn = sr.get("opponent_turn_destroyed_reposition_turn")
+        if used_turn is None:
+            return False
+        try:
+            if int(used_turn) != int(turn):
+                return False
+        except Exception:
+            return False
+        owner = str(sr.get("opponent_turn_destroyed_reposition_turn_owner", "") or "")
+        if turn_owner_id:
+            return owner == str(turn_owner_id)
+        return bool(owner)
+
+    def _mark_opponent_turn_destroyed_reposition_used(self, unit, *, turn_owner_id: str | None) -> None:
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            sr["opponent_turn_destroyed_reposition_turn"] = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            sr["opponent_turn_destroyed_reposition_turn"] = 0
+        if turn_owner_id:
+            sr["opponent_turn_destroyed_reposition_turn_owner"] = str(turn_owner_id)
+        unit.special_rules = sr
+
+    def _find_closest_valid_reposition_position(
+        self,
+        unit,
+        anchor_pos,
+        *,
+        game_map: Map | None = None,
+        radius_step: float = 0.5,
+        angle_step: int = 15,
+    ) -> tuple | None:
+        if unit is None or anchor_pos is None:
+            return None
+        if game_map is None:
+            game_map = getattr(self, "map", None)
+        if game_map is None:
+            return None
+        try:
+            ax = float(anchor_pos[0])
+            ay = float(anchor_pos[1])
+            az = float(anchor_pos[2]) if len(anchor_pos) > 2 else 0.0
+        except (TypeError, ValueError, IndexError):
+            return None
+
+        try:
+            models = [m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
+        except Exception:
+            models = []
+        if len(models) != 1:
+            return None
+        model = models[0]
+        facing = float(getattr(getattr(model, "model_base", None), "facing", 0.0) or 0.0)
+
+        collision_fn = getattr(game_map, "check_collision_with_obstacles", None)
+        if not callable(collision_fn):
+            collision_fn = getattr(game_map, "check_collision_with_terrain", None)
+
+        from ..battlefield.map import validate_ruins_placement
+        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
+
+        def _position_valid(x: float, y: float, z: float) -> bool:
+            if hasattr(game_map, "is_within_boundary") and not game_map.is_within_boundary(model, destination=(x, y)):
+                return False
+            if callable(collision_fn) and collision_fn(model, destination=(x, y)):
+                return False
+            ruins_validation = validate_ruins_placement(unit, (x, y, z), game_map.terrain_features, moving_model=model)
+            if not ruins_validation.get("valid", False):
+                return False
+            if hasattr(game_map, "check_collision_with_other_friendly_units"):
+                if game_map.check_collision_with_other_friendly_units(model, destination=(x, y)):
+                    return False
+            if hasattr(game_map, "check_collision_with_other_enemy_units"):
+                if game_map.check_collision_with_other_enemy_units(model, destination=(x, y)):
+                    return False
+            test_base = model.model_base
+            if hasattr(unit, "_create_potential_base"):
+                test_base = unit._create_potential_base(x, y, z, facing, model=model)
+            for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(unit) or []):
+                if hasattr(enemy, "is_alive") and callable(enemy.is_alive) and not enemy.is_alive():
+                    continue
+                if not getattr(enemy, "deployed", True):
+                    continue
+                try:
+                    enemy_models = list(enemy.get_models_for_collision() or [])
+                except Exception:
+                    enemy_models = list(getattr(enemy, "models", []) or [])
+                for em in enemy_models:
+                    if not getattr(em, "is_alive", True):
+                        continue
+                    horiz = float(horizontal_distance_between_bases_2d(test_base, em.model_base))
+                    vert = float(vertical_distance_between_bases(test_base, em.model_base))
+                    if horiz <= ENGAGEMENT_RANGE_HORIZONTAL and vert <= ENGAGEMENT_RANGE_VERTICAL:
+                        return False
+            return True
+
+        max_radius = float(math.hypot(float(game_map.width), float(game_map.height)))
+        if max_radius <= 0:
+            return None
+        step = max(0.1, float(radius_step))
+        deg_step = max(5, int(angle_step))
+
+        best = None
+        best_dist = None
+        radius = 0.0
+        while radius <= max_radius + 1e-6:
+            if radius <= 1e-6:
+                angles = (0,)
+            else:
+                angles = range(0, 360, deg_step)
+            for deg in angles:
+                ang = math.radians(float(deg))
+                x = ax + math.cos(ang) * radius
+                y = ay + math.sin(ang) * radius
+                height_fn = getattr(game_map, "get_height_at_point", None)
+                if callable(height_fn):
+                    height = height_fn(x, y)
+                    z = float(height) if height is not None else float(az)
+                else:
+                    z = float(az)
+                if not _position_valid(x, y, z):
+                    continue
+                dist = float(get_dist(x - ax, y - ay, z - az))
+                if best_dist is None or dist < best_dist - 1e-6:
+                    best = (float(x), float(y), float(z), float(facing))
+                    best_dist = dist
+            if best_dist is not None and radius > best_dist + 1e-6:
+                break
+            radius += step
+        return best
+
     def _queue_movement_phase_normal_move_weapon_attacks_bonus(
         self,
         *,
@@ -3590,6 +3752,7 @@ class Game:
             "power_from_pain_empower",
             "enhancement_fight_first",
             "opponent_turn_strategic_reserves",
+            "opponent_turn_destroyed_reposition",
             "seductive_gambit",
             "sensational_performance",
             "cult_ambush",
@@ -3848,6 +4011,70 @@ class Game:
                         player,
                         f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.",
                     )
+            return
+
+        if ability_key == "opponent_turn_destroyed_reposition":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            if not self._unit_on_battlefield_for_reposition(unit):
+                return
+            turn_owner_id = str(
+                ctx.get("turn_owner_id")
+                or getattr(getattr(self, "get_current_player", lambda: None)(), "id", "")
+                or ""
+            )
+            if self._opponent_turn_destroyed_reposition_used(unit, turn_owner_id=turn_owner_id):
+                return
+            placement = ctx.get("placement_position")
+            if isinstance(placement, (list, tuple)) and len(placement) >= 4:
+                placement_pos = placement
+            else:
+                anchor = ctx.get("destroyed_position")
+                placement_pos = self._find_closest_valid_reposition_position(
+                    unit,
+                    anchor,
+                    game_map=getattr(self, "map", None),
+                )
+            if not placement_pos:
+                return
+            try:
+                models = [m for m in list(getattr(unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            except Exception:
+                models = []
+            if len(models) != 1:
+                return
+            model = models[0]
+            model.set_location(
+                float(placement_pos[0]),
+                float(placement_pos[1]),
+                float(placement_pos[2]),
+                float(placement_pos[3]),
+            )
+            unit.position = (float(placement_pos[0]), float(placement_pos[1]), float(placement_pos[2]))
+            if getattr(self, "map", None) is not None and hasattr(self.map, "units"):
+                if unit not in self.map.units:
+                    self.map.units.append(unit)
+            self._mark_opponent_turn_destroyed_reposition_used(unit, turn_owner_id=turn_owner_id)
+            try:
+                if hasattr(self, "event_system"):
+                    self.event_system.publish("unit_set_up", unit=unit)
+            except Exception:
+                pass
+            try:
+                from ..utility.event_bus import append_action
+                player = getattr(unit.get_parent_army(), "player", None)
+                ability_name = str(ctx.get("ability_name", "") or "Reposition")
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} repositioned after a friendly unit was destroyed.",
+                    )
+            except Exception:
+                pass
             return
 
         if ability_key == "seductive_gambit":
@@ -8563,6 +8790,92 @@ class Game:
             payload={"unit_id": unit_id},
             instance_key=str(unit_id or ""),
         )
+
+    def _on_unit_destroyed_friendly_unit_destroyed_reposition(self, unit=None, last_model=None, **_kwargs) -> None:
+        if unit is None or last_model is None:
+            return
+        army = unit.get_parent_army()
+        if army is None:
+            return
+        owner = getattr(army, "player", None)
+        if owner is None:
+            return
+        current_player = self.get_current_player()
+        if current_player is owner:
+            return
+        current_player_id = getattr(current_player, "id", None)
+
+        pos = None
+        if hasattr(last_model, "get_location"):
+            pos = last_model.get_location()
+        if pos is None:
+            try:
+                pos = unit.position
+            except Exception:
+                pos = None
+        if pos is None:
+            return
+
+        game_map = getattr(self, "map", None)
+        for candidate in list(getattr(army, "units", []) or []):
+            if candidate is None:
+                continue
+            try:
+                root = candidate.get_attached_unit_root()
+            except Exception:
+                root = candidate
+            if root is None:
+                continue
+            if root is unit:
+                continue
+            ability = root.get_opponent_turn_friendly_unit_destroyed_reposition_ability()
+            if not ability:
+                continue
+            if not self._unit_on_battlefield_for_reposition(root):
+                continue
+            if self._opponent_turn_destroyed_reposition_used(root, turn_owner_id=current_player_id):
+                continue
+            keyword = str(ability.get("keyword") or "").strip()
+            if keyword:
+                try:
+                    if not root._unit_matches_keyword_phrase(unit, keyword, use_effective=False):
+                        continue
+                except Exception:
+                    continue
+            placement = self._find_closest_valid_reposition_position(root, pos, game_map=game_map)
+            if placement is None:
+                continue
+            unit_id = maybe_entity_id(root)
+            destroyed_unit_id = maybe_entity_id(unit)
+            ability_name = str(ability.get("name") or "Reposition").strip()
+            ctx = {
+                "ability_name": ability_name,
+                "phase": "Opponent's turn",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "destroyed_unit": getattr(unit, "name", "") or "",
+                "destroyed_unit_id": destroyed_unit_id,
+                "destroyed_position": list(pos) if isinstance(pos, (list, tuple)) else None,
+                "placement_position": list(placement),
+                "turn_owner_id": str(current_player_id or ""),
+                "turn": int(getattr(self, "turn", 0) or 0),
+            }
+            message = (
+                f"{getattr(root, 'name', 'Model')} can reposition after a friendly unit was destroyed.\n\n"
+                "Use this ability?"
+            )
+            self._queue_optional_ability_confirmation(
+                player=owner,
+                ability_key="opponent_turn_destroyed_reposition",
+                ability_name=ability_name or "Reposition",
+                message=message,
+                context=ctx,
+                payload={
+                    "unit_id": unit_id,
+                    "destroyed_unit_id": destroyed_unit_id,
+                },
+                instance_key=f"{unit_id}:{destroyed_unit_id}:{ctx['turn']}:{ctx['turn_owner_id']}",
+            )
 
     def _on_unit_move_ended_cult_ambush(self, unit=None, **_kwargs) -> None:
         if unit is None:

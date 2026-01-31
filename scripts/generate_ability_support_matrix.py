@@ -1978,6 +1978,7 @@ def _classify_ability_base(
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
+    opponent_turn_destroyed_reposition_support = _opponent_turn_destroyed_reposition_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
@@ -2141,6 +2142,8 @@ def _classify_ability_base(
         return charge_phase_bodyguard_loss_support
     if opponent_turn_reserves_support:
         return opponent_turn_reserves_support
+    if opponent_turn_destroyed_reposition_support:
+        return opponent_turn_destroyed_reposition_support
     if enemy_fall_back_desperate_escape_support:
         return enemy_fall_back_desperate_escape_support
     if command_phase_bonus_cp_support:
@@ -4238,6 +4241,27 @@ def _opponent_turn_strategic_reserves_support(description: str) -> Optional[Tupl
     return (
         "Supported",
         "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves.",
+    )
+
+
+def _opponent_turn_destroyed_reposition_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once in each of your opponents turns if this model is on the battlefield when (?:another )?friendly (?P<keyword>[a-z0-9 ]+) unit is destroyed "
+        r"just after removing the last model in that unit you can remove this model from the battlefield and set it up as close as possible "
+        r"to where that destroyed model was destroyed and not within engagement range of (?:one or more|any) enemy units?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = (m.group("keyword") or "friendly").strip().upper()
+    return (
+        "Supported",
+        f"Opponent's turn: after another friendly {keyword} unit is destroyed, this model can reposition as close as possible outside Engagement Range (once per opponent turn).",
     )
 
 

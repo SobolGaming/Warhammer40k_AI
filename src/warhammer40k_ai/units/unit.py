@@ -1186,6 +1186,13 @@ class Unit:
         r"you can remove it from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
     )
+    _OPPONENT_TURN_FRIENDLY_UNIT_DESTROYED_REPOSITION_RE = re.compile(
+        r"once in each of your opponents turns if this model is on the battlefield when (?:another )?friendly "
+        r"(?P<keyword>[a-z0-9 ]+) unit is destroyed just after removing the last model in that unit "
+        r"you can remove this model from the battlefield and set it up as close as possible to where that destroyed model "
+        r"was destroyed and not within engagement range of (?:one or more|any) enemy units?",
+        re.IGNORECASE,
+    )
     _TRANSPORT_REACTIVE_DISEMBARK_RE = re.compile(
         r"in your opponents movement phase each time an enemy unit is set up(?: on the battlefield)? or ends (?:a )?normal "
         r"advance or fall back move within (\d+) of this (?:model|unit) any units embarked within it can disembark",
@@ -1963,6 +1970,36 @@ class Unit:
                 return {
                     "name": name or "Strategic Reserves",
                     "description": desc or "",
+                }
+        return None
+
+    def _scan_opponent_turn_friendly_unit_destroyed_reposition_ability(self):
+        pattern = self._OPPONENT_TURN_FRIENDLY_UNIT_DESTROYED_REPOSITION_RE
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            match = pattern.fullmatch(norm)
+            if match:
+                keyword = str(match.group("keyword") or "").strip()
+                return {
+                    "name": name or "Inevitable Death",
+                    "description": desc or "",
+                    "keyword": keyword,
                 }
         return None
 
@@ -18563,6 +18600,36 @@ class Unit:
         for member in members:
             try:
                 ability = member._scan_end_of_opponent_turn_strategic_reserves_ability()
+            except Exception:
+                ability = None
+            if ability:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = ability
+        return ability
+
+    def get_opponent_turn_friendly_unit_destroyed_reposition_ability(self):
+        """
+        Return ability info dict for opponent-turn reposition after a friendly unit is destroyed.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "opponent_turn_friendly_unit_destroyed_reposition_ability"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        ability = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            try:
+                ability = member._scan_opponent_turn_friendly_unit_destroyed_reposition_ability()
             except Exception:
                 ability = None
             if ability:
