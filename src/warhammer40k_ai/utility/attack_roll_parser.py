@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 class AttackRollCondition:
     attacker_below_starting_strength: bool = False
     attacker_below_half_strength: bool = False
+    attacker_charged_this_turn: bool = False
     target_below_starting_strength: bool = False
     target_battleshocked: bool = False
     target_within_objective: bool = False
@@ -31,6 +32,9 @@ class AttackRollCondition:
             ),
             attacker_below_half_strength=bool(
                 self.attacker_below_half_strength or other.attacker_below_half_strength
+            ),
+            attacker_charged_this_turn=bool(
+                self.attacker_charged_this_turn or other.attacker_charged_this_turn
             ),
             target_below_starting_strength=bool(
                 self.target_below_starting_strength or other.target_below_starting_strength
@@ -177,6 +181,9 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(attacker_below_starting_strength=True)
     if re.fullmatch(r"(?:this model|this unit|it) is (?:also )?below half[- ]strength", t):
         return AttackRollCondition(attacker_below_half_strength=True)
+
+    if re.fullmatch(r"(?:this model|this unit|it|that unit) made a charge move this turn", t):
+        return AttackRollCondition(attacker_charged_this_turn=True)
 
     if re.fullmatch(r"that unit is (?:also )?below (?:its )?starting strength", t):
         return AttackRollCondition(attacker_below_starting_strength=True)

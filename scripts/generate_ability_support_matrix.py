@@ -2281,6 +2281,13 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     text = re.sub(r"\s+", " ", text).strip()
     if not text:
         return None
+    # Let the specialized attached-character FNP handler own this exact pattern.
+    if re.fullmatch(
+        r"while this model is leading a unit other character models attached to "
+        r"(?:that unit|the bearers unit|this unit) have (?:the )?feel no pain [1-6](?: ability)?",
+        _norm_rules_text(text),
+    ):
+        return None
     low = text.lower()
     notes: List[str] = []
     leading_prefix = ""

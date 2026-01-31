@@ -10461,6 +10461,12 @@ class Unit:
                     return False
             except Exception:
                 return False
+        if condition.attacker_charged_this_turn:
+            try:
+                if not bool(getattr(unit.round_state, "charged_this_round", False)):
+                    return False
+            except Exception:
+                return False
         if condition.target_battleshocked:
             try:
                 if not (target is not None and target.is_battle_shocked()):
@@ -10645,6 +10651,8 @@ class Unit:
                 parts.append("while below Starting Strength")
             if cond.attacker_below_half_strength:
                 parts.append("while below Half-strength")
+            if cond.attacker_charged_this_turn:
+                parts.append("after making a Charge move this turn")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -10771,6 +10779,8 @@ class Unit:
                 parts.append("while below Starting Strength")
             if cond.attacker_below_half_strength:
                 parts.append("while below Half-strength")
+            if cond.attacker_charged_this_turn:
+                parts.append("after making a Charge move this turn")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -10884,6 +10894,8 @@ class Unit:
                 parts.append("while below Starting Strength")
             if cond.attacker_below_half_strength:
                 parts.append("while below Half-strength")
+            if cond.attacker_charged_this_turn:
+                parts.append("after making a Charge move this turn")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -21900,6 +21912,8 @@ class Unit:
                 parts.append("while below Starting Strength")
             if cond.attacker_below_half_strength:
                 parts.append("while below Half-strength")
+            if cond.attacker_charged_this_turn:
+                parts.append("after making a Charge move this turn")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -22170,6 +22184,8 @@ class Unit:
                 parts.append("while below Starting Strength")
             if cond.attacker_below_half_strength:
                 parts.append("while below Half-strength")
+            if cond.attacker_charged_this_turn:
+                parts.append("after making a Charge move this turn")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
