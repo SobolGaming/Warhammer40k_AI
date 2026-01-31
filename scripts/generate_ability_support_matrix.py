@@ -1618,6 +1618,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "When targeted, if the unit contains other models, the Support Weapon model uses Toughness 3 for that attack.",
         ),
+        ("AE", "Scattershield"): (
+            "Supported",
+            "Bearer has a 4+ invulnerable save and reduces allocated attack damage by 1.",
+        ),
         ("AE", "Whirling Death"): (
             "Supported",
             "Leading: Advance without roll; +6\" Move; ignore vertical distance during Advance moves.",

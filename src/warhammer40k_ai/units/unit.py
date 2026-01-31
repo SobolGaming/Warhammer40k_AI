@@ -1441,6 +1441,29 @@ class Unit:
         r"^the bearer has a (\d)\+ invulnerable save\.?$",
         re.IGNORECASE,
     )
+    _BEARER_INVULNERABLE_SAVE_WITH_ALLOCATED_DAMAGE_RE = re.compile(
+        r"^the bearer has a (\d)\+ invulnerable save\s+and\s+each\s+time\s+an\s+attack\s+"
+        r"is\s+allocated\s+to\s+the\s+bearer,\s*subtract\s+\d+\s+from\s+the\s+damage\s+"
+        r"characteristic\s+of\s+that\s+attack\.?$",
+        re.IGNORECASE,
+    )
+    _BEARER_ALLOCATED_DAMAGE_REDUCTION_RE = re.compile(
+        r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+"
+        r"to\s+the\s+bearer,\s*subtract\s+(?P<val>\d+)\s+from\s+the\s+damage\s+"
+        r"characteristic\s+of\s+that\s+attack",
+        re.IGNORECASE,
+    )
+    _BEARER_ALLOCATED_DAMAGE_HALVING_RE = re.compile(
+        r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+"
+        r"to\s+the\s+bearer,\s*(?:halve|half)\s+the\s+damage\s+characteristic\s+"
+        r"of\s+that\s+attack",
+        re.IGNORECASE,
+    )
+    _BEARER_ALLOCATED_DAMAGE_HALVING_ALT_RE = re.compile(
+        r"each\s+time\s+(?:an|a)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+is\s+allocated\s+"
+        r"to\s+the\s+bearer.*?damage\s+characteristic\s+of\s+that\s+attack\s+is\s+halved",
+        re.IGNORECASE,
+    )
     _BEARER_SAVE_CHARACTERISTIC_RE = re.compile(
         r"^the bearer has a save characteristic of (\d)\+\.?$",
         re.IGNORECASE,
@@ -9618,11 +9641,55 @@ class Unit:
         normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
         m = self._BEARER_INVULNERABLE_SAVE_RE.match(normalized)
         if not m:
+            m = self._BEARER_INVULNERABLE_SAVE_WITH_ALLOCATED_DAMAGE_RE.match(normalized)
+        if not m:
             return None
         try:
             return int(m.group(1))
         except Exception:
             return None
+
+    def _parse_bearer_allocated_damage_reductions(self, text: str) -> list[dict]:
+        if not text:
+            return []
+        normalized = self._normalize_rules_text(text)
+        if not normalized:
+            return []
+        normalized = normalized.replace("\u2019", "'")
+        normalized = re.sub(r"\s+([.])", r"\1", normalized).strip()
+        tl = normalized.lower()
+        entries: list[dict] = []
+
+        m = self._BEARER_ALLOCATED_DAMAGE_REDUCTION_RE.search(tl)
+        if m:
+            try:
+                val = int(m.group("val"))
+            except Exception:
+                val = 0
+            if val:
+                atype = (m.group("atype") or "any").strip().lower()
+                entries.append(
+                    {
+                        "value": int(val),
+                        "attack_type": atype,
+                        "op": "sub",
+                    }
+                )
+
+        m = self._BEARER_ALLOCATED_DAMAGE_HALVING_RE.search(tl)
+        if not m:
+            m = self._BEARER_ALLOCATED_DAMAGE_HALVING_ALT_RE.search(tl)
+        if m:
+            atype = (m.group("atype") or "any").strip().lower()
+            entries.append(
+                {
+                    "value": 2,
+                    "attack_type": atype,
+                    "op": "div",
+                }
+            )
+
+        return entries
 
     def _parse_bearer_save_characteristic(self, text: str) -> Optional[int]:
         if not text:
@@ -9796,6 +9863,65 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
+
+    def get_model_allocated_damage_reduction_entries(self, model: Optional['Model'] = None) -> list[dict]:
+        """
+        Return allocated-damage modifier entries that apply only to the specified model (bearer-only rules).
+        """
+        if model is None:
+            return []
+        cache_key = f"model_allocated_damage_reductions:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        entries: list[dict] = []
+
+        def _add_entries(found: list[dict], source: str) -> None:
+            for entry in found:
+                if not isinstance(entry, dict):
+                    continue
+                merged = dict(entry)
+                if source and not merged.get("source"):
+                    merged["source"] = str(source)
+                entries.append(merged)
+
+        # Model-level abilities (if any)
+        try:
+            for ab in getattr(model, "abilities", {}).values():
+                try:
+                    desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+                    name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "Model ability")
+                except Exception:
+                    desc = ""
+                    name = "Model ability"
+                found = self._parse_bearer_allocated_damage_reductions(desc)
+                if found:
+                    _add_entries(found, str(name or "Model ability"))
+        except Exception:
+            pass
+
+        # Wargear abilities tied to equipped items.
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = getattr(ab, "name", "") or ""
+                if not name:
+                    continue
+                if not self._model_has_wargear_named(model, name):
+                    continue
+                desc = getattr(ab, "description", "") or ""
+                found = self._parse_bearer_allocated_damage_reductions(desc)
+                if found:
+                    _add_entries(found, str(name))
+            except Exception:
+                continue
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = entries
+        return entries
 
     def _iter_active_possible_abilities(self):
         """Yield unit-level abilities that are currently active for this unit."""

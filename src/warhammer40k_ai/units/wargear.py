@@ -7877,12 +7877,16 @@ class WargearProfile:
                 damage_mods.append(Modifier(ModifierOp.SUB, int(red), source="enhancement:reduce_damage_taken"))
         except Exception:
             pass
-        # Unit ability: reduce damage allocated to this model.
+        # Unit/model abilities: reduce damage allocated to this model.
         try:
             t_unit = getattr(target_model, "parent_unit", None)
             sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
-            if isinstance(sr, dict):
-                entries = list(sr.get("allocated_damage_reductions", []) or [])
+            entries = list(sr.get("allocated_damage_reductions", []) or []) if isinstance(sr, dict) else []
+            if t_unit is not None and hasattr(t_unit, "get_model_allocated_damage_reduction_entries"):
+                model_entries = list(t_unit.get_model_allocated_damage_reduction_entries(target_model) or [])
+                if model_entries:
+                    entries.extend(model_entries)
+            if entries:
                 attack_type = "melee" if (self.parent_wargear and self.parent_wargear.is_melee()) else "ranged"
                 for entry in entries:
                     if not isinstance(entry, dict):
