@@ -160,6 +160,26 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         inv_val, _source = unit.get_model_invulnerable_save_override(unit.models[0])
         self.assertEqual(inv_val, 5)
 
+    def test_leading_unit_agile_maneuver_reroll_applies(self):
+        ability = {
+            "name": "Superlative Strategist",
+            "description": (
+                "While this model is leading a unit, you can re-roll Advance rolls made for that unit, and you can "
+                "re-roll any rolls made for that unit while it is performing an Agile Manoeuvre."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertTrue(bodyguard.special_rules.get("bearer_unit_agile_maneuver_reroll"))
+
     def test_leading_unit_fnp_applies(self):
         ability = {
             "name": "Grim Guardian",

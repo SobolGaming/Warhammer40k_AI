@@ -495,7 +495,7 @@ class BattleFocusManager:
             return True
         return (uid in self._units_used_this_phase) and not used_before
 
-    def apply_reactive_maneuver(self, unit, maneuver: str, game) -> bool:
+    def apply_reactive_maneuver(self, unit, maneuver: str, game, *, moving_unit=None, attacker_unit=None) -> bool:
         if unit is None or game is None:
             return False
         if not self._army_has_battle_focus():
@@ -506,7 +506,7 @@ class BattleFocusManager:
         before = int(self.tokens or 0)
         uid = self._unit_id(unit)
         used_before = uid in self._units_used_this_phase
-        self._apply_reactive_move(unit, maneuver, game)
+        self._apply_reactive_move(unit, maneuver, game, moving_unit=moving_unit, attacker_unit=attacker_unit)
         if int(self.tokens or 0) < before:
             return True
         return (uid in self._units_used_this_phase) and not used_before
@@ -799,7 +799,7 @@ class BattleFocusManager:
         unit.special_rules = sr
         self._mark_used(unit, maneuver)
 
-    def _apply_reactive_move(self, unit, maneuver: str, game) -> None:
+    def _apply_reactive_move(self, unit, maneuver: str, game, *, moving_unit=None, attacker_unit=None) -> None:
         if unit is None or game is None:
             return
         if not self._can_use_unit_this_phase(unit):
@@ -810,24 +810,78 @@ class BattleFocusManager:
             return
         self._maybe_refund_token_on_agile_maneuver(unit, game, maneuver)
 
-        try:
-            from ..utility.dice import get_roll
-            roll = int(get_roll("D6"))
-        except Exception:
-            roll = 1
-        if self.is_warhost_detachment():
-            roll += 1
-        max_dist = int(roll) + 1
-        phase = getattr(game, "phase", None)
-        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
-
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
-        sr["battle_focus_reactive_move_max"] = max_dist
-        sr["battle_focus_reactive_move_source"] = str(maneuver)
-        sr["battle_focus_reactive_move_expires_phase"] = phase_name
-        unit.special_rules = sr
+        phase = getattr(game, "phase", None)
+        phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        warhost_bonus = bool(self.is_warhost_detachment())
+
+        has_roll_manager = bool(getattr(game, "roll_manager", None) is not None)
+        if has_roll_manager and bool(getattr(game, "is_authoritative", True)):
+            try:
+                from ..utility.entity_ids import get_entity_id
+            except Exception:
+                def get_entity_id(_obj):
+                    return None
+            unit_id = get_entity_id(unit)
+            reroll_rules = []
+            try:
+                if hasattr(unit, "can_reroll_agile_maneuver_rolls") and unit.can_reroll_agile_maneuver_rolls():
+                    reroll_rules.append(
+                        {
+                            "action_id": "reroll_agile_maneuver",
+                            "label": "Re-roll Agile Manoeuvre roll",
+                            "mode": "all",
+                            "source": "rule",
+                        }
+                    )
+            except Exception:
+                pass
+            roll_spec = {
+                "dice_count": 1,
+                "faces": 6,
+                "reason": f"Battle Focus {str(maneuver).replace('_', ' ').title()} roll for {getattr(unit, 'name', 'Unit')}",
+                "roll_type": "battle_focus_maneuver",
+                "unit_id": unit_id,
+                "handler_key": "battle_focus_reactive_move",
+                "handler_payload": {
+                    "maneuver": str(maneuver),
+                    "phase_name": phase_name,
+                    "warhost_bonus": warhost_bonus,
+                    "moving_unit_id": get_entity_id(moving_unit) if moving_unit is not None else None,
+                    "attacker_unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
+                },
+                "reroll_rules": reroll_rules,
+            }
+            try:
+                player = getattr(self.army, "player", None)
+            except Exception:
+                player = None
+            try:
+                if hasattr(game, "request_dice_roll"):
+                    sr["battle_focus_reactive_move_pending"] = True
+                    unit.special_rules = sr
+                    game.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+                    self._mark_used(unit, maneuver)
+                    return
+            except Exception:
+                # Fall back to immediate roll if dice request fails.
+                sr.pop("battle_focus_reactive_move_pending", None)
+                unit.special_rules = sr
+        else:
+            try:
+                from ..utility.dice import get_roll
+                roll = int(get_roll("D6"))
+            except Exception:
+                roll = 1
+            if warhost_bonus:
+                roll += 1
+            max_dist = int(roll) + 1
+            sr["battle_focus_reactive_move_max"] = max_dist
+            sr["battle_focus_reactive_move_source"] = str(maneuver)
+            sr["battle_focus_reactive_move_expires_phase"] = phase_name
+            unit.special_rules = sr
 
         self._mark_used(unit, maneuver)
 
@@ -868,6 +922,7 @@ class BattleFocusManager:
                         "battle_focus_reactive_move_max",
                         "battle_focus_reactive_move_source",
                         "battle_focus_reactive_move_expires_phase",
+                        "battle_focus_reactive_move_pending",
                     ):
                         sr.pop(k, None)
             except Exception:

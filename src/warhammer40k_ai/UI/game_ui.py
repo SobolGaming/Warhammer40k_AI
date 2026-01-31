@@ -10676,8 +10676,8 @@ class GameView:
             if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                 self._battle_focus_flow_active = False
                 return
-            mgr.apply_reactive_maneuver(value, mgr.MANEUVER_OPPORTUNITY, self.game)
-            self._open_battle_focus_reactive_move(value)
+            mgr.apply_reactive_maneuver(value, mgr.MANEUVER_OPPORTUNITY, self.game, moving_unit=moving_unit)
+            self._battle_focus_flow_active = False
 
         def _on_cancel():
             skip_id = option_id_for_action(req, "skip")
@@ -10767,8 +10767,8 @@ class GameView:
             if apply_result is None or not getattr(apply_result, "ok", False) or value is None:
                 self._battle_focus_flow_active = False
                 return
-            mgr.apply_reactive_maneuver(value, mgr.MANEUVER_FADE_BACK, self.game)
-            self._open_battle_focus_reactive_move(value)
+            mgr.apply_reactive_maneuver(value, mgr.MANEUVER_FADE_BACK, self.game, attacker_unit=attacker_unit)
+            self._battle_focus_flow_active = False
 
         def _on_cancel():
             skip_id = option_id_for_action(req, "skip")

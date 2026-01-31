@@ -3073,16 +3073,22 @@ class Game:
             if mgr is None:
                 return
             maneuver = str(ctx.get("maneuver", "") or "").strip().lower()
+            moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
+            attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+            moving_unit = self._resolve_unit_by_id(moving_unit_id) if moving_unit_id else None
+            attacker_unit = self._resolve_unit_by_id(attacker_unit_id) if attacker_unit_id else None
             if maneuver == "opportunity":
-                applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_OPPORTUNITY, self))
+                applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_OPPORTUNITY, self, moving_unit=moving_unit))
             elif maneuver == "fade_back":
-                applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, self))
+                applied = bool(mgr.apply_reactive_maneuver(unit, mgr.MANEUVER_FADE_BACK, self, attacker_unit=attacker_unit))
             else:
                 return
             if not applied:
                 return
             sr = getattr(unit, "special_rules", None)
             if not isinstance(sr, dict):
+                return
+            if sr.get("battle_focus_reactive_move_pending"):
                 return
             try:
                 max_distance = int(sr.get("battle_focus_reactive_move_max", 0) or 0)
@@ -3091,10 +3097,6 @@ class Game:
             if max_distance <= 0:
                 return
             source = str(sr.get("battle_focus_reactive_move_source", "") or "Battle Focus").strip() or "Battle Focus"
-            moving_unit_id = str(ctx.get("reactive_move_moving_unit_id") or "")
-            attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
-            moving_unit = self._resolve_unit_by_id(moving_unit_id) if moving_unit_id else None
-            attacker_unit = self._resolve_unit_by_id(attacker_unit_id) if attacker_unit_id else None
             self._queue_reactive_move_movement_decision(
                 player=player,
                 unit=unit,

@@ -1035,6 +1035,10 @@ class Unit:
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_AGILE_MANEUVER_REROLL_RE = re.compile(
+        r"(?:you can )?re-?roll any rolls made for (?:the )?(?:bearer'?s|that) unit while it is performing an agile (?:manoeuvre|maneuver)",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
         r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+the\s+bearer'?s\s+unit.*?\bsustained\s+hits\b\s*(\d+)",
         re.IGNORECASE,
@@ -2442,6 +2446,7 @@ class Unit:
                 for key in (
                     "bearer_unit_fnp",
                     "bearer_unit_invulnerable_save",
+                    "bearer_unit_agile_maneuver_reroll",
                     "bearer_unit_sustained_hits_value",
                     "bearer_unit_sustained_hits_value_melee",
                     "bearer_unit_sustained_hits_value_ranged",
@@ -2494,6 +2499,7 @@ class Unit:
         auto_pass_desperate_escape = False
         grant_deep_strike = False
         kunnin_but_brutal_active = False
+        agile_maneuver_reroll = False
 
         def _iter_sentences(text: str) -> list[str]:
             if not text:
@@ -2629,6 +2635,8 @@ class Unit:
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             invuln_entries.append({"value": int(val), "source": source})
+                    if self._BEARER_UNIT_AGILE_MANEUVER_REROLL_RE.search(sentence):
+                        agile_maneuver_reroll = True
 
                     m = self._BEARER_UNIT_SUSTAINED_HITS_RE.search(sentence)
                     if m:
@@ -2810,6 +2818,14 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_invulnerable_save"] = list(deduped)
+                u.special_rules = sr
+
+        if agile_maneuver_reroll:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_agile_maneuver_reroll"] = True
                 u.special_rules = sr
 
         if sustained_hits_value:
@@ -10791,6 +10807,31 @@ class Unit:
             s = str(t or "").lower()
             if ("re-roll" in s or "reroll" in s) and "advance" in s:
                 return True
+        return False
+
+    def can_reroll_agile_maneuver_rolls(self) -> bool:
+        """Return True if this unit can reroll rolls while performing an Agile Manoeuvre."""
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bearer_unit_agile_maneuver_reroll"):
+                return True
+        except Exception:
+            pass
+        try:
+            for u in list(self.get_attached_unit_members() or []):
+                sr = getattr(u, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("bearer_unit_agile_maneuver_reroll"):
+                    return True
+        except Exception:
+            pass
+        try:
+            iter_fn = getattr(self, "_iter_attached_unit_reroll_texts", None)
+            if callable(iter_fn):
+                for text in iter_fn():
+                    if self._BEARER_UNIT_AGILE_MANEUVER_REROLL_RE.search(text):
+                        return True
+        except Exception:
+            pass
         return False
 
     def _filter_internal_rivalries_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:

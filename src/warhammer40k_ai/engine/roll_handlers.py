@@ -392,6 +392,74 @@ def handle_attack_roll(game: object, state: DiceRollState):
     return None
 
 
+def handle_battle_focus_reactive_move(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit_id = spec.get("unit_id")
+    unit = _get_unit(game, unit_id)
+    if unit is None:
+        return None
+    payload = dict(spec.get("handler_payload", {}) or {})
+    maneuver = str(payload.get("maneuver", "") or "Battle Focus").strip() or "Battle Focus"
+    try:
+        roll_val = int(state.total or 0)
+    except Exception:
+        roll_val = 0
+    warhost_bonus = bool(payload.get("warhost_bonus", False))
+    if not warhost_bonus:
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "battle_focus", None) if army is not None else None
+            warhost_bonus = bool(mgr and getattr(mgr, "is_warhost_detachment", lambda: False)())
+        except Exception:
+            warhost_bonus = False
+    if warhost_bonus:
+        roll_val += 1
+    max_dist = int(roll_val) + 1
+    if max_dist <= 0:
+        return 0
+    phase_name = str(payload.get("phase_name", "") or "").strip().upper()
+    if not phase_name:
+        try:
+            phase = getattr(game, "phase", None)
+            phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        except Exception:
+            phase_name = ""
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    sr["battle_focus_reactive_move_max"] = int(max_dist)
+    sr["battle_focus_reactive_move_source"] = str(maneuver)
+    if phase_name:
+        sr["battle_focus_reactive_move_expires_phase"] = phase_name
+    sr.pop("battle_focus_reactive_move_pending", None)
+    unit.special_rules = sr
+
+    if not bool(getattr(game, "is_authoritative", True)):
+        return max_dist
+    try:
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+    except Exception:
+        player = None
+    if player is None or not hasattr(game, "_queue_reactive_move_movement_decision"):
+        return max_dist
+    try:
+        moving_unit = _get_unit(game, payload.get("moving_unit_id")) if payload.get("moving_unit_id") else None
+        attacker_unit = _get_unit(game, payload.get("attacker_unit_id")) if payload.get("attacker_unit_id") else None
+        game._queue_reactive_move_movement_decision(
+            player=player,
+            unit=unit,
+            moving_unit=moving_unit,
+            attacker_unit=attacker_unit,
+            max_distance=int(max_dist),
+            kind="battle_focus",
+            movement_type="reactive",
+            source=str(maneuver),
+        )
+    except Exception:
+        return max_dist
+    return max_dist
+
+
 register_roll_handler("advance_roll", handle_advance_roll)
 register_roll_handler("charge_roll", handle_charge_roll)
 register_roll_handler("battle_shock", handle_battle_shock_roll)
@@ -403,3 +471,4 @@ register_roll_handler("attack_damage", handle_attack_roll)
 register_roll_handler("attack_hazardous", handle_attack_roll)
 register_roll_handler("daemonic_poisons", handle_daemonic_poisons_roll)
 register_roll_handler("daemonic_poisons_damage", handle_daemonic_poisons_damage_roll)
+register_roll_handler("battle_focus_reactive_move", handle_battle_focus_reactive_move)

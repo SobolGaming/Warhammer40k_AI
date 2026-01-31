@@ -1592,7 +1592,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Empowered by Death"): ("Partial", "Fights First applied without below-strength condition."),
         ("AE", "Spiritseer"): ("Supported", "Conditional Lone Operative within 3\" of friendly WRAITH CONSTRUCT units."),
         ("AE", "Bonesinger"): ("Partial", "Lone Operative applied without 3\" proximity/leading restrictions."),
-        ("AE", "Superlative Strategist"): ("Partial", "Advance reroll enabled; leading/Agile Manoeuvre rerolls not enforced."),
+        ("AE", "Superlative Strategist"): ("Supported", "Leading: re-roll Advance rolls; re-roll any rolls while performing an Agile Manoeuvre."),
         ("AE", "Linked Fire"): ("Supported", "Linked Fire origin selection supported; range/LOS measured from origin and Attacks=1 override applied."),
         ("AE", "SERVANT OF THE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
         ("AE", "SERVANT OFTHE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
@@ -2260,6 +2260,26 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append("Leading: re-roll Advance and Charge rolls for the unit.")
         else:
             notes.append("Re-roll Advance and Charge rolls.")
+    advance_only_re = re.search(
+        r"re-?roll\s+advance\s+rolls?\s+made\s+for\s+(?:the\s+)?(?:bearer'?s|that)\s+unit",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if advance_only_re:
+        if leading_prefix:
+            notes.append("Leading: re-roll Advance rolls for the unit.")
+        else:
+            notes.append("Re-roll Advance rolls for bearer's unit.")
+    agile_re = re.search(
+        r"re-?roll any rolls made for (?:the )?(?:bearer'?s|that) unit while it is performing an agile (?:manoeuvre|maneuver)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if agile_re:
+        if leading_prefix:
+            notes.append("Leading: re-roll any rolls made for the unit while performing an Agile Manoeuvre.")
+        else:
+            notes.append("Bearer's unit can re-roll any rolls while performing an Agile Manoeuvre.")
 
     charge_objective_re = re.search(
         r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
@@ -2473,6 +2493,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks and mortal wounds?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds?",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? feel no pain [1-6](?: ability)? against mortal wounds? and psychic attacks",
+        rf"{lead_prefix}(?:you can )?reroll advance rolls? made for {unit_ref} and you can reroll any rolls made for {unit_ref} while it is performing an agile (?:manoeuvre|maneuver)",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
