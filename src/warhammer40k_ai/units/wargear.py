@@ -6873,20 +6873,7 @@ class WargearProfile:
             except Exception:
                 pass
 
-        # Leading ability: once per phase, optionally set the roll to an unmodified 6.
-        new_roll, decision = self._maybe_apply_leading_unmodified_six(
-            attacker,
-            target,
-            roll_type="wound",
-            roll_value=dice_roll,
-            needed=final_needed,
-        )
-        if new_roll is not None and int(new_roll) != int(dice_roll):
-            dice_roll = int(new_roll)
-            wound_result['roll'] = dice_roll
-            wound_result['special_effects'].append("Leading ability: set roll to 6")
-
-        # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
+        # Compute needed roll for prompt-driven rules before applying them.
         needed_for_prompt = None
         try:
             if isinstance(strength, int) and isinstance(target_toughness, int):
@@ -6903,6 +6890,21 @@ class WargearProfile:
                 needed_for_prompt = min(max(int(base_needed) - int(dice_modifier), 2), 6)
         except Exception:
             needed_for_prompt = None
+
+        # Leading ability: once per phase, optionally set the roll to an unmodified 6.
+        new_roll, decision = self._maybe_apply_leading_unmodified_six(
+            attacker,
+            target,
+            roll_type="wound",
+            roll_value=dice_roll,
+            needed=needed_for_prompt,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            wound_result['roll'] = dice_roll
+            wound_result['special_effects'].append("Leading ability: set roll to 6")
+
+        # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         new_roll, decision = self._maybe_apply_aspect_shrine_token(
             attacker,
             target,
