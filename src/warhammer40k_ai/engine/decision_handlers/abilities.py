@@ -41,6 +41,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_WRATHFUL_PRESENCE,
     DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
     DECISION_CHOOSE_ASPECT,
+    DECISION_USE_LEADING_UNMODIFIED_SIX,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_SELECT_RISE_TO_CHALLENGE,
@@ -1954,6 +1955,26 @@ def _apply_choose_aspect(game: object, request: DecisionRequest, result: Decisio
     return payload.get("choice")
 
 
+def _validate_use_leading_unmodified_six(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    ability_key = payload.get("ability_key") or request.context.get("ability_key")
+    if not ability_key:
+        return ("Leading unmodified-six choice requires ability_key.",)
+    return ()
+
+
+def _apply_use_leading_unmodified_six(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    return payload
+
+
 def _validate_choose_battle_focus_maneuver(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -2509,6 +2530,11 @@ register_decision_handler(
     apply=_apply_choose_daemon_primarch_slaanesh,
 )
 register_decision_handler(DECISION_CHOOSE_ASPECT, validate=_validate_choose_aspect, apply=_apply_choose_aspect)
+register_decision_handler(
+    DECISION_USE_LEADING_UNMODIFIED_SIX,
+    validate=_validate_use_leading_unmodified_six,
+    apply=_apply_use_leading_unmodified_six,
+)
 register_decision_handler(
     DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
     validate=_validate_choose_battle_focus_maneuver,

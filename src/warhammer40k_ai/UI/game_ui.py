@@ -2447,6 +2447,7 @@ class GameView:
                 self.game.map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game.map.miracle_dice_provider = self._miracle_dice_provider
                 self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
+                self.game.map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -2463,6 +2464,7 @@ class GameView:
                 self.game_map.reanimation_allocation_provider = self._reanimation_allocation_provider
                 self.game_map.miracle_dice_provider = self._miracle_dice_provider
                 self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
+                self.game_map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -11542,6 +11544,168 @@ class GameView:
             roll_text=roll_text,
             callback=_on_choice,
             decision_request=req,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "skip"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return str(choice_holder["choice"] or "skip")
+
+    def _leading_unmodified_six_provider(
+        self,
+        *,
+        player=None,
+        unit=None,
+        roll_type: str = "",
+        value: Optional[int] = None,
+        needed: Optional[int] = None,
+        options=None,
+        attacker=None,
+        target=None,
+        weapon_name: Optional[str] = None,
+    ) -> str:
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return "skip"
+        except Exception:
+            return "skip"
+
+        if not options:
+            return "skip"
+
+        if not hasattr(self, "leading_unmodified_six_dialog") or self.leading_unmodified_six_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                self.leading_unmodified_six_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+            except Exception:
+                self.leading_unmodified_six_dialog = None
+        dlg = self.leading_unmodified_six_dialog
+        if dlg is None:
+            return "skip"
+
+        from ..engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        rt = str(roll_type or "").strip().lower()
+        title = "Leading Ability: Unmodified 6"
+        if rt == "hit":
+            title = "Leading Ability: Hit Roll to 6"
+        elif rt == "wound":
+            title = "Leading Ability: Wound Roll to 6"
+        elif rt == "damage":
+            title = "Leading Ability: Damage Roll to 6"
+
+        ulabel = getattr(unit, "name", "Unit")
+        roll_val = value
+        try:
+            roll_val = int(value)
+        except Exception:
+            roll_val = value
+
+        roll_text = f"Rolled {roll_val}"
+        try:
+            if needed is not None:
+                roll_text = f"Rolled {int(roll_val)} (need {int(needed)}+)"
+        except Exception:
+            pass
+
+        header = f"{ulabel} can change this {rt or 'roll'} to an unmodified 6 (once per phase)."
+        subtitle = roll_text
+        if weapon_name:
+            subtitle = f"{roll_text} - {weapon_name}"
+
+        unit_id = ""
+        attacker_id = ""
+        try:
+            unit_id = get_entity_id(unit)
+        except Exception:
+            unit_id = ""
+        try:
+            attacker_id = get_entity_id(attacker)
+        except Exception:
+            attacker_id = ""
+
+        req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
+        for entry in list(options or []):
+            label = str(entry.get("label", "") or "Leading ability")
+            req_options.append(
+                DecisionOption.create(
+                    f"Use {label}",
+                    payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
+                )
+            )
+
+        req = DecisionRequest.create(
+            DECISION_USE_LEADING_UNMODIFIED_SIX,
+            title,
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "unit_id": unit_id,
+                "attacker_model_id": attacker_id,
+                "roll_type": rt,
+                "roll_value": roll_val,
+                "ability_keys": [e.get("ability_key", "") for e in list(options or [])],
+            },
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        choice_holder = {"choice": "skip", "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            if isinstance(value, dict) and str(value.get("choice", "") or "") == "use":
+                choice_holder["choice"] = str(value.get("ability_key", "") or "")
+            else:
+                choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        def _on_cancel():
+            skip_id = None
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action", "") or "") == "skip":
+                    skip_id = opt.option_id
+                    break
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
+            choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        dlg.show(
+            title=title,
+            header=header,
+            subtitle=subtitle,
+            on_confirm=_on_choice,
+            on_cancel=_on_cancel,
+            decision_request=req,
+            show_cancel=True,
         )
         try:
             self.dialog_manager.open(dlg, modal=True)

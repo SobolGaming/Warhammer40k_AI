@@ -323,6 +323,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}
 - yes_no_dialog: CONFIRM_YES_NO {choice}
 - aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}
+- leading_unmodified_six_prompt_dialog: USE_LEADING_UNMODIFIED_SIX {ability_key | skip} (context `unit_id`, `attacker_model_id`, `roll_type`, `roll_value`, `ability_keys`)
 - example_dialog: CONFIRM_EXAMPLE {choice_id}
 - reverberating_summons_unit_dialog: SELECT_REVERBERATING_SUMMONS_UNIT {unit_id | skip}
 - reverberating_summons_return_model_dialog: ALLOCATE_DAMAGE {unit_id, model_id | skip} (context `selection_kind="reverberating_summons_return"`)

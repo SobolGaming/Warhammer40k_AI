@@ -1819,6 +1819,313 @@ class WargearProfile:
         
         return attack_result
 
+    def _leading_unmodified_six_phase_key(self, unit: Optional['Unit'], game: Optional[object]) -> str:
+        if game is None and unit is not None:
+            try:
+                game = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            phase = getattr(game, "phase", None)
+            pname = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        except Exception:
+            pname = ""
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        if current_player is None and unit is not None:
+            try:
+                current_player = getattr(unit.get_parent_army(), "player", None)
+            except Exception:
+                current_player = None
+        owner = str(getattr(current_player, "id", "") or getattr(current_player, "name", "") or "")
+        return f"{br}:{pname}:{owner}"
+
+    def _maybe_apply_leading_unmodified_six(
+        self,
+        attacker: 'Model',
+        target: 'Unit',
+        roll_type: str,
+        roll_value: Optional[int],
+        needed: Optional[int] = None,
+    ) -> tuple[Optional[int], Optional[str]]:
+        """
+        Leading ability: once per phase, set one hit/wound/damage roll for the unit to an unmodified 6.
+        Returns (new_roll_value, decision_str) where decision_str is ability_key or "skip".
+        """
+        try:
+            if roll_value is None:
+                return roll_value, None
+            if int(roll_value) == 6:
+                return roll_value, None
+        except Exception:
+            return roll_value, None
+
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return roll_value, None
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+
+        try:
+            specs = list(getattr(root, "leading_unmodified_six_specs", lambda: [])() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return roll_value, None
+
+        is_support_weapon_model = False
+        try:
+            is_support_weapon_model = bool(unit.has_support_weapon_ability())
+        except Exception:
+            is_support_weapon_model = False
+
+        player = None
+        game_map = None
+        is_human = False
+        provider = None
+        game = None
+        try:
+            army = root.get_parent_army()
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+            provider = getattr(game_map, "leading_unmodified_six_provider", None) if game_map is not None else None
+        except Exception:
+            player = None
+            game_map = None
+            game = None
+            is_human = False
+            provider = None
+
+        phase_key = self._leading_unmodified_six_phase_key(root, game)
+        available: list[dict] = []
+        for spec in list(specs or []):
+            try:
+                if spec.get("exclude_support_weapon") and is_support_weapon_model:
+                    continue
+            except Exception:
+                pass
+            leader = spec.get("leader")
+            ability_key = str(spec.get("ability_key", "") or "")
+            if leader is None or not ability_key:
+                continue
+            try:
+                sr = getattr(leader, "special_rules", None)
+            except Exception:
+                sr = None
+            if not isinstance(sr, dict):
+                sr = {}
+            used_map = sr.get("leading_unmodified_six_used_phase_key", {})
+            if isinstance(used_map, dict) and str(used_map.get(ability_key, "")) == str(phase_key):
+                continue
+            available.append(spec)
+
+        if not available:
+            return roll_value, None
+
+        # Deterministic ordering for options.
+        def _spec_sort_key(item: dict) -> tuple:
+            return (
+                str(item.get("ability_key", "")),
+                str(item.get("leader_id", "")),
+                str(item.get("source", "")),
+            )
+
+        available = sorted(available, key=_spec_sort_key)
+        option_entries = []
+        for spec in available:
+            leader_name = ""
+            try:
+                leader_name = str(getattr(spec.get("leader"), "name", "") or "")
+            except Exception:
+                leader_name = ""
+            source = str(spec.get("source", "") or "").strip()
+            if leader_name and source and leader_name != source:
+                label = f"{source} ({leader_name})"
+            else:
+                label = source or leader_name or "Leading ability"
+            option_entries.append(
+                {
+                    "ability_key": str(spec.get("ability_key", "") or ""),
+                    "label": label,
+                    "leader_id": str(spec.get("leader_id", "") or ""),
+                    "source": source or "Leading ability",
+                }
+            )
+
+        decision = None
+        if is_human and callable(provider):
+            try:
+                decision = provider(
+                    player=player,
+                    unit=root,
+                    roll_type=str(roll_type or ""),
+                    value=int(roll_value),
+                    needed=needed,
+                    options=option_entries,
+                    attacker=attacker,
+                    target=target,
+                    weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                    or getattr(self, "name", "Weapon"),
+                )
+            except Exception:
+                decision = None
+        else:
+            decision = None
+            if game is not None and player is not None:
+                try:
+                    from warhammer40k_ai.engine.decision_kinds import DECISION_USE_LEADING_UNMODIFIED_SIX
+                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.entity_ids import get_entity_id
+                except Exception:
+                    decision = None
+                else:
+                    unit_id = ""
+                    attacker_id = ""
+                    try:
+                        unit_id = get_entity_id(root)
+                    except Exception:
+                        unit_id = ""
+                    try:
+                        attacker_id = get_entity_id(attacker)
+                    except Exception:
+                        attacker_id = ""
+                    req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
+                    for entry in option_entries:
+                        req_options.append(
+                            DecisionOption.create(
+                                f"Use {entry.get('label')}",
+                                payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
+                            )
+                        )
+                    req = DecisionRequest.create(
+                        DECISION_USE_LEADING_UNMODIFIED_SIX,
+                        "Leading Ability: Unmodified 6",
+                        player_id=getattr(player, "id", None),
+                        options=req_options,
+                        context={
+                            "unit_id": unit_id,
+                            "attacker_model_id": attacker_id,
+                            "roll_type": str(roll_type or ""),
+                            "roll_value": int(roll_value),
+                            "ability_keys": [e.get("ability_key", "") for e in option_entries],
+                        },
+                    )
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
+
+                    choice = None
+                    try:
+                        overrides = getattr(player, "_next_optional_selections", None)
+                        if isinstance(overrides, dict) and "LEADING_UNMODIFIED_SIX" in overrides:
+                            choice = overrides.pop("LEADING_UNMODIFIED_SIX")
+                    except Exception:
+                        choice = None
+                    choice_norm = str(choice or "").strip().lower()
+                    desired_key = ""
+                    if choice_norm in ("use", "yes", "true"):
+                        desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+                    elif choice_norm in ("skip", "no", "false"):
+                        desired_key = ""
+                    else:
+                        # Allow explicit ability_key selection.
+                        for entry in option_entries:
+                            if str(entry.get("ability_key", "")).lower() == choice_norm:
+                                desired_key = str(entry.get("ability_key", "") or "")
+                                break
+                    option_id = None
+                    try:
+                        if not desired_key:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("action", "") or "") == "skip":
+                                    option_id = opt.option_id
+                                    break
+                        else:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("ability_key", "") or "") == desired_key:
+                                    option_id = opt.option_id
+                                    break
+                    except Exception:
+                        option_id = None
+                    if option_id:
+                        value, apply_result = resolve_decision_value(
+                            game,
+                            req,
+                            option_id,
+                            player_id=getattr(player, "id", None),
+                        )
+                        if apply_result is not None and getattr(apply_result, "ok", False):
+                            decision = value
+            if decision is None:
+                decision = "skip"
+
+        decision_key = ""
+        if isinstance(decision, dict):
+            if str(decision.get("choice", "") or "") == "use":
+                decision_key = str(decision.get("ability_key", "") or "")
+        else:
+            if str(decision or "").strip().lower() == "use":
+                decision_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+            else:
+                decision_key = str(decision or "")
+
+        decision_key = str(decision_key or "").strip()
+        if not decision_key:
+            return roll_value, "skip"
+
+        spec_map = {str(s.get("ability_key", "")): s for s in available if str(s.get("ability_key", ""))}
+        spec = spec_map.get(decision_key)
+        if spec is None:
+            return roll_value, "skip"
+
+        leader = spec.get("leader")
+        if leader is None:
+            return roll_value, "skip"
+
+        try:
+            sr = getattr(leader, "special_rules", None)
+        except Exception:
+            sr = None
+        if not isinstance(sr, dict):
+            sr = {}
+        used_map = sr.get("leading_unmodified_six_used_phase_key", {})
+        if not isinstance(used_map, dict):
+            used_map = {}
+        used_map[decision_key] = str(phase_key or "")
+        sr["leading_unmodified_six_used_phase_key"] = used_map
+        leader.special_rules = sr
+
+        try:
+            from warhammer40k_ai.utility.event_bus import append_dice, append_action
+            rt = str(roll_type or "").strip().lower()
+            label = "roll"
+            if rt == "hit":
+                label = "Hit roll"
+            elif rt == "wound":
+                label = "Wound roll"
+            elif rt == "damage":
+                label = "Damage roll"
+            append_dice(player, f"{label} made {int(roll_value)}, leading ability used to change value to 6")
+            uname = getattr(root, "name", "Unit")
+            source = str(spec.get("source", "") or "Leading ability")
+            append_action(player, f"{uname}: {source} used to change {label} {int(roll_value)} to 6")
+        except Exception:
+            pass
+
+        return 6, decision_key
+
     def _maybe_apply_aspect_shrine_token(
         self,
         attacker: 'Model',
@@ -2504,6 +2811,17 @@ class WargearProfile:
             hit_result['roll'] = dice_roll
             hit_result['needed'] = 6
             hit_result['final_needed'] = 6
+            new_roll, decision = self._maybe_apply_leading_unmodified_six(
+                attacker,
+                target,
+                roll_type="hit",
+                roll_value=dice_roll,
+                needed=6,
+            )
+            if new_roll is not None and int(new_roll) != int(dice_roll):
+                dice_roll = int(new_roll)
+                hit_result['roll'] = dice_roll
+                hit_result['special_effects'].append("Leading ability: set roll to 6")
             new_roll, decision = self._maybe_apply_aspect_shrine_token(
                 attacker,
                 target,
@@ -4190,6 +4508,19 @@ class WargearProfile:
                 )
             except Exception:
                 pass
+
+        # Leading ability: once per phase, optionally set the roll to an unmodified 6.
+        new_roll, decision = self._maybe_apply_leading_unmodified_six(
+            attacker,
+            target,
+            roll_type="hit",
+            roll_value=dice_roll,
+            needed=final_needed,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            hit_result['roll'] = dice_roll
+            hit_result['special_effects'].append("Leading ability: set roll to 6")
 
         # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         new_roll, decision = self._maybe_apply_aspect_shrine_token(
@@ -6524,6 +6855,19 @@ class WargearProfile:
             except Exception:
                 pass
 
+        # Leading ability: once per phase, optionally set the roll to an unmodified 6.
+        new_roll, decision = self._maybe_apply_leading_unmodified_six(
+            attacker,
+            target,
+            roll_type="wound",
+            roll_value=dice_roll,
+            needed=final_needed,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            wound_result['roll'] = dice_roll
+            wound_result['special_effects'].append("Leading ability: set roll to 6")
+
         # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         needed_for_prompt = None
         try:
@@ -7380,6 +7724,23 @@ class WargearProfile:
                             f"{label}: re-roll Damage roll"
                         )
                         damage_result['reroll'] = new_val
+        except Exception:
+            pass
+
+        # Leading ability: once per phase, optionally set the roll to an unmodified 6.
+        try:
+            if isinstance(self.damage, DiceCollection):
+                new_roll, decision = self._maybe_apply_leading_unmodified_six(
+                    attacker,
+                    getattr(target_model, "parent_unit", None),
+                    roll_type="damage",
+                    roll_value=damage_value,
+                    needed=None,
+                )
+                if new_roll is not None and int(new_roll) != int(damage_value):
+                    damage_value = int(new_roll)
+                    damage_result['damage_rolled'] = damage_value
+                    damage_result.setdefault('special_effects', []).append("Leading ability: set roll to 6")
         except Exception:
             pass
 

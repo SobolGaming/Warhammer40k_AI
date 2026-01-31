@@ -3408,6 +3408,17 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         and "that unit have" not in low
     ):
         return None
+
+    normalized = _norm_rules_text(text)
+    unmodified_pattern = (
+        r"while this model is leading a unit once per phase you can change the result of one hit roll one wound roll or one "
+        r"damage roll made for a model in that unit(?: excluding support weapon models)? to an unmodified 6"
+    )
+    if re.fullmatch(unmodified_pattern, normalized):
+        note = "Leading: once per phase, can set one Hit/Wound/Damage roll to an unmodified 6."
+        if "excluding support weapon models" in normalized:
+            note = "Leading: once per phase, can set one Hit/Wound/Damage roll to an unmodified 6 (excluding Support Weapon models)."
+        return ("Supported", note)
     notes: List[str] = []
     lethal_melee = re.search(
         r"melee weapons equipped by models in that unit have the \[?lethal hits\]? ability",

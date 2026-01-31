@@ -1288,6 +1288,12 @@ class Unit:
         r"an agile (?:manoeuvre|maneuver) roll (?:one|1) d6 on a (?P<threshold>\d)\+? you gain 1 battle focus token",
         re.IGNORECASE,
     )
+    _LEADING_UNMODIFIED_SIX_ROLL_RE = re.compile(
+        r"while this model is leading a unit once per phase you can change the result of one hit roll one wound roll or one "
+        r"damage roll made for a model in (?:that|this|the bearer s) unit(?: (?P<exclude>excluding support weapon models?))? "
+        r"to an unmodified 6",
+        re.IGNORECASE,
+    )
     _START_OF_BATTLE_KEYWORD_REROLL_ONES_RE = re.compile(
         r"at the start of the battle select one of the following keywords (?P<keywords>[a-z0-9 ]+) "
         r"each time this model makes an attack(?:s)? that targets? a unit with the selected keyword "
@@ -9712,6 +9718,80 @@ class Unit:
                 {
                     "source": source,
                     "threshold": int(threshold),
+                }
+            )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def leading_unmodified_six_specs(self) -> list[dict]:
+        """
+        Leading ability: once per phase, change one hit/wound/damage roll to an unmodified 6.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - exclude_support_weapon: bool
+            - leader: Unit (leader)
+            - leader_id: str
+            - ability_key: str (stable key for per-phase tracking)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_unmodified_six_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = str(ab or "")
+                    desc = str(ab or "")
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text_src = leader._strip_eligibility_prefix(desc or "")
+            normalized = leader._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._LEADING_UNMODIFIED_SIX_ROLL_RE.fullmatch(normalized)
+            if not m:
+                continue
+            exclude_support = False
+            try:
+                exclude_support = bool(m.group("exclude"))
+            except Exception:
+                exclude_support = "excluding support weapon" in normalized
+            source = str(name or "Leading ability").strip() or "Leading ability"
+            try:
+                leader_id = str(get_entity_id(leader) or "")
+            except Exception:
+                leader_id = ""
+            source_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_")
+            ability_key = f"leading_unmodified_six:{leader_id}:{source_key}:{'exclude_support' if exclude_support else 'all'}"
+            key = (leader_id, source_key, exclude_support)
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "exclude_support_weapon": bool(exclude_support),
+                    "leader": leader,
+                    "leader_id": leader_id,
+                    "ability_key": ability_key,
                 }
             )
 
