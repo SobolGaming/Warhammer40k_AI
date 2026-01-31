@@ -9188,6 +9188,76 @@ class Unit:
         re.IGNORECASE,
     )
     _NOT_LEADING_ABILITY_RE = re.compile(r"\bif this model is not leading a unit\b", re.IGNORECASE)
+    _LEADING_SPECIFIC_UNIT_RE = re.compile(
+        r"\b(?:while|if)\s+(?:this model|the bearer)\s+is\s+leading(?:s)?\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
+        re.IGNORECASE,
+    )
+
+    def _ability_leading_specific_units(self, ability) -> list[str]:
+        """Return specific unit phrases for abilities gated by leading a named unit."""
+        name = ""
+        desc = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._strip_eligibility_prefix(f"{name} {desc}".strip())
+        text = self._normalize_rules_text(text)
+        if not text:
+            return []
+        phrases: list[str] = []
+        for m in self._LEADING_SPECIFIC_UNIT_RE.finditer(text):
+            phrase = str(m.group("unit") or "").strip()
+            if phrase:
+                phrases.append(phrase)
+        return phrases
+
+    def _attached_unit_matches_phrase(self, phrase: str) -> bool:
+        bodyguard = getattr(self, "attached_to", None)
+        if bodyguard is None:
+            return False
+        try:
+            if self._unit_matches_keyword_phrase(bodyguard, phrase, use_effective=False):
+                return True
+        except Exception:
+            pass
+        try:
+            bodyguard_name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+            phrase_name = self._normalize_attached_unit_name(phrase)
+            if bodyguard_name and bodyguard_name == phrase_name:
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _iter_conditioned_text_segments(self, text: str) -> list[str]:
+        """
+        Split ability text into sentence-like segments and filter clauses gated
+        by leading a specific unit.
+        """
+        cleaned = self._strip_eligibility_prefix(text or "")
+        cleaned = self._normalize_rules_text(cleaned)
+        if not cleaned:
+            return []
+        if not self._LEADING_SPECIFIC_UNIT_RE.search(cleaned):
+            return [cleaned]
+        parts = [p.strip() for p in re.split(r"[.;]\s*", cleaned) if p.strip()]
+        if not parts:
+            return []
+        segments: list[str] = []
+        for part in parts:
+            m = self._LEADING_SPECIFIC_UNIT_RE.search(part)
+            if m:
+                phrase = str(m.group("unit") or "").strip()
+                if phrase and self._attached_unit_matches_phrase(phrase):
+                    segments.append(part)
+            else:
+                segments.append(part)
+        return segments
 
     def _ability_requires_leading(self, ability) -> bool:
         """Return True if the ability text is gated by 'While this model is leading a unit'."""
@@ -9227,6 +9297,11 @@ class Unit:
             # Only enforce leading attachment when this unit is actually a Leader datasheet.
             if bool(getattr(self, "is_leader", False)) and not bool(getattr(self, "is_attached_leader", False)):
                 return False
+            if bool(getattr(self, "is_leader", False)):
+                specific_units = self._ability_leading_specific_units(ability)
+                if specific_units:
+                    if not any(self._attached_unit_matches_phrase(phrase) for phrase in specific_units):
+                        return False
         elif self._ability_requires_not_leading(ability):
             if bool(getattr(self, "is_attached_leader", False)):
                 return False
@@ -9749,15 +9824,18 @@ class Unit:
         for ab in self._iter_active_abilities():
             try:
                 if isinstance(ab, str):
-                    if ab:
-                        yield ab
+                    for seg in self._iter_conditioned_text_segments(ab):
+                        if seg:
+                            yield seg
                     continue
                 nm = str(getattr(ab, "name", "") or "")
                 ds = str(getattr(ab, "description", "") or "")
                 if nm:
                     yield nm
                 if ds:
-                    yield ds
+                    for seg in self._iter_conditioned_text_segments(ds):
+                        if seg:
+                            yield seg
             except Exception:
                 continue
 
@@ -19515,16 +19593,17 @@ class Unit:
         # Check unit-level abilities (possible_abilities)
         for ability in self._iter_active_possible_abilities():
             if isinstance(ability, str):
-                for pattern in patterns:
-                    if pattern.lower() in ability.lower():
-                        if extract_value and value_pattern:
-                            match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.lower())
-                            if match:
-                                return True, match.group(1)
+                for segment in self._iter_conditioned_text_segments(ability):
+                    for pattern in patterns:
+                        if pattern.lower() in segment.lower():
+                            if extract_value and value_pattern:
+                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
+                                if match:
+                                    return True, match.group(1)
+                                else:
+                                    raise ValueError(f"{pattern} ability found in ability string '{ability}' but could not extract value for unit '{self.name}'")
                             else:
-                                raise ValueError(f"{pattern} ability found in ability string '{ability}' but could not extract value for unit '{self.name}'")
-                        else:
-                            return True, None
+                                return True, None
             else:
                 # Ability object with name and description attributes
                 ability_name_matched = False
@@ -19551,16 +19630,17 @@ class Unit:
                 
                 # Only check description if ability name didn't match
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
-                    for pattern in patterns:
-                        if pattern.lower() in ability.description.lower():
-                            if extract_value and value_pattern:
-                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.description.lower())
-                                if match:
-                                    return True, match.group(1)
+                    for segment in self._iter_conditioned_text_segments(ability.description):
+                        for pattern in patterns:
+                            if pattern.lower() in segment.lower():
+                                if extract_value and value_pattern:
+                                    match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
+                                    if match:
+                                        return True, match.group(1)
+                                    else:
+                                        raise ValueError(f"{pattern} ability found in ability description '{ability.description}' but could not extract value for unit '{self.name}'")
                                 else:
-                                    raise ValueError(f"{pattern} ability found in ability description '{ability.description}' but could not extract value for unit '{self.name}'")
-                            else:
-                                return True, None
+                                    return True, None
         
         # Check model-level abilities
         for ability in self.abilities:
@@ -19570,16 +19650,17 @@ class Unit:
             except Exception:
                 pass
             if isinstance(ability, str):
-                for pattern in patterns:
-                    if pattern.lower() in ability.lower():
-                        if extract_value and value_pattern:
-                            match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.lower())
-                            if match:
-                                return True, match.group(1)
+                for segment in self._iter_conditioned_text_segments(ability):
+                    for pattern in patterns:
+                        if pattern.lower() in segment.lower():
+                            if extract_value and value_pattern:
+                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
+                                if match:
+                                    return True, match.group(1)
+                                else:
+                                    raise ValueError(f"{pattern} ability found in model ability string '{ability}' but could not extract value for unit '{self.name}'")
                             else:
-                                raise ValueError(f"{pattern} ability found in model ability string '{ability}' but could not extract value for unit '{self.name}'")
-                        else:
-                            return True, None
+                                return True, None
             else:
                 # Ability object with name and description attributes
                 ability_name_matched = False
@@ -19606,16 +19687,17 @@ class Unit:
                 
                 # Only check description if ability name didn't match
                 if not ability_name_matched and hasattr(ability, 'description') and ability.description:
-                    for pattern in patterns:
-                        if pattern.lower() in ability.description.lower():
-                            if extract_value and value_pattern:
-                                match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', ability.description.lower())
-                                if match:
-                                    return True, match.group(1)
+                    for segment in self._iter_conditioned_text_segments(ability.description):
+                        for pattern in patterns:
+                            if pattern.lower() in segment.lower():
+                                if extract_value and value_pattern:
+                                    match = re.search(rf'{pattern.lower()}\s*\(?{value_pattern}', segment.lower())
+                                    if match:
+                                        return True, match.group(1)
+                                    else:
+                                        raise ValueError(f"{pattern} ability found in model ability description '{ability.description}' but could not extract value for unit '{self.name}'")
                                 else:
-                                    raise ValueError(f"{pattern} ability found in model ability description '{ability.description}' but could not extract value for unit '{self.name}'")
-                            else:
-                                return True, None
+                                    return True, None
         
         return False, None
 

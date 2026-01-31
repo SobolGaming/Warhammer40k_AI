@@ -1579,7 +1579,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AOI", "Psychic Hood"): ("Supported", "Feel No Pain 4+ against Psychic attacks."),
         ("AOI", "Rites of Teleportation"): ("Partial", "Deep Strike granted without Inquisitor attachment restriction."),
         ("AOI", "Unsubtle Crusader"): ("Partial", "Scouts 6\" applied without formation selection/target-unit restriction."),
-        ("AE", "ASPECT TRAINING"): ("Partial", "Fights First/Infiltrators/Scouts/Stealth detected; leader/unit restrictions not enforced."),
+        ("AE", "ASPECT TRAINING"): (
+            "Supported",
+            "Leading: grants Fights First when attached to Howling Banshees; grants Infiltrators/Scouts 7\"/Stealth when attached to Striking Scorpions.",
+        ),
         ("AE", "Aspect Shrine Token"): (
             "Supported",
             "Per-roll prompt lets non-CHARACTER models change a hit or wound roll to an unmodified 6, consuming a token; tokens tracked from wargear options with per-activation prompt suppression.",
