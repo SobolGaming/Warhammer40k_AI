@@ -2009,6 +2009,10 @@ class Game:
                 if exp and exp == pname:
                     for k in ("exquisite_swordsmanship_choice", "exquisite_swordsmanship_expires_phase"):
                         sr.pop(k, None)
+                exp = str(sr.get("path_of_warrior_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in ("path_of_warrior_choice", "path_of_warrior_expires_phase"):
+                        sr.pop(k, None)
                 exp = str(sr.get("post_shoot_no_cover_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -7482,6 +7486,23 @@ class Game:
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
 
+    def _on_shooting_targets_selected_path_of_warrior(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        phase = getattr(self, "phase", None)
+        phase_name = str(getattr(phase, "name", "") or phase or "")
+        trigger_fn = getattr(root, "maybe_trigger_path_of_warrior", None)
+        if callable(trigger_fn):
+            trigger_fn(self, phase_name=phase_name, trigger="shooting")
+
     def _on_fight_unit_selected_dark_pacts(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -7494,6 +7515,21 @@ class Game:
         phase = getattr(self, "phase", None)
         phase_name = str(getattr(phase, "name", "") or phase or "")
         trigger_fn = getattr(root, "maybe_trigger_dark_pacts", None)
+        if callable(trigger_fn):
+            trigger_fn(self, phase_name=phase_name, trigger="fight")
+
+    def _on_fight_unit_selected_path_of_warrior(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        phase = getattr(self, "phase", None)
+        phase_name = str(getattr(phase, "name", "") or phase or "")
+        trigger_fn = getattr(root, "maybe_trigger_path_of_warrior", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="fight")
 
@@ -13164,62 +13200,415 @@ class Game:
         if self.attacker_index is None or self.defender_index is None:
             print("WARN: Attacker/Defender not set; skipping Redeploy Units phase")
             return
+        state = getattr(self, "_redeploy_state", None)
+        if isinstance(state, dict) and state.get("active"):
+            self._continue_redeploy_phase()
+            return
+
+        from ..utility.entity_ids import get_entity_id
 
         players_in_order = [self.players[self.attacker_index], self.players[self.defender_index]]
+        redeploy_queues: dict[str, list[dict]] = {}
 
-        # Collect eligible units per convention: unit.has_redeploy() -> (has, count, can_place_in_reserves)
-        redeploy_pool = {p: [] for p in players_in_order}
         for p in players_in_order:
             army = p.get_army()
             if not army:
                 continue
-            for u in army.units:
+            tokens: list[dict] = []
+            for u in list(getattr(army, "units", []) or []):
                 has_redeploy, count, can_place_in_reserves = u.has_redeploy()
-                if has_redeploy and u.deployed and u.reserve_status == 'deployed':
-                    redeploy_pool[p].append((u, count, can_place_in_reserves))
+                if not has_redeploy or int(count or 0) <= 0:
+                    continue
+                try:
+                    cache = getattr(u, "_ability_cache", {}) or {}
+                except Exception:
+                    cache = {}
+                filters = list(cache.get("redeploy_filters") or [])
+                ability_name = str(cache.get("redeploy_ability_name") or "")
+                if not ability_name:
+                    ability_name = str(getattr(getattr(u, "enhancement", None), "name", "") or "Redeploy")
+                tokens.append(
+                    {
+                        "source_unit_id": get_entity_id(u),
+                        "remaining": int(count or 0),
+                        "can_place_in_reserves": bool(can_place_in_reserves),
+                        "filters": list(filters),
+                        "used_unit_ids": [],
+                        "ability_name": ability_name,
+                    }
+                )
+            if tokens:
+                tokens.sort(key=lambda t: str(t.get("source_unit_id", "")))
+                redeploy_queues[str(getattr(p, "id", "") or "")] = tokens
 
-        if not any(redeploy_pool.values()):
+        if not any(redeploy_queues.values()):
             print("INFO: No units with Redeploy; skipping")
             return
 
-        # Alternate between players until all redeploy options exhausted
-        turn_idx = 0
-        while any(redeploy_pool[p] for p in players_in_order):
-            current_player = players_in_order[turn_idx % 2]
-            options = redeploy_pool[current_player]
-            if not options:
-                turn_idx += 1
-                continue
-            # Pick the first available unit; in the future, UI/controller should decide
-            unit, remaining, can_place_in_reserves = options.pop(0)
-            print(f"INFO: {current_player.name} redeploys {unit.name}")
-            # If the redeploy count was D3, print the stored roll result if available
-            roll_info = getattr(unit, '_redeploy_d_roll', None)
-            if roll_info:
-                print(
-                    f"INFO: Redeploy count ({roll_info['expr']}) for {unit.name}: "
-                    f"{roll_info['total']} (rolled {roll_info['rolls']})"
-                )
-            # Redeploy requires an explicit controller selection.
-            pos = self._find_valid_redeploy_position(current_player, unit)
-            if pos:
-                # Use unit's deployment placement to set model positions
-                positions = unit.calculate_model_positions(
-                    pos[0], pos[1], self.map,
-                    boundary_repulsors=self.map.get_battlefield_edge_repulsors()
-                )
-                if positions:
-                    print(f"INFO: {unit.name} redeployed to ({pos[0]:.1f}, {pos[1]:.1f})")
-                else:
-                    print(f"WARN: Redeploy failed to find valid formation for {unit.name}")
-            else:
-                print(f"WARN: No valid redeploy position found for {unit.name}")
-            # If multiple redeploy counts allowed, requeue
-            if remaining > 1:
-                options.insert(0, (unit, remaining - 1, can_place_in_reserves))
+        self._redeploy_state = {
+            "active": True,
+            "turn_index": 0,
+            "player_order": [str(getattr(p, "id", "") or "") for p in players_in_order],
+            "queues": redeploy_queues,
+            "pending_move": False,
+            "pending_move_unit_id": "",
+        }
+        self._queue_redeploy_selection()
+
+    def _continue_redeploy_phase(self) -> None:
+        state = getattr(self, "_redeploy_state", None)
+        if not isinstance(state, dict) or not state.get("active"):
+            return
+        if state.get("pending_move"):
+            return
+        self._queue_redeploy_selection()
+
+    def _queue_redeploy_selection(self) -> None:
+        state = getattr(self, "_redeploy_state", None)
+        if not isinstance(state, dict) or not state.get("active"):
+            return
+        if state.get("pending_move"):
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        queue = getattr(self, "decision_queue", None)
+        last_decision_id = str(state.get("last_decision_id", "") or "")
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) == "aeldari_guileful_strategist":
+                    if last_decision_id and str(getattr(req, "decision_id", "") or "") == last_decision_id:
+                        continue
+                    return
+        order = list(state.get("player_order") or [])
+        if not order:
+            state["active"] = False
+            return
+        turn_idx = int(state.get("turn_index", 0) or 0)
+
+        player_id = ""
+        player_obj = None
+        for _ in range(len(order)):
+            pid = str(order[turn_idx % len(order)] or "")
+            tokens = list(state.get("queues", {}).get(pid, []) or [])
+            if tokens:
+                player_id = pid
+                player_obj = self.entity_registry.get(pid, kind="player") if self.entity_registry else None
+                break
             turn_idx += 1
 
-        print("INFO: Redeploy phase complete")
+        if not player_id or player_obj is None:
+            state["active"] = False
+            print("INFO: Redeploy phase complete")
+            return
+
+        state["turn_index"] = turn_idx
+        tokens = list(state.get("queues", {}).get(player_id, []) or [])
+        if not tokens:
+            state["active"] = False
+            print("INFO: Redeploy phase complete")
+            return
+        token = tokens[0]
+
+        army = player_obj.get_army()
+        if army is None:
+            state["active"] = False
+            print("INFO: Redeploy phase complete")
+            return
+
+        from ..utility.entity_ids import get_entity_id
+
+        used = set(str(v) for v in list(token.get("used_unit_ids") or []) if v)
+        filters = [str(f or "").strip().upper() for f in list(token.get("filters") or []) if str(f or "").strip()]
+
+        candidates = []
+        seen = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                rid = str(get_entity_id(root))
+            except Exception:
+                continue
+            if rid in seen:
+                continue
+            seen.add(rid)
+            if rid in used:
+                continue
+            try:
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                if str(getattr(root, "reserve_status", "deployed") or "deployed") != "deployed":
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                    continue
+            except Exception:
+                continue
+            if filters:
+                try:
+                    if not all(root.has_any_keyword(f) for f in filters):
+                        continue
+                except Exception:
+                    continue
+            candidates.append(root)
+
+        if not candidates:
+            tokens.pop(0)
+            state.get("queues", {})[player_id] = tokens
+            state["turn_index"] = turn_idx + 1
+            self._queue_redeploy_selection()
+            return
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for cand in sorted(candidates, key=_cand_sort_key):
+            cid = get_entity_id(cand)
+            label = str(getattr(cand, "name", "Unit") or "Unit")
+            if bool(token.get("can_place_in_reserves")):
+                options.append(
+                    DecisionOption.create(
+                        f"{label} - Redeploy",
+                        payload={"target_unit_id": cid, "redeploy_action": "battlefield"},
+                    )
+                )
+                options.append(
+                    DecisionOption.create(
+                        f"{label} - Strategic Reserves",
+                        payload={"target_unit_id": cid, "redeploy_action": "strategic_reserves"},
+                    )
+                )
+            else:
+                options.append(
+                    DecisionOption.create(
+                        f"{label} - Redeploy",
+                        payload={"target_unit_id": cid, "redeploy_action": "battlefield"},
+                    )
+                )
+
+        ability_name = str(token.get("ability_name") or "Redeploy").strip()
+        remaining = int(token.get("remaining", 0) or 0)
+        ctx = {
+            "ability": "aeldari_guileful_strategist",
+            "ability_name": ability_name,
+            "phase": "Redeploy Units",
+            "remaining": remaining,
+            "redeploy_player_id": player_id,
+            "source_unit_id": token.get("source_unit_id"),
+            "can_place_in_reserves": bool(token.get("can_place_in_reserves")),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a unit to redeploy ({remaining} remaining).",
+            player_id=player_id,
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+
+    def _apply_redeploy_choice(self, request, result, *, skipped: bool = False) -> None:
+        state = getattr(self, "_redeploy_state", None)
+        if not isinstance(state, dict) or not state.get("active"):
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        player_id = str(ctx.get("redeploy_player_id") or getattr(request, "player_id", "") or "")
+        if not player_id:
+            return
+        queues = state.get("queues", {}) or {}
+        tokens = list(queues.get(player_id, []) or [])
+        if not tokens:
+            return
+        token = tokens[0]
+        if skipped:
+            state["last_decision_id"] = str(getattr(request, "decision_id", "") or "")
+            tokens.pop(0)
+            queues[player_id] = tokens
+            state["turn_index"] = int(state.get("turn_index", 0) or 0) + 1
+            self._queue_redeploy_selection()
+            return
+
+        from ..utility.entity_ids import get_entity_id
+        payload = dict(getattr(result, "payload", {}) or {})
+        if not payload:
+            try:
+                opt = next((o for o in list(getattr(request, "options", []) or []) if o.option_id == result.option_id), None)
+                if opt is not None:
+                    payload = dict(getattr(opt, "payload", {}) or {})
+            except Exception:
+                payload = {}
+        target_id = str(payload.get("target_unit_id", "") or "")
+        action = str(payload.get("redeploy_action", "battlefield") or "battlefield").strip().lower()
+        if not target_id:
+            tokens.pop(0)
+            queues[player_id] = tokens
+            state["turn_index"] = int(state.get("turn_index", 0) or 0) + 1
+            self._queue_redeploy_selection()
+            return
+        target = self.entity_registry.get(target_id, kind="unit") if self.entity_registry else None
+        if target is None:
+            tokens.pop(0)
+            queues[player_id] = tokens
+            state["turn_index"] = int(state.get("turn_index", 0) or 0) + 1
+            self._queue_redeploy_selection()
+            return
+        try:
+            root = target.get_attached_unit_root()
+        except Exception:
+            root = target
+        root_id = get_entity_id(root)
+        used = token.get("used_unit_ids")
+        if isinstance(used, set):
+            used.add(root_id)
+        elif isinstance(used, list):
+            if root_id not in used:
+                used.append(root_id)
+        token["remaining"] = max(int(token.get("remaining", 0) or 0) - 1, 0)
+        if token["remaining"] <= 0:
+            tokens.pop(0)
+        queues[player_id] = tokens
+        state["turn_index"] = int(state.get("turn_index", 0) or 0) + 1
+        state["last_decision_id"] = str(getattr(request, "decision_id", "") or "")
+
+        if action == "strategic_reserves":
+            self._redeploy_unit_to_strategic_reserves(root)
+            self._queue_redeploy_selection()
+            return
+
+        player = self.entity_registry.get(player_id, kind="player") if self.entity_registry else None
+        ability_name = str(token.get("ability_name") or ctx.get("ability_name") or "Redeploy").strip()
+        self._queue_redeploy_placement(player, root, ability_name=ability_name)
+
+    def _queue_redeploy_placement(self, player, unit, *, ability_name: str) -> None:
+        if unit is None or not bool(getattr(self, "is_authoritative", True)):
+            return
+        from ..engine.decision_kinds import DECISION_MOVE_UNIT
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_MOVE_UNIT:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if bool(ctx.get("redeploy_followup")) and str(ctx.get("unit_id", "")) == str(get_entity_id(unit)):
+                    return
+
+        unit_id = get_entity_id(unit)
+        options = [
+            DecisionOption.create(
+                "Confirm",
+                payload={"unit_id": unit_id, "movement_type": "deploy", "action": "confirm"},
+            )
+        ]
+        player_id = getattr(player, "id", None) if player is not None else None
+        allowed_ids = [get_entity_id(m) for m in list(getattr(unit, "models", []) or [])]
+        ctx = {
+            "unit_id": unit_id,
+            "movement_type": "deploy",
+            "placement_kind": "deployment",
+            "allowed_model_ids": allowed_ids,
+            "allow_skip": False,
+            "redeploy_followup": True,
+            "redeploy_unit_id": unit_id,
+            "ability_name": str(ability_name or "Redeploy"),
+        }
+        request = DecisionRequest.create(
+            DECISION_MOVE_UNIT,
+            f"{ability_name}: redeploy {getattr(unit, 'name', 'Unit')}",
+            player_id=player_id,
+            options=options,
+            context=ctx,
+        )
+        self._redeploy_state["pending_move"] = True
+        self._redeploy_state["pending_move_unit_id"] = str(unit_id)
+        self.request_decision(request)
+
+    def _on_redeploy_placement_resolved(self, unit_id: str) -> None:
+        state = getattr(self, "_redeploy_state", None)
+        if not isinstance(state, dict) or not state.get("active"):
+            return
+        if str(state.get("pending_move_unit_id") or "") != str(unit_id or ""):
+            return
+        state["pending_move"] = False
+        state["pending_move_unit_id"] = ""
+        self._queue_redeploy_selection()
+
+    def _redeploy_unit_to_strategic_reserves(self, unit) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        game_map = getattr(self, "map", None)
+
+        for member in members:
+            try:
+                member.set_reserve_status("strategic_reserves")
+            except Exception:
+                try:
+                    member.reserve_status = "strategic_reserves"
+                except Exception:
+                    pass
+            try:
+                member.deployed = True
+                member.reserve_turn_deployed = None
+                member.arrived_from_reserves_this_turn = False
+            except Exception:
+                pass
+            try:
+                if game_map is not None and hasattr(game_map, "units") and member in game_map.units:
+                    game_map.units.remove(member)
+            except Exception:
+                pass
+
+        # Keep embarked passengers embarked; ensure they follow the transport into reserves.
+        try:
+            passengers = list(getattr(root, "transport_passengers", []) or [])
+        except Exception:
+            passengers = []
+        for passenger in passengers:
+            try:
+                passenger.set_reserve_status("strategic_reserves")
+            except Exception:
+                try:
+                    passenger.reserve_status = "strategic_reserves"
+                except Exception:
+                    pass
+            try:
+                passenger.deployed = True
+                passenger.reserve_turn_deployed = None
+                passenger.arrived_from_reserves_this_turn = False
+            except Exception:
+                pass
+            try:
+                if game_map is not None and hasattr(game_map, "units") and passenger in game_map.units:
+                    game_map.units.remove(passenger)
+            except Exception:
+                pass
 
     def _find_valid_redeploy_position(self, player: 'Player', unit: 'Unit') -> tuple | None:
         """Return None unless a controller provides a redeploy position."""

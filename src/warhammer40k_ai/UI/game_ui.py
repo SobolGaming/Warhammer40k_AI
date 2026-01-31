@@ -3094,6 +3094,7 @@ class GameView:
                 DECISION_CHOOSE_VOW,
                 DECISION_CHOOSE_WRATHFUL_PRESENCE,
                 DECISION_CHOOSE_DARK_PACT,
+                DECISION_CHOOSE_PATH_OF_WARRIOR,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
             )
@@ -3697,6 +3698,56 @@ class GameView:
             self.dark_pacts_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, decision_request=request)
             try:
                 self.dialog_manager.open(self.dark_pacts_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_PATH_OF_WARRIOR:
+            if self.martial_katah_dialog is None:
+                try:
+                    from .dialogs import MartialKatahDialog
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    self.martial_katah_dialog = MartialKatahDialog(sw, sh)
+                except Exception:
+                    self.martial_katah_dialog = None
+            if self.martial_katah_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+            trigger = str(ctx.get("trigger", "") or "")
+            if trigger:
+                subtitle = f"{getattr(unit, 'name', 'Unit')} selected to {('shoot' if trigger == 'shooting' else 'fight')}."
+            else:
+                subtitle = f"{getattr(unit, 'name', 'Unit')}"
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.martial_katah_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                default_id = first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    self.martial_katah_dialog.hide()
+                except Exception:
+                    pass
+
+            self.martial_katah_dialog.show(
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                subtitle=subtitle,
+                title="Path of the Warrior",
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.martial_katah_dialog, modal=True)
             except Exception:
                 pass
             return
@@ -4320,6 +4371,61 @@ class GameView:
                 subtitle = "Select a friendly AELDARI VEHICLE unit to regain D3 lost wounds."
                 if range_value:
                     subtitle = f"{subtitle} (Range: {range_value}\")"
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "aeldari_guileful_strategist":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "aeldari_guileful_strategist_dialog") or self.aeldari_guileful_strategist_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.aeldari_guileful_strategist_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.aeldari_guileful_strategist_dialog = None
+                dlg = self.aeldari_guileful_strategist_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Guileful Strategist").strip()
+                remaining = ctx.get("remaining")
+                header = "Select a friendly unit to redeploy."
+                subtitle = "Select a friendly AELDARI VEHICLE unit to redeploy."
+                if remaining is not None:
+                    try:
+                        subtitle = f"{subtitle} (Remaining: {int(remaining)})"
+                    except Exception:
+                        subtitle = subtitle
 
                 dlg.show(
                     title=ability_name,

@@ -73,6 +73,16 @@ class AeldariDetachmentManager(DetachmentManagerBase):
             and self._unit_has_keyword(unit, "FLY")
         )
 
+    def _unit_is_aspect_warriors(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "ASPECT WARRIORS")
+
+    def _unit_is_avatar_of_khaine(self, unit) -> bool:
+        if unit is None:
+            return False
+        return self._unit_has_keyword(unit, "AVATAR OF KHAINE")
+
     def skilled_crews_assault_applies(self, unit) -> bool:
         if not self.is_armoured_warhost():
             return False
@@ -86,3 +96,10 @@ class AeldariDetachmentManager(DetachmentManagerBase):
         if not self._unit_in_army(unit):
             return False
         return self._unit_is_aeldari_vehicle_fly(unit)
+
+    def path_of_the_warrior_applies(self, unit) -> bool:
+        if not self.is_aspect_host():
+            return False
+        if not self._unit_in_army(unit):
+            return False
+        return self._unit_is_aspect_warriors(unit) or self._unit_is_avatar_of_khaine(unit)

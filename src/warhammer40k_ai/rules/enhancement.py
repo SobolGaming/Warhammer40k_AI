@@ -337,6 +337,27 @@ class Enhancement:
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
+        if name == "mantle of wisdom" or enh_id == "000009927003":
+            if not is_aspect_host:
+                return
+            unit.special_rules["enhancement_mantle_of_wisdom"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "shimmerstone" or enh_id == "000009927004":
+            if not is_aspect_host:
+                return
+            unit.special_rules["enhancement_shimmerstone"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "strategic savant" or enh_id == "000009927005":
+            if not is_aspect_host:
+                return
+            unit.special_rules["enhancement_strategic_savant"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
         if name == "faultless opportunist" or enh_id == "000010002002":
             unit.special_rules["enhancement_faultless_opportunist"] = True
 

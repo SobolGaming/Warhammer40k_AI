@@ -22,6 +22,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_FRENZY_TARGET,
     DECISION_CHOOSE_HARBINGER,
     DECISION_CHOOSE_MARTIAL_KATAH,
+    DECISION_CHOOSE_PATH_OF_WARRIOR,
     DECISION_CHOOSE_LIMB_FROM_LIMB,
     DECISION_CHOOSE_RED_WRATH,
     DECISION_USE_MIRACLE_DIE,
@@ -571,6 +572,51 @@ def _apply_choose_dark_pact(game: object, request: DecisionRequest, result: Deci
     return bool(apply_fn(game, choice=str(choice), phase_name=phase_name, trigger=trigger))
 
 
+def _validate_choose_path_of_warrior(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit")
+    choice = payload.get("choice_key") or payload.get("choice") or payload.get("key")
+    if unit_val is None or choice is None:
+        return ("Path of the Warrior requires unit_id and choice.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Path of the Warrior unit not found.",)
+    if str(choice or "").strip().upper() not in ("HIT", "WOUND", "BOTH"):
+        return ("Path of the Warrior choice must be HIT or WOUND.",)
+    try:
+        root = unit.get_attached_unit_root()
+    except Exception:
+        root = unit
+    try:
+        army = root.get_parent_army()
+    except Exception:
+        army = None
+    mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+    if mgr is None or not getattr(mgr, "path_of_the_warrior_applies", lambda _u: False)(root):
+        return ("Path of the Warrior is not applicable for this unit.",)
+    return ()
+
+
+def _apply_choose_path_of_warrior(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit"))
+    if unit is None:
+        raise RuntimeError("Path of the Warrior unit not found.")
+    choice = payload.get("choice_key") or payload.get("choice") or payload.get("key")
+    phase_name = str(payload.get("phase_name", "") or request.context.get("phase_name", "") or "")
+    apply_fn = getattr(unit, "apply_path_of_warrior_choice", None)
+    if not callable(apply_fn):
+        raise RuntimeError("Path of the Warrior apply hook missing.")
+    return bool(apply_fn(game, choice=str(choice), phase_name=phase_name))
+
+
 def _validate_choose_doctrina(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -1088,12 +1134,18 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 
 
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
+    ctx = dict(getattr(request, "context", {}) or {})
+    if str(ctx.get("ability", "") or "") == "aeldari_guileful_strategist":
+        skipped = is_skip_choice(request, result)
+        apply_fn = getattr(game, "_apply_redeploy_choice", None)
+        if callable(apply_fn):
+            apply_fn(request, result, skipped=skipped)
+        return None
     if is_skip_choice(request, result):
         return None
     payload = _option_payload(request, result)
     unit_val = payload.get("target_unit_id", payload.get("unit_id", payload.get("unit")))
     chosen = resolve_unit(game, unit_val)
-    ctx = dict(getattr(request, "context", {}) or {})
     if str(ctx.get("ability", "") or "") == "monarch_of_the_hunt":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:
@@ -2609,6 +2661,7 @@ register_decision_handler(
 register_decision_handler(DECISION_CHOOSE_FRENZY_TARGET, validate=_validate_choose_frenzy, apply=_apply_choose_frenzy)
 register_decision_handler(DECISION_CHOOSE_HARBINGER, validate=_validate_choose_harbinger, apply=_apply_choose_harbinger)
 register_decision_handler(DECISION_CHOOSE_MARTIAL_KATAH, validate=_validate_choose_martial_katah, apply=_apply_choose_martial_katah)
+register_decision_handler(DECISION_CHOOSE_PATH_OF_WARRIOR, validate=_validate_choose_path_of_warrior, apply=_apply_choose_path_of_warrior)
 register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_choose_limb_from_limb, apply=_apply_choose_limb_from_limb)
 register_decision_handler(DECISION_CHOOSE_RED_WRATH, validate=_validate_choose_red_wrath, apply=_apply_choose_red_wrath)
 register_decision_handler(DECISION_USE_MIRACLE_DIE, validate=_validate_use_miracle_die, apply=_apply_use_miracle_die)

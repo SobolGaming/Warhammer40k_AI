@@ -799,7 +799,7 @@ class WargearProfile:
             return []
         items = sr.get(key)
         if not isinstance(items, list):
-            return []
+            items = []
         atk_type = str(attack_type or "any").strip().lower()
         phase_key = str(phase_key or "").strip().upper()
         out = []
@@ -817,6 +817,40 @@ class WargearProfile:
             if entry_phase and phase_key and entry_phase != phase_key:
                 continue
             out.append(entry)
+        if key == "defensive_wound_mods":
+            try:
+                root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+            except Exception:
+                root = target_unit
+            try:
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            if leaders:
+                try:
+                    from ..utility.keyword_utils import unit_has_keyword
+                    is_aspect = unit_has_keyword(root, "ASPECT WARRIORS")
+                except Exception:
+                    is_aspect = False
+                if is_aspect:
+                    for leader in leaders:
+                        sr = getattr(leader, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            continue
+                        if not sr.get("enhancement_shimmerstone"):
+                            continue
+                        entry_attack_type = "ranged"
+                        if atk_type and entry_attack_type not in ("any", atk_type):
+                            continue
+                        out.append(
+                            {
+                                "value": 1,
+                                "attack_type": entry_attack_type,
+                                "source": "Shimmerstone",
+                            }
+                        )
+                        break
+            # If no leaders or no enhancement, fall through.
         return out
 
     def _resolve_attack_count(

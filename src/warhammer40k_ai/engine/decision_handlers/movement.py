@@ -676,6 +676,14 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
         _finalize_deployment_move(game, unit, model_positions)
     if placement_kind == "reserves_arrival":
         _finalize_reserves_arrival_move(game, unit, model_positions)
+    if bool(ctx.get("redeploy_followup", False)):
+        try:
+            unit_id = str(ctx.get("redeploy_unit_id", "") or unit_id)
+            followup = getattr(game, "_on_redeploy_placement_resolved", None)
+            if callable(followup):
+                followup(unit_id)
+        except Exception:
+            pass
 
     members = _movement_members(unit)
     for member in members:

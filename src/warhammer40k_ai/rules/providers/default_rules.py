@@ -131,6 +131,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_move_started", "_on_unit_move_started_battle_focus"),
                 ("unit_move_ended", "_on_unit_move_ended_battle_focus"),
                 ("fight_unit_selected", "_on_fight_unit_selected_battle_focus"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_path_of_warrior"),
+                ("fight_unit_selected", "_on_fight_unit_selected_path_of_warrior"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_battle_focus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_aspect_shrine"),
                 ("fight_sequence_complete", "_on_fight_sequence_complete_aspect_shrine"),

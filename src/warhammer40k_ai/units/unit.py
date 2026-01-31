@@ -357,6 +357,30 @@ class Unit:
                 except Exception:
                     continue
 
+            # Strategic Savant (Aspect Host): +1 OC while leading Aspect Warriors.
+            try:
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+            except Exception:
+                root = self
+            try:
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            if leaders:
+                try:
+                    from ..utility.keyword_utils import unit_has_keyword
+                    is_aspect = unit_has_keyword(root, "ASPECT WARRIORS")
+                except Exception:
+                    is_aspect = False
+                if is_aspect:
+                    for leader in leaders:
+                        sr = getattr(leader, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            continue
+                        if sr.get("enhancement_strategic_savant"):
+                            mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:strategic_savant"))
+                            break
+
             # OC: strict enemy engagement-range halving (e.g. Chitinous Horrors).
             try:
                 if game_map is None:
@@ -10736,6 +10760,34 @@ class Unit:
         mods["crit_wound_reasons"] = tuple(crit_wound_reasons)
         return mods
 
+    def _path_of_warrior_choice(self, *, game=None) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        choice = str(sr.get("path_of_warrior_choice", "") or "").strip().upper()
+        if not choice:
+            return ""
+        exp = str(sr.get("path_of_warrior_expires_phase", "") or "").strip().upper()
+        if exp:
+            if game is None:
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+            if game is not None:
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or getattr(game, "phase", "") or "").strip().upper()
+                if pname and pname != exp:
+                    return ""
+        return choice
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -10831,6 +10883,17 @@ class Unit:
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_hit_threshold = eff.critical_threshold if crit_hit_threshold is None else min(crit_hit_threshold, eff.critical_threshold)
                     crit_hit_reasons.append(f"{label}: critical hit on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        choice = ""
+        try:
+            choice_fn = getattr(self, "_path_of_warrior_choice", None)
+            if callable(choice_fn):
+                choice = choice_fn()
+        except Exception:
+            choice = ""
+        if choice in ("HIT", "BOTH"):
+            reroll_hit_values.add(1)
+            reroll_hit_reasons.append("Path of the Warrior: re-roll Hit rolls of 1")
 
         army = None
         get_parent_army = getattr(root, "get_parent_army", None)
@@ -10946,6 +11009,17 @@ class Unit:
                 elif eff.kind == "crit" and eff.critical_threshold:
                     crit_wound_threshold = eff.critical_threshold if crit_wound_threshold is None else min(crit_wound_threshold, eff.critical_threshold)
                     crit_wound_reasons.append(f"{label}: critical wound on {eff.critical_threshold}+{_cond_suffix(eff.condition)}")
+
+        choice = ""
+        try:
+            choice_fn = getattr(self, "_path_of_warrior_choice", None)
+            if callable(choice_fn):
+                choice = choice_fn()
+        except Exception:
+            choice = ""
+        if choice in ("WOUND", "BOTH"):
+            reroll_wound_values.add(1)
+            reroll_wound_reasons.append("Path of the Warrior: re-roll Wound rolls of 1")
 
         game = None
         army = None
@@ -12340,6 +12414,97 @@ class Unit:
             DECISION_CHOOSE_DARK_PACT,
             f"Select Dark Pact for {getattr(self, 'name', 'Unit')}",
             player_id=getattr(player, "id", None),
+            options=decision_options,
+            context={"unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
+        )
+        if hasattr(game, "request_decision"):
+            game.request_decision(req)
+
+    def apply_path_of_warrior_choice(self, game, *, choice: str, phase_name: str) -> bool:
+        choice_norm = str(choice or "").strip().upper()
+        if choice_norm not in ("HIT", "WOUND", "BOTH"):
+            return False
+        self.set_path_of_warrior_choice(choice_norm, phase_name=str(phase_name or "").strip().upper())
+        return True
+
+    def maybe_trigger_path_of_warrior(self, game, *, phase_name: str, trigger: str) -> None:
+        trigger_norm = str(trigger or "").strip().lower()
+        if trigger_norm not in ("shooting", "fight"):
+            return
+        if not bool(getattr(game, "is_authoritative", True)):
+            return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
+        if mgr is None or not getattr(mgr, "path_of_the_warrior_applies", lambda _u: False)(root):
+            return
+
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        for leader in leaders:
+            sr = getattr(leader, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_mantle_of_wisdom"):
+                root.set_path_of_warrior_choice("BOTH", phase_name=str(phase_name or "").strip().upper())
+                return
+
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_PATH_OF_WARRIOR
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            return
+
+        unit_id = get_entity_id(root)
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_PATH_OF_WARRIOR:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("unit_id", "")) != str(unit_id):
+                    continue
+                if str(ctx.get("phase_name", "")) != str(phase_name or ""):
+                    continue
+                if str(ctx.get("trigger", "")) != str(trigger or ""):
+                    continue
+                return
+
+        decision_options = [
+            DecisionOption.create(
+                "Re-roll Hit 1s",
+                payload={
+                    "choice_key": "HIT",
+                    "unit_id": unit_id,
+                    "phase_name": phase_name or "",
+                    "trigger": trigger or "",
+                    "summary": "Re-roll Hit rolls of 1.",
+                },
+            ),
+            DecisionOption.create(
+                "Re-roll Wound 1s",
+                payload={
+                    "choice_key": "WOUND",
+                    "unit_id": unit_id,
+                    "phase_name": phase_name or "",
+                    "trigger": trigger or "",
+                    "summary": "Re-roll Wound rolls of 1.",
+                },
+            ),
+        ]
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_PATH_OF_WARRIOR,
+            f"Select Path of the Warrior for {getattr(root, 'name', 'Unit')}",
+            player_id=getattr(getattr(army, "player", None), "id", None),
             options=decision_options,
             context={"unit_id": unit_id, "phase_name": phase_name or "", "trigger": trigger or ""},
         )
@@ -19051,6 +19216,25 @@ class Unit:
             sr.pop(k, None)
         root.special_rules = sr
 
+    def set_path_of_warrior_choice(self, choice: str, *, phase_name: str = "") -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["path_of_warrior_choice"] = str(choice or "").strip().upper()
+        if phase_name:
+            sr["path_of_warrior_expires_phase"] = str(phase_name or "").strip().upper()
+        root.special_rules = sr
+
+    def clear_path_of_warrior_choice(self) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for k in ("path_of_warrior_choice", "path_of_warrior_expires_phase"):
+            sr.pop(k, None)
+        root.special_rules = sr
+
     def attached_unit_has_reanimation_protocols(self) -> bool:
         """Attached unit eligibility: true if any attached member has Reanimation Protocols."""
         for u in self.get_attached_unit_members():
@@ -20352,7 +20536,7 @@ class Unit:
         can_place_in_reserves = False
 
         # Normalize abilities list: abilities may be attached to models in unit
-        abilities_to_check = []
+        abilities_to_check: list[tuple[str, str]] = []
         for model in getattr(self, 'models', []):
             for ability in getattr(model, 'abilities', []):
                 if ability and hasattr(ability, 'description'):
@@ -20361,18 +20545,33 @@ class Unit:
                             continue
                     except Exception:
                         pass
-                    abilities_to_check.append(ability.description)
+                    abilities_to_check.append((getattr(ability, "name", "") or "", ability.description))
 
         # Also include unit-level possible_abilities if present
         for ability in self._iter_active_possible_abilities():
             if ability and hasattr(ability, 'description'):
-                abilities_to_check.append(ability.description)
+                abilities_to_check.append((getattr(ability, "name", "") or "", ability.description))
 
-        for desc in abilities_to_check:
-            text = desc.lower()
+        # Enhancement text applies to the enhancement bearer (unit-level for redeploy rules).
+        try:
+            enh = getattr(self, "enhancement", None)
+            if enh is not None:
+                desc = getattr(enh, "description", "") or ""
+                if desc:
+                    abilities_to_check.append((getattr(enh, "name", "") or "", desc))
+        except Exception:
+            pass
+
+        redeploy_filters: list[str] = []
+        ability_name = ""
+
+        for name, desc in abilities_to_check:
+            text = str(desc or "").lower()
             if ("after both players have deployed their armies" in text and "redeploy" in text):
                 # Attempt to extract count from "select up to" phrases
                 has_redeploy = True
+                if name and not ability_name:
+                    ability_name = str(name)
                 # Support numeric or dice expressions like D3, D6, D10 (optionally with +N)
                 m = re.search(r"select\s+up\s+to\s+((?:\d+)|(?:d\d+(?:\s*\+\s*\d+)?))", text)
                 if m:
@@ -20399,12 +20598,18 @@ class Unit:
                     count = max(count, 3)  # default to 3 if unspecified
                 if "strategic reserves" in text:
                     can_place_in_reserves = True
+                if "aeldari vehicle units" in text or "aeldari vehicle unit" in text:
+                    redeploy_filters = ["AELDARI", "VEHICLE"]
 
         result = (has_redeploy, count, can_place_in_reserves)
         # Cache the result
         if not hasattr(self, '_ability_cache'):
             self._ability_cache = {}
         self._ability_cache['redeploy'] = result
+        if redeploy_filters:
+            self._ability_cache['redeploy_filters'] = list(redeploy_filters)
+        if ability_name:
+            self._ability_cache['redeploy_ability_name'] = ability_name
         return result
     
     def has_firing_deck(self) -> Tuple[bool, int]:

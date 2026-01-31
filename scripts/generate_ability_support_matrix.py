@@ -262,6 +262,11 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"each time an emperors children unit from your army is selected to fight if it made a charge move this turn select one of the abilities below",
             r"while resolving those attacks melee weapons equipped by models in that unit have that ability",
         ),
+        "Path of the Warrior": (
+            r"each time an aspect warriors or avatar of khaine unit from your army is selected to shoot or fight select one of the following abilities for it to gain until the end of the phase",
+            r"each time a model in this unit makes an attack reroll a hit roll of \d+",
+            r"each time a model in this unit makes an attack reroll a wound roll of \d+",
+        ),
         "Mechanised Murder": (
             r"each time an emperors children model from your army makes an attack if it is a transport model or disembarked from a transport this turn reroll a hit roll of \d+ and reroll a wound roll of \d+",
         ),
@@ -1426,6 +1431,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Skilled Crews": (
             "Supported",
             "Armoured Warhost: AELDARI VEHICLE ranged weapons count as [ASSAULT]; AELDARI VEHICLE FLY units can re-roll Advance rolls.",
+        ),
+        "Path of the Warrior": (
+            "Supported",
+            "Aspect Host: select re-roll Hit 1s or re-roll Wound 1s each time an Aspect Warriors or Avatar of Khaine unit is selected to shoot or fight (until end of phase).",
         ),
         "Pledges to the Dark Prince": (
             "Supported",
@@ -5187,7 +5196,11 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000009769002": "Guiding Presence: start of Shooting phase select friendly AELDARI VEHICLE within 9\" to gain +1 to hit until end of phase.",
         "000009769003": "Harmonisation Matrix: Command phase roll D6 if bearer/transport is within a controlled objective; on 3+, gain 1 CP.",
         "000009769004": "Spirit Stone of Raelyth: Lone Operative within 3\" of friendly AELDARI VEHICLE; Command phase select friendly AELDARI VEHICLE within 3\" to regain up to D3 lost wounds.",
+        "000009769005": "Guileful Strategist: after deployment select up to three AELDARI VEHICLE units to redeploy; may place them into Strategic Reserves regardless of limits.",
         "000009927002": "Aspect of Murder: bearer melee weapons gain +1 Damage and [Precision].",
+        "000009927003": "Mantle of Wisdom: while leading Aspect Warriors, unit gains both Path of the Warrior abilities when selected to shoot or fight.",
+        "000009927004": "Shimmerstone: while leading Aspect Warriors, ranged attacks targeting the unit suffer -1 to wound.",
+        "000009927005": "Strategic Savant: while leading Aspect Warriors, models in the unit gain +1 Objective Control.",
         "000008348005": "Adaptive Biology: bearer gains Feel No Pain 5+; at the start of any turn, if below starting wounds, upgrade to Feel No Pain 4+ for the rest of the battle.",
         "000010002002": "Faultless Opportunist: Heroic Intervention for 0CP even if another unit was targeted this phase.",
         "000010002005": "Rise to the Challenge: end of Fight phase (once per battle) fight one additional time and choose an Exquisite Swordsmanship ability.",
