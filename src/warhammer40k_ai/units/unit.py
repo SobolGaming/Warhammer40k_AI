@@ -1039,6 +1039,10 @@ class Unit:
         r"(?:you can )?re-?roll any rolls made for (?:the )?(?:bearer'?s|that) unit while it is performing an agile (?:manoeuvre|maneuver)",
         re.IGNORECASE,
     )
+    _UNIQUE_MODEL_RESTRICTION_RE = re.compile(
+        r"cannot include more than one of this (?:model|unit) in your army",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_SUSTAINED_HITS_RE = re.compile(
         r"(?:weapons?\s+equipped\s+by\s+models\s+in|models\s+in)\s+the\s+bearer'?s\s+unit.*?\bsustained\s+hits\b\s*(\d+)",
         re.IGNORECASE,
@@ -7831,6 +7835,34 @@ class Unit:
         except Exception:
             pass
         return False
+
+    def has_unique_model_restriction(self) -> bool:
+        """True if this unit has a 'one-of' army inclusion restriction."""
+        cache_key = "unique_model_restriction"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+
+        found = False
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            normalized = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not normalized:
+                continue
+            if self._UNIQUE_MODEL_RESTRICTION_RE.search(normalized):
+                found = True
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = bool(found)
+        self._ability_cache = cache
+        return bool(found)
 
     def _get_crewed_platform_spec(self) -> Optional[dict]:
         """Return parsed crewed platform ability info, or None if not present."""

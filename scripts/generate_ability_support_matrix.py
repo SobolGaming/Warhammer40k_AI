@@ -1857,6 +1857,7 @@ def _classify_ability_base(
             return mapped
 
     desc_support = _warlord_enhancement_restriction_support(description)
+    unique_model_support = _unique_model_restriction_support(description)
     chapter_restriction_support = None
     if description:
         if "RESTRICTIONS" not in description.upper():
@@ -1865,6 +1866,8 @@ def _classify_ability_base(
         chapter_restriction_support = _space_marine_chapter_restriction_support(name)
     if desc_support:
         return desc_support
+    if unique_model_support:
+        return unique_model_support
     if chapter_restriction_support:
         return chapter_restriction_support
     closest_m_veh_support = _closest_monster_vehicle_reroll_support(description)
@@ -2206,6 +2209,18 @@ def _space_marine_chapter_restriction_support(description: str) -> Optional[Tupl
     if re.fullmatch(pattern, norm):
         return ("Supported", "Space Marine chapter restriction enforced during army validation.")
     return None
+
+
+def _unique_model_restriction_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = r"(?:unless otherwise stated )?you cannot include more than one of this (?:model|unit) in your army"
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "Army validation enforces unique inclusion for this model.")
 
 
 def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:

@@ -1022,6 +1022,28 @@ class Army:
             duplicates = [name for name in epic_hero_names if epic_hero_names.count(name) > 1]
             raise ArmyValidationError(f"Epic Hero(s) {duplicates} included more than once.")
 
+    def validate_unique_model_restrictions(self) -> None:
+        def _norm_name(value: str) -> str:
+            text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+            return re.sub(r"\s+", " ", text).strip()
+
+        restricted = {}
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            has_rule = bool(getattr(unit, "has_unique_model_restriction", lambda: False)())
+            if not has_rule:
+                continue
+            key = _norm_name(getattr(unit, "name", ""))
+            if not key:
+                continue
+            entry = restricted.setdefault(key, {"name": getattr(unit, "name", "Unknown"), "count": 0})
+            entry["count"] += 1
+
+        duplicates = [entry["name"] for entry in restricted.values() if entry.get("count", 0) > 1]
+        if duplicates:
+            raise ArmyValidationError(f"Unique model restriction: {duplicates} included more than once.")
+
     def validate_ynnari_epic_hero_restrictions(self) -> None:
         def _norm_name(value: str) -> str:
             text = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
@@ -1938,6 +1960,7 @@ class Army:
         self.validate_points_limit()
         self.validate_unit_limits()
         self.validate_epic_heroes()
+        self.validate_unique_model_restrictions()
         self.validate_ynnari_epic_hero_restrictions()
         self.validate_leaders()
         self.validate_enhancements()
