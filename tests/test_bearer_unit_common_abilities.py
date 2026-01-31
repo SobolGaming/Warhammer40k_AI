@@ -197,6 +197,33 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), bodyguard.has_feel_no_pain())
 
+    def test_leading_unit_other_character_fnp_applies(self):
+        ability = {
+            "name": "Champion of Souls",
+            "description": (
+                "While this model is leading a unit, other Character models attached to that unit have the "
+                "Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability], attached_to=["Bodyguard"])
+        other_leader = _make_unit("Other Leader", attached_to=["Bodyguard"])
+        bodyguard = _make_unit("Bodyguard")
+
+        leader.keywords = ["Character"]
+        other_leader.keywords = ["Character"]
+
+        bodyguard.attached_leaders = [leader, other_leader]
+        leader.attached_to = bodyguard
+        other_leader.attached_to = bodyguard
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((4, None), other_leader.has_feel_no_pain(target_model=other_leader.models[0]))
+        self.assertNotIn((4, None), leader.has_feel_no_pain(target_model=leader.models[0]))
+        self.assertNotIn((4, None), bodyguard.has_feel_no_pain(target_model=bodyguard.models[0]))
+
     def test_leading_unit_invulnerable_save_applies(self):
         ability = {
             "name": "Aegis Ward",
@@ -424,6 +451,43 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertTrue(attack_instance.get("ignores_cover", False))
 
+    def test_unit_ignores_cover_applies(self):
+        from warhammer40k_ai.units.wargear import WargearProfile
+
+        ability = {
+            "name": "Shrouded Volley",
+            "description": "Weapons equipped by models in this unit have the [IGNORES COVER] ability.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Shadow", abilities=[ability])
+        unit._refresh_bearer_unit_common_modifiers()
+
+        parent = SimpleNamespace(name="Test Gun", is_melee=lambda: False, is_ranged=lambda: True)
+        profile = WargearProfile(
+            profile_name="Ranged",
+            wargear_data={
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            },
+            parent_wargear=parent,
+        )
+        target = SimpleNamespace(
+            toughness=4,
+            models=[SimpleNamespace(is_alive=True)],
+            has_keyword=lambda _k: False,
+        )
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
+            profile._hit_target_with_tracking(target, unit.models[0], attack_instance)
+
+        self.assertTrue(attack_instance.get("ignores_cover", False))
+
     def test_enhancement_bearer_unit_ignores_cover_applies(self):
         from warhammer40k_ai.rules.enhancement import Enhancement
         from warhammer40k_ai.units.wargear import WargearProfile
@@ -483,6 +547,25 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         penalty, reasons = unit.get_target_hit_roll_penalty("ranged")
         self.assertEqual(penalty, 1)
         self.assertIn("-1 to hit from Deflective Field", reasons)
+
+    def test_bearer_unit_grenades_keyword_applies(self):
+        ability = {
+            "name": "Grenade Harness",
+            "description": "The bearer's unit has the Grenades keyword.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability], attached_to=["Bodyguard"])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+
+        leader.models[0].optional_wargear.append("Grenade Harness")
+
+        bodyguard._refresh_bearer_keyword_flags()
+
+        self.assertTrue(bodyguard.has_keyword("Grenades"))
+        self.assertTrue(leader.has_keyword("Grenades"))
 
     def test_leading_unit_target_hit_penalty_applies(self):
         from warhammer40k_ai.roster.army import Army

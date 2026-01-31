@@ -1095,6 +1095,11 @@ class Unit:
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit.*?\bfeel\s+no\s+pain\b\s*([1-6])\+",
         re.IGNORECASE,
     )
+    _ATTACHED_CHARACTER_FNP_RE = re.compile(
+        r"other\s+character\s+models\s+attached\s+to\s+(?:that\s+unit|the\s+bearer'?s\s+unit|this\s+unit)\s+"
+        r"have\s+(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,
@@ -1112,7 +1117,8 @@ class Unit:
         re.IGNORECASE,
     )
     _BEARER_UNIT_IGNORES_COVER_RE = re.compile(
-        r"(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+the\s+bearer'?s\s+unit.*?\bignores\s+cover\b",
+        r"(?:weapons?\s+equipped\s+by\s+models\s+in|attacks?\s+made\s+by\s+models\s+in)\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit).*?\bignores\s+cover\b",
         re.IGNORECASE,
     )
     _BEARER_UNIT_TARGET_HIT_PENALTY_RE = re.compile(
@@ -1226,6 +1232,16 @@ class Unit:
     _WEAPON_HALF_RANGE_KEYWORD_MODEL_RE = re.compile(
         r"(?P<atype>melee|ranged)?\s*weapons?\s+equipped\s+by\s+this\s+model.*?"
         r"\b(?:have|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability.*?\bwithin\s+half\s+range\b",
+        re.IGNORECASE,
+    )
+    _WEAPON_ALWAYS_KEYWORD_MODEL_RE = re.compile(
+        r"(?P<atype>melee|ranged)?\s*weapons?\s+equipped\s+by\s+this\s+model.*?"
+        r"\b(?:have|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability\b",
+        re.IGNORECASE,
+    )
+    _BEARER_WEAPON_ALWAYS_KEYWORD_RE = re.compile(
+        r"(?:the\s+bearer'?s|this\s+model'?s)\s+(?P<atype>melee|ranged)?\s*weapons?\s+"
+        r"\b(?:have|has|gain)\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability\b",
         re.IGNORECASE,
     )
     _CHARGE_ROLL_TARGET_STRENGTH_BONUS_RE = re.compile(
@@ -2552,6 +2568,7 @@ class Unit:
                         del sr["advance_roll_modifiers"]
                 for key in (
                     "bearer_unit_fnp",
+                    "attached_character_fnp_entries",
                     "bearer_unit_invulnerable_save",
                     "bearer_unit_agile_maneuver_reroll",
                     "bearer_unit_sustained_hits_value",
@@ -2592,6 +2609,7 @@ class Unit:
         oc_mods: list[tuple[int, str]] = []
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
+        attached_character_fnp_entries: list[dict] = []
         invuln_entries: list[dict] = []
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
@@ -2711,8 +2729,26 @@ class Unit:
                                 source = str(name or "Unit contains ability").strip() or "Unit contains ability"
                                 contains_oc_mods.append((val, source))
 
-                    m = self._BEARER_UNIT_FNP_RE.search(sentence)
+                    attached_character_fnp_matched = False
+                    m = self._ATTACHED_CHARACTER_FNP_RE.search(sentence)
                     if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            attached_character_fnp_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                    "exclude_unit_id": get_entity_id(u),
+                                }
+                            )
+                            attached_character_fnp_matched = True
+
+                    m = self._BEARER_UNIT_FNP_RE.search(sentence)
+                    if m and not attached_character_fnp_matched:
                         try:
                             val = int(m.group(1))
                         except Exception:
@@ -2904,6 +2940,13 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_fnp"] = list(fnp_entries)
+                u.special_rules = sr
+        if attached_character_fnp_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["attached_character_fnp_entries"] = list(attached_character_fnp_entries)
                 u.special_rules = sr
 
         if invuln_entries:
@@ -3241,8 +3284,11 @@ class Unit:
             except Exception:
                 continue
 
+        unit_added_keywords: list[str] = []
+
         for u in members:
             added: list[str] = []
+            unit_added: list[str] = []
             for ab in u._iter_active_abilities():
                 try:
                     if isinstance(ab, str):
@@ -3254,12 +3300,19 @@ class Unit:
                 text = u._normalize_rules_text(desc or "")
                 if not text:
                     continue
+                text_lower = text.lower()
+                if "leading a unit" in text_lower and "bearer's unit" not in text_lower:
+                    text = re.sub(r"\bthat unit\b", "the bearer's unit", text, flags=re.IGNORECASE)
                 norm = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
                 norm = re.sub(r"'s\b", "s", norm)
                 norm = re.sub(r"[^a-z0-9]+", " ", norm)
                 norm = re.sub(r"\s+", " ", norm).strip()
                 if re.fullmatch(r"(?:the )?" + re.escape(self._BEARER_SMOKE_KEYWORD_TOKENS), norm):
                     added.append("Smoke")
+                if re.fullmatch(r"(?:the )?bearers unit has the grenades keyword", norm):
+                    unit_added.append("Grenades")
+                if re.fullmatch(r"this unit has the grenades keyword", norm):
+                    unit_added.append("Grenades")
             if added:
                 sr = getattr(u, "special_rules", None)
                 if not isinstance(sr, dict):
@@ -3276,6 +3329,38 @@ class Unit:
                 if unique:
                     sr["ability_added_keywords"] = unique
                 u.special_rules = sr
+            if unit_added:
+                for kw in unit_added:
+                    unit_added_keywords.append(kw)
+
+        if unit_added_keywords:
+            seen = set()
+            unique = []
+            for kw in unit_added_keywords:
+                k = str(kw).strip()
+                lk = k.lower()
+                if not k or lk in seen:
+                    continue
+                seen.add(lk)
+                unique.append(k)
+            if unique:
+                for u in members:
+                    sr = getattr(u, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    existing = list(sr.get("ability_added_keywords", []) or [])
+                    combined = []
+                    seen_kw = set()
+                    for kw in existing + unique:
+                        k = str(kw).strip()
+                        lk = k.lower()
+                        if not k or lk in seen_kw:
+                            continue
+                        seen_kw.add(lk)
+                        combined.append(k)
+                    if combined:
+                        sr["ability_added_keywords"] = combined
+                    u.special_rules = sr
 
     def _refresh_move_over_friendly_monster_vehicle_flags(self) -> None:
         """Parse move-over friendly MONSTER/VEHICLE and low-terrain traversal rules into special_rules."""
@@ -18635,6 +18720,90 @@ class Unit:
         self._ability_cache[cache_key] = rules
         return rules
 
+    def _get_model_weapon_keyword_bonus_rules(self, model: Optional['Model'] = None) -> list[dict]:
+        """Collect always-on weapon keyword grants that apply to a specific model."""
+        if model is None:
+            return []
+        cache_key = f"model_weapon_keyword_bonus_rules:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        entries: list[tuple[str, str]] = []
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                entries.append((name, desc))
+        except Exception:
+            pass
+
+        # Wargear abilities tied to equipped items.
+        for ab in list(getattr(self, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = getattr(ab, "name", "") or ""
+                if not name:
+                    continue
+                if not self._model_has_wargear_named(model, name):
+                    continue
+                entries.append((name, getattr(ab, "description", "") or ""))
+            except Exception:
+                continue
+
+        # Enhancement text applies to the enhancement bearer.
+        try:
+            enh = getattr(self, "enhancement", None)
+            if enh is not None:
+                bearer_id = self._get_enhancement_bearer_id()
+                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                if bearer_id and model_id == str(bearer_id):
+                    entries.append((getattr(enh, "name", "") or "", getattr(enh, "description", "") or ""))
+        except Exception:
+            pass
+
+        rules: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        for name, desc in entries:
+            text = self._normalize_rules_text(desc or name or "")
+            if not text:
+                continue
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            text = Unit._strip_eligibility_prefix(text)
+
+            for match in self._BEARER_WEAPON_ALWAYS_KEYWORD_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                source = str(name or "Ability")
+                key = (atype, keyword.lower(), source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"attack_type": atype, "keyword": keyword, "source": source})
+
+            for match in self._WEAPON_ALWAYS_KEYWORD_MODEL_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                source = str(name or "Ability")
+                key = (atype, keyword.lower(), source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append({"attack_type": atype, "keyword": keyword, "source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rules
+        return rules
+
     def _resolve_attack_keyword_bonuses_from_rules(self, rules: list[dict], *, attack_type: Optional[str]) -> dict:
         atype = str(attack_type or "").strip().lower()
         if atype not in ("melee", "ranged"):
@@ -18710,6 +18879,20 @@ class Unit:
         ):
             return bonuses
         return {}
+
+    def get_model_weapon_keyword_bonuses(
+        self,
+        *,
+        attack_type: Optional[str] = None,
+        model: Optional['Model'] = None,
+    ) -> dict:
+        """Return always-on weapon keyword bonuses for a specific model."""
+        if model is None:
+            return {}
+        rules = self._get_model_weapon_keyword_bonus_rules(model=model)
+        if not rules:
+            return {}
+        return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
 
     def get_attack_keyword_bonuses(
         self,
@@ -23932,7 +24115,7 @@ class Unit:
         
         return found_abilities
 
-    def has_feel_no_pain(self) -> List[Tuple[int, Optional[str]]]:
+    def has_feel_no_pain(self, target_model: Optional['Model'] = None) -> List[Tuple[int, Optional[str]]]:
         """Check if the unit has Feel No Pain abilities and return all of them.
         
         Returns:
@@ -24003,6 +24186,31 @@ class Unit:
                         continue
                     seen.add(key)
                     result.append((int(val), cond))
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("attached_character_fnp_entries") if isinstance(sr, dict) else None
+            if isinstance(entries, list) and target_model is not None:
+                t_unit = getattr(target_model, "parent_unit", None) or self
+                if bool(getattr(t_unit, "is_attached_leader", False)) and bool(getattr(target_model, "is_character", False)):
+                    t_unit_id = get_entity_id(t_unit)
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        exclude_id = entry.get("exclude_unit_id")
+                        if exclude_id and str(exclude_id) == str(t_unit_id):
+                            continue
+                        try:
+                            val = int(entry.get("value"))
+                        except Exception:
+                            continue
+                        key = (int(val), "")
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        result.append((int(val), None))
         except Exception:
             pass
         try:

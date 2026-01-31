@@ -793,7 +793,7 @@ class Model:
                 wounds_cannot_be_ignored = bool(wcni_fn())
 
         try:
-            fnp_abilities = self.parent_unit.has_feel_no_pain()
+            fnp_abilities = self.parent_unit.has_feel_no_pain(target_model=self)
         except Exception:
             fnp_abilities = []
         if fnp_abilities and not wounds_cannot_be_ignored:

@@ -2707,6 +2707,12 @@ class WargearProfile:
                     weapon_profile=self,
                 )
                 _apply_keyword_bonus(half_bonus, sustained_label="Half Range", heavy_label="Half Range", lance_label="Half Range")
+            if unit is not None and hasattr(unit, "get_model_weapon_keyword_bonuses"):
+                model_bonus = unit.get_model_weapon_keyword_bonuses(
+                    attack_type=attack_type,
+                    model=attacker,
+                )
+                _apply_keyword_bonus(model_bonus, lance_label="Ability")
 
             if bonus_devastating:
                 attack_instance["bonus_devastating_wounds"] = True
@@ -8154,7 +8160,7 @@ class WargearProfile:
         # Handle Feel No Pain saves
         final_damage = damage_amount
         try:
-            fnp_abilities = target_model.parent_unit.has_feel_no_pain()
+            fnp_abilities = target_model.parent_unit.has_feel_no_pain(target_model=target_model)
         except Exception:
             fnp_abilities = []
         # Defensive reaction stratagems: temporary Feel No Pain.

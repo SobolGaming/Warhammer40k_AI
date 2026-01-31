@@ -1933,7 +1933,9 @@ def _classify_ability_base(
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
     bearer_save_support = _bearer_save_characteristic_support(description)
     model_fnp_support = _model_fnp_support(description)
+    attached_character_fnp_support = _attached_character_fnp_support(description)
     bearer_smoke_support = _bearer_smoke_keyword_support(description)
+    bearer_unit_keyword_support = _bearer_unit_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
@@ -1982,6 +1984,7 @@ def _classify_ability_base(
     attack_roll_rule_support = _attack_roll_rule_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
     half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
+    weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
@@ -2063,6 +2066,10 @@ def _classify_ability_base(
         return common_support
     if leading_support:
         return leading_support
+    if attached_character_fnp_support:
+        return attached_character_fnp_support
+    if weapon_keyword_grant_support:
+        return weapon_keyword_grant_support
     if bearer_invuln_support:
         return bearer_invuln_support
     if bearer_save_support:
@@ -2071,6 +2078,8 @@ def _classify_ability_base(
         return model_fnp_support
     if bearer_smoke_support:
         return bearer_smoke_support
+    if bearer_unit_keyword_support:
+        return bearer_unit_keyword_support
     if unit_hit_reroll_support:
         return unit_hit_reroll_support
     if unit_wound_reroll_support:
@@ -2847,6 +2856,99 @@ def _bearer_smoke_keyword_support(description: str) -> Optional[Tuple[str, str]]
     if not re.fullmatch(r"(?:the )?bearer has the smoke keyword", norm):
         return None
     return ("Supported", "Bearer gains the SMOKE keyword.")
+
+
+def _bearer_unit_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    lead_prefix = r"(?:while this model is leading a unit )?"
+    pattern = rf"{lead_prefix}(?:the )?(?:bearers unit|that unit|this unit) has the grenades keyword"
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    leading = norm.startswith("while this model is leading a unit")
+    prefix = "Leading: " if leading else ""
+    return ("Supported", f"{prefix}Unit gains the GRENADES keyword.")
+
+
+def _attached_character_fnp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this model is leading a unit other character models attached to "
+        r"(?:that unit|the bearers unit|this unit) have (?:the )?feel no pain ([1-6])(?: ability)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return ("Supported", f"Leading: other attached Character models gain Feel No Pain {m.group(1)}+.")
+
+
+def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    sentences = [
+        s for s in (_norm_rules_text(part) for part in re.split(r"[.;]\s*", _strip_html(description))) if s
+    ]
+    if not sentences:
+        return None
+    lead_prefix = r"(?:while this model is leading a unit )?"
+    patterns = [
+        (
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by models in "
+            r"(?:the bearers unit|that unit|this unit) have the (?P<keyword>[a-z0-9 ]+) ability",
+            "unit",
+        ),
+        (
+            rf"{lead_prefix}(?:the )?(?:bearers|this models) (?:(?P<scope>melee|ranged) )?weapons have the "
+            r"(?P<keyword>[a-z0-9 ]+) ability",
+            "bearer",
+        ),
+        (
+            rf"{lead_prefix}(?:(?P<scope>melee|ranged) )?weapons equipped by this model have the "
+            r"(?P<keyword>[a-z0-9 ]+) ability",
+            "model",
+        ),
+    ]
+    notes: List[str] = []
+    unsupported: List[str] = []
+    for sentence in sentences:
+        leading = sentence.startswith("while this model is leading a unit")
+        prefix = "Leading: " if leading else ""
+        for pattern, kind in patterns:
+            m = re.fullmatch(pattern, sentence)
+            if not m:
+                continue
+            kw = m.group("keyword") or ""
+            label = _attack_keyword_label_from_text(kw)
+            if not label:
+                unsupported.append(kw)
+                continue
+            scope = (m.group("scope") or "").strip().lower()
+            scope_text = "weapons"
+            if scope == "melee":
+                scope_text = "melee weapons"
+            elif scope == "ranged":
+                scope_text = "ranged weapons"
+            if kind == "unit":
+                notes.append(f"{prefix}Unit {scope_text} gain {label}.")
+            elif kind == "bearer":
+                notes.append(f"{prefix}Bearer's {scope_text} gain {label}.")
+            else:
+                notes.append(f"{prefix}Model {scope_text} gain {label}.")
+    if not notes and not unsupported:
+        return None
+    if unsupported:
+        if notes:
+            return ("Partial", " ".join(dict.fromkeys(notes)) + " Some weapon keywords are not supported.")
+        return ("Partial", "Weapon keyword grants not supported for this keyword.")
+    return ("Supported", " ".join(dict.fromkeys(notes)))
 
 
 def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[str, str]]:
