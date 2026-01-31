@@ -2025,6 +2025,7 @@ def _classify_ability_base(
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
+    ranged_ignore_bs_hit_support = _ranged_ignore_bs_hit_modifiers_support(description)
 
     if battlesuit_support_system_support:
         return battlesuit_support_system_support
@@ -2036,6 +2037,8 @@ def _classify_ability_base(
         return move_over_low_terrain_support
     if move_over_mortal_support:
         return move_over_mortal_support
+    if ranged_ignore_bs_hit_support:
+        return ranged_ignore_bs_hit_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -3063,6 +3066,34 @@ def _attack_roll_rule_support(description: str) -> Optional[Tuple[str, str]]:
     else:
         note = "Attack roll modifiers supported."
     return ("Supported", note)
+
+
+def _ranged_ignore_bs_hit_modifiers_support(description: str) -> Optional[Tuple[str, str]]:
+    """
+    Support for abilities that let ranged attacks ignore any/all BS and Hit roll modifiers.
+
+    Example:
+      "Each time a model in this unit makes a ranged attack, you can ignore any or all modifiers to
+       that attack's Ballistic Skill characteristic and any or all modifiers to the Hit roll."
+    """
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "ignore any or all modifiers" not in norm:
+        return None
+    if "ballistic skill" not in norm or "hit roll" not in norm:
+        return None
+    if "weapon skill" in norm:
+        return None
+    if "wound roll" in norm:
+        return None
+    if "strength" in norm or "armour penetration" in norm or "damage" in norm:
+        return None
+    if "ranged attack" not in norm and "ranged weapon" not in norm:
+        return None
+    return ("Supported", "Ranged attacks: ignore any or all modifiers to Ballistic Skill and Hit roll.")
 
 
 def _objective_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
