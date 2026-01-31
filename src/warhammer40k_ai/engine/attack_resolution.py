@@ -1703,6 +1703,15 @@ class AttackResolutionManager:
             hazardous_active = bool(profile.is_hazardous())
         except Exception:
             hazardous_active = False
+        target_melee_hazardous = False
+        target_unit = self._resolve_unit(game, seq.target_unit_id)
+        parent_wargear = getattr(profile, "parent_wargear", None)
+        is_melee = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_melee", None)) and parent_wargear.is_melee())
+        if is_melee and target_unit is not None and hasattr(target_unit, "get_attached_unit_root"):
+            target_root = target_unit.get_attached_unit_root()
+            fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
+            if callable(fn):
+                target_melee_hazardous = bool(fn())
         pain_hazardous = False
         try:
             sr = getattr(attacker_unit, "special_rules", None)
@@ -1713,12 +1722,14 @@ class AttackResolutionManager:
         except Exception:
             pain_hazardous = False
         test_model_ids: list[str] = []
-        if hazardous_active or pain_hazardous:
+        if hazardous_active or pain_hazardous or target_melee_hazardous:
             for model_id in list(seq.model_ids or []):
                 model = self._resolve_model(game, model_id)
                 if model is None or not getattr(model, "is_alive", False):
                     continue
                 if hazardous_active:
+                    test_model_ids.append(model_id)
+                elif target_melee_hazardous:
                     test_model_ids.append(model_id)
                 else:
                     try:
@@ -1730,6 +1741,7 @@ class AttackResolutionManager:
             return False
         seq.context["hazardous_test_model_ids"] = list(test_model_ids)
         seq.context["hazardous_pain_melee_non_character"] = bool(pain_hazardous)
+        seq.context["hazardous_target_melee_all"] = bool(target_melee_hazardous)
         seq.step = "hazardous_roll"
         player_id = None
         try:
@@ -1812,6 +1824,7 @@ class AttackResolutionManager:
         except Exception:
             root_unit = attacker_unit
         pain_hazardous = bool(seq.context.get("hazardous_pain_melee_non_character", False))
+        target_melee_all = bool(seq.context.get("hazardous_target_melee_all", False))
         from ..utility.hazardous import collect_hazardous_eligible_models
         from ..utility.damage_allocation import DamageAllocationCtx, hazardous_allocation_choice
         game_map = getattr(game, "map", None)
@@ -1822,6 +1835,7 @@ class AttackResolutionManager:
                 eligible = collect_hazardous_eligible_models(
                     root_unit,
                     include_melee_non_character=pain_hazardous,
+                    include_melee_all=target_melee_all,
                 )
             except Exception:
                 eligible = []

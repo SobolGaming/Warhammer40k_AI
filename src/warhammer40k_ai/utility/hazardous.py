@@ -45,7 +45,12 @@ def is_hazardous_failure(profile, roll_value: Optional[int]) -> bool:
     except Exception:
         return False
 
-def collect_hazardous_eligible_models(root_unit, *, include_melee_non_character: bool = False) -> List:
+def collect_hazardous_eligible_models(
+    root_unit,
+    *,
+    include_melee_non_character: bool = False,
+    include_melee_all: bool = False,
+) -> List:
     """Return alive models eligible to suffer Hazardous failures in the given unit."""
     if root_unit is None:
         return []
@@ -76,6 +81,14 @@ def collect_hazardous_eligible_models(root_unit, *, include_melee_non_character:
                     break
         except Exception:
             has_hazardous = False
+        if not has_hazardous and include_melee_all:
+            for wg in (getattr(model, "wargear", []) or []):
+                if wg is None:
+                    continue
+                is_melee = getattr(wg, "is_melee", None)
+                if callable(is_melee) and is_melee():
+                    has_hazardous = True
+                    break
         if not has_hazardous and include_melee_non_character and not bool(getattr(model, "is_character", False)):
             try:
                 for wg in (getattr(model, "wargear", []) or []):

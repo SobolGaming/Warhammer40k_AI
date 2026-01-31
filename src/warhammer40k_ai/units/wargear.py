@@ -1700,13 +1700,18 @@ class WargearProfile:
         
         # Handle hazardous weapon effects
         hazardous_active = self.is_hazardous()
-        try:
-            sr = getattr(attacker.parent_unit, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
-                if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
-                    hazardous_active = True
-        except Exception:
-            pass
+        sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
+        if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
+            if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
+                hazardous_active = True
+        target_melee_hazardous = False
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            target_root = target.get_attached_unit_root() if (target is not None and hasattr(target, "get_attached_unit_root")) else target
+            fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
+            if callable(fn):
+                target_melee_hazardous = bool(fn())
+        if target_melee_hazardous:
+            hazardous_active = True
         if hazardous_active:
             # Provide reroll callback for hazardous test
             def _reroll_hazard():
@@ -1746,16 +1751,14 @@ class WargearProfile:
                 except Exception:
                     root_unit = attacker.parent_unit
                 # Eligible models: alive models in the (attached) unit equipped with >=1 Hazardous weapon
-                try:
-                    root_sr = getattr(root_unit, "special_rules", None)
-                    pain_hazardous = isinstance(root_sr, dict) and root_sr.get("pain_melee_hazardous_non_character")
-                except Exception:
-                    pain_hazardous = False
+                root_sr = getattr(root_unit, "special_rules", None)
+                pain_hazardous = isinstance(root_sr, dict) and root_sr.get("pain_melee_hazardous_non_character")
                 try:
                     from ..utility.hazardous import collect_hazardous_eligible_models
                     eligible = collect_hazardous_eligible_models(
                         root_unit,
                         include_melee_non_character=bool(pain_hazardous),
+                        include_melee_all=bool(target_melee_hazardous),
                     )
                 except Exception:
                     eligible = []

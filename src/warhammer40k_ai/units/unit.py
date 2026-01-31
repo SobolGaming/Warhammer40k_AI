@@ -976,6 +976,70 @@ class Unit:
                 sr["defensive_wound_mods"] = items
                 self.special_rules = sr
 
+    def _matches_enemy_melee_hazardous_while_targeted(self, text: str) -> bool:
+        if not text:
+            return False
+        normalized = self._normalize_rules_text(text)
+        if not normalized:
+            return False
+        normalized = normalized.replace("\u2019", "'").lower().strip()
+        normalized = re.sub(r"'s\b", "s", normalized)
+        normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        return bool(self._ENEMY_MELEE_HAZARDOUS_WHILE_TARGETING_RE.search(normalized))
+
+    def enemy_melee_weapons_hazardous_while_targeted(self) -> list[str]:
+        """
+        Return source names for abilities that make enemy melee weapons Hazardous while targeting this unit.
+        """
+        root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+        cache_key = "enemy_melee_hazardous_while_targeted"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return cache[cache_key]
+
+        sources: list[str] = []
+        members = root.get_attached_unit_members() if hasattr(root, "get_attached_unit_members") else [root]
+        for unit in members:
+            for ab in unit._iter_active_possible_abilities():
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "")
+                text = desc or name
+                if text and self._matches_enemy_melee_hazardous_while_targeted(text):
+                    sources.append(name or "Ability")
+            for model in list(getattr(unit, "models", []) or []):
+                abilities = getattr(model, "abilities", {}) or {}
+                for ab in abilities.values():
+                    if isinstance(ab, str):
+                        name = ab
+                        desc = ab
+                    else:
+                        name = str(getattr(ab, "name", "") or "")
+                        desc = str(getattr(ab, "description", "") or "")
+                    text = desc or name
+                    if text and self._matches_enemy_melee_hazardous_while_targeted(text):
+                        sources.append(name or "Ability")
+
+        # De-dup while preserving order
+        deduped: list[str] = []
+        seen: set[str] = set()
+        for src in sources:
+            key = str(src or "").strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped.append(key)
+
+        if not isinstance(cache, dict):
+            root._ability_cache = {}
+            cache = root._ability_cache
+        cache[cache_key] = deduped
+        return deduped
+
     _CANNOT_BE_WARLORD_RE = re.compile(r"\bcannot be your\s+warlord\b", re.IGNORECASE)
     _CANNOT_BE_GIVEN_ENHANCEMENTS_RE = re.compile(r"\bcannot be given\s+(?:an?\s+)?enhancements?\b", re.IGNORECASE)
     _BEARER_UNIT_CHARGE_BONUS_RE = re.compile(
@@ -1474,6 +1538,10 @@ class Unit:
     )
     _TARGET_HIT_ROLL_PENALTY_MODEL_RE = re.compile(
         r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? targets this model, subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
+    _ENEMY_MELEE_HAZARDOUS_WHILE_TARGETING_RE = re.compile(
+        r"melee weapons equipped by enemy models have the hazardous ability while targeting this (?:models unit|unit)",
         re.IGNORECASE,
     )
     _SPAWN_ONLY_ABILITY_RE = re.compile(r"^using\s+sir\s+hekhtur$", re.IGNORECASE)
