@@ -14757,6 +14757,21 @@ class Unit:
                     selected_models[get_entity_id(m)] = m
             if selected_models:
                 self.grant_selected_to_shoot_rerolls_for_models(list(selected_models.values()))
+                try:
+                    from ..rules.psychic_communion import apply_psychic_communion_on_selected_to_shoot
+                    phase_name = ""
+                    try:
+                        if game is not None:
+                            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        phase_name = ""
+                    apply_psychic_communion_on_selected_to_shoot(
+                        self,
+                        selected_models=list(selected_models.values()),
+                        phase_name=phase_name or None,
+                    )
+                except Exception:
+                    pass
         except Exception:
             pass
 

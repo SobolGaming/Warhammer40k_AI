@@ -5126,6 +5126,21 @@ class WargearProfile:
             return wound_result
 
         strength = self.strength
+        try:
+            if self.parent_wargear and isinstance(strength, int):
+                bonus, reasons = getattr(attacker, "get_temporary_weapon_strength_bonus", lambda _n: (0, []))(
+                    getattr(self.parent_wargear, "name", "")
+                )
+                if bonus:
+                    strength = strength + int(bonus)
+                    if reasons:
+                        wound_result.setdefault("modifiers", []).extend(list(reasons))
+                    else:
+                        wound_result.setdefault("modifiers", []).append(
+                            f"Ability +{bonus}S ({getattr(self.parent_wargear, 'name', 'weapon')}) [temporary]"
+                        )
+        except Exception:
+            pass
         # Drukhari: Power from Pain (Macro-steroids) set melee Strength.
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
