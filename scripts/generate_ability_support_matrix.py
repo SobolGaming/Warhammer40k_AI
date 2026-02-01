@@ -2137,6 +2137,7 @@ def _classify_ability_base(
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
+    targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
@@ -2359,6 +2360,8 @@ def _classify_ability_base(
         return model_attack_roll_bonus_support
     if targeted_stratagem_discount_support:
         return targeted_stratagem_discount_support
+    if targeted_stratagem_increase_support:
+        return targeted_stratagem_increase_support
     if charge_end_mortal_support:
         return charge_end_mortal_support
     if fight_within_3_support:
@@ -3856,6 +3859,28 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
             "Once per battle round, when this unit is targeted with a Stratagem, you can reduce its CP cost by 1.",
         )
     return None
+
+
+def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if "opponent" not in norm:
+        return None
+    if "stratagem" not in norm or "increase" not in norm or "cp cost" not in norm:
+        return None
+    if ("target" not in norm and "uses a stratagem" not in norm) or "within" not in norm:
+        return None
+    if not re.search(r"increase .* cp cost .* stratagem", norm):
+        return None
+    m = re.search(r"within (?P<range>\d+) of (?:this model|the bearer|this unit)", norm)
+    rng = m.group("range") if m else "?"
+    return (
+        "Supported",
+        f"Opponent stratagems targeting units within {rng}\" have +1CP (non-cumulative; unaffordable stratagems still count as used).",
+    )
 
 
 def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:

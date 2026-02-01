@@ -15567,6 +15567,35 @@ class GameView:
                 base = int(prev.get("base", getattr(strat, "cp_cost", 0) or 0) or 0)
                 optional_decisions = []
 
+                opponent = None
+                if self.game is not None:
+                    for p in list(getattr(self.game, "players", []) or []):
+                        if p is not player:
+                            opponent = p
+                            break
+                if opponent is not None and hasattr(opponent, "preview_targeted_stratagem_cp_increase"):
+                    inc_preview = opponent.preview_targeted_stratagem_cp_increase(target_unit=target_unit, current_cost=base)
+                    if bool(inc_preview.get("optional")):
+                        specs = list(inc_preview.get("optional_specs", []) or [])
+                        if specs:
+                            spec = specs[0]
+                            label = str(spec.get("name", "") or "Stratagem CP Increase").strip()
+                            max_cp = spec.get("max_cp", None)
+                            new_cost = base + 1
+                            if max_cp is not None:
+                                try:
+                                    new_cost = min(new_cost, int(max_cp))
+                                except Exception:
+                                    pass
+                            optional_decisions.append(
+                                {
+                                    "key": "OPPONENT_STRATAGEM_CP_INCREASE",
+                                    "title": label or "Stratagem CP Increase",
+                                    "message": f"Use {label or 'Stratagem CP Increase'} to increase CP cost by 1?\n\n{str(name)}: {base}CP -> {new_cost}CP",
+                                    "player": opponent,
+                                }
+                            )
+
                 use_mop = any("Master of the Pageant" in str(r) for r in reasons)
                 use_dts = any("Direct the Slaughter" in str(r) for r in reasons)
                 tsd_reason = next((r for r in reasons if "Targeted Stratagem Discount" in str(r)), None)
@@ -15657,6 +15686,7 @@ class GameView:
                             return
 
                         decision = decisions.pop(0)
+                        decision_player = decision.get("player") or player
                         ctx = {
                             "ability": str(decision.get("key", "") or "").strip().lower(),
                             "ability_name": decision.get("title", ""),
@@ -15671,7 +15701,7 @@ class GameView:
                         req = DecisionRequest.create(
                             DECISION_CONFIRM_YES_NO,
                             decision.get("title", "Confirm"),
-                            player_id=getattr(player, "id", None),
+                            player_id=getattr(decision_player, "id", None),
                             options=options,
                             context=ctx,
                         )
@@ -15691,7 +15721,7 @@ class GameView:
                             elif "choice" in getattr(_result, "payload", {}):
                                 chosen = bool(_result.payload.get("choice"))
                             try:
-                                player.set_next_optional_decision(decision.get("key", ""), bool(chosen))
+                                decision_player.set_next_optional_decision(decision.get("key", ""), bool(chosen))
                             except Exception:
                                 pass
                             _queue_next_decision()

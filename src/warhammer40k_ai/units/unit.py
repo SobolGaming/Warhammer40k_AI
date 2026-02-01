@@ -221,6 +221,19 @@ class Unit:
             self._refresh_targeted_stratagem_cp_discount_flags()
         except Exception:
             pass
+        try:
+            self._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
+        # Parse stratagem CP increases applied to enemy targets.
+        try:
+            self._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
         # Parse "first time destroyed" return-to-battlefield abilities.
         try:
             self._refresh_return_on_death_flags()
@@ -1399,6 +1412,14 @@ class Unit:
         r"once\s+per\s+battle\s+round\s+one\s+friendly\s+(?P<keyword>[a-z0-9 ]+?)\s+unit\s+within\s+(?P<range>\d+)\s+of\s+this\s+model\s+"
         r"can\s+be\s+targeted\s+with\s+a\s+stratagem\s+(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+"
         r"of\s+that\s+stratagem\s+by\s+1\s*cp",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_INCREASE_RANGE_RE = re.compile(
+        r"within\s+(?P<range>\d+)\s+of\s+(?:this\s+model|the\s+bearer|this\s+unit)",
+        re.IGNORECASE,
+    )
+    _TARGETED_STRATAGEM_CP_INCREASE_MAX_RE = re.compile(
+        r"maximum\s+of\s+(?P<max>\d+)\s*cp",
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_RE = re.compile(
@@ -2581,6 +2602,102 @@ class Unit:
                 deduped_specs.append(spec)
             if deduped_specs:
                 sr["stratagem_target_cp_discount_aura"] = deduped_specs
+
+        self.special_rules = sr
+
+    def _refresh_targeted_stratagem_cp_increase_flags(self) -> None:
+        """Parse unit abilities that increase Stratagem CP cost when the opponent targets a unit."""
+        if getattr(self, "special_rules", None) is None:
+            self.special_rules = {}
+        sr = self.special_rules
+        try:
+            if "stratagem_target_cp_increase_aura" in sr:
+                del sr["stratagem_target_cp_increase_aura"]
+        except Exception:
+            pass
+
+        specs: list[dict] = []
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm:
+                continue
+            if "opponent" not in norm:
+                continue
+            if "stratagem" not in norm:
+                continue
+            if "increase" not in norm or "cp cost" not in norm:
+                continue
+            if "target" not in norm and "uses a stratagem" not in norm:
+                continue
+            m_range = self._TARGETED_STRATAGEM_CP_INCREASE_RANGE_RE.search(norm)
+            if not m_range:
+                continue
+            try:
+                rng = int(m_range.group("range"))
+            except Exception:
+                rng = 0
+            if rng <= 0:
+                continue
+            optional = False
+            if "can use this ability" in norm or "can use this enhancement" in norm or "you can use this" in norm:
+                optional = True
+            limit = None
+            if "once per battle round" in norm or "once in each battle round" in norm:
+                limit = "battle_round"
+            elif "once per turn" in norm or "once in each of your opponent s turns" in norm:
+                limit = "turn"
+            max_cp = None
+            m_max = self._TARGETED_STRATAGEM_CP_INCREASE_MAX_RE.search(norm)
+            if m_max:
+                try:
+                    max_cp = int(m_max.group("max"))
+                except Exception:
+                    max_cp = None
+            usage_key = str(name or "Stratagem CP Increase").strip().upper()
+            spec = {
+                "range": rng,
+                "keyword": "",
+                "name": name or "Stratagem CP Increase",
+                "description": desc or "",
+                "optional": bool(optional),
+                "limit": limit or "",
+                "max_cp": max_cp,
+                "usage_key": f"STRATAGEM_CP_INCREASE:{usage_key}" if usage_key else "STRATAGEM_CP_INCREASE",
+            }
+            specs.append(spec)
+
+        if specs:
+            seen_specs: set[tuple] = set()
+            deduped_specs: list[dict] = []
+            for spec in specs:
+                key = (
+                    int(spec.get("range", 0) or 0),
+                    str(spec.get("name", "") or "").strip().lower(),
+                    str(spec.get("limit", "") or "").strip().lower(),
+                    bool(spec.get("optional", False)),
+                    int(spec.get("max_cp", 0) or 0),
+                )
+                if key in seen_specs:
+                    continue
+                seen_specs.add(key)
+                deduped_specs.append(spec)
+            if deduped_specs:
+                sr["stratagem_target_cp_increase_aura"] = deduped_specs
 
         self.special_rules = sr
 
@@ -9264,6 +9381,14 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
+        try:
             self._refresh_charge_end_mortal_wounds_flags()
         except Exception:
             pass
@@ -9384,6 +9509,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_targeted_stratagem_cp_discount_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_targeted_stratagem_cp_increase_flags()
         except Exception:
             pass
         try:

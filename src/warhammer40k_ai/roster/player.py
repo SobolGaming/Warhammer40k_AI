@@ -59,6 +59,8 @@ class Player:
         self._cp_gain_guardrail_battle_round: int | None = None
         # Generic per-battle-round ability usage (e.g. "Once per battle round..." reactions)
         self._ability_used_battle_round: dict[str, int] = {}
+        # Generic per-turn ability usage (keyed by ability string).
+        self._ability_used_turn: dict[str, tuple[int, int]] = {}
         # One-shot overrides that dialogs can set to drive immediate decisions without requiring
         # a persistent controller. Entries are consumed on first read.
         self._next_optional_decisions: dict[str, bool] = {}
@@ -205,6 +207,21 @@ class Player:
         amount = int(amount or 0)
         if amount <= 0:
             return False
+        self._last_stratagem_spend_failed_due_to_increase = False
+        reason_text = str(reason or "")
+        reason_lower = reason_text.lower()
+        is_stratagem_spend = str(source or "").strip().lower() == "stratagem" or "stratagem:" in reason_lower
+        pending = getattr(self, "_pending_stratagem_cp_increase", None)
+        pending_increase = 0
+        pending_name = ""
+        if isinstance(pending, dict):
+            pending_increase = int(pending.get("increase", 0) or 0)
+            pending_name = str(pending.get("stratagem_name", "") or "").strip()
+        reason_name = ""
+        if "stratagem:" in reason_lower:
+            reason_name = reason_text.split(":", 1)[1].strip()
+        if pending_name and reason_name and pending_name.lower() != reason_name.lower():
+            pending_increase = 0
         if self.command_points >= amount:
             self.command_points -= amount
             self._record_cp_change(-amount, reason=reason or "Command Points spent", source=source or "spend")
@@ -217,7 +234,21 @@ class Player:
                     append_action(self, f"Stratagem used: {strat_name} ({amount} CP)")
                 else:
                     append_action(self, f"Stratagem used ({amount} CP)")
+            if is_stratagem_spend:
+                self._pending_stratagem_cp_increase = None
             return True
+        if is_stratagem_spend and pending_increase > 0:
+            key = (reason_name or pending_name).strip().upper()
+            if key:
+                mgr = getattr(self, "stratagems", None)
+                if mgr is not None:
+                    try:
+                        mgr._used_stratagems_this_phase.add(key)
+                    except Exception:
+                        raise
+            self._last_stratagem_spend_failed_due_to_increase = True
+        if is_stratagem_spend:
+            self._pending_stratagem_cp_increase = None
         return False
 
     def _record_cp_change(self, delta: int, *, reason: str | None = None, source: str | None = None) -> None:
@@ -256,6 +287,61 @@ class Player:
     def _battle_round(self) -> int:
         game = getattr(self, "game", None)
         return int(getattr(game, "turn", 0) or 0) if game is not None else 0
+
+    def _turn_key(self) -> tuple[int, int]:
+        game = getattr(self, "game", None)
+        if game is None:
+            return (0, -1)
+        return (int(getattr(game, "turn", 0) or 0), int(getattr(game, "current_player_index", 0) or 0))
+
+    def _mark_ability_used_turn(self, key: str) -> None:
+        k = str(key or "").strip().upper()
+        if not k:
+            return
+        self._ability_used_turn[k] = self._turn_key()
+
+    def _ability_used_this_turn(self, key: str) -> bool:
+        k = str(key or "").strip().upper()
+        if not k:
+            return False
+        return self._ability_used_turn.get(k) == self._turn_key()
+
+    def _get_opponent_player(self):
+        game = getattr(self, "game", None)
+        if game is None:
+            return None
+        for p in list(getattr(game, "players", []) or []):
+            if p is not self:
+                return p
+        return None
+
+    def _model_has_ability_name(self, model, ability_name: str) -> bool:
+        if model is None:
+            return False
+        key = str(ability_name or "").strip().lower()
+        if not key:
+            return False
+        abilities = getattr(model, "abilities", {}) or {}
+        for nm in list(abilities.keys()):
+            if str(nm or "").strip().lower() == key:
+                return True
+        return False
+
+    def _source_model_within_range_for_ability(self, source_unit, target_unit, rng: float, ability_name: str) -> bool:
+        from warhammer40k_ai.utility.aura_utils import unit_within_range_of_unit
+
+        models = list(source_unit.get_attached_unit_models() or [])
+        has_named_model = False
+        for m in models:
+            if not getattr(m, "is_alive", True):
+                continue
+            if ability_name and self._model_has_ability_name(m, ability_name):
+                has_named_model = True
+                if source_unit._model_within_range_of_unit(m, target_unit, rng):
+                    return True
+        if has_named_model:
+            return False
+        return bool(unit_within_range_of_unit(source_unit, target_unit, rng, use_attached_aggregate=True))
 
     def _unit_has_keyword(self, unit, keyword: str) -> bool:
         if unit is None:
@@ -353,6 +439,19 @@ class Player:
     def _target_unit_has_stratagem_target_cp_discount(self, target_unit) -> tuple[bool, list[str]]:
         if target_unit is None:
             return False, []
+        try:
+            parent = None
+            getter = getattr(target_unit, "get_parent_army", None)
+            if callable(getter):
+                parent = getter()
+            else:
+                parent = getattr(target_unit, "parent_army", None)
+                if parent is None:
+                    parent = getattr(target_unit, "army", None)
+            if parent is not None and parent is not self.get_army():
+                return False, []
+        except Exception:
+            pass
         members = self._attached_members(target_unit)
         found = False
         names: list[str] = []
@@ -398,33 +497,6 @@ class Player:
         army = self.get_army()
         if army is None:
             return False, []
-        from warhammer40k_ai.utility.aura_utils import unit_within_range_of_unit
-
-        def _model_has_ability_name(model, ability_name: str) -> bool:
-            if model is None:
-                return False
-            key = str(ability_name or "").strip().lower()
-            if not key:
-                return False
-            abilities = getattr(model, "abilities", {}) or {}
-            for nm in list(abilities.keys()):
-                if str(nm or "").strip().lower() == key:
-                    return True
-            return False
-
-        def _source_model_within_range(source_unit, target, rng: float, ability_name: str) -> bool:
-            models = list(source_unit.get_attached_unit_models() or [])
-            has_named_model = False
-            for m in models:
-                if not getattr(m, "is_alive", True):
-                    continue
-                if ability_name and _model_has_ability_name(m, ability_name):
-                    has_named_model = True
-                    if source_unit._model_within_range_of_unit(m, target, rng):
-                        return True
-            if has_named_model:
-                return False
-            return bool(unit_within_range_of_unit(source_unit, target, rng, use_attached_aggregate=True))
 
         names: list[str] = []
         for u in list(getattr(army, "units", []) or []):
@@ -446,7 +518,7 @@ class Player:
                 if kw and not self._unit_has_keyword(target_unit, kw):
                     continue
                 name = str(spec.get("name", "") or "Stratagem CP Discount").strip()
-                if _source_model_within_range(u, target_unit, rng, name):
+                if self._source_model_within_range_for_ability(u, target_unit, rng, name):
                     names.append(name or "Stratagem CP Discount")
 
         if not names:
@@ -491,6 +563,139 @@ class Player:
             seen.add(key)
             deduped.append(str(n))
         return 1, deduped
+
+    def _target_unit_has_stratagem_target_cp_increase_sources(self, target_unit, *, current_cost: int | None = None) -> tuple[list[dict], list[dict]]:
+        if target_unit is None:
+            return [], []
+        try:
+            parent = None
+            getter = getattr(target_unit, "get_parent_army", None)
+            if callable(getter):
+                parent = getter()
+            else:
+                parent = getattr(target_unit, "parent_army", None)
+                if parent is None:
+                    parent = getattr(target_unit, "army", None)
+            if parent is not None and parent is self.get_army():
+                return [], []
+        except Exception:
+            pass
+        army = self.get_army()
+        if army is None:
+            return [], []
+
+        auto_specs: list[dict] = []
+        optional_specs: list[dict] = []
+        for u in list(getattr(army, "units", []) or []):
+            if not u.is_alive():
+                continue
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            specs = list(sr.get("stratagem_target_cp_increase_aura", []) or [])
+            if not specs:
+                continue
+            for spec in specs:
+                if not isinstance(spec, dict):
+                    continue
+                rng = float(spec.get("range", 0) or 0)
+                if rng <= 0:
+                    continue
+                kw = str(spec.get("keyword", "") or "").strip()
+                if kw and not self._unit_has_keyword(target_unit, kw):
+                    continue
+                name = str(spec.get("name", "") or "Stratagem CP Increase").strip()
+                if not self._source_model_within_range_for_ability(u, target_unit, rng, name):
+                    continue
+                limit = str(spec.get("limit", "") or "").strip().lower()
+                usage_key = str(spec.get("usage_key", "") or "").strip().upper()
+                if limit == "battle_round":
+                    br = self._battle_round()
+                    if br > 0 and int(self._ability_used_battle_round.get(usage_key, 0) or 0) == br:
+                        continue
+                elif limit == "turn":
+                    if usage_key and self._ability_used_this_turn(usage_key):
+                        continue
+                max_cp = spec.get("max_cp", None)
+                if current_cost is not None and max_cp is not None:
+                    try:
+                        if int(current_cost) >= int(max_cp):
+                            continue
+                    except Exception:
+                        pass
+                if bool(spec.get("optional", False)):
+                    optional_specs.append(spec)
+                else:
+                    auto_specs.append(spec)
+
+        def _dedupe(specs: list[dict]) -> list[dict]:
+            seen = set()
+            out: list[dict] = []
+            for spec in specs:
+                key = str(spec.get("usage_key", "") or spec.get("name", "") or "").strip().lower()
+                if not key:
+                    key = f"{spec.get('range', 0)}:{spec.get('name', '')}".strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append(spec)
+            return out
+
+        return _dedupe(auto_specs), _dedupe(optional_specs)
+
+    def preview_targeted_stratagem_cp_increase(self, *, target_unit=None, current_cost: int | None = None) -> dict:
+        auto_specs, optional_specs = self._target_unit_has_stratagem_target_cp_increase_sources(
+            target_unit, current_cost=current_cost
+        )
+        auto_names = [str(s.get("name", "Stratagem CP Increase")) for s in auto_specs]
+        optional_names = [str(s.get("name", "Stratagem CP Increase")) for s in optional_specs]
+        return {
+            "auto": bool(auto_specs),
+            "optional": bool(optional_specs),
+            "auto_names": auto_names,
+            "optional_names": optional_names,
+            "auto_specs": auto_specs,
+            "optional_specs": optional_specs,
+        }
+
+    def apply_targeted_stratagem_cp_increase(self, *, target_unit=None, stratagem=None, current_cost: int | None = None) -> dict:
+        auto_specs, optional_specs = self._target_unit_has_stratagem_target_cp_increase_sources(
+            target_unit, current_cost=current_cost
+        )
+        increase = 0
+        reasons: list[str] = []
+        used_spec = None
+        if auto_specs:
+            used_spec = auto_specs[0]
+            increase = 1
+        elif optional_specs:
+            used_spec = optional_specs[0]
+            ctx = {
+                "ability_name": str(used_spec.get("name", "") or "Stratagem CP Increase"),
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "current_cp_cost": int(current_cost or 0),
+            }
+            if self._should_use_optional_ability("OPPONENT_STRATAGEM_CP_INCREASE", ctx):
+                increase = 1
+
+        if increase and used_spec:
+            label = str(used_spec.get("name", "") or "Stratagem CP Increase").strip() or "Stratagem CP Increase"
+            reasons.append(f"{label}: +1CP")
+            limit = str(used_spec.get("limit", "") or "").strip().lower()
+            usage_key = str(used_spec.get("usage_key", "") or label).strip().upper()
+            if limit == "battle_round":
+                br = self._battle_round()
+                if br > 0:
+                    self._ability_used_battle_round[usage_key] = br
+            elif limit == "turn":
+                self._mark_ability_used_turn(usage_key)
+
+        return {
+            "increase": int(increase or 0),
+            "reasons": reasons,
+            "spec": used_spec,
+        }
 
     def _target_unit_has_gift_of_foresight(self, target_unit) -> bool:
         if target_unit is None:
@@ -709,11 +914,32 @@ class Player:
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
         if faultless:
+            cost = 0
+            increase = 0
+            increase_reasons: list[str] = []
+            opponent = self._get_opponent_player()
+            if opponent is not None:
+                inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                    target_unit=target_unit,
+                    stratagem=stratagem,
+                    current_cost=cost,
+                )
+                increase = int(inc_info.get("increase", 0) or 0)
+                increase_reasons = list(inc_info.get("reasons", []) or [])
+                if increase:
+                    cost = max(0, cost + increase)
+            self._pending_stratagem_cp_increase = {
+                "increase": int(increase or 0),
+                "reasons": increase_reasons,
+                "stratagem_name": getattr(stratagem, "name", None) or "",
+            }
             return {
                 "base": base,
                 "discount": base,
-                "cost": 0,
+                "cost": cost,
                 "reasons": ["Faultless Opportunist: Heroic Intervention for 0CP."],
+                "increase": increase,
+                "increase_reasons": increase_reasons,
             }
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
         preview = self.preview_stratagem_cp_cost(stratagem, target_unit=target_unit, assume_optional_discounts=True)
@@ -792,11 +1018,31 @@ class Player:
                     mgr.master_of_pageant_used_round = br
 
         cost = max(0, base - applied_discount)
+        increase = 0
+        increase_reasons: list[str] = []
+        opponent = self._get_opponent_player()
+        if opponent is not None:
+            inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                target_unit=target_unit,
+                stratagem=stratagem,
+                current_cost=cost,
+            )
+            increase = int(inc_info.get("increase", 0) or 0)
+            increase_reasons = list(inc_info.get("reasons", []) or [])
+            if increase:
+                cost = max(0, cost + increase)
+        self._pending_stratagem_cp_increase = {
+            "increase": int(increase or 0),
+            "reasons": increase_reasons,
+            "stratagem_name": getattr(stratagem, "name", None) or "",
+        }
         return {
             "base": base,
             "discount": applied_discount,
             "available_discount": available_discount,
             "cost": cost,
+            "increase": increase,
+            "increase_reasons": increase_reasons,
             "reasons": reasons or list(preview.get("reasons", []) or []),
         }
 

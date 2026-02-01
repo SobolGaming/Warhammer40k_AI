@@ -7236,7 +7236,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 try:
                     fight_mgr._forced_next_unit = None
                     fight_mgr._forced_next_player = None
@@ -7339,7 +7345,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             if not self._apply_armour_of_contempt(target_unit, attacker_unit, amount=1):
                 return False
@@ -7398,6 +7410,15 @@ class StratagemManager:
             if _unit_cannot_be_target_of_stratagem(shooter):
                 print("ERROR: Overwatch: cannot target a Battle-shocked unit")
                 return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=shooter).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
+                if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                    return False
             # Build declarations: group best ranged profile per model for target
             declarations = []
             profile_to_models = {}
@@ -7446,7 +7467,7 @@ class StratagemManager:
                 if kwargs.get('dequeue') is True:
                     self._dequeue_reaction_by_name(s.name)
                 # Spend CP and return through normal use path (so CP is deducted consistently)
-                if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                     print("ERROR: Overwatch succeeded but CP spend failed; adjusting CP manually")
                 try:
                     self._used_stratagems_this_phase.add((s.name or "").strip().upper())
@@ -7478,7 +7499,13 @@ class StratagemManager:
                 print("ERROR: Command Re-roll: no reroll callback available")
                 return False
             # Spend CP first per rules, then perform the reroll
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 result = reroll_cb()
@@ -7551,7 +7578,13 @@ class StratagemManager:
                                 return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(model, "special_rules", None)
@@ -8103,7 +8136,17 @@ class StratagemManager:
                 print("ERROR: New Orders: invalid or missing target Secondary card")
                 return False
             # Spend CP per stratagem cost
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(
+                        self.player.apply_stratagem_cp_cost(
+                            s, target_unit=kwargs.get("target_unit") or kwargs.get("unit")
+                        ).get("cost", s.cp_cost)
+                    )
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Discard chosen card and draw back up to two
             try:
@@ -8165,6 +8208,15 @@ class StratagemManager:
             if not position:
                 print("ERROR: Rapid Ingress: could not find a valid placement position")
                 return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
+                if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                    return False
             # Attempt arrival
             try:
                 ok = target.arrive_from_reserves(position, getattr(self.game, "turn", 0), getattr(self.game, "map", None))
@@ -8181,7 +8233,7 @@ class StratagemManager:
             except Exception:
                 raise
             # Spend CP (after success to avoid consuming CP on placement failure)
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 print("ERROR: Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
             print(f"INFO: Rapid Ingress: {target.name} arrived from reserves")
             if kwargs.get('dequeue') is True:
@@ -8203,7 +8255,13 @@ class StratagemManager:
                 print("ERROR: GO TO GROUND: no target unit provided")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Mark active until end of Shooting phase; cleared in _on_phase_end.
             try:
@@ -8317,7 +8375,13 @@ class StratagemManager:
                 print("ERROR: GRENADE: no eligible enemy target found/provided")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=enemy).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Roll 6D6; each 4+ = 1 mortal wound
             rolls = [dice_module.get_roll("D6") for _ in range(6)]
@@ -8366,7 +8430,13 @@ class StratagemManager:
                 print("ERROR: TANK SHOCK: no enemy unit in Engagement Range")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=enemy).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             # Pick a VEHICLE model in your unit within ER of that enemy unit.
             chosen_model = None
@@ -8472,7 +8542,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
 
             ok = False
@@ -8535,7 +8611,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(unit, "special_rules", None)
@@ -8723,7 +8805,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(root, "special_rules", None)
@@ -8791,7 +8879,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(root, "special_rules", None)
@@ -8878,7 +8972,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 roll = int(dice_module.get_roll("D6") or 0)
@@ -8971,7 +9071,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(root, "special_rules", None)
@@ -9106,7 +9212,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 game_map = getattr(self.game, "map", None)
@@ -9198,7 +9310,13 @@ class StratagemManager:
                 raise
             if not self._unit_wholly_within_battlefield_edge_distance(root, 9.0):
                 return False
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 game_map = getattr(self.game, "map", None)
@@ -9290,7 +9408,13 @@ class StratagemManager:
                     return False
             except Exception:
                 raise
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 sr = getattr(unit, "special_rules", None)
@@ -10875,7 +10999,13 @@ class StratagemManager:
                 print("ERROR: Blood Offering: no objective marker available")
                 return False
             # Spend CP
-            if not self.player.spend_command_points(s.cp_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                 return False
             try:
                 loc = getattr(objective, "location", None)
