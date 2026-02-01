@@ -180,6 +180,42 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertTrue(bodyguard.special_rules.get("bearer_unit_agile_maneuver_reroll"))
 
+    def test_leading_unit_assault_ranged_applies(self):
+        from warhammer40k_ai.units.wargear import Wargear
+
+        ability = {
+            "name": "Swift Assault",
+            "description": (
+                "While this model is leading a unit, ranged weapons equipped by models in that unit have the "
+                "[ASSAULT] ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability])
+        bodyguard = _make_unit("Bodyguard")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Bodyguard"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        gun = Wargear(
+            {
+                "name": "Test Gun",
+                "type": "Ranged",
+                "range": "24",
+                "A": "1",
+                "BS_WS": "3+",
+                "S": "4",
+                "AP": "0",
+                "D": "1",
+                "description": "",
+            }
+        )
+        profile = next(iter(gun.profiles.values()))
+        self.assertTrue(bodyguard.can_shoot_after_advance(profile))
+
     def test_leading_unit_fnp_applies(self):
         ability = {
             "name": "Grim Guardian",

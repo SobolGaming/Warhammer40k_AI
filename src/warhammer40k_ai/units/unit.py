@@ -1338,6 +1338,12 @@ class Unit:
         r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit).*?\bignores\s+cover\b",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_ASSAULT_RANGED_RE = re.compile(
+        r"ranged\s+weapons?\s+equipped\s+by\s+models\s+in\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit).*?"
+        r"\b(?:have|gain)\s+the\s+\[?assault\]?\s+ability\b",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_TARGET_HIT_PENALTY_RE = re.compile(
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
         re.IGNORECASE,
@@ -3333,6 +3339,7 @@ class Unit:
                     "bearer_unit_ignores_cover",
                     "bearer_unit_benefit_of_cover",
                     "bearer_unit_target_hit_penalties",
+                    "bearer_unit_assault_ranged",
                     "bearer_unit_pile_in_distance_override",
                     "bearer_unit_consolidate_distance_override",
                     "bearer_unit_deep_strike",
@@ -3377,6 +3384,7 @@ class Unit:
         benefit_of_cover_entries: list[dict] = []
         benefit_of_cover_seen: set[tuple[str, str]] = set()
         hit_penalties: list[dict] = []
+        assault_ranged = False
         pile_in_distance_override = 0
         consolidate_distance_override = 0
         phase_move_types: set[str] = set()
@@ -3596,6 +3604,8 @@ class Unit:
                     if self._BEARER_UNIT_IGNORES_COVER_RE.search(sentence):
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                         ignores_cover_sources.add(source)
+                    if self._BEARER_UNIT_ASSAULT_RANGED_RE.search(sentence):
+                        assault_ranged = True
 
                     m = self._BEARER_UNIT_BENEFIT_OF_COVER_RE.search(sentence)
                     if m:
@@ -3804,6 +3814,14 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_ignores_cover"] = True
+                u.special_rules = sr
+
+        if assault_ranged:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_assault_ranged"] = True
                 u.special_rules = sr
 
         if benefit_of_cover_entries:
@@ -16593,6 +16611,13 @@ class Unit:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bondsman_assault_ranged"):
+                if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
+                    return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("bearer_unit_assault_ranged"):
                 if getattr(profile, "parent_wargear", None) is not None and profile.parent_wargear.is_ranged():
                     return True
         except Exception:
