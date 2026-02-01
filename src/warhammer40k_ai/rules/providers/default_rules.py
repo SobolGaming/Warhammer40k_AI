@@ -119,6 +119,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_movement_phase_visible_wound_bonus"),
                 ("phase_end", "_on_phase_end_movement_phase_visible_hit_bonus"),
                 ("phase_end", "_on_phase_end_misfortune"),
+                ("phase_end", "_on_phase_end_movement_phase_mortal_table"),
                 ("phase_end", "_on_phase_end_flickerjump_mortal_wounds"),
                 ("fight_targets_selected", "_on_fight_targets_selected_tracking"),
                 ("phase_end", "_on_phase_end_cleanup"),

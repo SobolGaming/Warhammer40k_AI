@@ -1563,6 +1563,12 @@ class Unit:
         r"from the wound roll(?: each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
+        r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+        r"on a 2 3 that unit suffers 1 mortal wounds? on a 4 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d6 mortal wounds?"
+        r"(?: each enemy unit within range of this ability must then take a battle shock test)?",
+        re.IGNORECASE,
+    )
     _POINT_BLANK_DEVASTATION_RE = re.compile(
         r"each time this model s (?P<weapon1>[a-z0-9 ]+?) or (?P<weapon2>[a-z0-9 ]+?) targets a unit within half range "
         r"you can re ?roll the dice to determine the number of attacks made",
@@ -27460,6 +27466,62 @@ class Unit:
                     "range": int(range_value),
                     "penalty": -int(penalty),
                     "limit_once_per_turn": bool(limit_once),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_end_enemy_within_range_mortal_table_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, roll D6 for each enemy unit within range; apply mortal wound table.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (aura range)
+            - battle_shock: bool (if units within range must take a Battle-shock test)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_enemy_within_range_mortal_table:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Movement phase mortals").strip() or "Movement phase mortals"
+            battle_shock = "battle shock test" in normalized
+            key = (source.lower(), int(range_value), bool(battle_shock))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "battle_shock": bool(battle_shock),
                 }
             )
 

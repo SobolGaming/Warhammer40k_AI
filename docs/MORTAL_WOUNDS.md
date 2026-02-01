@@ -27,3 +27,6 @@ This engine follows the 10th edition mortal wound sequence with the current spil
 - Attack-based mortal wounds are queued per target and resolved after normal damage for that target.
 - [DEVASTATING WOUNDS] uses no-spill logic; other attack-based mortal wounds use default spillover.
 - Rules that add mortal wounds "in addition" should set `mortal_wound_in_addition=True` and provide a `mortal_wound_amount` on the attack instance.
+
+## Non-attack mortal wound triggers (engine support)
+- Movement phase end: roll a D6 for each enemy unit within range of the model; 2-3 = 1 mortal wound, 4-5 = D3, 6 = D6. If the ability also requires Battle-shock tests for units within range, those tests are triggered after resolving mortals.

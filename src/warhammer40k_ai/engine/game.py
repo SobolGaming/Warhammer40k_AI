@@ -4057,6 +4057,47 @@ class Game:
             candidates.append(enemy_root)
         return candidates
 
+    def _collect_enemy_unit_roots(self, player) -> list:
+        if player is None:
+            return []
+        try:
+            enemy_units = list(self.get_enemy_units(player) or [])
+        except Exception:
+            enemy_units = []
+        enemy_roots = []
+        seen = set()
+        from ..utility.entity_ids import get_entity_id
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None:
+                continue
+            try:
+                if not getattr(root, "is_alive", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                rid = str(get_entity_id(root))
+            except Exception:
+                rid = ""
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            enemy_roots.append(root)
+        return enemy_roots
+
     def _queue_movement_phase_flickerjump(
         self,
         *,
@@ -9394,33 +9435,7 @@ class Game:
 
         from ..utility.entity_ids import get_entity_id
 
-        enemy_units = list(self.get_enemy_units(player) or [])
-        enemy_roots = []
-        seen = set()
-        for enemy in enemy_units:
-            if enemy is None:
-                continue
-            try:
-                root = enemy.get_attached_unit_root()
-            except Exception:
-                root = enemy
-            if root is None or not getattr(root, "is_alive", lambda: False)():
-                continue
-            if not getattr(root, "deployed", True):
-                continue
-            try:
-                if root.is_in_reserves() or root.is_embarked:
-                    continue
-            except Exception:
-                pass
-            try:
-                rid = str(get_entity_id(root))
-            except Exception:
-                rid = ""
-            if not rid or rid in seen:
-                continue
-            seen.add(rid)
-            enemy_roots.append(root)
+        enemy_roots = self._collect_enemy_unit_roots(player)
 
         def _enemy_sort_key(u):
             try:
@@ -9537,30 +9552,7 @@ class Game:
 
         from ..utility.entity_ids import get_entity_id
 
-        enemy_units = list(self.get_enemy_units(player) or [])
-        enemy_roots = []
-        seen = set()
-        for enemy in enemy_units:
-            if enemy is None:
-                continue
-            try:
-                root = enemy.get_attached_unit_root()
-            except Exception:
-                root = enemy
-            if root is None or not getattr(root, "is_alive", lambda: False)():
-                continue
-            if not getattr(root, "deployed", True):
-                continue
-            try:
-                if root.is_in_reserves() or root.is_embarked:
-                    continue
-            except Exception:
-                pass
-            rid = str(get_entity_id(root) or "")
-            if not rid or rid in seen:
-                continue
-            seen.add(rid)
-            enemy_roots.append(root)
+        enemy_roots = self._collect_enemy_unit_roots(player)
 
         if not enemy_roots:
             return
@@ -9633,6 +9625,126 @@ class Game:
                         candidates=candidates,
                         spec=spec,
                     )
+
+    def _on_phase_end_movement_phase_mortal_table(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: roll a D6 for each enemy unit within range of this model; apply mortal wound table."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+        game_map = getattr(self, "map", None)
+
+        from ..utility.entity_ids import get_entity_id
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_movement_phase_end_enemy_within_range_mortal_table_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = []
+                    for enemy_root in enemy_roots:
+                        if enemy_root is None:
+                            continue
+                        if not self._unit_within_range_of_model(model, enemy_root, range_value=float(range_value)):
+                            continue
+                        candidates.append(enemy_root)
+                    if not candidates:
+                        continue
+                    candidates.sort(key=_unit_sort_key)
+                    ability_name = str(spec.get("source", "") or "Movement phase mortals").strip() or "Movement phase mortals"
+                    for target_unit in candidates:
+                        roll = int(get_roll("D6") or 0)
+                        total_mw = 0
+                        d3_roll = None
+                        d6_roll = None
+                        if 2 <= roll <= 3:
+                            total_mw = 1
+                        elif 4 <= roll <= 5:
+                            d3_roll = int(get_roll("D3") or 0)
+                            total_mw = int(d3_roll or 0)
+                        elif roll >= 6:
+                            d6_roll = int(get_roll("D6") or 0)
+                            total_mw = int(d6_roll or 0)
+                        roll_note = f"roll={roll}"
+                        if d3_roll is not None:
+                            roll_note += f", d3={int(d3_roll)}"
+                        if d6_roll is not None:
+                            roll_note += f", d6={int(d6_roll)}"
+                        if total_mw > 0 and hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
+                            source_unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
+                        append_dice(
+                            player,
+                            f"{ability_name}: {getattr(target_unit, 'name', 'Target')} ({roll_note}) => {int(total_mw)} mortal wounds.",
+                        )
+                        append_action(
+                            player,
+                            f"{ability_name}: {getattr(target_unit, 'name', 'Target')} suffered {int(total_mw)} mortal wounds.",
+                        )
+
+                    if bool(spec.get("battle_shock")):
+                        for target_unit in candidates:
+                            try:
+                                target_unit.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
+                            except Exception:
+                                continue
 
     def _on_phase_end_transport_end_of_fight_embark(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: optional embark for empty transports with datasheet abilities."""
