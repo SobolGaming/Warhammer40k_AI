@@ -1488,6 +1488,38 @@ class Game:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
+    def _on_phase_start_post_shoot_suppression_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear post-shoot Suppressed effects at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Post-shoot suppression cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Post-shoot suppression cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("post_shoot_suppressed_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("post_shoot_suppressed_active"):
+                    for key in (
+                        "post_shoot_suppressed_active",
+                        "post_shoot_suppressed_owner",
+                        "post_shoot_suppressed_turn",
+                        "post_shoot_suppressed_source",
+                    ):
+                        sr.pop(key, None)
+                    unit.special_rules = sr
+
     def _on_phase_start_pinned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Pinned effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2672,6 +2704,179 @@ class Game:
             sr["enhancement_fierce_conqueror_enemy_models"] = int(enemy_models)
             unit.special_rules = sr
 
+    def _on_phase_start_world_eaters_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Goretrack Onslaught enhancements that trigger at the start of the Shooting phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"World Eaters enhancement hooks require an army for {player.name}.")
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("World Eaters enhancement hooks require a game map.")
+
+        from ..rules.enhancement_descriptors import get_enhancement_tool_descriptor
+        from ..utility.aura_utils import distance_between_models_bases_3d
+        from .decision_kinds import DECISION_SELECT_UNLEASH_HELL_VEHICLE
+
+        desc = get_enhancement_tool_descriptor(enhancement_id="000010086004", name="Unleash Hell")
+        try:
+            range_in = float(getattr(desc, "range_in", 0) or 0)
+        except Exception:
+            range_in = 0.0
+        if range_in <= 0:
+            range_in = 6.0
+        try:
+            exclude_mv = bool(getattr(desc, "effect_params", {}).get("suppression_excludes_monsters_vehicles", False))
+        except Exception:
+            exclude_mv = False
+
+        queue = getattr(self, "decision_queue", None)
+        pending = queue.list() if queue is not None else []
+
+        def _already_pending(unit_id: str) -> bool:
+            if not unit_id:
+                return False
+            for req in list(pending or []):
+                try:
+                    if req.decision_type != DECISION_SELECT_UNLEASH_HELL_VEHICLE:
+                        continue
+                    ctx = getattr(req, "context", {}) or {}
+                    if str(ctx.get("source_unit_id", "") or "") == unit_id:
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        for unit in list(army.units):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_unleash_hell"):
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                continue
+            get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+            bearer_model = get_bearer() if callable(get_bearer) else None
+            if bearer_model is None or not getattr(bearer_model, "is_alive", False):
+                continue
+            source_unit_id = str(get_entity_id(unit) or "")
+            if not source_unit_id:
+                continue
+
+            try:
+                prompt_turn = int(sr.get("unleash_hell_prompt_turn", 0) or 0)
+            except Exception:
+                prompt_turn = 0
+            prompt_owner = str(sr.get("unleash_hell_prompt_owner", "") or "")
+            prompt_phase = str(sr.get("unleash_hell_prompt_phase", "") or "").strip().upper()
+            if (
+                prompt_turn == int(getattr(self, "turn", 0) or 0)
+                and prompt_owner == str(getattr(player, "id", "") or "")
+                and prompt_phase == pname
+            ):
+                continue
+            if _already_pending(source_unit_id):
+                continue
+
+            candidates: list[Any] = []
+            if bool(getattr(root, "is_embarked", False)) and getattr(root, "embarked_in", None) is not None:
+                transport = root.embarked_in
+                if (
+                    transport is not None
+                    and transport.is_alive()
+                    and bool(getattr(transport, "deployed", True))
+                    and not transport.is_in_reserves()
+                ):
+                    candidates = [transport]
+            else:
+                try:
+                    if not getattr(root, "deployed", True):
+                        continue
+                    if root.is_in_reserves():
+                        continue
+                except Exception:
+                    continue
+                for cand in list(army.units):
+                    if cand is None:
+                        continue
+                    try:
+                        cand_root = cand.get_attached_unit_root()
+                    except Exception:
+                        cand_root = cand
+                    if cand_root is None or cand_root is not cand:
+                        continue
+                    if not cand.is_alive():
+                        continue
+                    try:
+                        if not getattr(cand, "deployed", True):
+                            continue
+                        if cand.is_in_reserves() or cand.is_embarked:
+                            continue
+                    except Exception:
+                        continue
+                    if not getattr(cand, "is_vehicle", False):
+                        continue
+                    try:
+                        models = list(cand.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(cand, "models", []) or [])
+                    in_range = False
+                    for model in list(models or []):
+                        if not getattr(model, "is_alive", False):
+                            continue
+                        if distance_between_models_bases_3d(bearer_model, model) <= range_in + 1e-6:
+                            in_range = True
+                            break
+                    if in_range:
+                        candidates.append(cand)
+
+            if not candidates:
+                continue
+
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+            allowed_ids = [str(get_entity_id(cand) or "") for cand in candidates if cand is not None]
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for cand in candidates:
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+
+            ctx = {
+                "ability": "unleash_hell",
+                "ability_name": "Unleash Hell",
+                "source_unit_id": source_unit_id,
+                "bearer_model_id": get_entity_id(bearer_model),
+                "range": float(range_in),
+                "allowed_unit_ids": allowed_ids,
+                "exclude_monster_vehicle": bool(exclude_mv),
+            }
+            if bool(getattr(root, "is_embarked", False)) and getattr(root, "embarked_in", None) is not None:
+                ctx["transport_id"] = get_entity_id(root.embarked_in)
+
+            request = DecisionRequest.create(
+                DECISION_SELECT_UNLEASH_HELL_VEHICLE,
+                "Unleash Hell: select a vehicle to unleash suppression.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(request)
+
+            sr["unleash_hell_prompt_turn"] = int(getattr(self, "turn", 0) or 0)
+            sr["unleash_hell_prompt_owner"] = str(getattr(player, "id", "") or "")
+            sr["unleash_hell_prompt_phase"] = pname
+            unit.special_rules = sr
+
     def _on_phase_end_gate_of_infinity(self, player=None, phase=None, **_kwargs) -> None:
         """Grey Knights: Gate of Infinity at the end of the opponent's Fight phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2881,6 +3086,19 @@ class Game:
                         "post_shoot_no_cover_active",
                         "post_shoot_no_cover_expires_phase",
                         "post_shoot_no_cover_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("unleash_hell_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "unleash_hell_active",
+                        "unleash_hell_owner",
+                        "unleash_hell_turn",
+                        "unleash_hell_source",
+                        "unleash_hell_source_unit_id",
+                        "unleash_hell_expires_phase",
+                        "unleash_hell_consumed",
+                        "unleash_hell_exclude_monster_vehicle",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("guiding_presence_expires_phase", "") or "").strip().upper()
@@ -8066,9 +8284,12 @@ class Game:
                     triggers.append((model, spec, candidates))
 
         unit_specs = attacker_unit.unit_post_shoot_suppression_specs() or []
+        unleash_hell_present = False
         if unit_specs:
             seen_sources = {str(spec.get("source", "") or "").strip().lower() for _m, spec, _c in triggers}
             for spec in unit_specs:
+                if str(spec.get("source_key", "") or "").strip().lower() == "unleash_hell":
+                    unleash_hell_present = True
                 source_key = str(spec.get("source", "") or "").strip().lower()
                 if source_key and source_key in seen_sources:
                     continue
@@ -8088,6 +8309,13 @@ class Game:
                     triggers.append((None, spec, candidates))
                     if source_key:
                         seen_sources.add(source_key)
+
+        if unleash_hell_present:
+            sr = getattr(attacker_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["unleash_hell_consumed"] = True
+            attacker_unit.special_rules = sr
 
         if not triggers:
             return
@@ -8117,6 +8345,7 @@ class Game:
                     "attacker_unit_id": get_entity_id(attacker_unit),
                     "model_id": get_entity_id(model) if model is not None else None,
                     "ability_name": ability_name,
+                    "source_key": spec.get("source_key"),
                 },
             )
             self.request_decision(request)

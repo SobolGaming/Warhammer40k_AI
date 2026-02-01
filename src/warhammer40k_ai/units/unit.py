@@ -14063,7 +14063,43 @@ class Unit:
             source = "Wargear keyword (charge bonus)"
         return [(bonus, source)]
 
+    def _murderous_onslaught_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not sr.get("murderous_onslaught_no_overwatch"):
+            return False
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        if game is None:
+            return True
+        owner_id = str(sr.get("murderous_onslaught_turn_owner", "") or "")
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            if current is None or str(getattr(current, "id", "") or "") != owner_id:
+                return False
+        try:
+            turn = int(sr.get("murderous_onslaught_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != turn:
+                    return False
+            except Exception:
+                return False
+        return True
+
     def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
+        if self._murderous_onslaught_no_overwatch_active(game=game):
+            return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)
         if not entry:
             return False
@@ -19350,6 +19386,7 @@ class Unit:
         if (not self.deployed) and (not transport_unit.deployed):
             ok = transport_unit.add_passenger(self, game_map=game_map)
             if ok:
+                self._apply_aggressive_deployment_scouts(transport_unit)
                 print(f"{self.name} starts embarked within {transport_unit.name}.")
             else:
                 print(f"{self.name} cannot embark onto {transport_unit.name}.")
@@ -19666,6 +19703,107 @@ class Unit:
                 sr["goretrack_onslaught_turn"] = int(turn)
             unit.special_rules = sr
 
+    def _apply_murderous_onslaught_disembark_effect(self, *, game=None, current_turn: int = 0) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        if not self._attached_unit_has_enhancement_flag(
+            "enhancement_murderous_onslaught",
+            enhancement_id="000010086002",
+            enhancement_name="murderous onslaught",
+        ):
+            return
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        try:
+            owner = str(getattr(current_player, "id", "") or "")
+        except Exception:
+            owner = ""
+        if not owner:
+            try:
+                army = self.get_parent_army()
+                owner = str(getattr(getattr(army, "player", None), "id", "") or "")
+            except Exception:
+                owner = ""
+        try:
+            turn = int(getattr(game, "turn", current_turn) or current_turn)
+        except Exception:
+            turn = int(current_turn or 0)
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for unit in members:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["murderous_onslaught_no_overwatch"] = True
+            if owner:
+                sr["murderous_onslaught_turn_owner"] = owner
+            if turn:
+                sr["murderous_onslaught_turn"] = int(turn)
+            unit.special_rules = sr
+
+    def _apply_aggressive_deployment_scouts(self, transport_unit: Optional['Unit'] = None) -> None:
+        if transport_unit is None:
+            return
+        try:
+            if not transport_unit.is_dedicated_transport:
+                return
+        except Exception:
+            return
+        if not self._attached_unit_has_enhancement_flag(
+            "enhancement_aggressive_deployment",
+            enhancement_id="000010086003",
+            enhancement_name="aggressive deployment",
+        ):
+            return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        scouts_distance = 0.0
+        for unit in members:
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            try:
+                val = float(sr.get("enhancement_aggressive_deployment_scouts_distance", 0) or 0)
+            except Exception:
+                val = 0.0
+            if val > scouts_distance:
+                scouts_distance = val
+        if scouts_distance <= 0:
+            scouts_distance = 9.0
+        sr = getattr(transport_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        current = float(sr.get("enhancement_scout_distance", 0) or 0)
+        if scouts_distance > current:
+            sr["enhancement_scout_distance"] = scouts_distance
+        sr["enhancement_aggressive_deployment_active"] = True
+        sr["enhancement_aggressive_deployment_distance"] = scouts_distance
+        transport_unit.special_rules = sr
+
     def disembark(
         self,
         game_map: Optional['Map'] = None,
@@ -19818,6 +19956,7 @@ class Unit:
                     sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
                 self.special_rules = sr
                 self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
+                self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
 
                 # Battle-shock until next Command phase
                 if not self.is_battle_shocked():
@@ -19865,6 +20004,7 @@ class Unit:
             sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
 
         # Apply moved/charge restrictions depending on cause
         if destroyed_transport:
@@ -20071,6 +20211,7 @@ class Unit:
             sr["voice_of_command_disembark_round"] = int(getattr(game, "turn", current_turn) or current_turn) if game is not None else int(current_turn or 0)
         self.special_rules = sr
         self._apply_goretrack_onslaught_disembark_effect(game=game, current_turn=current_turn)
+        self._apply_murderous_onslaught_disembark_effect(game=game, current_turn=current_turn)
 
         if destroyed_transport:
             self.round_state.disembarked_from_destroyed_transport = True
@@ -20379,6 +20520,55 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
+
+    def _attached_unit_has_enhancement_flag(
+        self,
+        flag_key: str,
+        *,
+        enhancement_id: str = "",
+        enhancement_name: str = "",
+    ) -> bool:
+        if not flag_key and not enhancement_id and not enhancement_name:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        norm_name = ""
+        if enhancement_name:
+            try:
+                norm_name = str(enhancement_name or "").strip().lower()
+            except Exception:
+                norm_name = ""
+        for unit in members:
+            if unit is None:
+                continue
+            try:
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and flag_key and sr.get(flag_key):
+                    return True
+            except Exception:
+                pass
+            try:
+                enh = getattr(unit, "enhancement", None)
+                if enh is None:
+                    continue
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if enhancement_id and enh_id == enhancement_id:
+                    return True
+                if norm_name:
+                    enh_name = str(getattr(enh, "name", "") or "").strip().lower()
+                    if enh_name == norm_name:
+                        return True
+            except Exception:
+                continue
+        return False
 
     def _is_lord_on_juggernaut(self) -> bool:
         try:
@@ -23629,6 +23819,23 @@ class Unit:
         self.special_rules = sr
 
     def _get_enhancement_bearer_model(self):
+        sr = getattr(self, "special_rules", None)
+        bearer_id = ""
+        if isinstance(sr, dict):
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if bearer_id:
+            for m in list(getattr(self, "models", []) or []):
+                try:
+                    mid = str(getattr(m, "id", getattr(m, "_id", "")) or "")
+                except Exception:
+                    mid = ""
+                if mid and mid == bearer_id:
+                    try:
+                        if not getattr(m, "is_alive", True):
+                            return None
+                    except Exception:
+                        return None
+                    return m
         for m in list(getattr(self, "models", []) or []):
             try:
                 if not getattr(m, "is_alive", True):
@@ -26035,43 +26242,88 @@ class Unit:
         except Exception:
             root = self
         cache_key = "unit_post_shoot_suppression_specs"
+        base_specs = None
         if cache_key in getattr(root, "_ability_cache", {}):
-            return list(root._ability_cache[cache_key])
+            base_specs = list(root._ability_cache[cache_key])
 
-        specs: list[dict] = []
-        seen: set[tuple[str, bool]] = set()
-        try:
-            members = list(root.get_attached_unit_members() or [])
-        except Exception:
-            members = [root]
-        if not members:
-            members = [root]
+        if base_specs is None:
+            specs: list[dict] = []
+            seen: set[tuple[str, bool]] = set()
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
 
-        for u in members:
-            for name, desc in u._iter_ability_entries_for_rules(model=None):
-                text_src = desc or name or ""
-                if not text_src:
-                    continue
-                text_src = u._strip_eligibility_prefix(text_src)
-                normalized = u._normalize_rules_text(text_src)
-                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
-                normalized = normalized.lower()
-                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-                normalized = re.sub(r"\s+", " ", normalized).strip()
-                m = self._POST_SHOOT_SUPPRESSION_RE.fullmatch(normalized)
-                if not m:
-                    continue
-                exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
-                source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
+            for u in members:
+                for name, desc in u._iter_ability_entries_for_rules(model=None):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    text_src = u._strip_eligibility_prefix(text_src)
+                    normalized = u._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    m = self._POST_SHOOT_SUPPRESSION_RE.fullmatch(normalized)
+                    if not m:
+                        continue
+                    exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+                    source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
+                    key = (source.lower(), exclude_mv)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
+
+            if not hasattr(root, "_ability_cache"):
+                root._ability_cache = {}
+            root._ability_cache[cache_key] = list(specs)
+            base_specs = list(specs)
+
+        specs = list(base_specs or [])
+        seen = {(str(spec.get("source", "") or "").strip().lower(), bool(spec.get("exclude_monster_vehicle", False))) for spec in specs}
+
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("unleash_hell_active") and not sr.get("unleash_hell_consumed"):
+            game = None
+            try:
+                army = root.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+            if game is not None and bool(getattr(game, "is_shooting_phase", lambda: False)()):
+                owner_id = str(sr.get("unleash_hell_owner", "") or "")
+                if owner_id:
+                    try:
+                        current = game.get_current_player()
+                    except Exception:
+                        current = None
+                    if current is None or str(getattr(current, "id", "") or "") != owner_id:
+                        return list(specs)
+                try:
+                    turn = int(sr.get("unleash_hell_turn", 0) or 0)
+                except Exception:
+                    turn = 0
+                if turn:
+                    try:
+                        if int(getattr(game, "turn", 0) or 0) != turn:
+                            return list(specs)
+                    except Exception:
+                        return list(specs)
+                source = str(sr.get("unleash_hell_source", "") or "Unleash Hell").strip() or "Unleash Hell"
+                exclude_mv = bool(sr.get("unleash_hell_exclude_monster_vehicle", False))
                 key = (source.lower(), exclude_mv)
-                if key in seen:
-                    continue
-                seen.add(key)
-                specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
-
-        if not hasattr(root, "_ability_cache"):
-            root._ability_cache = {}
-        root._ability_cache[cache_key] = list(specs)
+                if key not in seen:
+                    specs.append(
+                        {
+                            "exclude_monster_vehicle": exclude_mv,
+                            "source": source,
+                            "source_key": "unleash_hell",
+                        }
+                    )
         return list(specs)
 
     def model_post_shoot_snare_specs(self, model: Optional['Model'] = None) -> List[dict]:

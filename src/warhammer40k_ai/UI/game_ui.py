@@ -3089,6 +3089,7 @@ class GameView:
                 DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+                DECISION_SELECT_UNLEASH_HELL_VEHICLE,
                 DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
                 DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
                 DECISION_CHOOSE_QUARRY,
@@ -4028,6 +4029,7 @@ class GameView:
             DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
             DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
             DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+            DECISION_SELECT_UNLEASH_HELL_VEHICLE,
             DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
             DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
         ):
@@ -4084,6 +4086,16 @@ class GameView:
                 phase_label = str(ctx.get("phase", "") or "Fight phase").strip()
                 title = ability_name or "Daemonic Poisons"
                 subtitle = f"{model_name or 'Model'} attacked. Select a unit hit in the {phase_label} to poison."
+            elif decision_type == DECISION_SELECT_UNLEASH_HELL_VEHICLE:
+                source_name = model_name
+                try:
+                    source_unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
+                except Exception:
+                    source_unit = None
+                if source_unit is not None:
+                    source_name = str(getattr(source_unit, "name", "") or source_name)
+                title = ability_name or "Unleash Hell"
+                subtitle = f"{source_name or 'Bearer'}: select a Vehicle to unleash suppression."
             else:
                 title = ability_name or "Suppression"
                 subtitle = f"{model_name or 'Model'} shot. Select a unit to suppress."

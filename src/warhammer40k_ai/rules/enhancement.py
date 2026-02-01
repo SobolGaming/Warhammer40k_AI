@@ -86,6 +86,7 @@ from .enhancement_effects import (
     parse_enhancement_eligibility,
     parse_enhancement_effects,
 )
+from .enhancement_descriptors import get_enhancement_tool_descriptor
 
 
 @dataclass(slots=True)
@@ -201,6 +202,10 @@ class Enhancement:
         except Exception:
             is_khorne_daemonkin = False
         try:
+            is_goretrack_onslaught = bool(we_mgr and we_mgr.is_goretrack_onslaught())
+        except Exception:
+            is_goretrack_onslaught = False
+        try:
             is_warhost = bool(ae_mgr and ae_mgr.is_warhost_detachment())
         except Exception:
             is_warhost = False
@@ -286,6 +291,33 @@ class Enhancement:
             if not is_khorne_daemonkin:
                 return
             unit.special_rules["enhancement_disciple_of_khorne"] = True
+
+        if name == "murderous onslaught" or enh_id == "000010086002":
+            if not is_goretrack_onslaught:
+                return
+            unit.special_rules["enhancement_murderous_onslaught"] = True
+
+        if name == "aggressive deployment" or enh_id == "000010086003":
+            if not is_goretrack_onslaught:
+                return
+            unit.special_rules["enhancement_aggressive_deployment"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            if desc is not None:
+                scouts_distance = float(desc.effect_params.get("scouts_distance", 0) or 0)
+                if scouts_distance > 0:
+                    unit.special_rules["enhancement_aggressive_deployment_scouts_distance"] = scouts_distance
+
+        if name == "unleash hell" or enh_id == "000010086004":
+            if not is_goretrack_onslaught:
+                return
+            unit.special_rules["enhancement_unleash_hell"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "infernal infusion" or enh_id == "000010086005":
+            if not is_goretrack_onslaught:
+                return
+            unit.special_rules["enhancement_infernal_infusion"] = True
 
         if name == "carmine reliquary" or enh_id == "000010645002":
             unit.special_rules["enhancement_carmine_reliquary"] = True

@@ -1,4 +1,4 @@
-﻿import unittest
+import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -435,6 +435,323 @@ class TestWorldEatersEnhancements(unittest.TestCase):
             )
 
         self.assertEqual(int(army.world_eaters_detachments.blood_tithe_points), 1)
+
+    def test_murderous_onslaught_prevents_overwatch_after_disembark(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("World Eaters", "Goretrack Onslaught")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        transport = self._make_unit(
+            "Test Transport",
+            keywords=["Transport", "Dedicated Transport", "Vehicle"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        passenger = self._make_unit(
+            "Test Squad",
+            keywords=["Infantry"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        enemy = self._make_unit(
+            "Enemy",
+            faction_name="Enemy",
+            keywords=["Infantry"],
+            faction_keywords=["ENEMY"],
+        )
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(
+            bf,
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        army.add_unit(transport)
+        army.add_unit(passenger)
+        enemy_army.add_unit(enemy)
+
+        transport.transport_capacity = 10
+
+        enh = Enhancement(
+            id="000010086002",
+            name="Murderous Onslaught",
+            faction_id="WE",
+            detachment="Goretrack Onslaught",
+            points=20,
+            description="",
+        )
+        passenger.enhancement = enh
+        enh.apply_to_unit(passenger)
+
+        transport.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        enemy.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+        game.map.place_unit(transport)
+        game.map.place_unit(enemy)
+
+        transport.add_passenger(passenger, game_map=game.map)
+        passenger.round_state.embarked_this_round = False
+        game.current_player_index = 0
+
+        ok = passenger.disembark(game_map=game.map, transport_unit=transport, current_turn=1)
+        self.assertTrue(ok)
+        self.assertTrue(passenger.is_overwatch_prevented_against(enemy, game=game))
+
+    def test_aggressive_deployment_grants_scouts_to_dedicated_transport(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("World Eaters", "Goretrack Onslaught")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        transport = self._make_unit(
+            "Test Transport",
+            keywords=["Transport", "Dedicated Transport", "Vehicle"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        passenger = self._make_unit(
+            "Bearer",
+            keywords=["Infantry", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(
+            bf,
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        army.add_unit(transport)
+        army.add_unit(passenger)
+
+        transport.transport_capacity = 10
+
+        enh = Enhancement(
+            id="000010086003",
+            name="Aggressive Deployment",
+            faction_id="WE",
+            detachment="Goretrack Onslaught",
+            points=20,
+            description="",
+        )
+        passenger.enhancement = enh
+        enh.apply_to_unit(passenger)
+
+        transport.deployed = False
+        passenger.deployed = False
+        passenger.embark(transport, game_map=game.map)
+
+        has_scout, distance = transport.has_scout()
+        self.assertTrue(has_scout)
+        self.assertEqual(float(distance), 9.0)
+
+    def test_unleash_hell_selects_vehicle_and_marks(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_UNLEASH_HELL_VEHICLE
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        army = Army("World Eaters", "Goretrack Onslaught")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        bearer = self._make_unit(
+            "Bearer",
+            keywords=["Infantry", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        vehicle = self._make_unit(
+            "Vehicle",
+            keywords=["Vehicle"],
+            faction_keywords=["WORLD EATERS"],
+        )
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(
+            bf,
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        army.add_unit(bearer)
+        army.add_unit(vehicle)
+        game.rebuild_entity_registry()
+
+        bearer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        vehicle.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+        game.map.place_unit(bearer)
+        game.map.place_unit(vehicle)
+        bearer.deployed = True
+        vehicle.deployed = True
+        bearer.reserve_status = "deployed"
+        vehicle.reserve_status = "deployed"
+
+        enh = Enhancement(
+            id="000010086004",
+            name="Unleash Hell",
+            faction_id="WE",
+            detachment="Goretrack Onslaught",
+            points=20,
+            description="",
+        )
+        bearer.enhancement = enh
+        enh.apply_to_unit(bearer)
+
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game._on_phase_start_world_eaters_enhancements(player=game.get_current_player(), phase=game.phase)
+
+        requests = [
+            req for req in game.decision_queue.list()
+            if str(getattr(req, "decision_type", "")) == DECISION_SELECT_UNLEASH_HELL_VEHICLE
+        ]
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+
+        vid = str(get_entity_id(vehicle) or "")
+        option_id = None
+        for opt in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(opt, "payload", {}) or {})
+            if str(payload.get("unit_id", "") or "") == vid:
+                option_id = opt.option_id
+                break
+        self.assertTrue(option_id)
+
+        resolve_decision_command(game, request, option_id, player_id=getattr(game.get_current_player(), "id", None))
+        sr = getattr(vehicle, "special_rules", {})
+        self.assertTrue(bool(sr.get("unleash_hell_active")))
+        self.assertEqual(str(sr.get("unleash_hell_owner", "")), str(game.get_current_player().id))
+        self.assertEqual(str(sr.get("unleash_hell_expires_phase", "")), "SHOOTING_PHASE")
+
+    def test_unleash_hell_rejects_out_of_range_target(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.engine.phase import BattleRoundPhases
+        from warhammer40k_ai.engine.decision_kinds import DECISION_SELECT_UNLEASH_HELL_VEHICLE
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        army = Army("World Eaters", "Goretrack Onslaught")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        bearer = self._make_unit(
+            "Bearer",
+            keywords=["Infantry", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        vehicle = self._make_unit(
+            "Vehicle",
+            keywords=["Vehicle"],
+            faction_keywords=["WORLD EATERS"],
+        )
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(
+            bf,
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        army.add_unit(bearer)
+        army.add_unit(vehicle)
+        game.rebuild_entity_registry()
+
+        bearer.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        vehicle.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+        game.map.place_unit(bearer)
+        game.map.place_unit(vehicle)
+        bearer.deployed = True
+        vehicle.deployed = True
+        bearer.reserve_status = "deployed"
+        vehicle.reserve_status = "deployed"
+
+        enh = Enhancement(
+            id="000010086004",
+            name="Unleash Hell",
+            faction_id="WE",
+            detachment="Goretrack Onslaught",
+            points=20,
+            description="",
+        )
+        bearer.enhancement = enh
+        enh.apply_to_unit(bearer)
+
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game._on_phase_start_world_eaters_enhancements(player=game.get_current_player(), phase=game.phase)
+
+        requests = [
+            req for req in game.decision_queue.list()
+            if str(getattr(req, "decision_type", "")) == DECISION_SELECT_UNLEASH_HELL_VEHICLE
+        ]
+        self.assertEqual(len(requests), 1)
+        request = requests[0]
+
+        vid = str(get_entity_id(vehicle) or "")
+        option_id = None
+        for opt in list(getattr(request, "options", []) or []):
+            payload = dict(getattr(opt, "payload", {}) or {})
+            if str(payload.get("unit_id", "") or "") == vid:
+                option_id = opt.option_id
+                break
+        self.assertTrue(option_id)
+
+        vehicle.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+
+        result = resolve_decision_command(game, request, option_id, player_id=getattr(game.get_current_player(), "id", None))
+        self.assertFalse(bool(getattr(result, "ok", False)))
+        self.assertTrue(any("out of range" in str(err).lower() for err in getattr(result, "errors", ()) or ()))
+
+    def test_infernal_infusion_grants_fight_first_flag(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        army = Army("World Eaters", "Goretrack Onslaught")
+        army.faction_id = "WE"
+        unit = SimpleNamespace(
+            special_rules={},
+            models=[],
+            possible_abilities=[],
+            abilities=[],
+            round_state=SimpleNamespace(remained_stationary_this_round=False, charged_this_round=False),
+        )
+        unit.get_parent_army = lambda: army
+        army.units = [unit]
+
+        Enhancement(
+            id="000010086005",
+            name="Infernal Infusion",
+            faction_id="WE",
+            detachment="Goretrack Onslaught",
+            points=20,
+            description="Once per battle, at the start of the Fight phase, the bearer can use this Enhancement. If it does, until the end of the phase, the bearer’s unit has the Fights First ability.",
+        ).apply_to_unit(unit)
+
+        self.assertTrue(bool(unit.special_rules.get("enhancement_fight_first_once_per_battle")))
 
 
 if __name__ == "__main__":

@@ -242,6 +242,7 @@ Shooting:
 - cruel_amusement_dialog: CHOOSE_CRUEL_AMUSEMENT {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - hand_of_asuryan_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="hand_of_asuryan"`, `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - aeldari_guiding_presence_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_guiding_presence"`, `source_unit_id`, `model_id`, `range`, `bonus`)
+- unleash_hell_vehicle_dialog: SELECT_UNLEASH_HELL_VEHICLE {unit_id | skip} (context `ability="unleash_hell"`, `source_unit_id`, `bearer_model_id`, `range`, `allowed_unit_ids`, `exclude_monster_vehicle`)
 - post_shoot_battleshock_target_dialog: CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`)
 - post_shoot_mortal_wounds_target_dialog: CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `dice`, `threshold`, `mortal_per_success`)
 - post_shoot_wracked_agonies_target_dialog: CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `move_penalty`, `charge_penalty`)

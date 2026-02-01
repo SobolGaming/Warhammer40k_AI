@@ -36,6 +36,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+    DECISION_SELECT_UNLEASH_HELL_VEHICLE,
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
     DECISION_CHOOSE_DAEMONIC_POISONS_TARGET,
     DECISION_DISCARD_SECONDARY,
@@ -2515,6 +2516,115 @@ def _apply_post_shoot_suppression_target(game: object, request: DecisionRequest,
     return target_unit
 
 
+def _validate_choose_unleash_hell_vehicle(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Unleash Hell requires a target unit.",)
+    target_unit = resolve_unit(game, target_val)
+    if target_unit is None:
+        return ("Unleash Hell target not found.",)
+    if not getattr(target_unit, "is_alive", lambda: True)():
+        return ("Unleash Hell target must be alive.",)
+    if not (getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False)):
+        return ("Unleash Hell target must be a Vehicle or Transport.",)
+
+    ctx = dict(getattr(request, "context", {}) or {})
+    allowed_ids = ctx.get("allowed_unit_ids")
+    if isinstance(allowed_ids, (list, tuple, set)):
+        allowed = {str(x or "") for x in allowed_ids if str(x or "")}
+        if allowed and str(target_val) not in allowed:
+            return ("Unleash Hell target is not eligible.",)
+
+    transport_id = str(ctx.get("transport_id", "") or "")
+    if transport_id:
+        if str(target_val) != transport_id:
+            return ("Unleash Hell target must be the bearer transport.",)
+        return ()
+
+    bearer_id = str(ctx.get("bearer_model_id", "") or "")
+    if bearer_id:
+        bearer_model = resolve_model(game, bearer_id)
+        if bearer_model is None:
+            return ("Unleash Hell bearer model not found.",)
+        try:
+            range_in = float(ctx.get("range", 0) or 0)
+        except Exception:
+            range_in = 0.0
+        if range_in <= 0:
+            range_in = 6.0
+        try:
+            models = list(target_unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(target_unit, "models", []) or [])
+        in_range = False
+        from ...utility.aura_utils import distance_between_models_bases_3d
+        for model in list(models or []):
+            try:
+                if not getattr(model, "is_alive", False):
+                    continue
+            except Exception:
+                continue
+            if distance_between_models_bases_3d(bearer_model, model) <= range_in + 1e-6:
+                in_range = True
+                break
+        if not in_range:
+            return ("Unleash Hell target is out of range.",)
+    return ()
+
+
+def _apply_choose_unleash_hell_vehicle(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Unleash Hell requires a target unit.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or "Unleash Hell").strip() or "Unleash Hell"
+    source_unit_id = ctx.get("source_unit_id")
+    source_unit = resolve_unit(game, source_unit_id)
+    player = _resolve_player(game, request, payload)
+    if player is None and source_unit is not None:
+        try:
+            player = source_unit.get_parent_army().player
+        except Exception:
+            player = None
+    owner_id = str(getattr(player, "id", "") or "")
+    try:
+        current_turn = int(getattr(game, "turn", 0) or 0)
+    except Exception:
+        current_turn = 0
+    if not (getattr(target_unit, "is_vehicle", False) or getattr(target_unit, "is_transport", False)):
+        raise RuntimeError("Unleash Hell target must be a Vehicle or Transport.")
+    sr = getattr(target_unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    sr["unleash_hell_active"] = True
+    sr["unleash_hell_owner"] = owner_id
+    sr["unleash_hell_turn"] = int(current_turn)
+    sr["unleash_hell_source"] = ability_name
+    if source_unit_id:
+        sr["unleash_hell_source_unit_id"] = str(source_unit_id)
+    sr["unleash_hell_expires_phase"] = "SHOOTING_PHASE"
+    sr["unleash_hell_consumed"] = False
+    sr["unleash_hell_exclude_monster_vehicle"] = bool(ctx.get("exclude_monster_vehicle", False))
+    target_unit.special_rules = sr
+    try:
+        if player is not None:
+            sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"Unleash Hell: {sname} empowered {tname}.")
+    except Exception:
+        pass
+    return target_unit
+
+
 def _apply_post_shoot_leadership_debuff_target(game: object, request: DecisionRequest, result: DecisionResult):
     if is_skip_choice(request, result):
         return None
@@ -3435,6 +3545,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     validate=_validate_post_shoot_suppression_target,
     apply=_apply_post_shoot_suppression_target,
+)
+register_decision_handler(
+    DECISION_SELECT_UNLEASH_HELL_VEHICLE,
+    validate=_validate_choose_unleash_hell_vehicle,
+    apply=_apply_choose_unleash_hell_vehicle,
 )
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,

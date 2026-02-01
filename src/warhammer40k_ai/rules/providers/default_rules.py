@@ -97,6 +97,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_start", "_on_phase_start_post_shoot_leadership_debuff_cleanup"),
                 ("phase_start", "_on_phase_start_wracked_with_agonies_cleanup"),
                 ("phase_start", "_on_phase_start_snared_cleanup"),
+                ("phase_start", "_on_phase_start_post_shoot_suppression_cleanup"),
                 ("phase_start", "_on_phase_start_pinned_cleanup"),
                 ("phase_start", "_on_phase_start_misfortune_cleanup"),
                 ("phase_start", "_on_phase_start_movement_phase_visible_wound_bonus_cleanup"),
@@ -294,6 +295,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_bloodshed_points"),
                 ("unit_destroyed", "_on_unit_destroyed_blood_tithe"),
+                ("phase_start", "_on_phase_start_world_eaters_enhancements"),
             ],
         )
     )
