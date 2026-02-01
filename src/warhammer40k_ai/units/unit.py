@@ -440,6 +440,14 @@ class Unit:
                     mods.append(Modifier(ModifierOp.ADD, int(bonus), source="aura:toughness_add"))
             except Exception:
                 pass
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict):
+                    bonus = int(sr.get("daemonic_allegiance_toughness_bonus", 0) or 0)
+                    if bonus:
+                        mods.append(Modifier(ModifierOp.ADD, int(bonus), source="daemonic_allegiance:toughness_add"))
+            except Exception:
+                pass
 
         if ckey == "leadership":
             if game_map is None:
@@ -521,6 +529,14 @@ class Unit:
                 bonus = 0
             if bonus:
                 mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_movement_add"))
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict):
+                    daemonic_bonus = int(sr.get("daemonic_allegiance_move_bonus", 0) or 0)
+                    if daemonic_bonus:
+                        mods.append(Modifier(ModifierOp.ADD, int(daemonic_bonus), source="daemonic_allegiance:move_add"))
+            except Exception:
+                pass
             try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("flickerjump_move_set_value"):
@@ -1843,6 +1859,29 @@ class Unit:
         "equipped",
         "with",
     )
+    _DAEMONIC_ALLEGIANCE_KEYWORD_ONLY_TOKENS = (
+        "select",
+        "one",
+        "of",
+        "the",
+        "keywords",
+    )
+    _DAEMONIC_ALLEGIANCE_WEAPON_BONUS_RE = re.compile(
+        r"if this model has the (?P<keyword>khorne|tzeentch|nurgle|slaanesh) keyword, "
+        r"add (?P<value>\d+) to the (?P<char>strength|attacks) characteristic of this model'?s "
+        r"(?P<weapon>[a-z0-9 '\\-]+?)(?:\.|$)",
+        re.IGNORECASE,
+    )
+    _DAEMONIC_ALLEGIANCE_TOUGHNESS_BONUS_RE = re.compile(
+        r"if this model has the (?P<keyword>khorne|tzeentch|nurgle|slaanesh) keyword, "
+        r"add (?P<value>\d+) to this model'?s toughness characteristic",
+        re.IGNORECASE,
+    )
+    _DAEMONIC_ALLEGIANCE_MOVE_BONUS_RE = re.compile(
+        r"if this model has the (?P<keyword>khorne|tzeentch|nurgle|slaanesh) keyword, "
+        r"add (?P<value>\d+)\"? to this model'?s move characteristic",
+        re.IGNORECASE,
+    )
     _NUMBER_WORDS = {
         "one": 1,
         "two": 2,
@@ -2025,6 +2064,33 @@ class Unit:
             options.append((kw_upper, resolved))
         return options
 
+    def _parse_daemonic_allegiance_keyword_only_options(self, text: str) -> list[tuple[str, str]]:
+        norm = self._normalize_rules_text(text or "")
+        if not norm:
+            return []
+        low = norm.lower().replace("\u2019", "'")
+        if "select this model to include in your army" not in low:
+            return []
+        if "keyword" not in low or "select one of" not in low:
+            return []
+        tokens = re.sub(r"[^a-z0-9]+", " ", low).split()
+        if not tokens:
+            return []
+        if not all(tok in tokens for tok in self._DAEMONIC_ALLEGIANCE_KEYWORD_ONLY_TOKENS):
+            return []
+        keywords = set(self._DAEMONIC_ALLEGIANCE_WARGEAR_KEYWORDS)
+        options: list[tuple[str, str]] = []
+        seen = set()
+        for tok in tokens:
+            if tok not in keywords:
+                continue
+            kw = tok.upper()
+            if kw in seen:
+                continue
+            seen.add(kw)
+            options.append((kw, ""))
+        return options
+
     def get_daemonic_allegiance_options(self) -> list[tuple[str, str]]:
         cache = getattr(self, "_ability_cache", None)
         if isinstance(cache, dict) and "daemonic_allegiance_options" in cache:
@@ -2036,6 +2102,10 @@ class Unit:
             except Exception:
                 desc = ""
             parsed = self._parse_daemonic_allegiance_wargear_options(desc or "")
+            if parsed:
+                options = parsed
+                break
+            parsed = self._parse_daemonic_allegiance_keyword_only_options(desc or "")
             if parsed:
                 options = parsed
                 break
@@ -2069,6 +2139,95 @@ class Unit:
                     choice = token
         return str(choice).strip() if choice else None
 
+    def _apply_daemonic_allegiance_effects(self, keyword: str) -> None:
+        kw = str(keyword or "").strip().upper()
+        if not kw:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if str(sr.get("daemonic_allegiance_effects_applied", "") or "").upper() == kw:
+            return
+
+        sr.pop("daemonic_allegiance_weapon_bonuses", None)
+        sr.pop("daemonic_allegiance_move_bonus", None)
+        sr.pop("daemonic_allegiance_toughness_bonus", None)
+        sr.pop("daemonic_allegiance_move_bonus_source", None)
+        sr.pop("daemonic_allegiance_toughness_bonus_source", None)
+
+        weapon_bonuses: list[dict] = []
+        move_bonus = 0
+        toughness_bonus = 0
+        move_source = ""
+        toughness_source = ""
+
+        for ab in self._iter_active_abilities():
+            try:
+                name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "")
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or "")
+            except Exception:
+                name = ""
+                desc = ""
+            if not name:
+                continue
+            if "daemon prince of " not in str(name).lower():
+                continue
+            text = self._normalize_rules_text(desc or name)
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'")
+
+            m = self._DAEMONIC_ALLEGIANCE_WEAPON_BONUS_RE.search(low)
+            if m and str(m.group("keyword") or "").strip().upper() == kw:
+                try:
+                    bonus_val = int(m.group("value") or 0)
+                except Exception:
+                    bonus_val = 0
+                weapon = str(m.group("weapon") or "").strip()
+                char = str(m.group("char") or "").strip().lower()
+                if bonus_val > 0 and weapon and char in ("strength", "attacks"):
+                    entry = {
+                        "weapon_names": [weapon],
+                        "source": str(name or "Daemonic Allegiance").strip() or "Daemonic Allegiance",
+                    }
+                    if char == "strength":
+                        entry["strength_bonus"] = bonus_val
+                    else:
+                        entry["attacks_bonus"] = bonus_val
+                    weapon_bonuses.append(entry)
+                continue
+
+            m = self._DAEMONIC_ALLEGIANCE_TOUGHNESS_BONUS_RE.search(low)
+            if m and str(m.group("keyword") or "").strip().upper() == kw:
+                try:
+                    toughness_bonus = int(m.group("value") or 0)
+                except Exception:
+                    toughness_bonus = 0
+                toughness_source = str(name or "Daemonic Allegiance").strip()
+                continue
+
+            m = self._DAEMONIC_ALLEGIANCE_MOVE_BONUS_RE.search(low)
+            if m and str(m.group("keyword") or "").strip().upper() == kw:
+                try:
+                    move_bonus = int(m.group("value") or 0)
+                except Exception:
+                    move_bonus = 0
+                move_source = str(name or "Daemonic Allegiance").strip()
+
+        if weapon_bonuses:
+            sr["daemonic_allegiance_weapon_bonuses"] = weapon_bonuses
+        if move_bonus:
+            sr["daemonic_allegiance_move_bonus"] = int(move_bonus)
+            if move_source:
+                sr["daemonic_allegiance_move_bonus_source"] = move_source
+        if toughness_bonus:
+            sr["daemonic_allegiance_toughness_bonus"] = int(toughness_bonus)
+            if toughness_source:
+                sr["daemonic_allegiance_toughness_bonus_source"] = toughness_source
+
+        sr["daemonic_allegiance_effects_applied"] = kw
+        self.special_rules = sr
+
     def apply_daemonic_allegiance_selection(self, selection: Optional[str] = None) -> bool:
         options = list(self.get_daemonic_allegiance_options() or [])
         if not options:
@@ -2094,46 +2253,51 @@ class Unit:
         if not isinstance(sr, dict):
             sr = {}
         if sr.get("daemonic_allegiance_applied") and sr.get("daemonic_allegiance") == kw:
+            self._apply_daemonic_allegiance_effects(kw)
             return True
         self.daemonic_allegiance = kw
         sr["daemonic_allegiance"] = kw
-        sr["daemonic_allegiance_wargear"] = wargear_name
+        sr["daemonic_allegiance_wargear"] = wargear_name or ""
         sr.pop("daemonic_allegiance_pending", None)
         if kw not in list(getattr(self, "keywords", []) or []):
             try:
                 self.keywords.append(kw)
             except Exception:
                 pass
-        target_norm = Unit._norm_wargear_name(wargear_name)
-        matching = None
-        for wg in list(getattr(self, "possible_wargear", []) or []):
-            try:
-                if Unit._norm_wargear_name(getattr(wg, "name", "")) == target_norm:
-                    matching = wg
-                    break
-            except Exception:
-                continue
-        for model in list(getattr(self, "models", []) or []):
-            try:
-                wargear_list = list(getattr(model, "wargear", []) or [])
-            except Exception:
-                wargear_list = []
-            if any(Unit._norm_wargear_name(getattr(wg, "name", "")) == target_norm for wg in wargear_list if wg):
-                continue
-            if matching is not None:
-                wargear_list.append(matching)
-                model.wargear = wargear_list
-            else:
+        if wargear_name:
+            target_norm = Unit._norm_wargear_name(wargear_name)
+            matching = None
+            for wg in list(getattr(self, "possible_wargear", []) or []):
                 try:
-                    optional = list(getattr(model, "optional_wargear", []) or [])
-                    optional.append(str(wargear_name))
-                    model.optional_wargear = optional
+                    if Unit._norm_wargear_name(getattr(wg, "name", "")) == target_norm:
+                        matching = wg
+                        break
                 except Exception:
-                    pass
-        if matching is None:
-            sr["daemonic_allegiance_wargear_missing"] = wargear_name
+                    continue
+            for model in list(getattr(self, "models", []) or []):
+                try:
+                    wargear_list = list(getattr(model, "wargear", []) or [])
+                except Exception:
+                    wargear_list = []
+                if any(Unit._norm_wargear_name(getattr(wg, "name", "")) == target_norm for wg in wargear_list if wg):
+                    continue
+                if matching is not None:
+                    wargear_list.append(matching)
+                    model.wargear = wargear_list
+                else:
+                    try:
+                        optional = list(getattr(model, "optional_wargear", []) or [])
+                        optional.append(str(wargear_name))
+                        model.optional_wargear = optional
+                    except Exception:
+                        pass
+            if matching is None:
+                sr["daemonic_allegiance_wargear_missing"] = wargear_name
+        else:
+            sr.pop("daemonic_allegiance_wargear_missing", None)
         sr["daemonic_allegiance_applied"] = True
         self.special_rules = sr
+        self._apply_daemonic_allegiance_effects(kw)
         return True
 
     def _scan_command_phase_sticky_objective(self) -> bool:

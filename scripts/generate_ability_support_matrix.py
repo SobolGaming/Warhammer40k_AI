@@ -1774,6 +1774,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
+        ("CD", "DAEMONIC ALLEGIANCE"): (
+            "Supported",
+            "Muster: select a god keyword; keyword-only selection supported and Soul Grinder wargear applied when present.",
+        ),
+        ("CD", "Daemon Prince of Khorne"): ("Supported", "If KHORNE: hellforged weapons gain +2 Strength."),
+        ("CD", "Daemon Prince of Tzeentch"): ("Supported", "If TZEENTCH: infernal cannon gains +3 Attacks."),
+        ("CD", "Daemon Prince of Nurgle"): ("Supported", "If NURGLE: model Toughness +1."),
+        ("CD", "Daemon Prince of Slaanesh"): ("Supported", "If SLAANESH: model Move +2\"."),
         ("CD", "Daemonic Lord"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEGIONES DAEMONICA INFANTRY units."),
         ("CD", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit (melee) aura within 6\" for KHORNE LEGIONES DAEMONICA."),
         ("CD", "Split"): (

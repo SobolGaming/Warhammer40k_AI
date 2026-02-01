@@ -1079,6 +1079,33 @@ class WargearProfile:
             pass
 
         try:
+            sr = self._unit_special_rules(attacker)
+            bonuses = list(sr.get("daemonic_allegiance_weapon_bonuses", []) or []) if isinstance(sr, dict) else []
+            if bonuses and self.parent_wargear:
+                unit = getattr(attacker, "parent_unit", None)
+                weapon_name = str(getattr(self.parent_wargear, "name", "") or getattr(self, "name", "") or "")
+                for bonus in bonuses:
+                    try:
+                        names = list(bonus.get("weapon_names", []) or [])
+                    except Exception:
+                        names = []
+                    if names and unit is not None and hasattr(unit, "_weapon_name_matches"):
+                        if not unit._weapon_name_matches(names, weapon_name):
+                            continue
+                    try:
+                        att_bonus = int(bonus.get("attacks_bonus", 0) or 0)
+                    except Exception:
+                        att_bonus = 0
+                    if att_bonus:
+                        atk_mods.append(
+                            Modifier(ModifierOp.ADD, int(att_bonus), source="daemonic_allegiance:weapon_attacks_add")
+                        )
+                        source = str(bonus.get("source", "") or "Daemonic Allegiance").strip() or "Daemonic Allegiance"
+                        attack_result.attacks_special_modifiers.append(f"{source} +{att_bonus}A ({weapon_name})")
+        except Exception:
+            pass
+
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 unit = getattr(attacker, "parent_unit", None)
                 army = unit.get_parent_army() if unit is not None else None
@@ -5440,6 +5467,30 @@ class WargearProfile:
                         wound_result.setdefault("modifiers", []).append(
                             f"Ability +{bonus}S ({getattr(self.parent_wargear, 'name', 'weapon')}) [temporary]"
                         )
+        except Exception:
+            pass
+        try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            bonuses = list(sr.get("daemonic_allegiance_weapon_bonuses", []) or []) if isinstance(sr, dict) else []
+            if bonuses and self.parent_wargear and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                weapon_name = str(getattr(self.parent_wargear, "name", "") or getattr(self, "name", "") or "")
+                for bonus in bonuses:
+                    try:
+                        names = list(bonus.get("weapon_names", []) or [])
+                    except Exception:
+                        names = []
+                    if names and unit is not None and hasattr(unit, "_weapon_name_matches"):
+                        if not unit._weapon_name_matches(names, weapon_name):
+                            continue
+                    try:
+                        s_bonus = int(bonus.get("strength_bonus", 0) or 0)
+                    except Exception:
+                        s_bonus = 0
+                    if s_bonus:
+                        strength = strength + int(s_bonus)
+                        source = str(bonus.get("source", "") or "Daemonic Allegiance").strip() or "Daemonic Allegiance"
+                        wound_result.setdefault("modifiers", []).append(f"{source} +{s_bonus}S ({weapon_name})")
         except Exception:
             pass
         try:

@@ -120,7 +120,7 @@ class DaemonicAllegianceDialog(BaseDialog):
         subtitle = self.unit_name
         self.draw_title_bar(screen, self.title, subtitle)
 
-        header = self.font_small.render("Select one keyword (adds matching wargear):", True, TEXT_SECONDARY)
+        header = self.font_small.render("Select one keyword:", True, TEXT_SECONDARY)
         screen.blit(header, (self.x + 15, self.y + self.title_bar_height + 10))
 
         row_h = 70
