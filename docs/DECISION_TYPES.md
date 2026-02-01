@@ -14,9 +14,11 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 ## Deployment & Pre-game
 
 - `ATTACH_LEADER` — Attach leader to bodyguard (or none).
+- `ATTACH_SUPPORT_ARTILLERY` — Attach support artillery to bodyguard (or none).
 - `DECLARE_RESERVES` — Declare units in reserve.
 - `ASSIGN_TRANSPORT` — Assign transport to a unit (or none).
 - `SCOUT_MOVE` — Resolve pre-game scout move.
+- `CHOOSE_START_OF_BATTLE_KEYWORD` — Choose start-of-battle keyword.
 - `SELECT_SETUP_REACTIVE_TARGET` — Choose target for setup-reactive effects.
 - `CHOOSE_SETUP_REACTIVE_ACTION` — Choose which setup-reactive action to use.
 
@@ -71,6 +73,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET` — Choose post-shoot mortal wounds target.
 - `CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET` — Choose post-shoot Wracked Agonies target.
 - `CHOOSE_POST_SHOOT_SUPPRESSION_TARGET` — Choose post-shoot suppression target.
+- `SELECT_UNLEASH_HELL_VEHICLE` — Choose Unleash Hell vehicle/transport.
 - `CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET` — Choose post-shoot leadership debuff target.
 - `CHOOSE_DAEMONIC_POISONS_TARGET` — Choose Daemonic Poisons target.
 
@@ -94,12 +97,16 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_HARBINGER` — Choose Harbinger.
 - `USE_GILDED_CHAMPION` — Use Gilded Champion.
 - `CHOOSE_MARTIAL_KATAH` — Choose Martial Katah.
+- `CHOOSE_PATH_OF_WARRIOR` — Choose Path of the Warrior.
+- `CHOOSE_CRUEL_AMUSEMENT` — Choose Cruel Amusement.
+- `CHOOSE_DANCE_OF_DEATH` — Choose Dance of Death.
 - `CHOOSE_LIMB_FROM_LIMB` — Choose Limb from Limb target.
 - `CHOOSE_RED_WRATH` — Choose Red Wrath option.
 - `USE_MIRACLE_DIE` — Use Miracle Die.
 - `CHOOSE_PLAGUE` — Choose Plague.
 - `CHOOSE_PLEDGE` — Choose Pledge.
 - `CHOOSE_QUARRY` — Choose Quarry.
+- `CHOOSE_MOMENT_SHACKLE` — Choose Moment Shackle option.
 - `CHOOSE_SHADOW_FORM` — Choose Shadow Form.
 - `CHOOSE_VOW` — Choose Vow.
 - `ISSUE_ORDER` — Issue an Order.
@@ -107,6 +114,8 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_DAEMON_PRIMARCH_SLAANESH` — Choose Slaanesh primarch option.
 - `USE_CAREEN` — Use Careen!
 - `CHOOSE_ASPECT` — Choose Aspect.
+- `USE_LEADING_UNMODIFIED_SIX` — Use leading unmodified six.
+- `USE_MODEL_UNMODIFIED_SIX` — Use model unmodified six.
 - `CHOOSE_HIT_MODIFIER_IGNORES` — Choose hit modifier ignores.
 - `CHOOSE_SKILL_MODIFIER_IGNORES` — Choose skill modifier ignores.
 - `CHOOSE_MOVE_MODIFIER_IGNORES` — Choose move modifier ignores.
