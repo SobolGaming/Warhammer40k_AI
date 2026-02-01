@@ -1620,6 +1620,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("AC", "Tactical Perception"): ("Supported", "Leading: unit gains Fights First."),
         ("CD", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
+        ("CD", "A Gory Path"): ("Supported", "Consolidate up to 6\"."),
         ("CD", "Blazing Warpfire (Psychic)"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
