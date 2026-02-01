@@ -1096,6 +1096,84 @@ class Game:
                 remaining=amount,
             )
 
+    def _on_phase_start_dance_of_death(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        from .decision_kinds import DECISION_CHOOSE_DANCE_OF_DEATH
+        from .decisions import DecisionOption, DecisionRequest
+
+        pending_units = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_DANCE_OF_DEATH:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    uid = str(ctx.get("unit_id", "") or "")
+                    if uid:
+                        pending_units.add(uid)
+        except Exception:
+            pending_units = set()
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in list(army.units or []):
+                if unit is None or not unit.is_alive():
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                try:
+                    if not root.has_dance_of_death():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    choice_fn = getattr(root, "_dance_of_death_choice", None)
+                    if callable(choice_fn) and choice_fn(game=self):
+                        continue
+                except Exception:
+                    pass
+                unit_id = str(get_entity_id(root) or "")
+                if unit_id and unit_id in pending_units:
+                    continue
+                options = [
+                    DecisionOption.create(
+                        "Hero's Prowess",
+                        payload={"choice": "HERO", "summary": "Re-roll Hit rolls of 1 for this unit."},
+                    ),
+                    DecisionOption.create(
+                        "Villain's Doom",
+                        payload={"choice": "VILLAIN", "summary": "Add 1 to Wound rolls for this unit."},
+                    ),
+                    DecisionOption.create(
+                        "Trickster's Grace",
+                        payload={"choice": "TRICKSTER", "summary": "Attacks against this unit suffer -1 to hit."},
+                    ),
+                ]
+                ctx = {
+                    "unit_id": unit_id,
+                    "ability_name": "Dance of Death",
+                    "phase_name": pname,
+                }
+                req = DecisionRequest.create(
+                    DECISION_CHOOSE_DANCE_OF_DEATH,
+                    "Dance of Death: select a performance.",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context=ctx,
+                )
+                self.request_decision(req)
+
     def _on_phase_start_post_shoot_leadership_debuff_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear post-shoot Leadership/Battle-shock debuffs at the start of the owner's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2257,11 +2335,25 @@ class Game:
                     sr = getattr(u, "special_rules", None)
                     if not isinstance(sr, dict):
                         continue
+                    exp = str(sr.get("dance_of_death_expires_phase", "") or "").strip().upper()
+                    if exp == pname:
+                        for k in ("dance_of_death_choice", "dance_of_death_expires_phase"):
+                            sr.pop(k, None)
                     if str(sr.get("cabal_temporal_surge_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("cabal_temporal_surge_no_charge_turn_owner", "cabal_temporal_surge_no_charge_turn"):
                             sr.pop(k, None)
                     if str(sr.get("pain_swooping_descent_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("pain_swooping_descent_no_charge_turn_owner", "pain_swooping_descent_no_charge_turn"):
+                            sr.pop(k, None)
+                    if str(sr.get("cloudstrider_no_charge_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "cloudstrider_no_charge_turn_owner",
+                            "cloudstrider_no_charge_turn",
+                            "cloudstrider_choice_turn_owner",
+                            "cloudstrider_choice_turn",
+                            "cloudstrider_deep_strike_min_distance",
+                            "cloudstrider_source",
+                        ):
                             sr.pop(k, None)
                     if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_id:
                         for k in ("feigned_retreat_active", "feigned_retreat_turn_owner", "feigned_retreat_turn"):
@@ -3753,6 +3845,7 @@ class Game:
             "enhancement_fight_first",
             "opponent_turn_strategic_reserves",
             "opponent_turn_destroyed_reposition",
+            "cloudstrider",
             "seductive_gambit",
             "sensational_performance",
             "cult_ambush",
@@ -4072,6 +4165,50 @@ class Game:
                     append_action(
                         player,
                         f"{ability_name}: {getattr(unit, 'name', 'Unit')} repositioned after a friendly unit was destroyed.",
+                    )
+            except Exception:
+                pass
+            return
+
+        if ability_key == "cloudstrider":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            owner_id = str(getattr(request, "player_id", "") or getattr(result, "player_id", "") or "")
+            if not owner_id:
+                try:
+                    owner_id = str(root.get_parent_army().player.id)
+                except Exception:
+                    owner_id = ""
+            turn = int(getattr(self, "turn", 0) or 0)
+            sr["cloudstrider_deep_strike_min_distance"] = 6.0
+            sr["cloudstrider_choice_turn"] = int(turn)
+            if owner_id:
+                sr["cloudstrider_choice_turn_owner"] = owner_id
+                sr["cloudstrider_no_charge_turn_owner"] = owner_id
+            sr["cloudstrider_no_charge_turn"] = int(turn)
+            source = str(ctx.get("ability_name", "") or "Cloudstrider").strip() or "Cloudstrider"
+            sr["cloudstrider_source"] = source
+            root.special_rules = sr
+            try:
+                from ..utility.event_bus import append_action
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{source}: {getattr(root, 'name', 'Unit')} may Deep Strike more than 6\" away (no charge).",
                     )
             except Exception:
                 pass
@@ -4615,11 +4752,11 @@ class Game:
             self.resolve_charge_end_mortal_wounds(unit, target_unit, spec)
             return
         model_id = str(ctx.get("model_id", "") or "")
-        model = self._resolve_model_by_id(model_id)
-        if model is None:
-            return
+        model = self._resolve_model_by_id(model_id) if model_id else None
         if kind == "move_over":
             self.resolve_move_over_mortal_wounds(unit, model, target_unit, spec)
+            return
+        if model is None:
             return
         if kind == "fight_phase_end":
             self.resolve_fight_phase_end_mortal_wounds(unit, model, target_unit, spec)
@@ -5499,6 +5636,30 @@ class Game:
                 if candidates:
                     triggers.append((model, spec, candidates))
 
+        unit_specs = attacker_unit.unit_post_shoot_suppression_specs() or []
+        if unit_specs:
+            seen_sources = {str(spec.get("source", "") or "").strip().lower() for _m, spec, _c in triggers}
+            for spec in unit_specs:
+                source_key = str(spec.get("source", "") or "").strip().lower()
+                if source_key and source_key in seen_sources:
+                    continue
+                exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if exclude_mv and _is_monster_or_vehicle(target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((None, spec, candidates))
+                    if source_key:
+                        seen_sources.add(source_key)
+
         if not triggers:
             return
 
@@ -5525,7 +5686,7 @@ class Game:
                 options=options,
                 context={
                     "attacker_unit_id": get_entity_id(attacker_unit),
-                    "model_id": get_entity_id(model),
+                    "model_id": get_entity_id(model) if model is not None else None,
                     "ability_name": ability_name,
                 },
             )
@@ -6150,17 +6311,26 @@ class Game:
             )
 
     def resolve_move_over_mortal_wounds(self, unit, model, target_unit, spec) -> None:
-        if unit is None or model is None or target_unit is None or not isinstance(spec, dict):
+        if unit is None or target_unit is None or not isinstance(spec, dict):
             return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
         dice_count = int(spec.get("dice", 0) or 0)
+        dice_per_model = bool(spec.get("dice_per_model", False))
+        if dice_per_model:
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            dice_count = len([m for m in list(models or []) if getattr(m, "is_alive", True)])
         threshold = int(spec.get("threshold", 0) or 0)
         mortal_per = int(spec.get("mortal_per_success", 1) or 0)
         mortal_die = str(spec.get("mortal_per_success_die", "") or "").strip().upper()
         fly_bonus = int(spec.get("fly_bonus", 0) or 0)
         if dice_count <= 0 or threshold <= 0 or (mortal_per <= 0 and not mortal_die):
             return
-
-        from ..utility.dice import get_roll
 
         def _target_has_fly(target) -> bool:
             if target is None:
@@ -6185,46 +6355,81 @@ class Game:
             return False
 
         apply_fly_bonus = int(fly_bonus) if (fly_bonus and _target_has_fly(target_unit)) else 0
-
-        rolls = []
-        mod_rolls = []
-        successes = 0
-        for _ in range(dice_count):
-            r = int(get_roll("D6") or 0)
-            rolls.append(r)
-            mr = r + apply_fly_bonus
-            mod_rolls.append(mr)
-            if mr >= threshold:
-                successes += 1
-        if mortal_die:
-            total_mw = 0
-            for _ in range(successes):
-                total_mw += int(get_roll(mortal_die) or 0)
-        else:
-            total_mw = int(successes * mortal_per)
+        effective_threshold = max(1, int(threshold) - int(apply_fly_bonus))
 
         ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
-        roll_note = f"rolls={rolls}"
-        if apply_fly_bonus:
-            roll_note = f"{roll_note} (modified={mod_rolls}, +{apply_fly_bonus} vs FLY)"
-        print(
-            f"{ability_name}: {getattr(model, 'name', 'Model')} -> {getattr(target_unit, 'name', 'Target')} "
-            f"({roll_note}) => {total_mw} mortal wounds"
-        )
 
-        if total_mw > 0:
-            unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(self, "map", None))
-        from ..utility.event_bus import append_action, append_dice
-        player = getattr(unit.get_parent_army(), "player", None)
-        if player is not None:
-            append_dice(
-                player,
-                f"{ability_name}: rolls {rolls} => {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+        reroll_rules: list[dict] = []
+        reroll_count = 0
+        try:
+            reroll_count = int(root.move_over_mortal_wounds_reroll_count() or 0)
+        except Exception:
+            reroll_count = 0
+        if reroll_count > 0:
+            reroll_count = min(int(reroll_count), int(dice_count))
+            label = "Re-roll move-over die" if reroll_count == 1 else f"Re-roll up to {reroll_count} move-over dice"
+            reroll_rules.append(
+                {
+                    "action_id": "reroll_move_over",
+                    "label": label,
+                    "mode": "any",
+                    "max_select": int(reroll_count),
+                    "allow_success": True,
+                    "source": "Move-over reroll",
+                }
             )
-            append_action(
-                player,
-                f"{ability_name}: {getattr(model, 'name', 'Model')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
-            )
+
+        try:
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+
+        unit_id = get_entity_id(root) if callable(get_entity_id) else None
+        target_id = get_entity_id(target_unit) if callable(get_entity_id) else None
+        model_id = get_entity_id(model) if (model is not None and callable(get_entity_id)) else None
+
+        reason = f"{ability_name}: {getattr(root, 'name', 'Unit')} -> {getattr(target_unit, 'name', 'Target')}"
+        roll_spec = {
+            "dice_count": int(dice_count),
+            "faces": 6,
+            "reason": reason,
+            "roll_type": "move_over_mortal_wounds",
+            "unit_id": unit_id,
+            "model_id": model_id,
+            "target_unit_id": target_id,
+            "target_unit_ids": [target_id] if target_id else [],
+            "handler_key": "move_over_mortal_wounds",
+            "ability_name": ability_name,
+            "threshold": int(threshold),
+            "effective_threshold": int(effective_threshold),
+            "mortal_per_success": int(mortal_per),
+            "mortal_per_success_die": str(mortal_die or ""),
+            "fly_bonus": int(fly_bonus or 0),
+            "apply_fly_bonus": int(apply_fly_bonus),
+            "target": int(effective_threshold),
+            "target_op": "gte",
+        }
+        if reroll_rules:
+            roll_spec["reroll_rules"] = list(reroll_rules)
+        if bool(getattr(self, "auto_resolve_dice_rolls", False)):
+            try:
+                from ..utility.dice import get_roll
+
+                roll_spec["fixed_dice"] = [int(get_roll("D6") or 0) for _ in range(int(dice_count))]
+                if reroll_rules:
+                    roll_spec["roll_sequence"] = [int(get_roll("D6") or 0) for _ in range(int(reroll_count))]
+            except Exception:
+                pass
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+        try:
+            self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+        except Exception:
+            pass
 
     def _on_unit_move_ended_move_over_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -6297,6 +6502,65 @@ class Game:
                     allow_skip=True,
                     phase="Movement phase",
                 )
+
+        # Unit-level move-over mortal wounds (roll per model in unit).
+        try:
+            if not bool(getattr(root, "is_flying", False)):
+                return
+        except Exception:
+            return
+        try:
+            unit_specs = list(root.unit_move_over_mortal_wounds_specs() or [])
+        except Exception:
+            unit_specs = []
+        if not unit_specs:
+            return
+        candidates = []
+        seen_ids = set()
+        for model in models:
+            if not getattr(model, "is_alive", False):
+                continue
+            path = getattr(model, "last_move_path", None)
+            moved_over = get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True)
+            for cand in list(moved_over or []):
+                try:
+                    cid = get_entity_id(cand)
+                except Exception:
+                    cid = None
+                if cid and cid in seen_ids:
+                    continue
+                if cid:
+                    seen_ids.add(cid)
+                candidates.append(cand)
+        if not candidates:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+        for spec in list(unit_specs or []):
+            move_types = set(spec.get("move_types") or [])
+            if action_key not in move_types:
+                continue
+            filtered = list(candidates)
+            if spec.get("exclude_monster_vehicle"):
+                filtered = [
+                    cand for cand in filtered
+                    if not (cand.has_any_keyword("MONSTER") or cand.has_any_keyword("VEHICLE"))
+                ]
+            if not filtered:
+                continue
+            self._queue_mortal_wounds_target_decision(
+                player=player,
+                unit=root,
+                candidates=list(filtered),
+                spec=spec,
+                kind="move_over",
+                allow_skip=True,
+                phase="Movement phase",
+            )
 
     def _on_unit_move_ended_snared_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -7166,6 +7430,40 @@ class Game:
             return
         self._maybe_prompt_transport_reactive_disembark(unit, trigger="set_up")
 
+    def _on_unit_set_up_cry_of_the_wind(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not getattr(root, "is_alive", lambda: True)():
+            return
+        try:
+            entries = list(root.iter_cry_of_the_wind_models() or [])
+        except Exception:
+            entries = []
+        if not entries:
+            return
+        current_player = self.get_current_player()
+        owner_id = str(getattr(current_player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        for entry in list(entries):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            source = str(entry.get("source", "") or "Cry of the Wind").strip() or "Cry of the Wind"
+            key = f"cry_of_the_wind:{get_entity_id(model)}:{turn}:{owner_id}"
+            try:
+                model.set_temporary_crit_on_successful_hit(
+                    key=key,
+                    source=source,
+                    expires_turn=turn,
+                    expires_turn_owner=owner_id,
+                )
+            except Exception:
+                continue
+
     def _record_setup_reactive_shoot_or_charge_candidate(self, enemy_unit) -> None:
         if enemy_unit is None:
             return
@@ -7729,6 +8027,93 @@ class Game:
         trigger_fn = getattr(root, "maybe_trigger_path_of_warrior", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
+
+    def _on_shooting_targets_selected_cruel_amusement(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        try:
+            entries = list(root.iter_cruel_amusement_models() or [])
+        except Exception:
+            entries = []
+        if not entries:
+            return
+        from .decision_kinds import DECISION_CHOOSE_CRUEL_AMUSEMENT
+        from .decisions import DecisionOption, DecisionRequest
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_CRUEL_AMUSEMENT:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _sort_key(entry):
+            try:
+                return str(get_entity_id(entry.get("model")))
+            except Exception:
+                return ""
+
+        for entry in sorted(list(entries or []), key=_sort_key):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            weapon_name = str(entry.get("weapon_name", "") or "shrieker cannon")
+            ability_name = str(entry.get("source", "") or "Cruel Amusement").strip() or "Cruel Amusement"
+            options = [
+                DecisionOption.create(
+                    "Ignores Cover",
+                    payload={"choice": "IGNORES_COVER", "summary": "Weapon gains [IGNORES COVER] until end of phase."},
+                ),
+                DecisionOption.create(
+                    "Precision",
+                    payload={"choice": "PRECISION", "summary": "Weapon gains [PRECISION] until end of phase."},
+                ),
+                DecisionOption.create(
+                    "Sustained Hits 3",
+                    payload={"choice": "SUSTAINED_HITS_3", "summary": "Weapon gains [SUSTAINED HITS 3] until end of phase."},
+                ),
+            ]
+            ctx = {
+                "unit_id": get_entity_id(root),
+                "model_id": model_id,
+                "weapon_name": weapon_name,
+                "ability_name": ability_name,
+                "phase_name": "SHOOTING_PHASE",
+            }
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_CRUEL_AMUSEMENT,
+                f"{ability_name}: select a weapon ability.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(req)
 
     def _on_fight_unit_selected_dark_pacts(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -12359,6 +12744,26 @@ class Game:
                 if val:
                     modifiers.append((int(val), source))
 
+        try:
+            targets = []
+            if target_unit is None:
+                targets = []
+            elif isinstance(target_unit, (list, tuple, set)):
+                targets = [t for t in list(target_unit or []) if t is not None]
+            else:
+                targets = [target_unit]
+        except Exception:
+            targets = [target_unit] if target_unit is not None else []
+        for tgt in targets:
+            try:
+                get_def = getattr(tgt, "get_defensive_charge_roll_modifiers", None)
+                if callable(get_def):
+                    for val, source in get_def():
+                        if val:
+                            modifiers.append((int(val), source))
+            except Exception:
+                continue
+
         filt = getattr(charging_unit, "_filter_internal_rivalries_roll_modifiers", None)
         if callable(filt):
             modifiers = filt(modifiers, kind="charge")
@@ -12815,10 +13220,15 @@ class Game:
                 m.set_location(*loc)
 
         if battlefield_edge is None:
-            sr = getattr(unit, "special_rules", None)
-            pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0) if isinstance(sr, dict) else 0.0
-            if pain_min:
-                min_enemy_distance = min(float(min_enemy_distance), float(pain_min))
+            try:
+                if hasattr(unit, "get_deep_strike_min_distance_override"):
+                    override = unit.get_deep_strike_min_distance_override()
+                else:
+                    override = None
+            except Exception:
+                override = None
+            if override:
+                min_enemy_distance = min(float(min_enemy_distance), float(override))
 
         from ..utility.aura_utils import horizontal_distance_between_bases_2d
         enemy_units = self.get_enemy_units(unit.get_parent_army().player)
@@ -12997,6 +13407,49 @@ class Game:
             allow_skip = True
             if unit_id and unit_id in must_ids:
                 allow_skip = False
+            try:
+                if unit is not None and hasattr(unit, "get_cloudstrider_deep_strike_source"):
+                    source = str(unit.get_cloudstrider_deep_strike_source() or "")
+                else:
+                    source = ""
+            except Exception:
+                source = ""
+            try:
+                can_deep_strike = bool(getattr(unit, "has_deep_strike", lambda: False)())
+            except Exception:
+                can_deep_strike = False
+            if source and can_deep_strike:
+                try:
+                    sr = getattr(unit, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    owner_id = str(getattr(player, "id", "") or "")
+                    current_turn = int(getattr(self, "turn", 0) or 0)
+                    active = (
+                        str(sr.get("cloudstrider_choice_turn_owner", "") or "") == owner_id
+                        and int(sr.get("cloudstrider_choice_turn", 0) or 0) == current_turn
+                    )
+                except Exception:
+                    active = False
+                if not active:
+                    ctx = {
+                        "unit_id": unit_id,
+                        "ability_name": source or "Cloudstrider",
+                        "phase": "Movement phase",
+                    }
+                    message = (
+                        f"{source or 'Cloudstrider'}: use 6\" Deep Strike placement "
+                        f"(no charge this turn)?"
+                    )
+                    self._queue_optional_ability_confirmation(
+                        player=player,
+                        ability_key="cloudstrider",
+                        ability_name=source or "Cloudstrider",
+                        message=message,
+                        context=ctx,
+                        payload={"unit_id": unit_id},
+                        instance_key=f"{unit_id}:{getattr(self, 'turn', 0)}:cloudstrider",
+                    )
             request = self._build_reserves_arrival_request(unit, allow_skip=allow_skip)
             if request is not None:
                 try:

@@ -571,10 +571,15 @@ def _evaluate_reserves_arrival_positions(
         min_enemy_distance = 9.0
 
     if battlefield_edge is None:
-        sr = getattr(unit, "special_rules", None)
-        pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0) if isinstance(sr, dict) else 0.0
-        if pain_min:
-            min_enemy_distance = min(float(min_enemy_distance), float(pain_min))
+        try:
+            if hasattr(unit, "get_deep_strike_min_distance_override"):
+                override = unit.get_deep_strike_min_distance_override()
+            else:
+                override = None
+        except Exception:
+            override = None
+        if override:
+            min_enemy_distance = min(float(min_enemy_distance), float(override))
 
     try:
         from ...utility.aura_utils import horizontal_distance_between_bases_2d
@@ -647,20 +652,33 @@ def _evaluate_reserves_arrival_positions(
 def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     opt = find_option(request, result.option_id)
     payload = dict(getattr(opt, "payload", {}) or {}) if opt is not None else {}
-    unit_id = str(payload.get("unit_id", "") or request.context.get("unit_id", "") or "")
+    ctx = dict(getattr(request, "context", {}) or {})
+    unit_id = str(payload.get("unit_id", "") or ctx.get("unit_id", "") or "")
     unit = get_unit(game, unit_id)
     if unit is None:
         raise RuntimeError("Move unit: unit not found.")
     movement_type = str(payload.get("movement_type", "") or request.context.get("movement_type", "") or "")
+    placement_kind = str(ctx.get("placement_kind", "") or "")
     if bool(result.payload.get("skipped", False)):
         if movement_type == "reactive":
             _clear_battle_focus_reactive_flags(unit)
+        if placement_kind == "reserves_arrival":
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            for k in (
+                "cloudstrider_deep_strike_min_distance",
+                "cloudstrider_choice_turn",
+                "cloudstrider_choice_turn_owner",
+                "cloudstrider_no_charge_turn",
+                "cloudstrider_no_charge_turn_owner",
+            ):
+                sr.pop(k, None)
+            unit.special_rules = sr
         return None
     model_positions = list(result.payload.get("model_positions") or [])
     apply_model_positions(game, model_positions)
 
-    ctx = dict(getattr(request, "context", {}) or {})
-    placement_kind = str(ctx.get("placement_kind", "") or "")
     allowed_ids = {str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None}
     if placement_kind or allowed_ids:
         for entry in list(model_positions or []):

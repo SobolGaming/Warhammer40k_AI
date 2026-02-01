@@ -23,6 +23,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_HARBINGER,
     DECISION_CHOOSE_MARTIAL_KATAH,
     DECISION_CHOOSE_PATH_OF_WARRIOR,
+    DECISION_CHOOSE_CRUEL_AMUSEMENT,
+    DECISION_CHOOSE_DANCE_OF_DEATH,
     DECISION_CHOOSE_LIMB_FROM_LIMB,
     DECISION_CHOOSE_RED_WRATH,
     DECISION_USE_MIRACLE_DIE,
@@ -615,6 +617,140 @@ def _apply_choose_path_of_warrior(game: object, request: DecisionRequest, result
     if not callable(apply_fn):
         raise RuntimeError("Path of the Warrior apply hook missing.")
     return bool(apply_fn(game, choice=str(choice), phase_name=phase_name))
+
+
+def _validate_choose_cruel_amusement(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    model_val = payload.get("model_id") or payload.get("model") or request.context.get("model_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if model_val is None or not choice:
+        return ("Cruel Amusement requires model_id and choice.",)
+    model = resolve_model(game, model_val)
+    if model is None:
+        return ("Cruel Amusement model not found.",)
+    choice_key = str(choice or "").strip().upper()
+    if choice_key not in ("IGNORES_COVER", "PRECISION", "SUSTAINED_HITS_3"):
+        return ("Cruel Amusement choice must be Ignores Cover, Precision, or Sustained Hits 3.",)
+    return ()
+
+
+def _apply_choose_cruel_amusement(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    model = resolve_model(game, payload.get("model_id") or payload.get("model") or request.context.get("model_id"))
+    if model is None:
+        raise RuntimeError("Cruel Amusement model not found.")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_key = str(choice or "").strip().upper()
+    keyword_map = {
+        "IGNORES_COVER": ["IGNORES COVER"],
+        "PRECISION": ["PRECISION"],
+        "SUSTAINED_HITS_3": ["SUSTAINED HITS 3"],
+    }
+    keywords = keyword_map.get(choice_key)
+    if not keywords:
+        raise RuntimeError("Cruel Amusement choice invalid.")
+    weapon_name = str(payload.get("weapon_name") or request.context.get("weapon_name") or "shrieker cannon").strip()
+    ability_name = str(payload.get("ability_name") or request.context.get("ability_name") or "Cruel Amusement").strip()
+    model_id = getattr(model, "id", None) or getattr(model, "_id", None)
+    key = f"cruel_amusement:{model_id or ''}"
+    if hasattr(model, "set_temporary_weapon_keyword_bonuses"):
+        model.set_temporary_weapon_keyword_bonuses(
+            key=key,
+            weapon_name=weapon_name,
+            keywords=list(keywords),
+            source=ability_name,
+            expires_phase="SHOOTING_PHASE",
+            attack_type="ranged",
+        )
+    try:
+        unit = getattr(model, "parent_unit", None)
+        if unit is not None:
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+        else:
+            root = None
+        player = None
+        if root is not None:
+            army = root.get_parent_army()
+            player = getattr(army, "player", None) if army is not None else None
+        label = {
+            "IGNORES_COVER": "Ignores Cover",
+            "PRECISION": "Precision",
+            "SUSTAINED_HITS_3": "Sustained Hits 3",
+        }.get(choice_key, choice_key.title())
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(model, 'name', 'Model')} grants {label} to {weapon_name}.",
+        )
+    except Exception:
+        pass
+    return str(choice_key)
+
+
+def _validate_choose_dance_of_death(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if unit_val is None or not choice:
+        return ("Dance of Death requires unit_id and choice.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Dance of Death unit not found.",)
+    choice_key = str(choice or "").strip().upper()
+    if choice_key not in ("HERO", "VILLAIN", "TRICKSTER"):
+        return ("Dance of Death choice must be HERO, VILLAIN, or TRICKSTER.",)
+    try:
+        if hasattr(unit, "has_dance_of_death") and not unit.has_dance_of_death():
+            return ("Dance of Death is not applicable for this unit.",)
+    except Exception:
+        pass
+    return ()
+
+
+def _apply_choose_dance_of_death(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Dance of Death unit not found.")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_key = str(choice or "").strip().upper()
+    phase_name = str(request.context.get("phase_name", "") or payload.get("phase_name", "") or "FIGHT_PHASE")
+    set_fn = getattr(unit, "set_dance_of_death_choice", None)
+    if not callable(set_fn):
+        raise RuntimeError("Dance of Death apply hook missing.")
+    set_fn(choice_key, phase_name=phase_name)
+    try:
+        player = getattr(unit.get_parent_army(), "player", None)
+        label = {
+            "HERO": "Hero's Prowess",
+            "VILLAIN": "Villain's Doom",
+            "TRICKSTER": "Trickster's Grace",
+        }.get(choice_key, choice_key.title())
+        _log_action_for_players(
+            game,
+            player,
+            f"Dance of Death: {getattr(unit, 'name', 'Unit')} chose {label}.",
+        )
+    except Exception:
+        pass
+    return str(choice_key)
 
 
 def _validate_choose_doctrina(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -2662,6 +2798,8 @@ register_decision_handler(DECISION_CHOOSE_FRENZY_TARGET, validate=_validate_choo
 register_decision_handler(DECISION_CHOOSE_HARBINGER, validate=_validate_choose_harbinger, apply=_apply_choose_harbinger)
 register_decision_handler(DECISION_CHOOSE_MARTIAL_KATAH, validate=_validate_choose_martial_katah, apply=_apply_choose_martial_katah)
 register_decision_handler(DECISION_CHOOSE_PATH_OF_WARRIOR, validate=_validate_choose_path_of_warrior, apply=_apply_choose_path_of_warrior)
+register_decision_handler(DECISION_CHOOSE_CRUEL_AMUSEMENT, validate=_validate_choose_cruel_amusement, apply=_apply_choose_cruel_amusement)
+register_decision_handler(DECISION_CHOOSE_DANCE_OF_DEATH, validate=_validate_choose_dance_of_death, apply=_apply_choose_dance_of_death)
 register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_choose_limb_from_limb, apply=_apply_choose_limb_from_limb)
 register_decision_handler(DECISION_CHOOSE_RED_WRATH, validate=_validate_choose_red_wrath, apply=_apply_choose_red_wrath)
 register_decision_handler(DECISION_USE_MIRACLE_DIE, validate=_validate_use_miracle_die, apply=_apply_use_miracle_die)

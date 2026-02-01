@@ -246,6 +246,11 @@ class Unit:
             self._refresh_advance_no_roll_flags()
         except Exception:
             pass
+        # Parse ignore-vertical-distance move type rules.
+        try:
+            self._refresh_ignore_vertical_distance_move_types()
+        except Exception:
+            pass
         # Parse bearer-only keyword additions (e.g., SMOKE).
         try:
             self._refresh_bearer_keyword_flags()
@@ -1182,8 +1187,9 @@ class Unit:
         re.IGNORECASE,
     )
     _OPPONENT_TURN_STRATEGIC_RESERVES_RE = re.compile(
-        r"at the end of your opponents turn if this unit is not within engagement range of one or more enemy units? "
-        r"you can remove it from the battlefield and place it into strategic reserves?",
+        r"(?:while this model is leading a unit )?at the end of your opponents turn if "
+        r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit) is not within engagement range of one or more enemy units? "
+        r"you can remove (?:it|that unit|this unit) from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
     )
     _OPPONENT_TURN_FRIENDLY_UNIT_DESTROYED_REPOSITION_RE = re.compile(
@@ -1281,6 +1287,11 @@ class Unit:
         r"the\s+targets?\s+of\s+that\s+charge\s+are\s+below\s+half\s+strength\s+add\s+(?P<half>\d+)\s+to\s+the\s+charge\s+roll\s+instead",
         re.IGNORECASE,
     )
+    _DEFENSIVE_CHARGE_ROLL_PENALTY_RE = re.compile(
+        r"each\s+time\s+an?\s+enemy\s+unit\s+declares\s+a\s+charge\s+if\s+one\s+or\s+more\s+units?\s+with\s+this\s+ability\s+are\s+"
+        r"selected\s+as\s+a\s+target\s+of\s+that\s+charge\s+subtract\s+(?P<val>\d+)\s+from\s+the\s+charge\s+roll",
+        re.IGNORECASE,
+    )
     _TARGETED_STRATAGEM_CP_DISCOUNT_RE = re.compile(
         r"once\s+per\s+battle\s+round\s+one\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+"
         r"(?:its\s+unit|this\s+models\s+unit|that\s+models\s+unit)\s+is\s+targeted\s+with\s+a\s+stratagem\s+"
@@ -1317,7 +1328,7 @@ class Unit:
         re.IGNORECASE,
     )
     _POST_SHOOT_SUPPRESSION_RE = re.compile(
-        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?until the start of your next turn that enemy unit is suppressed "
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,
@@ -1443,6 +1454,35 @@ class Unit:
         r"(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+ that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
+    _UNIT_MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
+        r"each time this unit ends a (?P<moves>[a-z ]+) move "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+        r"(?:that )?(?:it )?moved over during that move "
+        r"(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
+        r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
+        r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
+    _MOVE_OVER_MORTAL_WOUNDS_REROLL_RE = re.compile(
+        r"each time you roll (?:a d6 for the bearer while resolving|to inflict wounds using) this unit s eviscerating fly by ability "
+        r"you can re ?roll (?:the result|one d6(?: for each model in this unit equipped with cluster caltrops)?)",
+        re.IGNORECASE,
+    )
+    _FIRST_FAILED_SAVE_DAMAGE_ZERO_RE = re.compile(
+        r"once per turn the first time a saving throw is failed for (?:the bearer s unit|this unit|this model s unit|this models unit) "
+        r"change the damage characteristic of that attack to 0",
+        re.IGNORECASE,
+    )
+    _CRUEL_AMUSEMENT_RE = re.compile(
+        r"in your shooting phase each time this model is selected to shoot select one of the abilities below "
+        r"until the end of the phase this model s (?P<weapon>[a-z0-9 ]+) has that ability",
+        re.IGNORECASE,
+    )
+    _CRY_OF_THE_WIND_RE = re.compile(
+        r"each time this model is set up on the battlefield until the end of the turn "
+        r"each time this model makes a ranged attack a successful unmodified hit roll scores a critical hit",
         re.IGNORECASE,
     )
     _CHARGE_PHASE_BODYGUARD_LOSS_RE = re.compile(
@@ -3252,6 +3292,64 @@ class Unit:
                 sr["advance_ignore_vertical_distance_effects"] = effects
                 u.special_rules = sr
 
+    def _refresh_ignore_vertical_distance_move_types(self) -> None:
+        """Parse abilities that ignore vertical distance for specific move types."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        ability_tag = "ability:ignore_vertical_distance_move_types"
+
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            effects = list(sr.get("ignore_vertical_distance_effects", []) or [])
+            kept = [e for e in effects if not (isinstance(e, dict) and e.get("tag") == ability_tag)]
+            if kept:
+                sr["ignore_vertical_distance_effects"] = kept
+            else:
+                sr.pop("ignore_vertical_distance_effects", None)
+            u.special_rules = sr
+
+        parsed_types: set[str] = set()
+        parsed_sources: set[str] = set()
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = u._strip_eligibility_prefix(desc or name or "")
+                text = u._normalize_rules_text(text_src or "")
+                low = str(text or "").lower()
+                if "ignore" not in low or "vertical distance" not in low:
+                    continue
+                move_types = u._parse_move_types_from_text(low)
+                if not move_types:
+                    continue
+                parsed_types.update(move_types)
+                parsed_sources.add(str(name or "Ignore vertical distance").strip() or "Ignore vertical distance")
+
+        if parsed_types:
+            source_label = ", ".join(sorted(parsed_sources)) if parsed_sources else "Ignore vertical distance"
+            entry = {
+                "move_types": sorted(parsed_types),
+                "source": source_label,
+                "tag": ability_tag,
+            }
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                effects = list(sr.get("ignore_vertical_distance_effects", []) or [])
+                effects.append(dict(entry))
+                sr["ignore_vertical_distance_effects"] = effects
+                u.special_rules = sr
+
     def _get_advance_no_roll_effect(self) -> Optional[dict]:
         """Return the best active fixed-Advance effect that replaces the Advance roll."""
         try:
@@ -3295,8 +3393,49 @@ class Unit:
                 }
         return best
 
+    def ignores_vertical_distance_for_move_type(self, movement_type) -> bool:
+        """Return True if this unit ignores vertical distance for the given move type."""
+        def _tag(value) -> str:
+            low = str(value or "").lower()
+            if "advance" in low:
+                return "advance"
+            if "fall back" in low or "fallback" in low or "fall_back" in low:
+                return "fall_back"
+            if "charge" in low:
+                return "charge"
+            if "move" in low or "normal" in low:
+                return "move"
+            return low
+
+        mt = _tag(movement_type)
+        if not mt:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        effects = sr.get("ignore_vertical_distance_effects") if isinstance(sr, dict) else None
+        if not isinstance(effects, list) or not effects:
+            return False
+        for effect in effects:
+            if not isinstance(effect, dict):
+                continue
+            try:
+                types = list(effect.get("move_types", []) or [])
+            except Exception:
+                types = []
+            if mt in types:
+                return True
+        return False
+
     def advance_ignores_vertical_distance(self) -> bool:
         """Return True if this unit ignores vertical distance when Advancing."""
+        try:
+            if self.ignores_vertical_distance_for_move_type("advance"):
+                return True
+        except Exception:
+            pass
         try:
             root = self.get_attached_unit_root()
         except Exception:
@@ -4166,6 +4305,10 @@ class Unit:
             pass
         try:
             self._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_ignore_vertical_distance_move_types()
         except Exception:
             pass
         try:
@@ -5219,6 +5362,10 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_ignore_vertical_distance_move_types()
+        except Exception:
+            pass
+        try:
             self._refresh_bearer_keyword_flags()
         except Exception:
             pass
@@ -5734,6 +5881,10 @@ class Unit:
             pass
         try:
             self._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_ignore_vertical_distance_move_types()
         except Exception:
             pass
         try:
@@ -7263,6 +7414,13 @@ class Unit:
             army = self.get_parent_army()
             game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
             mod = int(self._post_shoot_leadership_debuff_modifier(game))
+            try:
+                from ..utility.aura_effects import get_aura_battleshock_test_modifiers
+                aura_mods = get_aura_battleshock_test_modifiers(self, game_map=getattr(game, "map", None))
+                for val, _src in list(aura_mods or []):
+                    mod += int(val)
+            except Exception:
+                pass
         except Exception:
             mod = 0
         try:
@@ -8542,6 +8700,14 @@ class Unit:
         except Exception:
             pass
         try:
+            self._refresh_ignore_vertical_distance_move_types()
+        except Exception:
+            pass
+        try:
+            bodyguard._refresh_ignore_vertical_distance_move_types()
+        except Exception:
+            pass
+        try:
             self._refresh_bearer_keyword_flags()
         except Exception:
             pass
@@ -8648,6 +8814,15 @@ class Unit:
         try:
             if bodyguard is not None:
                 bodyguard._refresh_advance_no_roll_flags()
+        except Exception:
+            pass
+        try:
+            self._refresh_ignore_vertical_distance_move_types()
+        except Exception:
+            pass
+        try:
+            if bodyguard is not None:
+                bodyguard._refresh_ignore_vertical_distance_move_types()
         except Exception:
             pass
         try:
@@ -10825,6 +11000,34 @@ class Unit:
                     return ""
         return choice
 
+    def _dance_of_death_choice(self, *, game=None) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return ""
+        choice = str(sr.get("dance_of_death_choice", "") or "").strip().upper()
+        if not choice:
+            return ""
+        exp = str(sr.get("dance_of_death_expires_phase", "") or "").strip().upper()
+        if exp:
+            if game is None:
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+            if game is not None:
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or getattr(game, "phase", "") or "").strip().upper()
+                if pname and pname != exp:
+                    return ""
+        return choice
+
     def get_unit_hit_reroll_modifiers(self, attack_type: str, *, target=None) -> dict:
         """
         Return unit-level hit modifiers for this attached unit, parsed via attack_roll_parser.
@@ -10931,6 +11134,17 @@ class Unit:
         if choice in ("HIT", "BOTH"):
             reroll_hit_values.add(1)
             reroll_hit_reasons.append("Path of the Warrior: re-roll Hit rolls of 1")
+
+        choice = ""
+        try:
+            choice_fn = getattr(self, "_dance_of_death_choice", None)
+            if callable(choice_fn):
+                choice = choice_fn()
+        except Exception:
+            choice = ""
+        if choice == "HERO":
+            reroll_hit_values.add(1)
+            reroll_hit_reasons.append("Dance of Death (Hero's Prowess): re-roll Hit rolls of 1")
 
         army = None
         get_parent_army = getattr(root, "get_parent_army", None)
@@ -11057,6 +11271,17 @@ class Unit:
         if choice in ("WOUND", "BOTH"):
             reroll_wound_values.add(1)
             reroll_wound_reasons.append("Path of the Warrior: re-roll Wound rolls of 1")
+
+        choice = ""
+        try:
+            choice_fn = getattr(self, "_dance_of_death_choice", None)
+            if callable(choice_fn):
+                choice = choice_fn()
+        except Exception:
+            choice = ""
+        if choice == "VILLAIN":
+            mods["wound"] += 1
+            wound_reasons.append("Dance of Death (Villain's Doom): +1 to wound")
 
         game = None
         army = None
@@ -11307,6 +11532,11 @@ class Unit:
         except Exception:
             pass
         try:
+            if self._aethersails_reroll_active():
+                return True
+        except Exception:
+            pass
+        try:
             army = self.get_parent_army()
             mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
             if mgr is not None and getattr(mgr, "skilled_crews_reroll_advance_applies", None):
@@ -11337,6 +11567,10 @@ class Unit:
             pass
         for t in Unit._iter_reroll_scan_texts(self):
             s = str(t or "").lower()
+            if "advance" in s and "drukhari" in s and "embarked within this model" in s:
+                if self._transport_has_embarked_keyword("DRUKHARI"):
+                    return True
+                continue
             if ("re-roll" in s or "reroll" in s) and "advance" in s:
                 return True
         return False
@@ -11983,6 +12217,10 @@ class Unit:
 
         for t in Unit._iter_reroll_scan_texts(self):
             s = self._normalize_rules_text(str(t or "")).lower()
+            if "charge" in s and "drukhari" in s and "embarked within this model" in s:
+                if self._transport_has_embarked_keyword("DRUKHARI"):
+                    return True
+                continue
             if ("re-roll" in s or "reroll" in s) and "charge" in s:
                 return True
         return False
@@ -12078,6 +12316,69 @@ class Unit:
                 modifiers.append((int(spec.get("half_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
             elif has_below_start and int(spec.get("base_bonus", 0) or 0):
                 modifiers.append((int(spec.get("base_bonus", 0) or 0), spec.get("source", "Charge roll bonus")))
+        return modifiers
+
+    def _defensive_charge_roll_penalty_specs(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "defensive_charge_roll_penalty_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = self._strip_eligibility_prefix(text_src)
+                normalized = self._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._DEFENSIVE_CHARGE_ROLL_PENALTY_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    val = int(m.group("val") or 0)
+                except Exception:
+                    val = 0
+                if val <= 0:
+                    continue
+                source = str(name or "Charge roll penalty").strip() or "Charge roll penalty"
+                key = (source.lower(), int(val))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"value": int(val), "source": source})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def get_defensive_charge_roll_modifiers(self) -> list[tuple[int, str]]:
+        specs = self._defensive_charge_roll_penalty_specs()
+        if not specs:
+            return []
+        modifiers: list[tuple[int, str]] = []
+        for spec in specs:
+            try:
+                val = int(spec.get("value", 0) or 0)
+            except Exception:
+                val = 0
+            if not val:
+                continue
+            modifiers.append((-abs(val), spec.get("source", "Charge roll penalty")))
         return modifiers
 
     def register_wargear_charge_keyword_hit(
@@ -16429,6 +16730,14 @@ class Unit:
             post_shoot_mod = int(self._post_shoot_leadership_debuff_modifier(game))
         except Exception:
             post_shoot_mod = 0
+        aura_mod = 0
+        try:
+            from ..utility.aura_effects import get_aura_battleshock_test_modifiers
+            aura_mods = get_aura_battleshock_test_modifiers(self, game_map=getattr(game, "map", None))
+            for val, _src in list(aura_mods or []):
+                aura_mod += int(val)
+        except Exception:
+            aura_mod = 0
         # Core Stratagem: INSANE BRAVERY can make this unit automatically pass this test.
         # It is consumed on use (one-shot for the next Battle-shock test).
         auto_passed = False
@@ -16459,7 +16768,7 @@ class Unit:
                 carmine_reroll_available = False
 
         if not auto_passed:
-            total_mod = int(shadow_mod) + int(extra_mod) + int(post_shoot_mod)
+            total_mod = int(shadow_mod) + int(extra_mod) + int(post_shoot_mod) + int(aura_mod)
             dice_count = 3 if synapse_3d6 else 2
             dice_expr = "3D6" if synapse_3d6 else "2D6"
             leadership_value = None
@@ -18610,6 +18919,211 @@ class Unit:
         root._ability_cache[cache_key] = ability
         return ability
 
+    def _transport_has_embarked_keyword(self, keyword: str) -> bool:
+        kw = str(keyword or "").strip()
+        if not kw:
+            return False
+        try:
+            if not bool(getattr(self, "is_transport", False)):
+                return False
+        except Exception:
+            return False
+        passengers = list(getattr(self, "transport_passengers", []) or [])
+        if not passengers:
+            return False
+        for passenger in passengers:
+            if passenger is None:
+                continue
+            try:
+                root = passenger.get_attached_unit_root()
+            except Exception:
+                root = passenger
+            if root is None:
+                continue
+            try:
+                if bool(root.has_any_keyword(kw)):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _has_aethersails(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "aethersails_ability"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+        found = False
+        for name, desc in root._iter_ability_entries_for_rules(model=None):
+            text = f"{name or ''} {desc or ''}".lower()
+            if "aethersails" in text:
+                found = True
+                break
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def _aethersails_reroll_active(self) -> bool:
+        if not self._has_aethersails():
+            return False
+        return bool(self._transport_has_embarked_keyword("DRUKHARI"))
+
+    def has_dance_of_death(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "dance_of_death"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+        found = False
+        try:
+            for ab, _leader in root._iter_attached_leader_leading_abilities():
+                try:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+                except Exception:
+                    name = ""
+                    desc = ""
+                text = f"{name or ''} {desc or ''}".lower()
+                if "dance of death" in text:
+                    found = True
+                    break
+        except Exception:
+            found = False
+        if not found:
+            for name, desc in root._iter_ability_entries_for_rules(model=None):
+                text = f"{name or ''} {desc or ''}".lower()
+                if "dance of death" in text:
+                    found = True
+                    break
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def iter_cruel_amusement_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                if "cruel amusement" not in str(name or text_src).lower():
+                    normalized = root._normalize_rules_text(text_src)
+                    if not normalized:
+                        continue
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                    normalized = normalized.lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    if not root._CRUEL_AMUSEMENT_RE.fullmatch(normalized):
+                        continue
+                weapon_name = "shrieker cannon"
+                try:
+                    normalized = root._normalize_rules_text(text_src)
+                    normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                    normalized = re.sub(r"\s+", " ", normalized).strip()
+                    m = root._CRUEL_AMUSEMENT_RE.fullmatch(normalized)
+                    if m:
+                        weapon_name = str(m.group("weapon") or weapon_name).strip() or weapon_name
+                except Exception:
+                    weapon_name = "shrieker cannon"
+                results.append(
+                    {
+                        "model": model,
+                        "weapon_name": weapon_name,
+                        "source": str(name or "Cruel Amusement").strip() or "Cruel Amusement",
+                    }
+                )
+                break
+        return results
+
+    def iter_cry_of_the_wind_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not root._CRY_OF_THE_WIND_RE.fullmatch(normalized) and "cry of the wind" not in normalized:
+                    continue
+                results.append(
+                    {
+                        "model": model,
+                        "source": str(name or "Cry of the Wind").strip() or "Cry of the Wind",
+                    }
+                )
+                break
+        return results
+
+    def get_cloudstrider_deep_strike_source(self) -> str:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "cloudstrider_deep_strike_source"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+        source = ""
+        for ab, _leader in root._iter_attached_leader_leading_abilities():
+            try:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            if name.strip().lower() == "cloudstrider":
+                source = name or "Cloudstrider"
+                break
+            text = root._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if "deep strike" in norm and "more than 6" in norm and "not eligible to declare a charge" in norm:
+                source = name or "Cloudstrider"
+                break
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = source
+        return str(source or "")
+
     def get_opponent_turn_friendly_unit_destroyed_reposition_ability(self):
         """
         Return ability info dict for opponent-turn reposition after a friendly unit is destroyed.
@@ -19151,11 +19665,32 @@ class Unit:
         *,
         attack_type: Optional[str] = None,
         model: Optional['Model'] = None,
+        weapon_profile=None,
+        weapon_name: str = "",
     ) -> dict:
         """Return always-on weapon keyword bonuses for a specific model."""
         if model is None:
             return {}
-        rules = self._get_model_weapon_keyword_bonus_rules(model=model)
+        rules = list(self._get_model_weapon_keyword_bonus_rules(model=model) or [])
+        temp_rules: list[dict] = []
+        try:
+            wname = str(weapon_name or "").strip()
+            if not wname and weapon_profile is not None:
+                try:
+                    wname = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "")
+                except Exception:
+                    wname = ""
+                if not wname:
+                    try:
+                        wname = str(getattr(weapon_profile, "name", "") or "")
+                    except Exception:
+                        wname = ""
+            if wname and hasattr(model, "get_temporary_weapon_keyword_bonuses"):
+                temp_rules = list(model.get_temporary_weapon_keyword_bonuses(wname) or [])
+        except Exception:
+            temp_rules = []
+        if temp_rules:
+            rules = list(rules or []) + list(temp_rules or [])
         if not rules:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
@@ -19302,6 +19837,25 @@ class Unit:
             sr.pop(k, None)
         root.special_rules = sr
 
+    def set_dance_of_death_choice(self, choice: str, *, phase_name: str = "") -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["dance_of_death_choice"] = str(choice or "").strip().upper()
+        if phase_name:
+            sr["dance_of_death_expires_phase"] = str(phase_name or "").strip().upper()
+        root.special_rules = sr
+
+    def clear_dance_of_death_choice(self) -> None:
+        root = self.get_attached_unit_root()
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        for k in ("dance_of_death_choice", "dance_of_death_expires_phase"):
+            sr.pop(k, None)
+        root.special_rules = sr
+
     def attached_unit_has_reanimation_protocols(self) -> bool:
         """Attached unit eligibility: true if any attached member has Reanimation Protocols."""
         for u in self.get_attached_unit_members():
@@ -19311,6 +19865,50 @@ class Unit:
             except Exception:
                 continue
         return False
+
+    def get_choreographer_of_war_source(self) -> str:
+        """Return the source name if a leading Choreographer of War ability is active."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "choreographer_of_war_source"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return str(cache.get(cache_key) or "")
+
+        source = ""
+        for ab, _leader in root._iter_attached_leader_leading_abilities():
+            try:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            if name.strip().lower() == "choreographer of war":
+                source = name or "Choreographer of War"
+                break
+            text = root._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", " s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if (
+                "pile in" in norm
+                and "consolidation move" in norm
+                and "move up to 6" in norm
+                and "instead of up to 3" in norm
+                and "as close as possible to the closest enemy unit" in norm
+            ):
+                source = name or "Choreographer of War"
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = source
+        return str(source or "")
 
     def get_fight_phase_move_distance_override(self, movement_kind: str) -> Optional[float]:
         """
@@ -19343,6 +19941,12 @@ class Unit:
                         pname = ""
                     if not pname or pname == exp:
                         override = max(float(override or 0.0), 6.0)
+        except Exception:
+            pass
+
+        try:
+            if self.get_choreographer_of_war_source():
+                override = max(float(override or 0.0), 6.0)
         except Exception:
             pass
 
@@ -20083,6 +20687,18 @@ class Unit:
         except Exception:
             pass
 
+        # Cloudstrider: cannot charge until end of turn after 6" deep strike option.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("cloudstrider_no_charge_turn_owner"):
+                owner = str(sr.get("cloudstrider_no_charge_turn_owner") or "")
+                turn = int(sr.get("cloudstrider_no_charge_turn", 0) or 0)
+                if owner and game is not None:
+                    if game.get_current_player().id == owner and int(getattr(game, "turn", 0) or 0) == turn:
+                        return False
+        except Exception:
+            pass
+
         # Fire and Fade: cannot charge until end of turn.
         try:
             sr = getattr(self, "special_rules", None)
@@ -20433,6 +21049,58 @@ class Unit:
         self._ability_cache['deep_strike'] = found
         
         return found
+
+    def get_deep_strike_min_distance_override(self) -> Optional[float]:
+        """
+        Return an override for the minimum enemy distance when using Deep Strike, if applicable.
+
+        Currently supports:
+        - Power from Pain (Swooping Descent) min distance
+        - Cloudstrider (Baharroth) min distance when chosen for the current turn
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return None
+        min_dist: Optional[float] = None
+        try:
+            pain_min = float(sr.get("pain_deep_strike_min_distance", 0) or 0)
+            if pain_min > 0:
+                min_dist = pain_min if min_dist is None else min(min_dist, pain_min)
+        except Exception:
+            pass
+
+        try:
+            cloud_min = float(sr.get("cloudstrider_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            cloud_min = 0.0
+        if cloud_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("cloudstrider_choice_turn_owner", "") or "")
+                turn = int(sr.get("cloudstrider_choice_turn", 0) or 0)
+                if game is not None and owner_id:
+                    if str(getattr(game.get_current_player(), "id", "") or "") != owner_id:
+                        cloud_min = 0.0
+                    elif int(getattr(game, "turn", 0) or 0) != turn:
+                        cloud_min = 0.0
+            except Exception:
+                cloud_min = 0.0
+            if cloud_min > 0:
+                min_dist = cloud_min if min_dist is None else min(min_dist, cloud_min)
+
+        return float(min_dist) if min_dist is not None else None
 
     def has_infiltrate(self) -> bool:
         """Check if the unit has Infiltrate ability."""
@@ -22285,9 +22953,7 @@ class Unit:
                 if eff.roll != roll_key or eff.kind != "reroll":
                     continue
                 cond = eff.condition
-                if not cond or not (cond.target_keywords_any or cond.target_keywords_all):
-                    continue
-                if not self._attack_condition_met(cond, target=target, source_unit=root):
+                if cond and not self._attack_condition_met(cond, target=target, source_unit=root):
                     continue
                 label = name or "Model ability"
                 if eff.reroll_full:
@@ -22788,6 +23454,58 @@ class Unit:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_suppression_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit to become suppressed.
+
+        Returns a list of specs with keys:
+            - exclude_monster_vehicle: bool
+            - source: ability name
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_suppression_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                normalized = u._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._POST_SHOOT_SUPPRESSION_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+                source = str(name or "Post-shoot Suppression").strip() or "Post-shoot Suppression"
+                key = (source.lower(), exclude_mv)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"exclude_monster_vehicle": exclude_mv, "source": source})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_post_shoot_snare_specs(self, model: Optional['Model'] = None) -> List[dict]:
@@ -23694,6 +24412,210 @@ class Unit:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_move_over_mortal_wounds_specs(self) -> List[dict]:
+        """
+        Unit-level rule: end of Normal/Advance move, select an enemy unit moved over and roll D6s per model.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - threshold: int
+            - mortal_per_success: int
+            - mortal_per_success_die: str
+            - move_types: list[str]
+            - exclude_monster_vehicle: bool
+            - fly_bonus: int
+            - dice_per_model: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_move_over_mortal_wounds"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "moved over" not in normalized or "mortal wound" not in normalized:
+                    continue
+                if "for each model in this unit" not in normalized:
+                    continue
+                m = unit._UNIT_MOVE_OVER_MORTAL_WOUNDS_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                moves_text = (m.group("moves") or "").strip()
+                move_types = unit._parse_move_types_from_text(moves_text)
+                if "move" not in move_types:
+                    continue
+                if not move_types.issubset({"move", "advance"}):
+                    continue
+                try:
+                    threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                mw_token = str(m.group("mw") or "").strip().lower()
+                mortal_per = 0
+                mortal_die = ""
+                if mw_token.startswith("d"):
+                    mortal_die = mw_token.upper()
+                else:
+                    try:
+                        mortal_per = int(mw_token or 0)
+                    except Exception:
+                        mortal_per = 0
+                if threshold <= 0 or (mortal_per <= 0 and not mortal_die):
+                    continue
+                exclude_mv = "excluding monsters and vehicles" in normalized or "excluding monster and vehicle" in normalized
+                try:
+                    fly_bonus = int(m.group("fly_bonus") or 0)
+                except Exception:
+                    fly_bonus = 0
+                source = str(name or "Move-over mortals").strip() or "Move-over mortals"
+                key = (
+                    source.lower(),
+                    int(threshold),
+                    str(mortal_die or ""),
+                    int(mortal_per),
+                    tuple(sorted(move_types)),
+                    bool(exclude_mv),
+                    int(fly_bonus or 0),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "threshold": int(threshold),
+                        "mortal_per_success": int(mortal_per),
+                        "mortal_per_success_die": str(mortal_die),
+                        "move_types": sorted(move_types),
+                        "exclude_monster_vehicle": bool(exclude_mv),
+                        "fly_bonus": int(fly_bonus or 0),
+                        "dice_per_model": True,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def move_over_mortal_wounds_reroll_count(self) -> int:
+        """Count models that can re-roll their move-over mortal wound die (e.g., Cluster Caltrops)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return 0
+        count = 0
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = root._strip_eligibility_prefix(text_src)
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if root._MOVE_OVER_MORTAL_WOUNDS_REROLL_RE.fullmatch(normalized):
+                    count += 1
+                    break
+        return int(count)
+
+    def get_first_failed_save_damage_zero_sources(self) -> list[str]:
+        """Return ability source names that set the first failed save's damage to 0 (once per turn)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "first_failed_save_damage_zero_sources"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        sources: list[str] = []
+        seen: set[str] = set()
+
+        def _matches(text: str) -> bool:
+            if not text:
+                return False
+            norm = root._normalize_rules_text(text)
+            if not norm:
+                return False
+            norm = norm.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", " s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            return bool(root._FIRST_FAILED_SAVE_DAMAGE_ZERO_RE.fullmatch(norm))
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        for unit in members:
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                if _matches(desc or name or ""):
+                    src = str(name or "First failed save").strip() or "First failed save"
+                    key = src.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    sources.append(src)
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in models:
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                if _matches(desc or name or ""):
+                    src = str(name or "First failed save").strip() or "First failed save"
+                    key = src.lower()
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    sources.append(src)
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(sources)
+        return list(sources)
+
     def get_target_hit_roll_penalty(
         self,
         attack_type: str,
@@ -23818,6 +24740,17 @@ class Unit:
         if model is not None:
             model_entries = list(root._iter_model_specific_ability_entries(model))
             _match_entries(model_entries, "model")
+
+        choice = ""
+        try:
+            choice_fn = getattr(self, "_dance_of_death_choice", None)
+            if callable(choice_fn):
+                choice = choice_fn()
+        except Exception:
+            choice = ""
+        if choice == "TRICKSTER":
+            penalty += 1
+            reasons.append("Dance of Death (Trickster's Grace): -1 to hit")
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

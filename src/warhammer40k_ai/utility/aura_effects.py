@@ -502,6 +502,48 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for enemy-test auras like:
+      "While an enemy unit is within N\" of this model, subtract X from Battle-shock and Leadership tests taken for that unit."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = str(getattr(ability, "description", "") or "").strip()
+    if not desc:
+        return None
+    text = re.sub(r"<[^>]+>", " ", desc)
+    text = (
+        text.replace("\u2019", "'")
+        .replace("\u2018", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+    )
+    text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
+    if "enemy unit" not in text:
+        return None
+    if "battle shock" not in text or "leadership" not in text:
+        return None
+    m_range = re.search(r"within\s+(?P<rng>\d+)", text)
+    m_val = re.search(r"subtract\s+(?P<val>\d+)\s+from", text)
+    if not m_range or not m_val:
+        return None
+    try:
+        rng = float(m_range.group("rng"))
+    except Exception:
+        return None
+    try:
+        val = int(m_val.group("val"))
+    except Exception:
+        return None
+    if rng <= 0 or val <= 0:
+        return None
+    return {
+        "range": float(rng),
+        "amount": -abs(int(val)),
+    }
+
+
 def _nurgles_gift_contagion_range(battle_round: int) -> float:
     # 10e baseline: BR1=3", BR2=6", BR3+=9"
     br = int(battle_round or 0)
@@ -787,6 +829,39 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
                 charge_mods.append((1, f"Aura: +1 to Charge rolls from {aura_name}"))
 
     return advance_mods, charge_mods
+
+
+def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[int, str]]:
+    """
+    Return roll modifiers from enemy auras that affect Battle-shock and Leadership tests.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if unit is None:
+        return []
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return []
+
+    modifiers: list[tuple[int, str]] = []
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_enemy_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_battleshock_leadership_test_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            amt = int(spec["amount"])
+            if amt:
+                modifiers.append((amt, f"Aura: {ab_name}"))
+    return modifiers
 
 
 def _parse_melee_attacks_aura(ability) -> Optional[dict]:

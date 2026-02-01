@@ -613,6 +613,130 @@ class Model:
                     reasons.append(f"{label} +{bonus_val}S ({key_norm}) [temporary]")
         return int(total), reasons
 
+    def set_temporary_weapon_keyword_bonuses(
+        self,
+        *,
+        key: str,
+        weapon_name: str,
+        keywords: list[str],
+        source: str = "",
+        expires_phase: str = "",
+        attack_type: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        weapon_name = str(weapon_name or "").strip()
+        clean_keywords = [str(k or "").strip() for k in list(keywords or []) if str(k or "").strip()]
+        if not weapon_name or not clean_keywords:
+            effects.pop(key_norm, None)
+            return
+        atype = str(attack_type or "").strip().lower()
+        if atype not in ("melee", "ranged", "any"):
+            atype = "any"
+        entry = {
+            "expires_phase": str(expires_phase or "").strip().upper(),
+            "weapon_keyword_bonuses": {weapon_name: list(clean_keywords)},
+            "weapon_keyword_bonuses_source": str(source or "").strip() or "Weapon keyword bonus",
+            "weapon_keyword_bonuses_attack_type": atype,
+        }
+        effects[key_norm] = entry
+
+    def get_temporary_weapon_keyword_bonuses(self, weapon_name: str) -> list[dict]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return []
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return []
+        rules: list[dict] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_keyword_bonuses")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_keyword_bonuses_source") or "").strip()
+            atype = str(v.get("weapon_keyword_bonuses_attack_type") or "any").strip().lower()
+            if atype not in ("melee", "ranged", "any"):
+                atype = "any"
+            for key, kw_list in bonus_map.items():
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm != target and key_norm not in target and target not in key_norm:
+                    continue
+                for kw in list(kw_list or []):
+                    kw_text = str(kw or "").strip()
+                    if not kw_text:
+                        continue
+                    rules.append({"attack_type": atype, "keyword": kw_text, "source": source or kw_text})
+        return rules
+
+    def set_temporary_crit_on_successful_hit(
+        self,
+        *,
+        key: str,
+        source: str = "",
+        expires_turn: Optional[int] = None,
+        expires_turn_owner: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        entry = {
+            "crit_on_successful_hit": True,
+            "crit_on_successful_hit_source": str(source or "").strip() or "Critical hit on successful hit",
+        }
+        if expires_turn is not None:
+            try:
+                entry["crit_on_successful_hit_expires_turn"] = int(expires_turn)
+            except Exception:
+                entry["crit_on_successful_hit_expires_turn"] = int(expires_turn or 0)
+        if expires_turn_owner:
+            entry["crit_on_successful_hit_expires_turn_owner"] = str(expires_turn_owner)
+        self._temporary_effects[key_norm] = entry
+
+    def has_temporary_crit_on_successful_hit(self, *, game=None) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return False
+        if game is None:
+            game = self._resolve_game()
+        current_turn = None
+        current_owner = ""
+        if game is not None:
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = None
+            try:
+                current_owner = str(getattr(game.get_current_player(), "id", "") or "")
+            except Exception:
+                current_owner = ""
+        for key, v in list(eff.items()):
+            if not isinstance(v, dict):
+                continue
+            if not bool(v.get("crit_on_successful_hit")):
+                continue
+            exp_turn = v.get("crit_on_successful_hit_expires_turn")
+            exp_owner = str(v.get("crit_on_successful_hit_expires_turn_owner", "") or "")
+            if exp_turn is not None and current_turn is not None:
+                try:
+                    if int(exp_turn) != int(current_turn):
+                        continue
+                except Exception:
+                    continue
+            if exp_owner and current_owner and exp_owner != current_owner:
+                continue
+            return True
+        return False
+
     # ---------------- Code Chivalric helpers ----------------
 
     def grant_code_chivalric_rerolls(self) -> None:

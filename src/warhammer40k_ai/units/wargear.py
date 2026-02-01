@@ -2745,9 +2745,19 @@ class WargearProfile:
                 )
                 _apply_keyword_bonus(half_bonus, sustained_label="Half Range", heavy_label="Half Range", lance_label="Half Range")
             if unit is not None and hasattr(unit, "get_model_weapon_keyword_bonuses"):
+                weapon_name = ""
+                try:
+                    if getattr(self, "parent_wargear", None) is not None:
+                        weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                    if not weapon_name:
+                        weapon_name = str(getattr(self, "name", "") or "")
+                except Exception:
+                    weapon_name = ""
                 model_bonus = unit.get_model_weapon_keyword_bonuses(
                     attack_type=attack_type,
                     model=attacker,
+                    weapon_profile=self,
+                    weapon_name=weapon_name,
                 )
                 _apply_keyword_bonus(model_bonus, lance_label="Ability")
 
@@ -4706,6 +4716,22 @@ class WargearProfile:
                 crit_hit_reasons.extend(list(unit_hit_mods.get("crit_hit_reasons", ()) or ()))
         except Exception:
             pass
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+        if is_ranged:
+            try:
+                game = None
+                unit = getattr(attacker, "parent_unit", None)
+                army = unit.get_parent_army() if unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if hasattr(attacker, "has_temporary_crit_on_successful_hit"):
+                    if attacker.has_temporary_crit_on_successful_hit(game=game):
+                        crit_threshold = min(int(crit_threshold), int(final_needed))
+                        crit_hit_reasons.append("Cry of the Wind: critical hit on successful hit")
+            except Exception:
+                pass
         try:
             unit = attacker.parent_unit
             army = unit.get_parent_army() if unit is not None else None
@@ -7550,22 +7576,70 @@ class WargearProfile:
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             save_result['saved'] = False
             save_result['special_effects'].append("Natural 1 (auto-fail)")
-            return save_result
+        else:
+            from ..utility.modifiers import compute_save_roll_modifier
+            dice_modifier, effects = compute_save_roll_modifier(
+                target_model,
+                attack_instance=attack_instance,
+                ap=ap,
+                save_type=save_result.get("save_type"),
+                weapon_profile=self,
+            )
+            if effects:
+                save_result["special_effects"].extend(list(effects))
+            save_result['saved'] = (dice_roll + dice_modifier) >= save_value
 
-        from ..utility.modifiers import compute_save_roll_modifier
-        dice_modifier, effects = compute_save_roll_modifier(
-            target_model,
-            attack_instance=attack_instance,
-            ap=ap,
-            save_type=save_result.get("save_type"),
-            weapon_profile=self,
-        )
-        if effects:
-            save_result["special_effects"].extend(list(effects))
-        save_result['saved'] = (dice_roll + dice_modifier) >= save_value
+            if dice_modifier != 0:
+                save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
 
-        if dice_modifier != 0:
-            save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
+        # Channeller Stones: first failed save each turn sets Damage to 0.
+        try:
+            if not save_result.get("saved", False):
+                t_unit = getattr(target_model, "parent_unit", None)
+                if t_unit is not None and hasattr(t_unit, "get_first_failed_save_damage_zero_sources"):
+                    sources = list(t_unit.get_first_failed_save_damage_zero_sources() or [])
+                else:
+                    sources = []
+                if sources:
+                    try:
+                        root = t_unit.get_attached_unit_root()
+                    except Exception:
+                        root = t_unit
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    owner_id = ""
+                    turn = 0
+                    try:
+                        army = root.get_parent_army()
+                        player = getattr(army, "player", None) if army is not None else None
+                        owner_id = str(getattr(player, "id", "") or "")
+                        game = getattr(player, "game", None) if player is not None else None
+                        turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                    except Exception:
+                        owner_id = ""
+                        turn = 0
+                    used_owner = str(sr.get("first_failed_save_damage_zero_turn_owner", "") or "")
+                    try:
+                        used_turn = int(sr.get("first_failed_save_damage_zero_turn", 0) or 0)
+                    except Exception:
+                        used_turn = 0
+                    already_used = False
+                    if used_turn and turn and used_turn == turn:
+                        if not used_owner or not owner_id or used_owner == owner_id:
+                            already_used = True
+                    if not already_used:
+                        source = str(sources[0] or "First failed save").strip() or "First failed save"
+                        attack_instance["force_damage_zero"] = True
+                        attack_instance["force_damage_zero_source"] = source
+                        sr["first_failed_save_damage_zero_turn"] = int(turn or 0)
+                        if owner_id:
+                            sr["first_failed_save_damage_zero_turn_owner"] = owner_id
+                        sr["first_failed_save_damage_zero_source"] = source
+                        root.special_rules = sr
+                        save_result['special_effects'].append(f"{source}: damage set to 0")
+        except Exception:
+            pass
 
         return save_result
 
@@ -8203,6 +8277,15 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Channeller Stones (or similar): set Damage to 0 after a failed save.
+        try:
+            if bool(attack_instance.get("force_damage_zero")):
+                source = str(attack_instance.get("force_damage_zero_source", "") or "First failed save").strip()
+                damage_mods.append(Modifier(ModifierOp.SET, 0, source=source))
+                damage_result['special_effects'].append(f"{source}: damage set to 0")
+        except Exception:
+            pass
+
         # Apply modifiers unless these are "mortal wounds in addition" (not currently used, but Core Rules require it).
         if attack_instance.get("mortal_wound", False) and attack_instance.get("mortal_wound_in_addition", False):
             final_damage = int(damage_value)
@@ -8278,7 +8361,7 @@ class WargearProfile:
                 target_model,
                 attacker,
                 damage_value,
-                attack_instance["mortal_wound"],
+                bool(attack_instance.get("mortal_wound", False)),
                 attack_instance=attack_instance,
                 game_map=game_map,
                 wounds_cannot_be_ignored=wounds_cannot_be_ignored,
@@ -8286,7 +8369,7 @@ class WargearProfile:
         )
         damage_result['model_killed'] = was_alive and not target_model.is_alive
         
-        if attack_instance['mortal_wound']:
+        if bool(attack_instance.get('mortal_wound', False)):
             damage_result['special_effects'].append("Mortal Wounds")
         
         return damage_result

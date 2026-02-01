@@ -271,6 +271,12 @@ def _movement_type_allows_flip_belt(movement_type) -> bool:
 
 def _unit_ignores_vertical_distance(unit: 'Unit', movement_type=None) -> bool:
     mt = _movement_type_tag(movement_type)
+    try:
+        fn = getattr(unit, "ignores_vertical_distance_for_move_type", None)
+        if callable(fn) and fn(movement_type):
+            return True
+    except Exception:
+        pass
     if mt == "advance":
         try:
             fn = getattr(unit, "advance_ignores_vertical_distance", None)
@@ -1290,6 +1296,16 @@ def get_validation_rules(
                     base_rules['closest_enemy_unit'] = True
         except Exception:
             pass
+        try:
+            if moving_unit is not None and hasattr(moving_unit, "get_choreographer_of_war_source"):
+                source = str(moving_unit.get_choreographer_of_war_source() or "")
+                if source:
+                    base_rules['must_end_as_close_as_possible_to_closest_enemy_unit'] = True
+                    base_rules['closest_enemy_unit_reason'] = source
+                    base_rules['must_end_closer_to_enemies'] = False
+                    base_rules['must_end_closer_to_enemies_or_objectives'] = False
+        except Exception:
+            pass
 
     elif movement_type == MovementType.CONSOLIDATE:
         from .constants import CONSOLIDATE_DISTANCE
@@ -1327,6 +1343,16 @@ def get_validation_rules(
                 mgr = getattr(army, "templar_vows", None) if army is not None else None
                 if mgr is not None and mgr.use_closest_enemy_unit_rule(moving_unit):
                     base_rules['closest_enemy_unit'] = True
+        except Exception:
+            pass
+        try:
+            if moving_unit is not None and hasattr(moving_unit, "get_choreographer_of_war_source"):
+                source = str(moving_unit.get_choreographer_of_war_source() or "")
+                if source:
+                    base_rules['must_end_as_close_as_possible_to_closest_enemy_unit'] = True
+                    base_rules['closest_enemy_unit_reason'] = source
+                    base_rules['must_end_closer_to_enemies'] = False
+                    base_rules['must_end_closer_to_enemies_or_objectives'] = False
         except Exception:
             pass
 

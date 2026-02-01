@@ -114,6 +114,99 @@ def handle_daemonic_poisons_damage_roll(game: object, state: DiceRollState):
     return damage
 
 
+def handle_move_over_mortal_wounds(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    unit_id = spec.get("unit_id")
+    unit = _get_unit(game, unit_id)
+    if unit is None:
+        return None
+    target_id = spec.get("target_unit_id") or spec.get("target_unit") or spec.get("target_id")
+    target_unit = _get_unit(game, target_id)
+    if target_unit is None:
+        return None
+    ability_name = str(spec.get("ability_name", "") or spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
+    try:
+        threshold = int(spec.get("threshold", 0) or spec.get("effective_threshold", 0) or 0)
+    except Exception:
+        threshold = 0
+    try:
+        mortal_per = int(spec.get("mortal_per_success", 1) or 0)
+    except Exception:
+        mortal_per = 0
+    mortal_die = str(spec.get("mortal_per_success_die", "") or "").strip().upper()
+    if threshold <= 0 or (mortal_per <= 0 and not mortal_die):
+        return None
+    try:
+        fly_bonus = int(spec.get("fly_bonus", 0) or 0)
+    except Exception:
+        fly_bonus = 0
+    try:
+        apply_bonus = int(spec.get("apply_fly_bonus", 0) or 0)
+    except Exception:
+        apply_bonus = 0
+    if apply_bonus == 0 and fly_bonus:
+        try:
+            if bool(getattr(target_unit, "is_flying", False)):
+                apply_bonus = fly_bonus
+        except Exception:
+            apply_bonus = 0
+        if apply_bonus == 0:
+            try:
+                has_kw = getattr(target_unit, "has_keyword", None)
+                if callable(has_kw) and has_kw("FLY"):
+                    apply_bonus = fly_bonus
+            except Exception:
+                apply_bonus = apply_bonus
+        if apply_bonus == 0:
+            try:
+                has_any_kw = getattr(target_unit, "has_any_keyword", None)
+                if callable(has_any_kw) and has_any_kw("FLY"):
+                    apply_bonus = fly_bonus
+            except Exception:
+                apply_bonus = apply_bonus
+
+    rolls = [int(d.get("value", 0) or 0) for d in list(getattr(state, "dice", []) or []) if not bool(d.get("is_derived", False))]
+    if not rolls:
+        return 0
+    mod_rolls = [int(r) + int(apply_bonus) for r in rolls]
+    successes = sum(1 for r in mod_rolls if int(r) >= int(threshold))
+    if successes <= 0:
+        total_mw = 0
+    elif mortal_die:
+        from ..utility.dice import get_roll
+        total_mw = 0
+        for _ in range(int(successes)):
+            total_mw += int(get_roll(mortal_die) or 0)
+    else:
+        total_mw = int(successes * int(mortal_per))
+
+    try:
+        if total_mw > 0 and hasattr(unit, "_apply_mortal_wounds_to_unit"):
+            unit._apply_mortal_wounds_to_unit(target_unit, total_mw, game_map=getattr(game, "map", None))
+    except Exception:
+        pass
+
+    try:
+        from ..utility.event_bus import append_action, append_dice
+
+        player = unit.get_parent_army().player if hasattr(unit, "get_parent_army") else None
+        if player is not None:
+            roll_note = f"rolls {rolls}"
+            if apply_bonus:
+                roll_note = f"{roll_note} (modified {mod_rolls}, +{apply_bonus} vs FLY)"
+            append_dice(
+                player,
+                f"{ability_name}: {roll_note} => {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+            append_action(
+                player,
+                f"{ability_name}: {getattr(unit, 'name', 'Unit')} dealt {int(total_mw)} mortal wounds to {getattr(target_unit, 'name', 'Target')}.",
+            )
+    except Exception:
+        pass
+    return int(total_mw)
+
+
 def handle_advance_roll(game: object, state: DiceRollState):
     spec = dict(getattr(state, "spec", {}) or {})
     unit_id = spec.get("unit_id")
@@ -471,4 +564,5 @@ register_roll_handler("attack_damage", handle_attack_roll)
 register_roll_handler("attack_hazardous", handle_attack_roll)
 register_roll_handler("daemonic_poisons", handle_daemonic_poisons_roll)
 register_roll_handler("daemonic_poisons_damage", handle_daemonic_poisons_damage_roll)
+register_roll_handler("move_over_mortal_wounds", handle_move_over_mortal_wounds)
 register_roll_handler("battle_focus_reactive_move", handle_battle_focus_reactive_move)
