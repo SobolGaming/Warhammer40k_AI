@@ -2158,6 +2158,7 @@ def _classify_ability_base(
     start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
+    movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
@@ -2365,6 +2366,8 @@ def _classify_ability_base(
         return movement_phase_normal_move_weapon_attacks_bonus_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
+    if movement_phase_end_mortal_table_support:
+        return movement_phase_end_mortal_table_support
     if grenade_pack_flyover_support:
         return grenade_pack_flyover_support
     if movement_phase_visible_wound_bonus_support:
@@ -5140,6 +5143,31 @@ def _movement_phase_end_visible_hit_bonus_support(description: str) -> Optional[
         "Supported",
         f"End of Movement phase: select visible enemy within {range_val}\"; friendly {keyword} models gain +{bonus} to hit vs that target until next Command phase.",
     )
+
+
+def _movement_phase_end_enemy_within_range_mortal_table_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
+        r"on a 2 3 that unit suffers 1 mortal wounds? on a 4 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d6 mortal wounds?"
+        r"(?: each enemy unit within range of this ability must then take a battle shock test)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "6"
+    battle_shock = "battle shock test" in norm
+    note = (
+        f"End of Movement phase: roll D6 for each enemy within {range_val}\"; "
+        "2-3=1 mortal wound, 4-5=D3, 6=D6."
+    )
+    if battle_shock:
+        note = f"{note} Units within range take Battle-shock tests after resolving mortals."
+    return ("Supported", note)
 
 
 def _grenade_pack_flyover_support(description: str) -> Optional[Tuple[str, str]]:
