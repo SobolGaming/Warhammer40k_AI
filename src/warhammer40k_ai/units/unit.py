@@ -2521,17 +2521,9 @@ class Unit:
 
         names: list[str] = []
         aura_specs: list[dict] = []
-        for ab in self._iter_active_abilities():
-            try:
-                if isinstance(ab, str):
-                    name = ab
-                    desc = ab
-                else:
-                    name = str(getattr(ab, "name", "") or "")
-                    desc = str(getattr(ab, "description", "") or "") or name
-            except Exception:
-                continue
-            text = self._normalize_rules_text(desc or "")
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = self._strip_eligibility_prefix(desc or name)
+            text = self._normalize_rules_text(text_src or "")
             if not text:
                 continue
             norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
@@ -2617,17 +2609,9 @@ class Unit:
             pass
 
         specs: list[dict] = []
-        for ab in self._iter_active_abilities():
-            try:
-                if isinstance(ab, str):
-                    name = ab
-                    desc = ab
-                else:
-                    name = str(getattr(ab, "name", "") or "")
-                    desc = str(getattr(ab, "description", "") or "") or name
-            except Exception:
-                continue
-            text = self._normalize_rules_text(desc or "")
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = self._strip_eligibility_prefix(desc or name)
+            text = self._normalize_rules_text(text_src or "")
             if not text:
                 continue
             norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()

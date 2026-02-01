@@ -163,6 +163,27 @@ class TestStratagemCpIncrease(unittest.TestCase):
         self.assertTrue(used)
         self.assertEqual(int(player.command_points), 0)
 
+    def test_enhancement_parsed_for_cp_increase(self):
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        enhancement = Enhancement.from_waha_dict(
+            {
+                "id": "enh1",
+                "name": "Torc of Morai-Heg",
+                "faction_id": "AE",
+                "detachment": "Seer Council",
+                "detachment_id": "000001023",
+                "cost": "20",
+                "description": self._optional_text(),
+            }
+        )
+        unit = _make_unit("Seer")
+        unit.enhancement = enhancement
+        enhancement.apply_to_unit(unit)
+        specs = list(unit.special_rules.get("stratagem_target_cp_increase_aura", []) or [])
+        self.assertTrue(specs)
+        self.assertTrue(bool(specs[0].get("optional", False)))
+
 
 if __name__ == "__main__":
     unittest.main()

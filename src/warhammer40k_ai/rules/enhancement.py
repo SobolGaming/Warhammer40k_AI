@@ -178,6 +178,12 @@ class Enhancement:
             enh_id = ""
 
         try:
+            if hasattr(unit, "_refresh_targeted_stratagem_cp_increase_flags"):
+                unit._refresh_targeted_stratagem_cp_increase_flags()
+        except Exception:
+            pass
+
+        try:
             army = unit.get_parent_army()
         except Exception:
             army = None
