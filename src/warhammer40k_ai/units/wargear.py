@@ -3516,6 +3516,18 @@ class WargearProfile:
                         _add_hit_mod(-1, "-1 from Big Guns Never Tire (target engaged)")
         except Exception:
             pass
+
+        # Fortification: target only engaged with friendly Fortifications can be shot, but at -1 to hit (non-Pistol).
+        try:
+            pu = getattr(attacker, "parent_unit", None)
+            if is_ranged and pu is not None and (not self.is_pistol()):
+                game = getattr(getattr(pu.get_parent_army(), "player", None), "game", None)
+                game_map = getattr(game, "map", None) if game is not None else None
+                if game_map is not None and hasattr(target, "is_only_within_enemy_fortifications"):
+                    if target.is_only_within_enemy_fortifications(game_map, enemy_unit=pu):
+                        _add_hit_mod(-1, "-1 from Fortification")
+        except Exception:
+            pass
         
         # Check for target modifiers (like Stealth)
         if hasattr(target, 'has_stealth') and target.has_stealth():

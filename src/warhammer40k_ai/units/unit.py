@@ -16040,7 +16040,13 @@ class Unit:
                     pass
 
         is_battleshocked = self.is_battle_shocked()
-        if is_battleshocked or fallback_desperate:
+        fortification_escape_exempt = False
+        if is_battleshocked and game_map is not None:
+            try:
+                fortification_escape_exempt = self.is_only_within_enemy_fortifications(game_map)
+            except Exception:
+                fortification_escape_exempt = False
+        if (is_battleshocked and not fortification_escape_exempt) or fallback_desperate:
             roll_modifier = 0
             if is_battleshocked and fallback_desperate and fallback_bs_penalty:
                 roll_modifier = -abs(int(fallback_bs_penalty))
@@ -17138,6 +17144,68 @@ class Unit:
             if enemy.is_alive()
         )
 
+    def is_only_within_enemy_fortifications(self, game_map: 'Map', *, enemy_unit: Optional['Unit'] = None) -> bool:
+        """
+        Return True if this unit is within Engagement Range of one or more enemy Fortifications
+        and no other enemy units.
+
+        If enemy_unit is provided, treat that unit's army as the "enemy" perspective.
+        """
+        if game_map is None:
+            return False
+        try:
+            if not self.is_alive() or not getattr(self, "deployed", True):
+                return False
+        except Exception:
+            return False
+
+        if enemy_unit is not None:
+            candidates = list(game_map.get_friendly_units(enemy_unit))
+        else:
+            candidates = list(game_map.get_enemy_units(self))
+
+        engaged = []
+        seen = set()
+        for unit in list(candidates or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            rid = get_entity_id(root)
+            if rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)) or root.is_in_reserves():
+                    continue
+            except Exception:
+                pass
+            try:
+                if not game_map.is_within_engagement_range(root, self):
+                    continue
+            except Exception:
+                continue
+            engaged.append(root)
+
+        if not engaged:
+            return False
+        for unit in engaged:
+            try:
+                if not bool(getattr(unit, "is_fortification", False)):
+                    return False
+            except Exception:
+                return False
+        return True
+
     ###########################################################################
     ### Shooting Phase Actions
     ###########################################################################
@@ -17759,7 +17827,13 @@ class Unit:
         # - BGNT also allows a VEHICLE/MONSTER (in its controlling player's Shooting phase) to target enemy units
         #   it is within Engagement Range of (i.e., shoot into its own combat), subject to BLAST restriction.
         target_locked = Unit._is_unit_locked_in_combat(target_unit, game_map)
+        fortification_only = False
         if target_locked:
+            try:
+                fortification_only = bool(target_unit.is_only_within_enemy_fortifications(game_map, enemy_unit=self))
+            except Exception:
+                fortification_only = False
+        if target_locked and not fortification_only:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
             if weapon_profile.is_pistol():
                 if not shooter_in_er_of_target:

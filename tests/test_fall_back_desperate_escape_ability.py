@@ -127,6 +127,34 @@ class TestFallBackDesperateEscapeAbility(unittest.TestCase):
         self.assertEqual(called["count"], 1)
         self.assertEqual(int(called["modifier"] or 0), -1)
 
+    def test_battleshocked_fall_back_exempt_when_only_fortification(self):
+        runner = _make_unit("Runner", model_count=1)
+        fort = _make_unit("Fortification", keywords=["Fortification"])
+
+        runner.parent_army = object()
+        fort.parent_army = object()
+        runner.deployed = True
+        fort.deployed = True
+
+        runner.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        fort.models[0].set_location(10.5, 10.0, 0.0, 0.0)
+
+        runner.apply_status_effect(BattleShockEffect(1))
+
+        game_map = Map(60, 44)
+        game_map.units = [runner, fort]
+
+        called = {"count": 0}
+
+        def _fake(self, game_map=None, *, roll_modifier=0, reason=None):
+            called["count"] += 1
+            return 0
+
+        runner.take_desperate_escape_test = types.MethodType(_fake, runner)
+        result = runner.fall_back((14.0, 10.0, 0.0), [], game_map)
+        self.assertTrue(result)
+        self.assertEqual(called["count"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

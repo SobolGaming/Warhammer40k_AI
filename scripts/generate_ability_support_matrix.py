@@ -1558,6 +1558,10 @@ def _datasheet_ability_support_global() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Weapon ability: when this weapon destroys a model, select a friendly Plaguebearers unit within 12\" to return 1 destroyed model.",
         ),
+        "Fortification": (
+            "Supported",
+            "Enemy units only in Engagement Range of friendly Fortifications can be targeted by ranged attacks (non-Pistol: -1 to hit) and skip Battle-shocked fall back escape tests unless moving over enemies.",
+        ),
     }
     return {_norm(name): val for name, val in raw.items()}
 
