@@ -1619,6 +1619,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Once per battle, end of Fight phase after unit fights: Fall Back if engaged, otherwise Normal move.",
         ),
         ("AC", "Tactical Perception"): ("Supported", "Leading: unit gains Fights First."),
+        ("CD", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
+        ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Enginseer"): ("Partial", "Lone Operative applied without 3\" Vehicle proximity or leading restriction."),

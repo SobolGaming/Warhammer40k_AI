@@ -1284,6 +1284,21 @@ class Unit:
         r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?the\s+bearer'?s\s+unit",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_PILE_IN_CONSOLIDATE_DISTANCE_OVERRIDE_RE = re.compile(
+        r"each\s+time\s+(?:this\s+unit|the\s+bearer'?s\s+unit|this\s+model'?s\s+unit|that\s+unit)\s+"
+        r"(?:(?:piles?\s+in)|(?:makes\s+a\s+pile[-\s]?in\s+move))\s+or\s+"
+        r"(?:consolidates|makes\s+a\s+consolidation\s+move)\s*,?\s*"
+        r"(?:it|models\s+in\s+(?:it|that\s+unit|the\s+bearer'?s\s+unit)|each\s+model\s+in\s+(?:it|that\s+unit|the\s+bearer'?s\s+unit))\s+can\s+move\s+"
+        r"up\s+to\s+(\d+)\s*(?:\"|inches)?\s+instead\s+of\s+up\s+to\s+3\s*(?:\"|inches)?",
+        re.IGNORECASE,
+    )
+    _BEARER_UNIT_CONSOLIDATE_DISTANCE_OVERRIDE_RE = re.compile(
+        r"each\s+time\s+(?:this\s+unit|the\s+bearer'?s\s+unit|this\s+model'?s\s+unit|that\s+unit)\s+"
+        r"(?:consolidates|makes\s+a\s+consolidation\s+move)\s*,?\s*"
+        r"(?:it|models\s+in\s+(?:it|that\s+unit|the\s+bearer'?s\s+unit)|each\s+model\s+in\s+(?:it|that\s+unit|the\s+bearer'?s\s+unit))\s+can\s+move\s+"
+        r"up\s+to\s+(\d+)\s*(?:\"|inches)?\s+instead\s+of\s+up\s+to\s+3\s*(?:\"|inches)?\s*$",
+        re.IGNORECASE,
+    )
     _UNIT_CONTAINS_OC_BONUS_RE = re.compile(
         r"while\s+this\s+unit\s+contains\s+an?\s+(?P<model>.+?),\s*add\s+(?P<amt>\d+)\s+to\s+the\s+objective\s+control\s+"
         r"characteristic\s+of\s+models\s+in\s+this\s+unit",
@@ -3318,6 +3333,8 @@ class Unit:
                     "bearer_unit_ignores_cover",
                     "bearer_unit_benefit_of_cover",
                     "bearer_unit_target_hit_penalties",
+                    "bearer_unit_pile_in_distance_override",
+                    "bearer_unit_consolidate_distance_override",
                     "bearer_unit_deep_strike",
                     "bearer_unit_phase_move_types",
                     "bearer_unit_phase_move_terrain_only_types",
@@ -3360,6 +3377,8 @@ class Unit:
         benefit_of_cover_entries: list[dict] = []
         benefit_of_cover_seen: set[tuple[str, str]] = set()
         hit_penalties: list[dict] = []
+        pile_in_distance_override = 0
+        consolidate_distance_override = 0
         phase_move_types: set[str] = set()
         phase_move_terrain_only_types: set[str] = set()
         phase_engagement_types: set[str] = set()
@@ -3470,6 +3489,25 @@ class Unit:
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             oc_mods.append((val, source))
+
+                    m = self._BEARER_UNIT_PILE_IN_CONSOLIDATE_DISTANCE_OVERRIDE_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            pile_in_distance_override = max(pile_in_distance_override, int(val))
+                            consolidate_distance_override = max(consolidate_distance_override, int(val))
+
+                    m = self._BEARER_UNIT_CONSOLIDATE_DISTANCE_OVERRIDE_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            consolidate_distance_override = max(consolidate_distance_override, int(val))
 
                     m = self._UNIT_CONTAINS_OC_BONUS_RE.search(sentence)
                     if m:
@@ -3782,6 +3820,22 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["bearer_unit_target_hit_penalties"] = list(hit_penalties)
+                u.special_rules = sr
+
+        if pile_in_distance_override:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_pile_in_distance_override"] = int(pile_in_distance_override)
+                u.special_rules = sr
+
+        if consolidate_distance_override:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_consolidate_distance_override"] = int(consolidate_distance_override)
                 u.special_rules = sr
 
         if grant_deep_strike:
@@ -22122,6 +22176,18 @@ class Unit:
                 sr = getattr(root, "special_rules", None)
                 if isinstance(sr, dict):
                     dist = sr.get("stratagem_consolidate_distance_override")
+                    if dist is not None:
+                        override = max(float(override or 0.0), float(dist))
+                    dist = sr.get("bearer_unit_consolidate_distance_override")
+                    if dist is not None:
+                        override = max(float(override or 0.0), float(dist))
+            except Exception:
+                pass
+        if kind == "pile_in":
+            try:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict):
+                    dist = sr.get("bearer_unit_pile_in_distance_override")
                     if dist is not None:
                         override = max(float(override or 0.0), float(dist))
             except Exception:
