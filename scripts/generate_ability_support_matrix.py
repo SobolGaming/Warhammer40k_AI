@@ -1572,8 +1572,48 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AC", "Daughter of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Daughters of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
-        ("AC", "Martial Inspiration"): ("Partial", "Advance-and-charge eligibility applied without once-per-battle restriction."),
+        ("AC", "Captain-General"): (
+            "Supported",
+            "Leading: attacks can ignore any/all Ballistic/Weapon Skill modifiers and Hit roll modifiers (per-attack choice).",
+        ),
+        ("AC", "Corner the Quarry"): (
+            "Supported",
+            "Enemy non-MONSTER/VEHICLE units within Engagement Range that Fall Back take Desperate Escape tests; Battle-shocked targets suffer -1.",
+        ),
+        ("AC", "From Golden Light"): (
+            "Supported",
+            "Once per battle: end of opponent's turn, if not in Engagement Range, unit may enter Strategic Reserves.",
+        ),
+        ("AC", "Golden Laurels"): ("Supported", "Leading: melee attacks targeting the unit worsen AP by 1."),
+        ("AC", "Hero of Lion's Gate"): (
+            "Supported",
+            "Once per battle, after a hit/wound/save roll for this model, change the result to an unmodified 6.",
+        ),
+        ("AC", "Living Fortress"): (
+            "Supported",
+            "Once per battle at the start of any phase, models in this unit gain Feel No Pain 4+ until end of phase.",
+        ),
+        ("AC", "Martial Inspiration"): ("Supported", "Once-per-battle advance-and-charge eligibility enforced."),
+        ("AC", "Master of the Stances"): (
+            "Supported",
+            "Once per battle, when selected to fight, both Martial Ka'tah stances are active.",
+        ),
+        ("AC", "Moment Shackle"): (
+            "Supported",
+            "Once per battle, start of Fight phase: choose Watcher's Axe Attacks 12 or 2+ invulnerable save until end of phase.",
+        ),
+        ("AC", "Praesidium Shield"): ("Supported", "Bearer gains +1 Wounds."),
+        ("AC", "Purity of Execution"): ("Supported", "Ranged attacks vs PSYKER units gain [PRECISION] and [DEVASTATING WOUNDS]."),
+        ("AC", "Quicksilver Execution"): (
+            "Supported",
+            "Once per battle: after Normal/Advance move, select a moved-over enemy (non MONSTER/VEHICLE); roll one D6 per model, 2+ inflicts 2 mortal wounds.",
+        ),
+        ("AC", "Sanctified Flames"): ("Supported", "After shooting, select a hit enemy unit to take a Battle-shock test."),
         ("AC", "Strike from the Skies"): ("Supported", "Shoot and charge after Falling Back."),
+        ("AC", "Sweeping Advance"): (
+            "Supported",
+            "Once per battle, end of Fight phase after unit fights: Fall Back if engaged, otherwise Normal move.",
+        ),
         ("AC", "Tactical Perception"): ("Supported", "Leading: unit gains Fights First."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),
@@ -2102,6 +2142,7 @@ def _classify_ability_base(
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
+    post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
     post_shoot_wracking_agonies_support = _post_shoot_wracking_agonies_support(description)
     post_shoot_suppression_support = _post_shoot_suppression_support(description)
@@ -2113,6 +2154,8 @@ def _classify_ability_base(
     fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
+    start_any_phase_damage_set_one_support = _start_any_phase_damage_set_one_support(description)
+    start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
@@ -2292,6 +2335,8 @@ def _classify_ability_base(
         return command_phase_regain_wound_support
     if post_shoot_battleshock_support:
         return post_shoot_battleshock_support
+    if post_shoot_shoot_again_support:
+        return post_shoot_shoot_again_support
     if post_shoot_infantry_mortal_support:
         return post_shoot_infantry_mortal_support
     if post_shoot_wracking_agonies_support:
@@ -2312,6 +2357,10 @@ def _classify_ability_base(
         return fight_phase_end_mortal_support
     if fight_phase_melee_ap_boost_support:
         return fight_phase_melee_ap_boost_support
+    if start_any_phase_damage_set_one_support:
+        return start_any_phase_damage_set_one_support
+    if start_any_phase_unit_fnp_support:
+        return start_any_phase_unit_fnp_support
     if movement_phase_normal_move_weapon_attacks_bonus_support:
         return movement_phase_normal_move_weapon_attacks_bonus_support
     if movement_phase_speed_mortal_support:
@@ -2584,6 +2633,35 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         notes.append(f"Bearer's unit Leadership set to {m.group(1)}+.")
 
     m = re.search(
+        r"models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+have\s+a\s+move\s+characteristic\s+of\s+(\d+)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        match_text = m.group(0)
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Move set to {m.group(1)}\".")
+        elif "bearer" in match_text:
+            notes.append(f"Bearer's unit Move set to {m.group(1)}\".")
+        else:
+            notes.append(f"Unit Move set to {m.group(1)}\".")
+
+    m = re.search(
+        r"add\s+(\d+)\s*\"?\s+to\s+the\s+move\s+characteristic\s+of\s+models\s+in\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        match_text = m.group(0)
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Move characteristic +{m.group(1)}\".")
+        elif "bearer" in match_text:
+            notes.append(f"Bearer's unit Move characteristic +{m.group(1)}\".")
+        else:
+            notes.append(f"Unit Move characteristic +{m.group(1)}\".")
+
+    m = re.search(
         r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?"
         r"the\s+bearer'?s\s+unit",
         low,
@@ -2726,12 +2804,15 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     patterns = [
         rf"{lead_prefix}add \d+ to charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance and charge rolls made for {unit_ref}",
+        rf"{lead_prefix}add \d+ to the move characteristic of models in {unit_ref}",
+        rf"{lead_prefix}add \d+ to the move characteristic of models in {unit_ref} and add \d+ to advance and charge rolls made for {unit_ref}",
         rf"{lead_prefix}add \d+ to advance rolls made for {unit_ref}",
         rf"{lead_prefix}(?:you can |can )?reroll advance and charge rolls made for (?:this model|{unit_ref})",
         rf"{lead_prefix}(?:you can |can )?reroll charge rolls made for (?:this model|{unit_ref})",
         rf"{lead_prefix}bearers unit declares a charge .* objective marker .* reroll the charge roll",
         rf"{lead_prefix}reroll charge rolls .* set up on the battlefield",
         rf"{lead_prefix}models in {unit_ref} have a leadership characteristic of \d+",
+        rf"{lead_prefix}models in {unit_ref} have a move characteristic of \d+",
         rf"{lead_prefix}add \d+ to the objective control characteristic of (?:models in )?{unit_ref}",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)?",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? feel no pain [1-6](?: ability)? against psychic attacks",
@@ -3322,6 +3403,8 @@ def _attack_keyword_label_from_text(raw: str) -> Optional[str]:
         return "Heavy"
     if kw == "lance":
         return "Lance"
+    if kw == "precision":
+        return "Precision"
     if kw.startswith("anti "):
         m_val = re.search(r"anti ([a-z0-9 ]+) (\\d+)", kw)
         if m_val:
@@ -3542,7 +3625,7 @@ def _defensive_wound_penalty_support(description: str) -> Optional[Tuple[str, st
     if not norm:
         return None
     pattern = (
-        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this) model is leading (?:this|a) unit )?"
+        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this)(?: model)? is leading (?:this|a) unit )?"
         r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
         r"(?:targets|target|is allocated to) "
         r"(?P<scope>this model|this unit|this model s unit|a model in this unit) "
@@ -3571,7 +3654,7 @@ def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> 
     if not norm:
         return None
     pattern = (
-        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this) model is leading (?:this|a) unit )?"
+        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this)(?: model)? is leading (?:this|a) unit )?"
         r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
         r"(?:targets|target|is allocated to) "
         r"(?P<scope>this model|this unit|this model s unit|a model in this unit) "
@@ -4203,6 +4286,11 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
         re.IGNORECASE,
     )
+    objective_unit_clause_re = re.compile(
+        r"^while this unit is within range of an objective marker you control"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the wound roll instead$",
+        re.IGNORECASE,
+    )
 
     base_sentences: List[str] = []
     base_atype = None
@@ -4237,8 +4325,18 @@ def _unit_wound_reroll_ones_support(description: str) -> Optional[Tuple[str, str
         attack_scope = "all"
 
     notes = [f"Unit attacks re-roll Wound rolls of 1 for {attack_scope} attacks."]
-    objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
-    unsupported = [s for s in sentences if s not in base_sentences and not objective_clause_re.match(s.lower())]
+    objective_sentences = [
+        s
+        for s in sentences
+        if objective_clause_re.match(s.lower()) or objective_unit_clause_re.match(s.lower())
+    ]
+    unsupported = [
+        s
+        for s in sentences
+        if s not in base_sentences
+        and not objective_clause_re.match(s.lower())
+        and not objective_unit_clause_re.match(s.lower())
+    ]
 
     if objective_sentences:
         notes.append("If the target is within range of an objective marker, the Wound roll can be re-rolled instead (optional).")
@@ -4533,15 +4631,15 @@ def _opponent_turn_strategic_reserves_support(description: str) -> Optional[Tupl
     if not norm:
         return None
     pattern = (
-        r"at the end of your opponents turn if this unit is not within engagement range of one or more enemy units "
+        r"(?:once per battle(?:,)?\s+)?at the end of your opponents turn if this unit is not within engagement range of one or more enemy units "
         r"you can remove it from the battlefield and place it into strategic reserves"
     )
     if not re.fullmatch(pattern, norm):
         return None
-    return (
-        "Supported",
-        "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves.",
-    )
+    note = "End of opponent's turn: if not in Engagement Range, may enter Strategic Reserves."
+    if "once per battle" in norm:
+        note = f"{note} Once per battle."
+    return ("Supported", note)
 
 
 def _opponent_turn_destroyed_reposition_support(description: str) -> Optional[Tuple[str, str]]:
@@ -4572,8 +4670,8 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
     if not norm:
         return None
     base = (
-        r"each time an enemy unit(?: excluding monsters and vehicles)? within engagement range of "
-        r"(?:this unit|one or more units from your army with this ability) "
+        r"each time an enemy unit(?: excluding monsters and vehicles)?(?: that is)? within engagement range of "
+        r"(?:this unit|this model s unit|one or more units from your army with this ability) "
         r"(?:falls back|is selected to fall back) "
         r"(?:all )?(?:models in that enemy unit|that unit) must take (?:a )?desperate escape tests?"
     )
@@ -4658,9 +4756,9 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
     if not norm:
         return None
     pattern = (
-        r"in your shooting phase after this model has shot select one enemy "
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy "
         r"(?:(?P<infantry>infantry) )?unit (?:that was )?hit by one or more of those attacks "
-        r"that unit must take a battle shock test"
+        r"that (?:enemy )?unit must take a battle shock test"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -4668,6 +4766,18 @@ def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str
     if m.group("infantry"):
         return ("Supported", "After shooting, pick a hit enemy INFANTRY unit to take a Battle-shock test.")
     return ("Supported", "After shooting, pick a hit enemy unit to take a Battle-shock test.")
+
+
+def _post_shoot_shoot_again_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = r"once per battle in your shooting phase after this (?:unit|model) has shot it can shoot again"
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "Once per battle (after shooting): this unit can shoot again.")
 
 
 def _post_shoot_infantry_mortal_wounds_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
@@ -4902,6 +5012,43 @@ def _fight_phase_once_melee_attacks_ap_support(description: str) -> Optional[Tup
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "Once per battle (start of Fight phase): +3 Attacks and +1 AP for bearer melee weapons.")
+
+
+def _start_any_phase_damage_set_one_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
+        r"each time an attack is allocated to this model change the damage characteristic of that attack to 1"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Once per battle (start of any phase): allocated attacks against this model have Damage 1 until end of phase.",
+    )
+
+
+def _start_any_phase_unit_fnp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of any phase this unit can use this ability if it does until the end of the phase "
+        r"models in this unit have the feel no pain (?P<val>[1-6])(?: ability)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Once per battle (start of any phase): unit gains Feel No Pain {m.group('val')}+ until end of phase.",
+    )
 
 
 def _movement_phase_once_normal_move_weapon_attacks_bonus_support(description: str) -> Optional[Tuple[str, str]]:
@@ -5562,8 +5709,8 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     if not norm:
         return None
     pattern = (
-        r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
-        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+        r"(?:once per battle(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles?(?: units)?)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
@@ -5572,8 +5719,8 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     m = re.fullmatch(pattern, norm)
     if not m:
         unit_pattern = (
-            r"each time this unit ends a (?P<moves>[a-z ]+) move "
-            r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+            r"(?:once per battle(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
+            r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles?(?: units)?)? "
             r"(?:that )?(?:it )?moved over during that move "
             r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
             r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"

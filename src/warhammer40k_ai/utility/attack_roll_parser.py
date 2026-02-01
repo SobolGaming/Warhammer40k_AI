@@ -10,6 +10,7 @@ class AttackRollCondition:
     attacker_below_starting_strength: bool = False
     attacker_below_half_strength: bool = False
     attacker_charged_this_turn: bool = False
+    attacker_within_objective_controlled: bool = False
     target_below_starting_strength: bool = False
     target_battleshocked: bool = False
     target_within_objective: bool = False
@@ -35,6 +36,9 @@ class AttackRollCondition:
             ),
             attacker_charged_this_turn=bool(
                 self.attacker_charged_this_turn or other.attacker_charged_this_turn
+            ),
+            attacker_within_objective_controlled=bool(
+                self.attacker_within_objective_controlled or other.attacker_within_objective_controlled
             ),
             target_below_starting_strength=bool(
                 self.target_below_starting_strength or other.target_below_starting_strength
@@ -184,6 +188,12 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
 
     if re.fullmatch(r"(?:this model|this unit|it|that unit) made a charge move this turn", t):
         return AttackRollCondition(attacker_charged_this_turn=True)
+
+    if re.fullmatch(
+        r"(?:this model|this unit|it|that unit) is within range of (?:an|one or more) objective marker(?:s)? you control",
+        t,
+    ):
+        return AttackRollCondition(attacker_within_objective_controlled=True)
 
     if re.fullmatch(r"that unit is (?:also )?below (?:its )?starting strength", t):
         return AttackRollCondition(attacker_below_starting_strength=True)

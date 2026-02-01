@@ -2448,6 +2448,7 @@ class GameView:
                 self.game.map.miracle_dice_provider = self._miracle_dice_provider
                 self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
                 self.game.map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
+                self.game.map.model_unmodified_six_provider = self._model_unmodified_six_provider
                 self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -2465,6 +2466,7 @@ class GameView:
                 self.game_map.miracle_dice_provider = self._miracle_dice_provider
                 self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
                 self.game_map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
+                self.game_map.model_unmodified_six_provider = self._model_unmodified_six_provider
                 self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -3095,6 +3097,7 @@ class GameView:
                 DECISION_CHOOSE_WRATHFUL_PRESENCE,
                 DECISION_CHOOSE_DARK_PACT,
                 DECISION_CHOOSE_PATH_OF_WARRIOR,
+                DECISION_CHOOSE_MOMENT_SHACKLE,
                 DECISION_CHOOSE_CRUEL_AMUSEMENT,
                 DECISION_CHOOSE_DANCE_OF_DEATH,
                 DECISION_USE_CAREEN,
@@ -3700,6 +3703,70 @@ class GameView:
             self.dark_pacts_dialog.show(on_confirm=_on_confirm, on_cancel=_on_cancel, subtitle=subtitle, decision_request=request)
             try:
                 self.dialog_manager.open(self.dark_pacts_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_MOMENT_SHACKLE:
+            if self.martial_katah_dialog is None:
+                try:
+                    from .dialogs import MartialKatahDialog
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    self.martial_katah_dialog = MartialKatahDialog(sw, sh)
+                except Exception:
+                    self.martial_katah_dialog = None
+            if self.martial_katah_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action, first_option_id
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+            model = None
+            try:
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    reg = getattr(game, "entity_registry", None)
+                    model = reg.get(model_id, kind="model") if reg is not None else None
+            except Exception:
+                model = None
+            unit_name = getattr(unit, "name", "Unit") if unit is not None else "Unit"
+            model_name = getattr(model, "name", "Model") if model is not None else "Model"
+            subtitle = f"{model_name} ({unit_name})"
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.martial_katah_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                skip_id = option_id_for_action(request, "skip")
+                option_id = skip_id or first_option_id(request)
+                if option_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        option_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True} if option_id == skip_id else {},
+                    )
+                try:
+                    self.martial_katah_dialog.hide()
+                except Exception:
+                    pass
+
+            title = str(getattr(request, "prompt", "") or "Moment Shackle")
+            self.martial_katah_dialog.show(
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                subtitle=subtitle,
+                title=title,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.martial_katah_dialog, modal=True)
             except Exception:
                 pass
             return
@@ -7007,6 +7074,27 @@ class GameView:
                 },
             ),
         ]
+        try:
+            spec = unit.master_of_stances_spec()
+        except Exception:
+            spec = None
+        if isinstance(spec, dict):
+            model_id = str(spec.get("model_id") or "")
+            ability_key = str(spec.get("ability_key") or "master_of_stances").strip().lower() or "master_of_stances"
+            model = self._resolve_model_by_id(model_id) if model_id else None
+            if model is not None and not getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                options.append(
+                    DecisionOption.create(
+                        "Both Stances (Master of the Stances)",
+                        payload={
+                            "unit_id": unit_id,
+                            "choice_key": "BOTH",
+                            "ability_key": ability_key,
+                            "model_id": model_id,
+                            "summary": "Both stances active for this fight (once per battle).",
+                        },
+                    )
+                )
         req = DecisionRequest.create(
             DECISION_CHOOSE_MARTIAL_KATAH,
             "Select Martial Ka'tah stance.",
@@ -12586,6 +12674,169 @@ class GameView:
             context={
                 "unit_id": unit_id,
                 "attacker_model_id": attacker_id,
+                "roll_type": rt,
+                "roll_value": roll_val,
+                "ability_keys": [e.get("ability_key", "") for e in list(options or [])],
+            },
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        choice_holder = {"choice": "skip", "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            if isinstance(value, dict) and str(value.get("choice", "") or "") == "use":
+                choice_holder["choice"] = str(value.get("ability_key", "") or "")
+            else:
+                choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        def _on_cancel():
+            skip_id = None
+            for opt in list(getattr(req, "options", []) or []):
+                payload = dict(getattr(opt, "payload", {}) or {})
+                if str(payload.get("action", "") or "") == "skip":
+                    skip_id = opt.option_id
+                    break
+            if skip_id:
+                resolve_decision_value(self.game, req, skip_id)
+            choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        dlg.show(
+            title=title,
+            header=header,
+            subtitle=subtitle,
+            on_confirm=_on_choice,
+            on_cancel=_on_cancel,
+            decision_request=req,
+            show_cancel=True,
+        )
+        try:
+            self.dialog_manager.open(dlg, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while dlg.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "skip"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return str(choice_holder["choice"] or "skip")
+
+    def _model_unmodified_six_provider(
+        self,
+        *,
+        player=None,
+        model=None,
+        roll_type: str = "",
+        value: Optional[int] = None,
+        needed: Optional[int] = None,
+        options=None,
+        attacker=None,
+        target=None,
+        weapon_name: Optional[str] = None,
+    ) -> str:
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return "skip"
+        except Exception:
+            return "skip"
+
+        if not options:
+            return "skip"
+
+        if not hasattr(self, "model_unmodified_six_dialog") or self.model_unmodified_six_dialog is None:
+            try:
+                from .dialogs import QuarrySelectionDialog
+                self.model_unmodified_six_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+            except Exception:
+                self.model_unmodified_six_dialog = None
+        dlg = self.model_unmodified_six_dialog
+        if dlg is None:
+            return "skip"
+
+        from ..engine.decision_kinds import DECISION_USE_MODEL_UNMODIFIED_SIX
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        rt = str(roll_type or "").strip().lower()
+        base_label = str(options[0].get("label", "") or "Ability") if options else "Ability"
+        title = f"{base_label}: Unmodified 6"
+        if rt == "hit":
+            title = f"{base_label}: Hit Roll to 6"
+        elif rt == "wound":
+            title = f"{base_label}: Wound Roll to 6"
+        elif rt == "save":
+            title = f"{base_label}: Save Roll to 6"
+
+        mlabel = getattr(model, "name", "Model")
+        roll_val = value
+        try:
+            roll_val = int(value)
+        except Exception:
+            roll_val = value
+
+        roll_text = f"Rolled {roll_val}"
+        try:
+            if needed is not None:
+                roll_text = f"Rolled {int(roll_val)} (need {int(needed)}+)"
+        except Exception:
+            pass
+
+        header = f"{mlabel} can change this {rt or 'roll'} to an unmodified 6 (once per battle)."
+        subtitle = roll_text
+        if weapon_name:
+            subtitle = f"{roll_text} - {weapon_name}"
+
+        unit_id = ""
+        model_id = ""
+        try:
+            unit_id = get_entity_id(getattr(model, "parent_unit", None))
+        except Exception:
+            unit_id = ""
+        try:
+            model_id = get_entity_id(model)
+        except Exception:
+            model_id = ""
+
+        req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
+        for entry in list(options or []):
+            label = str(entry.get("label", "") or "Ability")
+            req_options.append(
+                DecisionOption.create(
+                    f"Use {label}",
+                    payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
+                )
+            )
+
+        req = DecisionRequest.create(
+            DECISION_USE_MODEL_UNMODIFIED_SIX,
+            title,
+            player_id=getattr(player, "id", None),
+            options=req_options,
+            context={
+                "unit_id": unit_id,
+                "model_id": model_id,
                 "roll_type": rt,
                 "roll_value": roll_val,
                 "ability_keys": [e.get("ability_key", "") for e in list(options or [])],

@@ -482,7 +482,6 @@ class AttackResolutionManager:
             CHOICE_KEEP_ALL,
             CHOICE_LABELS,
             options_for_signed_pairs,
-            options_for_signed_values,
         )
         for idx, attack_instance in enumerate(list(seq.attack_instances or [])):
             try:
@@ -495,14 +494,24 @@ class AttackResolutionManager:
             if attacker is None:
                 continue
             try:
-                rule_name = profile._ignore_hit_modifier_rule_name(attacker)
+                ignore_rule = profile._ignore_hit_modifier_rule(attacker)
             except Exception:
-                rule_name = None
+                ignore_rule = None
             attacker_unit = getattr(attacker, "parent_unit", None)
             try:
                 is_melee = bool(getattr(profile, "parent_wargear", None) and profile.parent_wargear.is_melee())
             except Exception:
                 is_melee = False
+            try:
+                is_ranged = bool(getattr(profile, "parent_wargear", None) and profile.parent_wargear.is_ranged())
+            except Exception:
+                is_ranged = False
+            if ignore_rule:
+                rule_attack_type = str(ignore_rule.get("attack_type") or "any").strip().lower()
+                if rule_attack_type == "ranged" and not is_ranged:
+                    ignore_rule = None
+                elif rule_attack_type == "melee" and not is_melee:
+                    ignore_rule = None
             driven_by_ultimate_rage = False
             driven_rule_name = ""
             if is_melee and attacker_unit is not None:
@@ -514,11 +523,11 @@ class AttackResolutionManager:
                 except Exception:
                     driven_by_ultimate_rage = False
                     driven_rule_name = ""
-            if not rule_name and not driven_by_ultimate_rage:
+            if not ignore_rule and not driven_by_ultimate_rage:
                 continue
-            if rule_name and hit_choice_set and not driven_by_ultimate_rage:
+            if ignore_rule and hit_choice_set and skill_choice_set and not driven_by_ultimate_rage:
                 continue
-            if driven_by_ultimate_rage and hit_choice_set and skill_choice_set and not rule_name:
+            if driven_by_ultimate_rage and hit_choice_set and skill_choice_set and not ignore_rule:
                 continue
 
             preview = profile._hit_target_with_tracking(
@@ -541,32 +550,53 @@ class AttackResolutionManager:
             game_map = getattr(game, "map", None)
             provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
 
-            if rule_name:
-                if attack_instance.get("hit_modifier_choice") is None:
-                    combined_vals = [int(val) for val, _ in list(skill_mods or [])] + [int(val) for val, _ in list(hit_mods or [])]
-                    options = options_for_signed_values(combined_vals)
-                    if not options:
-                        attack_instance["hit_modifier_choice"] = CHOICE_KEEP_ALL
-                    elif callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
-                        try:
-                            choice = provider(
-                                player=player,
-                                attacker=attacker,
-                                target=target,
-                                weapon_profile=profile,
-                                ability_name=rule_name,
-                                choices=options,
-                            )
-                        except Exception:
-                            choice = None
-                        if choice not in options:
-                            choice = CHOICE_KEEP_ALL
-                        attack_instance["hit_modifier_choice"] = choice
-                    if attack_instance.get("hit_modifier_choice") is None and options:
+            if ignore_rule:
+                rule_name = str(ignore_rule.get("name") or "Ignore modifiers").strip()
+                skill_kinds = set(ignore_rule.get("skill_kinds") or ())
+                allow_skill = False
+                skill_label = "Skill"
+                if is_melee:
+                    allow_skill = "weapon" in skill_kinds
+                    skill_label = "Weapon Skill"
+                elif is_ranged:
+                    allow_skill = "ballistic" in skill_kinds
+                    skill_label = "Ballistic Skill"
+                else:
+                    allow_skill = bool(skill_kinds)
+                    if "weapon" in skill_kinds:
+                        skill_label = "Weapon Skill"
+                    elif "ballistic" in skill_kinds:
+                        skill_label = "Ballistic Skill"
+                allow_hit = bool(ignore_rule.get("allow_hit", True))
+
+                if allow_skill and attack_instance.get("skill_modifier_choice") is None:
+                    skill_opts = options_for_signed_pairs(skill_mods)
+                    if not skill_opts:
+                        attack_instance["skill_modifier_choice"] = CHOICE_KEEP_ALL
+                    else:
+                        skill_provider = getattr(game_map, "skill_modifier_choice_provider", None) if game_map is not None else None
+                        if not callable(skill_provider):
+                            skill_provider = provider
+                        if callable(skill_provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
+                            try:
+                                choice = skill_provider(
+                                    player=player,
+                                    attacker=attacker,
+                                    target=target,
+                                    weapon_profile=profile,
+                                    ability_name=f"{rule_name} ({skill_label})",
+                                    choices=skill_opts,
+                                )
+                            except Exception:
+                                choice = None
+                            if choice not in skill_opts:
+                                choice = CHOICE_KEEP_ALL
+                            attack_instance["skill_modifier_choice"] = choice
+                    if attack_instance.get("skill_modifier_choice") is None and skill_opts:
                         prompt = "Choose which modifiers to ignore."
                         req_options = [
                             DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
-                            for opt in options
+                            for opt in skill_opts
                         ]
                         ctx = {
                             "sequence_id": int(seq.sequence_id),
@@ -575,7 +605,59 @@ class AttackResolutionManager:
                             "target_unit_id": seq.target_unit_id,
                             "wargear_id": seq.wargear_id,
                             "profile_name": seq.profile_name,
-                            "ability_name": rule_name,
+                            "ability_name": f"{rule_name} ({skill_label})",
+                            "modifier_kind": "weapon_skill" if is_melee else "ballistic_skill",
+                        }
+                        request = DecisionRequest.create(
+                            DECISION_CHOOSE_SKILL_MODIFIER_IGNORES,
+                            prompt,
+                            player_id=getattr(player, "id", None) if player is not None else None,
+                            options=req_options,
+                            context=ctx,
+                        )
+                        try:
+                            seq.step = "skill_modifier_choice"
+                        except Exception:
+                            pass
+                        if hasattr(game, "request_decision"):
+                            game.request_decision(request)
+                        return True
+
+                if allow_hit and attack_instance.get("hit_modifier_choice") is None:
+                    hit_opts = options_for_signed_pairs(hit_mods)
+                    if not hit_opts:
+                        attack_instance["hit_modifier_choice"] = CHOICE_KEEP_ALL
+                    else:
+                        if callable(provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
+                            try:
+                                choice = provider(
+                                    player=player,
+                                    attacker=attacker,
+                                    target=target,
+                                    weapon_profile=profile,
+                                    ability_name=f"{rule_name} (Hit roll)",
+                                    choices=hit_opts,
+                                )
+                            except Exception:
+                                choice = None
+                            if choice not in hit_opts:
+                                choice = CHOICE_KEEP_ALL
+                            attack_instance["hit_modifier_choice"] = choice
+                    if attack_instance.get("hit_modifier_choice") is None and hit_opts:
+                        prompt = "Choose which modifiers to ignore."
+                        req_options = [
+                            DecisionOption.create(CHOICE_LABELS.get(opt, str(opt)), payload={"choice": opt})
+                            for opt in hit_opts
+                        ]
+                        ctx = {
+                            "sequence_id": int(seq.sequence_id),
+                            "attack_index": int(idx),
+                            "attacker_model_id": attack_instance.get("attacker_model_id"),
+                            "target_unit_id": seq.target_unit_id,
+                            "wargear_id": seq.wargear_id,
+                            "profile_name": seq.profile_name,
+                            "ability_name": f"{rule_name} (Hit roll)",
+                            "modifier_kind": "hit_roll",
                         }
                         request = DecisionRequest.create(
                             DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
@@ -599,6 +681,8 @@ class AttackResolutionManager:
                         attack_instance["skill_modifier_choice"] = CHOICE_KEEP_ALL
                     else:
                         skill_provider = getattr(game_map, "skill_modifier_choice_provider", None) if game_map is not None else None
+                        if not callable(skill_provider):
+                            skill_provider = provider
                         if callable(skill_provider) and player is not None and bool(getattr(player, "has_control", lambda: False)()):
                             try:
                                 choice = skill_provider(

@@ -22,6 +22,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_FRENZY_TARGET,
     DECISION_CHOOSE_HARBINGER,
     DECISION_CHOOSE_MARTIAL_KATAH,
+    DECISION_CHOOSE_MOMENT_SHACKLE,
     DECISION_CHOOSE_PATH_OF_WARRIOR,
     DECISION_CHOOSE_CRUEL_AMUSEMENT,
     DECISION_CHOOSE_DANCE_OF_DEATH,
@@ -45,6 +46,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
     DECISION_CHOOSE_ASPECT,
     DECISION_USE_LEADING_UNMODIFIED_SIX,
+    DECISION_USE_MODEL_UNMODIFIED_SIX,
     DECISION_SELECT_SETUP_REACTIVE_TARGET,
     DECISION_CHOOSE_SETUP_REACTIVE_ACTION,
     DECISION_SELECT_RISE_TO_CHALLENGE,
@@ -1080,8 +1082,25 @@ def _validate_choose_martial_katah(game: object, request: DecisionRequest, resul
     choice = payload.get("choice_key") or payload.get("key")
     if unit_val is None or choice is None:
         return ("Martial Ka'tah requires unit_id and choice.",)
-    if resolve_unit(game, unit_val) is None:
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
         return ("Martial Ka'tah unit not found.",)
+    choice_norm = str(choice or "").strip().upper()
+    selection_kind = str(request.context.get("selection_kind", "") or payload.get("selection_kind", "") or "")
+    if choice_norm == "BOTH":
+        if selection_kind == "exquisite_swordsmanship":
+            return ("Master of the Stances cannot be used for Exquisite Swordsmanship.",)
+        spec = getattr(unit, "master_of_stances_spec", lambda: None)()
+        if not spec:
+            return ("Master of the Stances not available.",)
+        ability_key = str(payload.get("ability_key") or spec.get("ability_key") or "master_of_stances").strip().lower()
+        model_id = str(payload.get("model_id") or spec.get("model_id") or "")
+        if model_id:
+            model = resolve_model(game, model_id)
+            if model is None:
+                return ("Master of the Stances model not found.",)
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                return ("Master of the Stances already used.",)
     return ()
 
 
@@ -1093,11 +1112,115 @@ def _apply_choose_martial_katah(game: object, request: DecisionRequest, result: 
     if unit is None:
         raise RuntimeError("Martial Ka'tah unit not found.")
     choice = payload.get("choice_key") or payload.get("key")
+    choice_norm = str(choice or "").strip().upper()
     selection_kind = str(request.context.get("selection_kind", "") or payload.get("selection_kind", "") or "")
     if selection_kind == "exquisite_swordsmanship":
         unit.set_exquisite_swordsmanship_choice(str(choice))
     else:
+        if choice_norm == "BOTH":
+            spec = getattr(unit, "master_of_stances_spec", lambda: None)()
+            ability_name = ""
+            if isinstance(spec, dict):
+                ability_name = str(spec.get("source") or "Master of the Stances").strip()
+            ability_key = str(payload.get("ability_key") or (spec.get("ability_key") if isinstance(spec, dict) else "") or "master_of_stances").strip().lower()
+            model_id = str(payload.get("model_id") or (spec.get("model_id") if isinstance(spec, dict) else "") or "")
+            if model_id:
+                model = resolve_model(game, model_id)
+                if model is not None:
+                    getattr(model, "mark_used_once_per_battle", lambda _k, **_kw: None)(
+                        ability_key,
+                        ability_name=ability_name or "Master of the Stances",
+                        source="datasheet",
+                    )
         unit.set_martial_katah_choice(str(choice))
+    return str(choice)
+
+
+def _validate_choose_moment_shackle(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or request.context.get("unit_id")
+    model_val = payload.get("model_id") or request.context.get("model_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if not unit_val or not model_val or not choice:
+        return ("Moment Shackle requires unit_id, model_id, and choice.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Moment Shackle unit not found.",)
+    model = resolve_model(game, model_val)
+    if model is None:
+        return ("Moment Shackle model not found.",)
+    spec = getattr(unit, "model_moment_shackle_spec", lambda _m: None)(model)
+    if not spec:
+        return ("Moment Shackle not available.",)
+    ability_key = str(payload.get("ability_key") or spec.get("ability_key") or "moment_shackle").strip().lower()
+    if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+        return ("Moment Shackle already used.",)
+    choice_norm = str(choice or "").strip().lower()
+    if choice_norm not in ("attacks", "attack", "invuln", "invulnerable", "invulnerable_save"):
+        return ("Moment Shackle choice must be attacks or invulnerable save.",)
+    return ()
+
+
+def _apply_choose_moment_shackle(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    model = resolve_model(game, payload.get("model_id") or request.context.get("model_id"))
+    if unit is None or model is None:
+        raise RuntimeError("Moment Shackle unit/model not found.")
+    spec = getattr(unit, "model_moment_shackle_spec", lambda _m: None)(model)
+    if not spec:
+        raise RuntimeError("Moment Shackle not available.")
+    ability_name = str(spec.get("source") or "Moment Shackle").strip() or "Moment Shackle"
+    ability_key = str(payload.get("ability_key") or spec.get("ability_key") or "moment_shackle").strip().lower()
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_norm = str(choice or "").strip().lower()
+    if choice_norm in ("attacks", "attack"):
+        weapon_name = str(payload.get("weapon_name") or spec.get("weapon_name") or "Watcher's Axe").strip()
+        try:
+            attacks = int(payload.get("attacks", spec.get("attacks", 0)) or 0)
+        except Exception:
+            attacks = int(spec.get("attacks", 0) or 0)
+        getattr(model, "set_temporary_weapon_attacks_override", lambda **_kw: None)(
+            key=f"{ability_key}:attacks",
+            weapon_name=weapon_name,
+            attacks_value=int(attacks or 0),
+            source=ability_name,
+            expires_phase="FIGHT_PHASE",
+        )
+    elif choice_norm in ("invuln", "invulnerable", "invulnerable_save"):
+        try:
+            invuln = int(payload.get("invuln", spec.get("invuln", 0)) or 0)
+        except Exception:
+            invuln = int(spec.get("invuln", 0) or 0)
+        getattr(model, "set_temporary_invulnerable_save", lambda **_kw: None)(
+            key=f"{ability_key}:invuln",
+            value=int(invuln or 0),
+            source=ability_name,
+            expires_phase="FIGHT_PHASE",
+        )
+    getattr(model, "mark_used_once_per_battle", lambda _k, **_kw: None)(
+        ability_key,
+        ability_name=ability_name,
+        source="datasheet",
+    )
+    try:
+        player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+    except Exception:
+        player = None
+    try:
+        choice_label = _option_label(request, result) or str(choice)
+        mname = str(getattr(model, "name", "Model") or "Model")
+        if choice_label:
+            _log_action_for_players(game, player, f"{ability_name}: {mname} selected {choice_label}.")
+    except Exception:
+        pass
     return str(choice)
 
 
@@ -2771,6 +2894,14 @@ def _apply_use_leading_unmodified_six(game: object, request: DecisionRequest, re
     return payload
 
 
+def _validate_use_model_unmodified_six(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    return _validate_use_leading_unmodified_six(game, request, result)
+
+
+def _apply_use_model_unmodified_six(game: object, request: DecisionRequest, result: DecisionResult):
+    return _apply_use_leading_unmodified_six(game, request, result)
+
+
 def _validate_choose_battle_focus_maneuver(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -3270,6 +3401,7 @@ register_decision_handler(
 register_decision_handler(DECISION_CHOOSE_FRENZY_TARGET, validate=_validate_choose_frenzy, apply=_apply_choose_frenzy)
 register_decision_handler(DECISION_CHOOSE_HARBINGER, validate=_validate_choose_harbinger, apply=_apply_choose_harbinger)
 register_decision_handler(DECISION_CHOOSE_MARTIAL_KATAH, validate=_validate_choose_martial_katah, apply=_apply_choose_martial_katah)
+register_decision_handler(DECISION_CHOOSE_MOMENT_SHACKLE, validate=_validate_choose_moment_shackle, apply=_apply_choose_moment_shackle)
 register_decision_handler(DECISION_CHOOSE_PATH_OF_WARRIOR, validate=_validate_choose_path_of_warrior, apply=_apply_choose_path_of_warrior)
 register_decision_handler(DECISION_CHOOSE_CRUEL_AMUSEMENT, validate=_validate_choose_cruel_amusement, apply=_apply_choose_cruel_amusement)
 register_decision_handler(DECISION_CHOOSE_DANCE_OF_DEATH, validate=_validate_choose_dance_of_death, apply=_apply_choose_dance_of_death)
@@ -3333,6 +3465,11 @@ register_decision_handler(
     DECISION_USE_LEADING_UNMODIFIED_SIX,
     validate=_validate_use_leading_unmodified_six,
     apply=_apply_use_leading_unmodified_six,
+)
+register_decision_handler(
+    DECISION_USE_MODEL_UNMODIFIED_SIX,
+    validate=_validate_use_model_unmodified_six,
+    apply=_apply_use_model_unmodified_six,
 )
 register_decision_handler(
     DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,

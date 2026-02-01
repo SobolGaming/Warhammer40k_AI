@@ -19,7 +19,7 @@ from ..utility.calcs import (
     movement_segment_cost,
 )
 from ..utility.dice import get_roll, DiceCollection
-from ..utility.attack_roll_parser import AttackRollCondition, AttackRollRule, parse_attack_roll_text
+from ..utility.attack_roll_parser import AttackRollCondition, AttackRollRule, AttackRollEffect, parse_attack_roll_text
 from .status_effects import StatusEffect, BattleShockEffect
 from ..utility.entity_ids import get_entity_id
 import uuid
@@ -877,6 +877,11 @@ class Unit:
         except Exception:
             pass
         try:
+            if "defensive_ap_worsen" in self.special_rules:
+                del self.special_rules["defensive_ap_worsen"]
+        except Exception:
+            pass
+        try:
             entries = self.special_rules.get("defensive_wound_mods")
             if isinstance(entries, list):
                 kept = [
@@ -915,6 +920,14 @@ class Unit:
             except Exception:
                 continue
             entries.append((name, desc or name))
+
+        def _normalize_leading_keyword(raw_kw: str) -> str:
+            kw = str(raw_kw or "").strip()
+            if not kw:
+                return ""
+            kw = self._normalize_keyword_phrase(kw) or kw.upper()
+            kw = re.sub(r"\bmodels?\b$", "", kw).strip()
+            return kw
 
         for name, raw in entries:
             t = self._normalize_rules_text(raw)
@@ -1017,7 +1030,7 @@ class Unit:
                 if "strength characteristic" in norm:
                     continue
                 pattern = (
-                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this) model is leading (?:this|a) unit )?"
+                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target|is allocated to) "
                     r"(?:this model|this unit|this model s unit|a model in this unit) "
@@ -1033,9 +1046,7 @@ class Unit:
                 if not val:
                     continue
                 atype = (m.group("atype") or "any").strip().lower()
-                leader_kw = str(m.group("lemma") or "").strip()
-                if leader_kw:
-                    leader_kw = self._normalize_keyword_phrase(leader_kw) or leader_kw.upper()
+                leader_kw = _normalize_leading_keyword(m.group("lemma"))
                 label = (name or "Defensive ability").strip() or "Defensive ability"
                 key = (label.lower(), atype, int(val), leader_kw or "")
                 if key in seen_generic_wound_mods:
@@ -1068,10 +1079,8 @@ class Unit:
                 norm = re.sub(r"'s\b", "s", norm)
                 norm = re.sub(r"[^a-z0-9]+", " ", norm)
                 norm = re.sub(r"\s+", " ", norm).strip()
-                if not norm.startswith("each time"):
-                    continue
                 pattern = (
-                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this) model is leading (?:this|a) unit )?"
+                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target|is allocated to) "
                     r"(?:this model|this unit|this model s unit|a model in this unit) "
@@ -1090,9 +1099,7 @@ class Unit:
                 if not val:
                     continue
                 atype = (m.group("atype") or "any").strip().lower()
-                leader_kw = str(m.group("lemma") or "").strip()
-                if leader_kw:
-                    leader_kw = self._normalize_keyword_phrase(leader_kw) or leader_kw.upper()
+                leader_kw = _normalize_leading_keyword(m.group("lemma"))
                 label = (name or "Defensive ability").strip() or "Defensive ability"
                 key = (label.lower(), atype, int(val), leader_kw or "")
                 if key in seen_wound_mods:
@@ -1111,6 +1118,56 @@ class Unit:
                     entry["requires_leading_keyword"] = str(leader_kw)
                 items.append(entry)
                 sr["defensive_wound_mods"] = items
+                self.special_rules = sr
+
+            # AP worsen when attacks target this unit/model.
+            seen_ap_worsen = set()
+            for sentence in sentences:
+                if not sentence:
+                    continue
+                norm = self._normalize_rules_text(sentence)
+                if not norm:
+                    continue
+                norm = norm.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = norm.lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                pattern = (
+                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
+                    r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
+                    r"(?:targets|target) "
+                    r"(?:this model|this unit|this model s unit|that unit|the bearer s unit) "
+                    r"worsen the armou?r penetration characteristic of that attack by (?P<val>\d+)"
+                )
+                m = re.fullmatch(pattern, norm)
+                if not m:
+                    continue
+                try:
+                    val = int(m.group("val"))
+                except Exception:
+                    val = 0
+                if not val:
+                    continue
+                atype = (m.group("atype") or "any").strip().lower()
+                leader_kw = _normalize_leading_keyword(m.group("lemma"))
+                label = (name or "Defensive ability").strip() or "Defensive ability"
+                key = (label.lower(), atype, int(val), leader_kw or "")
+                if key in seen_ap_worsen:
+                    continue
+                seen_ap_worsen.add(key)
+                sr = self.special_rules
+                items = list(sr.get("defensive_ap_worsen", []) or [])
+                entry = {
+                    "value": int(val),
+                    "attack_type": atype,
+                    "source": label,
+                    "tag": "ability:defensive_ap_worsen",
+                }
+                if leader_kw:
+                    entry["requires_leading_keyword"] = str(leader_kw)
+                items.append(entry)
+                sr["defensive_ap_worsen"] = items
                 self.special_rules = sr
 
     def _matches_enemy_melee_hazardous_while_targeted(self, text: str) -> bool:
@@ -1219,6 +1276,10 @@ class Unit:
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+move\s+characteristic\s+of\s+(\d+)",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_MOVEMENT_BONUS_RE = re.compile(
+        r"add\s+(\d+)\s*(?:\"|inches)?\s+to\s+the\s+move\s+characteristic\s+of\s+models\s+in\s+the\s+bearer'?s\s+unit",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_OC_BONUS_RE = re.compile(
         r"add\s+(\d+)\s+to\s+the\s+objective\s+control\s+characteristic\s+of\s+(?:models\s+in\s+)?the\s+bearer'?s\s+unit",
         re.IGNORECASE,
@@ -1239,6 +1300,10 @@ class Unit:
     )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
+        re.IGNORECASE,
+    )
+    _BEARER_WOUNDS_BONUS_RE = re.compile(
+        r"add\s+(\d+)\s+to\s+the\s+bearer'?s\s+wounds?\s+characteristic",
         re.IGNORECASE,
     )
     _BEARER_UNIT_AGILE_MANEUVER_REROLL_RE = re.compile(
@@ -1295,7 +1360,7 @@ class Unit:
         re.IGNORECASE,
     )
     _OPPONENT_TURN_STRATEGIC_RESERVES_RE = re.compile(
-        r"(?:while this model is leading a unit )?at the end of your opponents turn if "
+        r"(?:once per battle(?:,)?\s+)?(?:while this model is leading a unit )?at the end of your opponents turn if "
         r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit) is not within engagement range of one or more enemy units? "
         r"you can remove (?:it|that unit|this unit) from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
@@ -1347,6 +1412,11 @@ class Unit:
         r"bearer'?s\s+unit\s+declares\s+a\s+charge.*?targets?\s+of\s+that\s+charge.*?within\s+range\s+of\s+an?\s+objective\s+marker.*?re-?roll\s+the\s+charge\s+roll",
         re.IGNORECASE,
     )
+    _UNIT_OBJECTIVE_CONTROLLED_FULL_WOUND_REROLL_RE = re.compile(
+        r"while this unit is within range of (?:an|one or more) objective marker(?:s)? you control "
+        r"you can re ?roll the wound roll instead",
+        re.IGNORECASE,
+    )
     _SELECTED_TO_SHOOT_CHARGE_REROLL_RE = re.compile(
         r"in your shooting phase each time this unit is selected to shoot if it makes one or more ranged attacks "
         r"and all of those attacks target the same enemy unit until the end of the turn each time this unit declares "
@@ -1354,13 +1424,18 @@ class Unit:
         re.IGNORECASE,
     )
     _ATTACK_TARGET_OBJECTIVE_KEYWORD_RE = re.compile(
-        r"each\s+time\s+this\s+(?:model|unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+this\s+unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
         r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+that\s+is\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+"
         r"objective\s+marker(?:s)?(?:,|\s+).*?that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
         re.IGNORECASE,
     )
+    _ATTACK_TARGET_KEYWORD_BONUS_RE = re.compile(
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+this\s+unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
+        r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?(?P<target>[^,]+?)\s+unit(?:,|\s+).*?that\s+attack\s+has\s+(?P<kw_section>.+?)\s+abilit",
+        re.IGNORECASE,
+    )
     _ATTACK_TARGET_HALF_RANGE_KEYWORD_RE = re.compile(
-        r"each\s+time\s+this\s+(?:model|unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+this\s+unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
         r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+within\s+half\s+range(?:,|\s+).*?"
         r"that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
         re.IGNORECASE,
@@ -1439,18 +1514,18 @@ class Unit:
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_RE = re.compile(
-        r"in your shooting phase after this model has shot select one enemy (?:(?P<infantry>infantry) )?unit "
-        r"(?:that was )?hit by one or more of those attacks that unit must take a battle shock test",
+        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"(?:that was )?hit by one or more of those attacks that (?:enemy )?unit must take a battle shock test",
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_PENALTY_RE = re.compile(
-        r"in your shooting phase after this model has shot select one enemy unit "
+        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
         r"that (?:enemy )?unit must take a battle shock test subtracting (?P<pen>\d+) from the result",
         re.IGNORECASE,
     )
     _POST_SHOOT_BATTLESHOCK_ON_KILL_RE = re.compile(
-        r"in your shooting phase after this model has shot select one enemy unit "
+        r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
         r"that (?:enemy )?unit must take a battle shock test "
         r"if one or more of those attacks destroyed a model in that enemy unit "
@@ -1591,6 +1666,10 @@ class Unit:
         r"(?: the same enemy unit can only be affected by this ability once per (?:turn|phase)| each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,
     )
+    _POST_SHOOT_SHOOT_AGAIN_RE = re.compile(
+        r"once per battle in your shooting phase after this unit has shot it can shoot again",
+        re.IGNORECASE,
+    )
     _RANGED_TARGETING_RESTRICTION_RE = re.compile(
         r"(?:can only be selected as the target of (?:a )?ranged attacks? if the attacking model is within (?P<range>\d+)"
         r"|cannot be targeted by ranged attacks unless the attacking model is within (?P<range2>\d+))",
@@ -1630,6 +1709,21 @@ class Unit:
         r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
         r"add 3 to the attacks characteristic of melee weapons equipped by this model and improve the armou?r penetration "
         r"characteristic of those weapons by 1",
+        re.IGNORECASE,
+    )
+    _START_ANY_PHASE_DAMAGE_SET_ONE_RE = re.compile(
+        r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
+        r"each time an attack is allocated to this model change the damage characteristic of that attack to 1",
+        re.IGNORECASE,
+    )
+    _START_ANY_PHASE_UNIT_FNP_RE = re.compile(
+        r"once per battle at the start of any phase this unit can use this ability if it does until the end of the phase "
+        r"models in this unit have the feel no pain (?P<val>\d+)(?: ability)?",
+        re.IGNORECASE,
+    )
+    _ONCE_PER_BATTLE_ADVANCE_AND_CHARGE_RE = re.compile(
+        r"once per battle in your charge phase (?:this model s unit|this unit|this model) is eligible to declare a charge "
+        r"in a turn (?:in )?which it advanced",
         re.IGNORECASE,
     )
     _MOVEMENT_PHASE_ONCE_NORMAL_MOVE_WEAPON_ATTACKS_RE = re.compile(
@@ -1673,6 +1767,22 @@ class Unit:
         r"to an unmodified 6",
         re.IGNORECASE,
     )
+    _MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE = re.compile(
+        r"once per battle after making a hit roll wound roll or (?:saving throw|save roll) for this model "
+        r"you can change the result of that roll to an unmodified 6",
+        re.IGNORECASE,
+    )
+    _MASTER_OF_STANCES_RE = re.compile(
+        r"once per battle when this model s unit is selected to fight it can use this ability if it does until that fight is resolved "
+        r"both ka tah stances are active for that unit instead of only one",
+        re.IGNORECASE,
+    )
+    _MOMENT_SHACKLE_RE = re.compile(
+        r"once per battle at the start of the fight phase you can select one of the following to take effect until the end of the phase "
+        r"this model s (?P<weapon>[a-z0-9 ]+?) melee weapon has an attacks characteristic of (?P<attacks>\d+) "
+        r"this model has a (?P<invuln>\d)\+? invulnerable save",
+        re.IGNORECASE,
+    )
     _START_OF_BATTLE_KEYWORD_REROLL_ONES_RE = re.compile(
         r"at the start of the battle select one of the following keywords (?P<keywords>[a-z0-9 ]+) "
         r"each time this model makes an attack(?:s)? that targets? a unit with the selected keyword "
@@ -1681,7 +1791,7 @@ class Unit:
     )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
         r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
-        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
@@ -1689,8 +1799,8 @@ class Unit:
         re.IGNORECASE,
     )
     _UNIT_MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
-        r"each time this unit ends a (?P<moves>[a-z ]+) move "
-        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
+        r"(?:once per battle(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
+        r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
@@ -1713,6 +1823,12 @@ class Unit:
         r"(?:and )?that is wholly within (?P<range>\d+) of this transport "
         r"(?:you cannot select a unit that can fly )?"
         r"unless that unit is within engagement range of one or more enemy units it can embark within this transport",
+        re.IGNORECASE,
+    )
+    _SWEEPING_ADVANCE_RE = re.compile(
+        r"once per battle at the end of the fight phase if this model s unit has fought this phase "
+        r"if it is within engagement range of one or more enemy units it can make a fall back move "
+        r"(?:or )?if it is not within engagement range of one or more enemy units it can make a normal move",
         re.IGNORECASE,
     )
     _TITANIC_AGILITY_RE = re.compile(
@@ -2442,6 +2558,8 @@ class Unit:
                 return {
                     "name": name or "Strategic Reserves",
                     "description": desc or "",
+                    "once_per_battle": "once per battle" in norm,
+                    "ability_key": "opponent_turn_strategic_reserves",
                 }
         return None
 
@@ -3142,6 +3260,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                u.remove_characteristic_modifiers_by_source("ability:bearer_unit_movement_bonus")
+            except Exception:
+                pass
+            try:
                 u.remove_characteristic_modifiers_by_source("enhancement:follow_me_ladz")
             except Exception:
                 pass
@@ -3263,7 +3385,9 @@ class Unit:
                     continue
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
                 text_lower = text.lower()
-                requires_attached_leader = bool(re.search(r"\bthis model is leading\b", text_lower))
+                requires_attached_leader = bool(
+                    re.search(r"\b(?:this model|the bearer|bearer)\s+is\s+leading\b", text_lower)
+                )
                 if requires_attached_leader and not getattr(u, "is_attached_leader", False):
                     continue
                 if "leading a unit" in text_lower and "bearer's unit" not in text_lower:
@@ -3320,6 +3444,16 @@ class Unit:
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             movement_sets.append((val, source))
+
+                    m = self._BEARER_UNIT_MOVEMENT_BONUS_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            movement_bonus_mods.append((val, source))
 
                     m = self._BEARER_UNIT_OC_BONUS_RE.search(sentence)
                     if m:
@@ -3459,8 +3593,6 @@ class Unit:
             except Exception:
                 sr = None
             if isinstance(sr, dict) and getattr(u, "is_attached_leader", False):
-                if sr.get("enhancement_follow_me_ladz"):
-                    movement_bonus_mods.append((2, "Follow Me Ladz"))
                 if sr.get("enhancement_kunnin_but_brutal"):
                     kunnin_but_brutal_active = True
 
@@ -3517,15 +3649,23 @@ class Unit:
         if movement_bonus_mods:
             from ..utility.modifiers import Modifier, ModifierOp
 
-            values = [int(val) for val, _ in movement_bonus_mods if int(val) > 0]
-            if values:
-                best_val = max(values)
-                sources = sorted({src for val, src in movement_bonus_mods if int(val) == best_val})
-                source_label = ", ".join(sources) if sources else "Follow Me Ladz"
+            seen_bonus: set[tuple[int, str]] = set()
+            for val, source in movement_bonus_mods:
+                try:
+                    ival = int(val)
+                except Exception:
+                    continue
+                if ival == 0:
+                    continue
+                key = (ival, str(source or "").strip())
+                if key in seen_bonus:
+                    continue
+                seen_bonus.add(key)
+                label = key[1] or "Bearer unit ability"
                 for u in members:
                     u.add_characteristic_modifier(
                         "movement",
-                        Modifier(ModifierOp.ADD, int(best_val), source=f"enhancement:follow_me_ladz:{source_label}"),
+                        Modifier(ModifierOp.ADD, ival, source=f"ability:bearer_unit_movement_bonus:{label}"),
                     )
 
         if oc_mods:
@@ -3688,6 +3828,99 @@ class Unit:
                     sr = {}
                 sr["enhancement_kunnin_but_brutal_active"] = True
                 u.special_rules = sr
+
+        self._refresh_bearer_wounds_bonuses()
+
+    def _refresh_bearer_wounds_bonuses(self) -> None:
+        """Apply bearer-only wound bonuses from wargear abilities (e.g., +W)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return
+
+        bonus_by_name: dict[str, int] = {}
+        for ab in list(getattr(root, "possible_abilities", []) or []):
+            try:
+                atype = str(getattr(ab, "type", "") or "").lower()
+                if "wargear" not in atype:
+                    continue
+                name = str(getattr(ab, "name", "") or "").strip()
+                if not name:
+                    continue
+                desc = str(getattr(ab, "description", "") or "")
+                normalized = self._normalize_rules_text(desc)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").lower()
+                m = self._BEARER_WOUNDS_BONUS_RE.search(normalized)
+                if not m:
+                    continue
+                try:
+                    val = int(m.group(1) or 0)
+                except Exception:
+                    val = 0
+                if val <= 0:
+                    continue
+                bonus_by_name[self._norm_wargear_name(name)] = int(val)
+            except Exception:
+                continue
+
+        for model in list(models or []):
+            if model is None:
+                continue
+            base_unmod = getattr(model, "_base_wounds_unmodified", None)
+            if base_unmod is None:
+                try:
+                    base_unmod = int(getattr(model, "_base_wounds", 0) or 0)
+                except Exception:
+                    base_unmod = 0
+                setattr(model, "_base_wounds_unmodified", int(base_unmod))
+            try:
+                base_unmod = int(base_unmod or 0)
+            except Exception:
+                base_unmod = 0
+            bonus = 0
+            try:
+                for wg in list(getattr(model, "wargear", []) or []):
+                    nm = self._norm_wargear_name(getattr(wg, "name", "") or "")
+                    if nm in bonus_by_name:
+                        bonus += int(bonus_by_name.get(nm, 0) or 0)
+            except Exception:
+                pass
+            try:
+                for ow in list(getattr(model, "optional_wargear", []) or []):
+                    nm = self._norm_wargear_name(str(ow or ""))
+                    if nm in bonus_by_name:
+                        bonus += int(bonus_by_name.get(nm, 0) or 0)
+            except Exception:
+                pass
+            desired_base = base_unmod + int(bonus or 0)
+            try:
+                prev_base = int(getattr(model, "_base_wounds", 0) or 0)
+            except Exception:
+                prev_base = 0
+            if prev_base != desired_base:
+                try:
+                    current = int(getattr(model, "_wounds", 0) or 0)
+                except Exception:
+                    current = 0
+                missing = max(0, prev_base - current)
+                if current == prev_base:
+                    model._wounds = int(desired_base)
+                else:
+                    model._wounds = max(0, int(desired_base) - int(missing))
+                model._base_wounds = int(desired_base)
+
+        try:
+            root.starting_total_wounds = sum(int(getattr(m, "_base_wounds", 0) or 0) for m in list(root.models or []))
+        except Exception:
+            pass
 
     def _parse_advance_no_roll_distance(self, text: str) -> Optional[int]:
         if not text:
@@ -10912,6 +11145,12 @@ class Unit:
         """
         if model is None:
             return None, None
+        try:
+            temp_val, temp_source = getattr(model, "get_temporary_invulnerable_save", lambda: (0, ""))()
+            if temp_val:
+                return int(temp_val), temp_source or "Temporary invulnerable save"
+        except Exception:
+            pass
         cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
         if cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
@@ -11346,6 +11585,53 @@ class Unit:
         root._ability_cache = cache
         return list(specs)
 
+    def model_once_per_battle_unmodified_six_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, after making a hit/wound/save roll, change it to an unmodified 6.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+        """
+        if model is None:
+            return []
+        cache_key = f"model_once_per_battle_unmodified_six_specs:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Unmodified 6").strip() or "Unmodified 6"
+            key_seed = self._normalize_keyword_phrase(source) or "model_unmodified_six"
+            key = f"model_unmodified_six:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def leading_tactical_acumen_specs(self) -> list[dict]:
         """
         Leading ability: after this unit has shot, it can make a Normal move of up to X", then cannot charge.
@@ -11399,6 +11685,74 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"source": source, "range": int(rng), "leader": leader})
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def leading_once_per_battle_advance_and_charge_specs(self) -> list[dict]:
+        """
+        Unit ability: once per battle, this unit can declare a charge after advancing.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - ability_key: str (stable once-per-battle key)
+            - owner_id: str (unit that provides the ability)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_once_per_battle_advance_and_charge_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = member._strip_eligibility_prefix(text_src)
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not self._ONCE_PER_BATTLE_ADVANCE_AND_CHARGE_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Advance and Charge").strip() or "Advance and Charge"
+                try:
+                    owner_id = str(get_entity_id(member) or "")
+                except Exception:
+                    owner_id = ""
+                if not owner_id:
+                    owner_id = str(get_entity_id(root) or "")
+                source_key = re.sub(r"[^a-z0-9]+", "_", source.lower()).strip("_") or "advance_and_charge"
+                ability_key = f"advance_and_charge_once:{owner_id}:{source_key}"
+                key = (owner_id, ability_key)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "ability_key": ability_key,
+                        "owner_id": owner_id,
+                    }
+                )
 
         if not isinstance(cache, dict):
             cache = {}
@@ -11630,6 +11984,7 @@ class Unit:
             return root._ability_cache[cache_key]
         rules = []
         seen_names: set[str] = set()
+        seen_objective_full_reroll: set[str] = set()
         try:
             members = list(root.get_attached_unit_members() or [])
         except Exception:
@@ -11652,6 +12007,46 @@ class Unit:
                     if rule.subject not in ("model_in_this_unit", "model_in_that_unit"):
                         continue
                     rules.append((rule, ability_name or "Unit ability"))
+                # Stand Vigil-style clause: while within a controlled objective, full wound re-roll.
+                try:
+                    norm = self._normalize_rules_text(text_src)
+                except Exception:
+                    norm = str(text_src or "")
+                if norm:
+                    norm = norm.replace("\u2019", "'").replace("\u0192?T", "'")
+                    sentences = [part.strip() for part in re.split(r"\.\s*", norm) if part.strip()]
+                    for sentence in sentences:
+                        s_norm = sentence.lower()
+                        s_norm = re.sub(r"'s\b", "s", s_norm)
+                        s_norm = re.sub(r"[^a-z0-9]+", " ", s_norm)
+                        s_norm = re.sub(r"\s+", " ", s_norm).strip()
+                        if not s_norm:
+                            continue
+                        if not self._UNIT_OBJECTIVE_CONTROLLED_FULL_WOUND_REROLL_RE.fullmatch(s_norm):
+                            continue
+                        source = ability_name or "Unit ability"
+                        key = f"{source.lower()}|objective_controlled_full_wound_reroll"
+                        if key in seen_objective_full_reroll:
+                            continue
+                        seen_objective_full_reroll.add(key)
+                        rules.append(
+                            (
+                                AttackRollRule(
+                                    scope="unit",
+                                    subject="model_in_this_unit",
+                                    attack_type="any",
+                                    effects=(
+                                        AttackRollEffect(
+                                            roll="wound",
+                                            kind="reroll",
+                                            reroll_full=True,
+                                            condition=AttackRollCondition(attacker_within_objective_controlled=True),
+                                        ),
+                                    ),
+                                ),
+                                source,
+                            )
+                        )
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = rules
@@ -11681,6 +12076,12 @@ class Unit:
         if condition.attacker_charged_this_turn:
             try:
                 if not bool(getattr(unit.round_state, "charged_this_round", False)):
+                    return False
+            except Exception:
+                return False
+        if condition.attacker_within_objective_controlled:
+            try:
+                if not unit._attacker_within_objective_controlled():
                     return False
             except Exception:
                 return False
@@ -11870,6 +12271,8 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_within_objective_controlled:
+                parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -12054,6 +12457,8 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_within_objective_controlled:
+                parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -12246,6 +12651,8 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_within_objective_controlled:
+                parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -12626,6 +13033,47 @@ class Unit:
                 except Exception:
                     continue
         return False
+
+    def _attacker_within_objective_controlled(self, game_map=None) -> bool:
+        """Return True if this unit is within range of an objective marker it controls."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return False
+        except Exception:
+            pass
+        game = None
+        if game_map is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+            game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        try:
+            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None) if game is None else game
+        except Exception:
+            game = None
+        if game is None or not hasattr(game, "_unit_within_range_of_objective"):
+            return False
+        try:
+            obj = game._unit_within_range_of_objective(root)
+        except Exception:
+            obj = None
+        if obj is None:
+            return False
+        loc = getattr(obj, "location", None) or obj
+        controller = getattr(loc, "controlling_player", None)
+        try:
+            return controller is root.get_parent_army().player
+        except Exception:
+            return False
 
     def can_reroll_advance_roll(self) -> bool:
         """
@@ -13766,6 +14214,141 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache["martial_katah"] = found
         return found
+
+    def master_of_stances_spec(self) -> Optional[dict]:
+        """
+        Return spec for Master of the Stances (once per battle, both stances active) if present.
+
+        Spec keys:
+            - source: ability name
+            - model_id: leader model id (or unit model)
+            - ability_key: stable once-per-battle key
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "master_of_stances_spec"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        candidates = [root]
+        try:
+            candidates.extend(list(getattr(root, "attached_leaders", []) or []))
+        except Exception:
+            pass
+        seen_ids = set()
+        spec = None
+        for cand in candidates:
+            if cand is None:
+                continue
+            cid = get_entity_id(cand)
+            if cid in seen_ids:
+                continue
+            seen_ids.add(cid)
+            for name, desc in cand._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = cand._strip_eligibility_prefix(text_src)
+                normalized = cand._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not self._MASTER_OF_STANCES_RE.fullmatch(normalized):
+                    continue
+                try:
+                    models = list(getattr(cand, "models", []) or [])
+                except Exception:
+                    models = []
+                model = None
+                for m in list(models or []):
+                    if getattr(m, "is_alive", True):
+                        model = m
+                        break
+                if model is None:
+                    continue
+                source = str(name or "Master of the Stances").strip() or "Master of the Stances"
+                spec = {
+                    "source": source,
+                    "model_id": get_entity_id(model),
+                    "ability_key": "master_of_stances",
+                }
+                break
+            if spec:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = spec
+        return spec
+
+    def model_moment_shackle_spec(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return spec for Moment Shackle (once per battle, start of Fight phase) for a model.
+
+        Spec keys:
+            - source: ability name
+            - weapon_name: str
+            - attacks: int
+            - invuln: int
+            - ability_key: str
+        """
+        if model is None:
+            return None
+        cache_key = f"model_moment_shackle:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+        spec = None
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9+]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOMENT_SHACKLE_RE.fullmatch(normalized)
+            if not m:
+                if str(name or "").strip().lower() != "moment shackle":
+                    continue
+                m = None
+            weapon_name = ""
+            attacks = 0
+            invuln = 0
+            if m:
+                weapon_name = str(m.group("weapon") or "").strip()
+                try:
+                    attacks = int(m.group("attacks") or 0)
+                except Exception:
+                    attacks = 0
+                try:
+                    invuln = int(m.group("invuln") or 0)
+                except Exception:
+                    invuln = 0
+            if not weapon_name:
+                weapon_name = "Watcher's Axe"
+            if attacks <= 0:
+                attacks = 12
+            if invuln <= 0:
+                invuln = 2
+            source = str(name or "Moment Shackle").strip() or "Moment Shackle"
+            spec = {
+                "source": source,
+                "weapon_name": weapon_name,
+                "attacks": int(attacks),
+                "invuln": int(invuln),
+                "ability_key": "moment_shackle",
+            }
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = spec
+        return spec
 
     def can_use_dark_pacts(self) -> bool:
         has_pacts = self.has_dark_pacts()
@@ -15664,6 +16247,7 @@ class Unit:
             " after ",
             " before ",
             " until ",
+            " once per ",
             " at the start",
             " start of",
             " each time",
@@ -15976,14 +16560,8 @@ class Unit:
             
         return False
 
-    def can_charge_after_advance(self) -> bool:
-        """Check if this unit can charge after advancing.
-
-        A unit can charge after advancing if it has an ability that allows it.
-
-        Returns:
-            bool: True if the unit can charge after advancing
-        """
+    def _advance_and_charge_always_available(self) -> bool:
+        """Return True if this unit can always charge after advancing (non-once-per-battle sources)."""
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict):
@@ -16013,9 +16591,45 @@ class Unit:
                     return True
         except Exception:
             pass
-        has_ability = self.has_advance_and_charge()
-        #print(f"{self.name} can_charge_after_advance check: {has_ability}")
-        return has_ability
+        return bool(self.has_advance_and_charge())
+
+    def _advance_and_charge_once_per_battle_spec(self) -> Optional[dict]:
+        """Return an available once-per-battle advance+charge spec, if any."""
+        try:
+            specs = list(self.leading_once_per_battle_advance_and_charge_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return None
+        for spec in specs:
+            key = str(spec.get("ability_key") or "").strip().lower()
+            if not key:
+                continue
+            if self.has_used_unit_once_per_battle(key):
+                continue
+            return dict(spec)
+        return None
+
+    def can_charge_after_advance(self) -> bool:
+        """Check if this unit can charge after advancing.
+
+        A unit can charge after advancing if it has an ability that allows it.
+
+        Returns:
+            bool: True if the unit can charge after advancing
+        """
+        try:
+            if Unit._advance_and_charge_always_available(self):
+                return True
+        except Exception:
+            pass
+        spec_fn = getattr(self, "_advance_and_charge_once_per_battle_spec", None)
+        if callable(spec_fn):
+            return spec_fn() is not None
+        try:
+            return bool(self.has_advance_and_charge())
+        except Exception:
+            return False
 
     def can_charge_after_fall_back(self) -> bool:
         """Check if this unit can charge after falling back."""
@@ -20529,7 +21143,28 @@ class Unit:
                 pass
 
         rules: list[dict] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple] = set()
+
+        def _parse_target_keywords(value: str) -> tuple[str, ...]:
+            cleaned = self._normalize_rules_text(value or "")
+            cleaned = cleaned.replace("\u2019", "'").replace("\u0192?T", "'")
+            cleaned = cleaned.lower()
+            cleaned = cleaned.replace("enemy ", "")
+            cleaned = re.sub(r"\bunit\b", "", cleaned)
+            cleaned = cleaned.replace("&", " and ")
+            cleaned = re.sub(r"\s+(and|or)\s+", ",", cleaned, flags=re.IGNORECASE)
+            parts = [p.strip(" .") for p in cleaned.split(",") if p.strip(" .")]
+            keywords: list[str] = []
+            for part in parts:
+                if not part:
+                    continue
+                norm = self._normalize_keyword_phrase(part) or part.strip().upper()
+                if not norm:
+                    continue
+                up = norm.upper()
+                if up not in keywords:
+                    keywords.append(up)
+            return tuple(keywords)
         for name, desc in entries:
             text = self._normalize_rules_text(desc or name or "")
             if not text:
@@ -20543,11 +21178,43 @@ class Unit:
                 atype = str(match.group("atype") or "").strip().lower()
                 if atype not in ("melee", "ranged"):
                     atype = "any"
-                key = (atype, keyword.lower())
+                key = ("objective", atype, keyword.lower())
                 if key in seen:
                     continue
                 seen.add(key)
-                rules.append({"attack_type": atype, "keyword": keyword, "source": str(name or "Ability")})
+                rules.append(
+                    {
+                        "attack_type": atype,
+                        "keyword": keyword,
+                        "source": str(name or "Ability"),
+                        "requires_objective": True,
+                    }
+                )
+            for match in self._ATTACK_TARGET_KEYWORD_BONUS_RE.finditer(text):
+                target_raw = str(match.group("target") or "").strip()
+                target_keywords = _parse_target_keywords(target_raw)
+                if not target_keywords:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                kw_section = str(match.group("kw_section") or "")
+                bonus_keywords = [k.strip() for k in re.findall(r"\[([^\]]+)\]", kw_section) if str(k or "").strip()]
+                if not bonus_keywords:
+                    continue
+                for bonus_kw in bonus_keywords:
+                    key = ("target_kw", atype, bonus_kw.strip().lower(), target_keywords)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    rules.append(
+                        {
+                            "attack_type": atype,
+                            "keyword": bonus_kw.strip(),
+                            "source": str(name or "Ability"),
+                            "target_keywords_any": target_keywords,
+                        }
+                    )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
@@ -20899,7 +21566,7 @@ class Unit:
         game_map=None,
     ) -> dict:
         """
-        Return objective-target keyword bonuses for this model/unit.
+        Return conditional attack keyword bonuses for this model/unit.
 
         Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
         """
@@ -20908,12 +21575,35 @@ class Unit:
             return {}
         if target is None:
             return {}
-        try:
-            if not self._target_within_objective_range(target, game_map):
-                return {}
-        except Exception:
+        filtered = []
+
+        def _target_has_keyword(val: str) -> bool:
+            key = str(val or "").strip()
+            if not key:
+                return False
+            try:
+                return bool(target.has_keyword(key.upper()))
+            except Exception:
+                try:
+                    return bool(target.has_any_keyword(key.upper()))
+                except Exception:
+                    return False
+
+        for rule in list(rules or []):
+            if rule.get("requires_objective"):
+                try:
+                    if not self._target_within_objective_range(target, game_map):
+                        continue
+                except Exception:
+                    continue
+            target_keywords_any = tuple(rule.get("target_keywords_any") or ())
+            if target_keywords_any:
+                if not any(_target_has_keyword(k) for k in target_keywords_any):
+                    continue
+            filtered.append(rule)
+        if not filtered:
             return {}
-        return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
+        return self._resolve_attack_keyword_bonuses_from_rules(filtered, attack_type=attack_type)
 
     @staticmethod
     def _normalize_weapon_name(name: str) -> str:
@@ -22904,6 +23594,34 @@ class Unit:
             base = "fight_first"
         return f"enhancement_fight_first:{base}".lower()
 
+    def has_used_unit_once_per_battle(self, key: str) -> bool:
+        """Return True if this unit has consumed a named once-per-battle ability."""
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        used = sr.get("once_per_battle_used")
+        if not isinstance(used, dict):
+            return False
+        return bool(used.get(key))
+
+    def mark_unit_once_per_battle_used(self, key: str, *, ability_name: str = "") -> None:
+        """Mark a named once-per-battle ability as used for this unit."""
+        key = str(key or "").strip().lower()
+        if not key:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        used = dict(sr.get("once_per_battle_used") or {})
+        used[key] = True
+        sr["once_per_battle_used"] = used
+        if ability_name:
+            sr.setdefault("once_per_battle_used_sources", {})[key] = str(ability_name or "").strip()
+        self.special_rules = sr
+
     def _get_enhancement_bearer_model(self):
         for m in list(getattr(self, "models", []) or []):
             try:
@@ -24465,6 +25183,8 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_within_objective_controlled:
+                parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -24735,6 +25455,8 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_within_objective_controlled:
+                parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
@@ -24822,6 +25544,8 @@ class Unit:
             exclude_mv = "excluding monsters and vehicles" in normalized
             m_kill = self._POST_SHOOT_BATTLESHOCK_ON_KILL_RE.fullmatch(normalized)
             if m_kill:
+                if str(m_kill.group("subject") or "").strip().lower() != "model":
+                    continue
                 try:
                     pen = int(m_kill.group("pen") or 0)
                 except Exception:
@@ -24842,6 +25566,8 @@ class Unit:
                     continue
             m_pen = self._POST_SHOOT_BATTLESHOCK_PENALTY_RE.fullmatch(normalized)
             if m_pen:
+                if str(m_pen.group("subject") or "").strip().lower() != "model":
+                    continue
                 try:
                     pen = int(m_pen.group("pen") or 0)
                 except Exception:
@@ -24863,6 +25589,8 @@ class Unit:
             m = self._POST_SHOOT_BATTLESHOCK_RE.fullmatch(normalized)
             if not m:
                 continue
+            if str(m.group("subject") or "").strip().lower() != "model":
+                continue
             infantry_only = bool(m.group("infantry"))
             source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
             key = (source.lower(), infantry_only, 0, 0, False)
@@ -24874,6 +25602,165 @@ class Unit:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_battleshock_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit to take a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - infantry_only: bool
+            - exclude_monster_vehicle: bool
+            - test_modifier: int (optional)
+            - test_modifier_on_kill: int (optional)
+            - source: ability name
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_battleshock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool, int, int, bool]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                normalized = u._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                exclude_mv = "excluding monsters and vehicles" in normalized
+                m_kill = self._POST_SHOOT_BATTLESHOCK_ON_KILL_RE.fullmatch(normalized)
+                if m_kill:
+                    if str(m_kill.group("subject") or "").strip().lower() != "unit":
+                        continue
+                    try:
+                        pen = int(m_kill.group("pen") or 0)
+                    except Exception:
+                        pen = 0
+                    if pen:
+                        source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+                        key = (source.lower(), False, 0, -int(pen), exclude_mv)
+                        if key not in seen:
+                            seen.add(key)
+                            specs.append(
+                                {
+                                    "infantry_only": False,
+                                    "exclude_monster_vehicle": bool(exclude_mv),
+                                    "test_modifier_on_kill": -int(pen),
+                                    "source": source,
+                                }
+                            )
+                        continue
+                m_pen = self._POST_SHOOT_BATTLESHOCK_PENALTY_RE.fullmatch(normalized)
+                if m_pen:
+                    if str(m_pen.group("subject") or "").strip().lower() != "unit":
+                        continue
+                    try:
+                        pen = int(m_pen.group("pen") or 0)
+                    except Exception:
+                        pen = 0
+                    if pen:
+                        source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+                        key = (source.lower(), False, -int(pen), 0, exclude_mv)
+                        if key not in seen:
+                            seen.add(key)
+                            specs.append(
+                                {
+                                    "infantry_only": False,
+                                    "exclude_monster_vehicle": bool(exclude_mv),
+                                    "test_modifier": -int(pen),
+                                    "source": source,
+                                }
+                            )
+                        continue
+                m = self._POST_SHOOT_BATTLESHOCK_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                if str(m.group("subject") or "").strip().lower() != "unit":
+                    continue
+                infantry_only = bool(m.group("infantry"))
+                source = str(name or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
+                key = (source.lower(), infantry_only, 0, 0, False)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "infantry_only": infantry_only,
+                        "exclude_monster_vehicle": bool(exclude_mv),
+                        "source": source,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_shoot_again_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: once per battle, after this unit has shot, it can shoot again.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - ability_key: str (once-per-battle tracking key)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_shoot_again_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                normalized = u._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not self._POST_SHOOT_SHOOT_AGAIN_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Shoot again").strip() or "Shoot again"
+                key_seed = self._normalize_keyword_phrase(source) or "shoot_again"
+                ability_key = f"post_shoot_shoot_again:{key_seed}"
+                if ability_key in seen:
+                    continue
+                seen.add(ability_key)
+                specs.append({"source": source, "ability_key": ability_key})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_post_shoot_disembark_wound_reroll_specs(self, model: Optional['Model'] = None) -> List[dict]:
@@ -25905,6 +26792,109 @@ class Unit:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_any_phase_damage_set_one_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of any phase, set incoming damage to 1.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - value: int (damage override)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_any_phase_damage_set_one:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._START_ANY_PHASE_DAMAGE_SET_ONE_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Damage set to 1").strip() or "Damage set to 1"
+            key_seed = self._normalize_keyword_phrase(source) or "damage_set_one"
+            key = f"start_any_phase_damage_set_one:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "key": key, "value": 1})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_start_any_phase_fnp_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: once per battle, at the start of any phase, grant Feel No Pain to the unit.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - value: int (FNP roll)
+            - ability_key: str (once-per-battle tracking key)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_start_any_phase_fnp_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                normalized = u._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._START_ANY_PHASE_UNIT_FNP_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    val = int(m.group("val") or 0)
+                except Exception:
+                    val = 0
+                if val <= 0:
+                    continue
+                source = str(name or "Start of phase FNP").strip() or "Start of phase FNP"
+                key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_fnp"
+                ability_key = f"start_any_phase_fnp:{key_seed}"
+                key = (source.lower(), int(val))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "value": int(val), "ability_key": ability_key})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_movement_phase_normal_move_weapon_attacks_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, before a Normal move in the Movement phase, add Move (dice) and weapon Attacks.
@@ -26299,6 +27289,54 @@ class Unit:
                     "keyword": keyword,
                     "max_models": int(max_models),
                     "range": int(range_value),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_end_of_fight_sweeping_advance_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, end of Fight phase, after the unit has fought,
+        make a Fall Back move if engaged, otherwise a Normal move.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+        """
+        if model is None:
+            return []
+        cache_key = f"model_end_of_fight_sweeping_advance_specs:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._SWEEPING_ADVANCE_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Sweeping Advance").strip() or "Sweeping Advance"
+            key_seed = self._normalize_keyword_phrase(source) or "sweeping_advance"
+            key = f"sweeping_advance:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
                 }
             )
 
@@ -26783,11 +27821,14 @@ class Unit:
                 if threshold <= 0 or (mortal_per <= 0 and not mortal_die):
                     continue
                 exclude_mv = "excluding monsters and vehicles" in normalized or "excluding monster and vehicle" in normalized
+                once_per_battle = "once per battle" in normalized
                 try:
                     fly_bonus = int(m.group("fly_bonus") or 0)
                 except Exception:
                     fly_bonus = 0
                 source = str(name or "Move-over mortals").strip() or "Move-over mortals"
+                key_seed = self._normalize_keyword_phrase(source) or "move_over_mortals"
+                ability_key = f"move_over_mortals:{key_seed}"
                 key = (
                     source.lower(),
                     int(threshold),
@@ -26796,6 +27837,7 @@ class Unit:
                     tuple(sorted(move_types)),
                     bool(exclude_mv),
                     int(fly_bonus or 0),
+                    bool(once_per_battle),
                 )
                 if key in seen:
                     continue
@@ -26810,6 +27852,8 @@ class Unit:
                         "exclude_monster_vehicle": bool(exclude_mv),
                         "fly_bonus": int(fly_bonus or 0),
                         "dice_per_model": True,
+                        "once_per_battle": bool(once_per_battle),
+                        "ability_key": ability_key,
                     }
                 )
 
@@ -27797,6 +28841,23 @@ class Unit:
                             continue
                         seen.add(key)
                         result.append((int(val), None))
+        except Exception:
+            pass
+        try:
+            if target_model is not None and hasattr(target_model, "get_temporary_fnp_entries"):
+                entries = list(target_model.get_temporary_fnp_entries() or [])
+                if entries:
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for val, cond in entries:
+                        try:
+                            val = int(val)
+                        except Exception:
+                            continue
+                        key = (int(val), str(cond or ""))
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        result.append((int(val), cond))
         except Exception:
             pass
         try:

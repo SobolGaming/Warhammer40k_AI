@@ -715,6 +715,214 @@ class Model:
                     best_source = source or str(key or weapon_name)
         return int(best_val), best_source
 
+    def set_temporary_weapon_attacks_override(
+        self,
+        *,
+        key: str,
+        weapon_name: str,
+        attacks_value: int,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            attacks_value = int(attacks_value or 0)
+        except Exception:
+            attacks_value = 0
+        if attacks_value <= 0:
+            effects.pop(key_norm, None)
+            return
+        weapon_name = str(weapon_name or "").strip()
+        if not weapon_name:
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        label = str(source or "").strip() or "Weapon attacks override"
+        entry["weapon_attacks_override"] = {weapon_name: int(attacks_value)}
+        entry["weapon_attacks_override_source"] = label
+        effects[key_norm] = entry
+
+    def get_temporary_weapon_attacks_override(self, weapon_name: str) -> tuple[int, str]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, ""
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, ""
+        best_val = 0
+        best_source = ""
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_attacks_override")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_attacks_override_source") or "").strip()
+            for key, att in bonus_map.items():
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm != target and key_norm not in target and target not in key_norm:
+                    continue
+                try:
+                    att_val = int(att or 0)
+                except Exception:
+                    att_val = 0
+                if att_val > best_val:
+                    best_val = int(att_val)
+                    best_source = source or str(key or weapon_name)
+        return int(best_val), best_source
+
+    def set_temporary_invulnerable_save(
+        self,
+        *,
+        key: str,
+        value: int,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            value = int(value or 0)
+        except Exception:
+            value = 0
+        if value <= 0:
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        entry["invulnerable_save_override"] = int(value)
+        entry["invulnerable_save_override_source"] = str(source or "").strip() or "Invulnerable save"
+        effects[key_norm] = entry
+
+    def get_temporary_invulnerable_save(self) -> tuple[int, str]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, ""
+        best_val = 0
+        best_source = ""
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            try:
+                val = int(v.get("invulnerable_save_override", 0) or 0)
+            except Exception:
+                val = 0
+            if val <= 0:
+                continue
+            if not best_val or val < best_val:
+                best_val = int(val)
+                best_source = str(v.get("invulnerable_save_override_source") or "").strip()
+        return int(best_val), best_source
+
+    def set_temporary_damage_taken_override(
+        self,
+        *,
+        key: str,
+        value: int,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            value = int(value or 0)
+        except Exception:
+            value = 0
+        if value <= 0:
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        entry["damage_taken_override"] = int(value)
+        entry["damage_taken_override_source"] = str(source or "").strip() or "Damage override"
+        effects[key_norm] = entry
+
+    def get_temporary_damage_taken_override(self) -> tuple[int, str]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, ""
+        best_val = 0
+        best_source = ""
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            if "damage_taken_override" not in v:
+                continue
+            try:
+                val = int(v.get("damage_taken_override", 0) or 0)
+            except Exception:
+                val = 0
+            if val <= 0:
+                continue
+            source = str(v.get("damage_taken_override_source") or "").strip()
+            if best_val == 0 or val < best_val:
+                best_val = int(val)
+                best_source = source
+        return int(best_val), best_source
+
+    def set_temporary_fnp(
+        self,
+        *,
+        key: str,
+        value: int,
+        source: str = "",
+        condition: str | None = None,
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            value = int(value or 0)
+        except Exception:
+            value = 0
+        if value <= 0:
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        entry["temporary_fnp_value"] = int(value)
+        entry["temporary_fnp_source"] = str(source or "").strip() or "Temporary FNP"
+        if condition:
+            entry["temporary_fnp_condition"] = str(condition or "").strip()
+        effects[key_norm] = entry
+
+    def get_temporary_fnp_entries(self) -> list[tuple[int, str | None]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return []
+        entries: list[tuple[int, str | None]] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            if "temporary_fnp_value" not in v:
+                continue
+            try:
+                val = int(v.get("temporary_fnp_value", 0) or 0)
+            except Exception:
+                val = 0
+            if val <= 0:
+                continue
+            cond = v.get("temporary_fnp_condition")
+            cond = str(cond).strip() if cond else None
+            entries.append((int(val), cond))
+        return entries
+
     def set_temporary_weapon_keyword_bonuses(
         self,
         *,

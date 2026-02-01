@@ -275,6 +275,7 @@ Fight:
 - dance_of_death_dialog: CHOOSE_DANCE_OF_DEATH {choice} (context `unit_id`, `phase_name`, `ability_name`)
 - herald_of_ynnead_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="herald_of_ynnead"`, `attacker_unit_id`, `model_id`, `keyword`, `ability_name`)
 - fight_phase_melee_ap_boost_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_melee_ap_boost"`, `unit_id`, `model_id`)
+- sweeping_advance_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sweeping_advance"`, `unit_id`, `model_id`, `ability_key`)
 - daemonic_patrons_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="daemonic_patrons"`, `unit_id`)
 - daemonic_patrons_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="daemonic_patrons_loss"`, `unit_id`, `ability_name`)
 - melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
@@ -296,6 +297,9 @@ Optional ability confirmations (yes/no):
 - battle_focus_flitting_shadows_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_flitting_shadows"`, `unit_id`)
 - battle_focus_sudden_strike_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_sudden_strike"`, `unit_id`)
 - battle_focus_fade_back_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="battle_focus_fade_back"`, `unit_id`)
+- start_any_phase_damage_set_one_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_damage_set_one"`, `unit_id`, `model_id`, `buff_key`)
+- start_any_phase_fnp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`)
+- sentinel_storm_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sentinel_storm"`, `unit_id`, `ability_key`)
 - cabal_channel_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="cabal_channel_warp"`)
 - stratagem_cp_discount_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="direct_the_slaughter"` or `ability="targeted_stratagem_discount"` or `ability="gift_of_foresight"` or `ability="master_of_the_pageant"` or `ability="opponent_stratagem_cp_increase"`)
 - power_from_pain_stratagem_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="power_from_pain_stratagem"`)
@@ -322,6 +326,7 @@ Faction / Detachment / Ability choices:
 - frenzy_choice_dialog: CHOOSE_FRENZY_TARGET {target_unit_id}
 - harbingers_of_dread_dialog: CHOOSE_HARBINGER {choice_id}
 - martial_katah_dialog: CHOOSE_MARTIAL_KATAH {choice_id}
+- moment_shackle_dialog: CHOOSE_MOMENT_SHACKLE {choice_id | skip} (context `unit_id`, `model_id`, `ability_key`, `ability_name`)
 - gilded_champion_dialog: USE_GILDED_CHAMPION {action="use" | action="skip", model_id, ability_key}
 - careen_choice_dialog: USE_CAREEN {choice="normal" | choice="fall_back" | action="skip", unit_id, model_id}
 - miracle_dice_dialog: USE_MIRACLE_DIE {die_value | skip} (context `unit_id`, `roll_type`, `dice_count`, `die_faces`, `pool`, `needed`)
@@ -346,6 +351,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - yes_no_dialog: CONFIRM_YES_NO {choice}
 - aspect_shrine_prompt_dialog: CHOOSE_ASPECT {choice_id}
 - leading_unmodified_six_prompt_dialog: USE_LEADING_UNMODIFIED_SIX {ability_key | skip} (context `unit_id`, `attacker_model_id`, `roll_type`, `roll_value`, `ability_keys`)
+- model_unmodified_six_prompt_dialog: USE_MODEL_UNMODIFIED_SIX {ability_key | skip} (context `unit_id`, `model_id`, `roll_type`, `roll_value`, `ability_keys`)
 - example_dialog: CONFIRM_EXAMPLE {choice_id}
 - reverberating_summons_unit_dialog: SELECT_REVERBERATING_SUMMONS_UNIT {unit_id | skip}
 - reverberating_summons_return_model_dialog: ALLOCATE_DAMAGE {unit_id, model_id | skip} (context `selection_kind="reverberating_summons_return"`)

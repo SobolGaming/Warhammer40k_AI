@@ -765,6 +765,25 @@ class WargearProfile:
                             ap_val += int(entry.get("value", 0) or 0)
                         except Exception:
                             continue
+                    attack_type = "any"
+                    try:
+                        if self.parent_wargear is not None and self.parent_wargear.is_melee():
+                            attack_type = "melee"
+                        elif self.parent_wargear is not None and self.parent_wargear.is_ranged():
+                            attack_type = "ranged"
+                    except Exception:
+                        attack_type = "any"
+                    for entry in self._iter_defensive_entries(
+                        target_root,
+                        "defensive_ap_worsen",
+                        attacker_key=None,
+                        attack_type=attack_type,
+                        phase_key="",
+                    ):
+                        try:
+                            ap_val += int(entry.get("value", 0) or 0)
+                        except Exception:
+                            continue
         except Exception:
             pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))
@@ -899,6 +918,27 @@ class WargearProfile:
         roll_value: Optional[int] = None,
         roll_values: Optional[list[int]] = None,
     ) -> AttackCountInfo:
+        if attacks_override is None:
+            try:
+                weapon_name = ""
+                if getattr(self, "parent_wargear", None) is not None:
+                    weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                if not weapon_name:
+                    weapon_name = str(getattr(self, "name", "") or "")
+                if weapon_name:
+                    override_val, override_source = getattr(attacker, "get_temporary_weapon_attacks_override", lambda _n: (0, ""))(
+                        weapon_name
+                    )
+                    if override_val:
+                        attacks_override = int(override_val)
+                        if not attacks_override_note:
+                            label = str(override_source or "").strip()
+                            if label:
+                                attacks_override_note = f"{label} (Attacks set to {int(override_val)})"
+                            else:
+                                attacks_override_note = f"Attacks set to {int(override_val)}"
+            except Exception:
+                pass
         if attacks_override is not None:
             num_attacks = max(0, int(attacks_override))
             attack_result.attacks_rolled = num_attacks
@@ -2381,6 +2421,247 @@ class WargearProfile:
 
         return 6, decision_key
 
+    def _maybe_apply_model_unmodified_six(
+        self,
+        model: 'Model',
+        roll_type: str,
+        roll_value: Optional[int],
+        needed: Optional[int] = None,
+        *,
+        attacker: Optional['Model'] = None,
+        target: Optional['Unit'] = None,
+    ) -> tuple[Optional[int], Optional[str]]:
+        """
+        Model ability: once per battle, after making a hit/wound/save roll, set it to an unmodified 6.
+        Returns (new_roll_value, decision_str) where decision_str is ability_key or "skip".
+        """
+        try:
+            if roll_value is None:
+                return roll_value, None
+            if int(roll_value) == 6:
+                return roll_value, None
+        except Exception:
+            return roll_value, None
+
+        rt = str(roll_type or "").strip().lower()
+        if rt not in ("hit", "wound", "save"):
+            return roll_value, None
+
+        if model is None:
+            return roll_value, None
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return roll_value, None
+
+        try:
+            specs = list(getattr(unit, "model_once_per_battle_unmodified_six_specs", lambda _m: [])(model) or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return roll_value, None
+
+        available: list[dict] = []
+        for spec in list(specs or []):
+            key = str(spec.get("key", "") or "").strip().lower()
+            if not key:
+                continue
+            try:
+                if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                    continue
+            except Exception:
+                continue
+            available.append(spec)
+
+        if not available:
+            return roll_value, None
+
+        def _spec_sort_key(item: dict) -> tuple:
+            return (
+                str(item.get("key", "")),
+                str(item.get("source", "")),
+            )
+
+        available = sorted(available, key=_spec_sort_key)
+        option_entries = []
+        for spec in available:
+            source = str(spec.get("source", "") or "Ability").strip()
+            option_entries.append(
+                {
+                    "ability_key": str(spec.get("key", "") or ""),
+                    "label": source or "Ability",
+                    "source": source or "Ability",
+                }
+            )
+
+        player = None
+        game_map = None
+        is_human = False
+        provider = None
+        game = None
+        try:
+            army = unit.get_parent_army()
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+            provider = getattr(game_map, "model_unmodified_six_provider", None) if game_map is not None else None
+        except Exception:
+            player = None
+            game_map = None
+            game = None
+            is_human = False
+            provider = None
+
+        decision = None
+        if is_human and callable(provider):
+            try:
+                decision = provider(
+                    player=player,
+                    model=model,
+                    roll_type=rt,
+                    value=int(roll_value),
+                    needed=needed,
+                    options=option_entries,
+                    attacker=attacker,
+                    target=target,
+                    weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                    or getattr(self, "name", "Weapon"),
+                )
+            except Exception:
+                decision = None
+        else:
+            decision = None
+            if game is not None and player is not None:
+                try:
+                    from warhammer40k_ai.engine.decision_kinds import DECISION_USE_MODEL_UNMODIFIED_SIX
+                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.entity_ids import get_entity_id
+                except Exception:
+                    decision = None
+                else:
+                    model_id = ""
+                    unit_id = ""
+                    try:
+                        model_id = get_entity_id(model)
+                    except Exception:
+                        model_id = ""
+                    try:
+                        unit_id = get_entity_id(unit)
+                    except Exception:
+                        unit_id = ""
+                    req_options = [DecisionOption.create("Don't Use", payload={"action": "skip"})]
+                    for entry in option_entries:
+                        req_options.append(
+                            DecisionOption.create(
+                                f"Use {entry.get('label')}",
+                                payload={"choice": "use", "ability_key": entry.get("ability_key", "")},
+                            )
+                        )
+                    req = DecisionRequest.create(
+                        DECISION_USE_MODEL_UNMODIFIED_SIX,
+                        "Ability: Unmodified 6",
+                        player_id=getattr(player, "id", None),
+                        options=req_options,
+                        context={
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "roll_type": rt,
+                            "roll_value": int(roll_value),
+                            "ability_keys": [e.get("ability_key", "") for e in option_entries],
+                        },
+                    )
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
+
+                    choice = None
+                    try:
+                        overrides = getattr(player, "_next_optional_selections", None)
+                        if isinstance(overrides, dict) and "MODEL_UNMODIFIED_SIX" in overrides:
+                            choice = overrides.pop("MODEL_UNMODIFIED_SIX")
+                    except Exception:
+                        choice = None
+                    choice_norm = str(choice or "").strip().lower()
+                    desired_key = ""
+                    if choice_norm in ("use", "yes", "true"):
+                        desired_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+                    elif choice_norm in ("skip", "no", "false"):
+                        desired_key = ""
+                    else:
+                        for entry in option_entries:
+                            if str(entry.get("ability_key", "")).lower() == choice_norm:
+                                desired_key = str(entry.get("ability_key", "") or "")
+                                break
+                    option_id = None
+                    try:
+                        if not desired_key:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("action", "") or "") == "skip":
+                                    option_id = opt.option_id
+                                    break
+                        else:
+                            for opt in list(getattr(req, "options", []) or []):
+                                payload = dict(getattr(opt, "payload", {}) or {})
+                                if str(payload.get("ability_key", "") or "") == desired_key:
+                                    option_id = opt.option_id
+                                    break
+                    except Exception:
+                        option_id = None
+                    if option_id:
+                        value, apply_result = resolve_decision_value(
+                            game,
+                            req,
+                            option_id,
+                            player_id=getattr(player, "id", None),
+                        )
+                        if apply_result is not None and getattr(apply_result, "ok", False):
+                            decision = value
+            if decision is None:
+                decision = "skip"
+
+        decision_key = ""
+        if isinstance(decision, dict):
+            if str(decision.get("choice", "") or "") == "use":
+                decision_key = str(decision.get("ability_key", "") or "")
+        else:
+            if str(decision or "").strip().lower() == "use":
+                decision_key = str(option_entries[0].get("ability_key", "") or "") if option_entries else ""
+            else:
+                decision_key = str(decision or "")
+
+        decision_key = str(decision_key or "").strip().lower()
+        if not decision_key:
+            return roll_value, "skip"
+
+        spec_map = {str(s.get("key", "")).strip().lower(): s for s in available if str(s.get("key", "") or "").strip()}
+        spec = spec_map.get(decision_key)
+        if spec is None:
+            return roll_value, "skip"
+
+        try:
+            ability_name = str(spec.get("source", "") or "Ability").strip()
+            model.mark_used_once_per_battle(decision_key, ability_name=ability_name, source="datasheet")
+        except Exception:
+            pass
+
+        try:
+            from warhammer40k_ai.utility.event_bus import append_dice, append_action
+            label = "roll"
+            if rt == "hit":
+                label = "Hit roll"
+            elif rt == "wound":
+                label = "Wound roll"
+            elif rt == "save":
+                label = "Save roll"
+            append_dice(player, f"{label} made {int(roll_value)}, ability used to change value to 6")
+            source = str(spec.get("source", "") or "Ability")
+            append_action(player, f"{getattr(model, 'name', 'Model')}: {source} used to change {label} {int(roll_value)} to 6")
+        except Exception:
+            pass
+
+        return 6, decision_key
+
     def _maybe_apply_aspect_shrine_token(
         self,
         attacker: 'Model',
@@ -2591,17 +2872,24 @@ class WargearProfile:
         return roll_value, "skip"
 
     def _ignore_hit_modifier_rule_name(self, attacker: 'Model') -> Optional[str]:
-        """
-        Detect unit/leader abilities that allow ignoring BS and Hit roll modifiers for ranged attacks.
-        Returns the ability name if matched, otherwise None.
-        """
+        rule = None
         try:
-            parent = getattr(self, "parent_wargear", None)
-            if parent is None or not bool(parent.is_ranged()):
-                return None
+            rule = self._ignore_hit_modifier_rule(attacker)
         except Exception:
+            rule = None
+        if not rule:
             return None
+        return str(rule.get("name") or "Ignore modifiers")
 
+    def _ignore_hit_modifier_rule(self, attacker: 'Model') -> Optional[dict]:
+        """
+        Detect unit/leader abilities that allow ignoring BS/WS and Hit roll modifiers.
+        Returns a rule dict with:
+            - name: ability name
+            - attack_type: "ranged"|"melee"|"any"
+            - skill_kinds: set("ballistic","weapon")
+            - allow_hit: bool
+        """
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
             return None
@@ -2637,15 +2925,25 @@ class WargearProfile:
             if not text:
                 continue
             low = text.lower()
-            if "ignore any or all modifiers" not in low:
-                continue
-            if "ballistic skill" not in low:
+            if "ignore" not in low or "modifier" not in low:
                 continue
             if "hit roll" not in low:
                 continue
-            if ("ranged attack" not in low) and ("ranged weapon" not in low):
+            has_bs = "ballistic skill" in low
+            has_ws = "weapon skill" in low
+            if not has_bs and not has_ws:
                 continue
-            return str(name or "Ignore modifiers")
+            attack_type = "any"
+            if ("ranged attack" in low) or ("ranged attacks" in low) or ("ranged weapon" in low):
+                attack_type = "ranged"
+            if ("melee attack" in low) or ("melee attacks" in low) or ("melee weapon" in low):
+                attack_type = "melee" if attack_type == "any" else "any"
+            return {
+                "name": str(name or "Ignore modifiers"),
+                "attack_type": attack_type,
+                "skill_kinds": {"ballistic" if has_bs else None, "weapon" if has_ws else None} - {None},
+                "allow_hit": True,
+            }
         return None
 
     def _hit_target_with_tracking(
@@ -3110,6 +3408,18 @@ class WargearProfile:
                 dice_roll = int(new_roll)
                 hit_result['roll'] = dice_roll
                 hit_result['special_effects'].append("Leading ability: set roll to 6")
+            new_roll, decision = self._maybe_apply_model_unmodified_six(
+                attacker,
+                roll_type="hit",
+                roll_value=dice_roll,
+                needed=6,
+                attacker=attacker,
+                target=target,
+            )
+            if new_roll is not None and int(new_roll) != int(dice_roll):
+                dice_roll = int(new_roll)
+                hit_result['roll'] = dice_roll
+                hit_result['special_effects'].append("Ability: set roll to 6")
             new_roll, decision = self._maybe_apply_aspect_shrine_token(
                 attacker,
                 target,
@@ -3545,6 +3855,43 @@ class WargearProfile:
             hit_result["base_skill"] = base_skill
             return hit_result
 
+        def _resolve_modifier_choice(
+            mods,
+            *,
+            choice_key: str,
+            provider_attr: str,
+            ability_label: str,
+            player=None,
+            game_map=None,
+        ):
+            if roll_value is None and mods:
+                choice = attack_instance.get(choice_key)
+                options = options_for_signed_pairs(mods)
+                if choice is None:
+                    if options:
+                        provider = getattr(game_map, provider_attr, None) if game_map is not None else None
+                        if callable(provider):
+                            try:
+                                choice = provider(
+                                    player=player,
+                                    attacker=attacker,
+                                    target=target,
+                                    weapon_profile=self,
+                                    ability_name=ability_label,
+                                    choices=options,
+                                )
+                            except Exception:
+                                choice = None
+                    if choice not in options:
+                        choice = CHOICE_KEEP_ALL
+                    attack_instance[choice_key] = choice
+                if choice is None:
+                    choice = CHOICE_KEEP_ALL
+                if choice != CHOICE_KEEP_ALL:
+                    kept, ignored = filter_signed_modifiers(mods, choice)
+                    return choice, kept, ignored
+            return CHOICE_KEEP_ALL, mods, []
+
         driven_by_ultimate_rage = False
         driven_rule_name = ""
         try:
@@ -3564,15 +3911,36 @@ class WargearProfile:
             driven_by_ultimate_rage = False
             driven_rule_name = ""
 
-        ignore_rule_name = None
+        ignore_rule = None
         try:
-            ignore_rule_name = self._ignore_hit_modifier_rule_name(attacker)
+            ignore_rule = self._ignore_hit_modifier_rule(attacker)
         except Exception:
-            ignore_rule_name = None
+            ignore_rule = None
 
-        if ignore_rule_name:
-            ignore_choice = attack_instance.get("hit_modifier_choice")
-            if ignore_choice is None and roll_value is None and (skill_mods or hit_mods):
+        if ignore_rule:
+            rule_attack_type = str(ignore_rule.get("attack_type") or "any").strip().lower()
+            if rule_attack_type == "ranged" and not attack_is_ranged:
+                ignore_rule = None
+            elif rule_attack_type == "melee" and not attack_is_melee:
+                ignore_rule = None
+        if ignore_rule:
+            skill_kinds = set(ignore_rule.get("skill_kinds") or ())
+            allow_hit = bool(ignore_rule.get("allow_hit", True))
+            allow_skill = False
+            skill_label = "Skill"
+            if attack_is_melee:
+                allow_skill = "weapon" in skill_kinds
+                skill_label = "Weapon Skill"
+            elif attack_is_ranged:
+                allow_skill = "ballistic" in skill_kinds
+                skill_label = "Ballistic Skill"
+            else:
+                allow_skill = bool(skill_kinds)
+                if "weapon" in skill_kinds:
+                    skill_label = "Weapon Skill"
+                elif "ballistic" in skill_kinds:
+                    skill_label = "Ballistic Skill"
+            if allow_skill or allow_hit:
                 player = None
                 game_map = None
                 try:
@@ -3583,38 +3951,35 @@ class WargearProfile:
                 except Exception:
                     player = None
                     game_map = None
-                combined_vals = [int(val) for val, _ in list(skill_mods or [])] + [int(val) for val, _ in list(hit_mods or [])]
-                options = options_for_signed_values(combined_vals)
-                choice = None
-                if options:
-                    provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
-                    if callable(provider):
-                        try:
-                            choice = provider(
-                                player=player,
-                                attacker=attacker,
-                                target=target,
-                                weapon_profile=self,
-                                ability_name=ignore_rule_name,
-                                choices=options,
-                            )
-                        except Exception:
-                            choice = None
-                if choice not in (options or []):
-                    choice = CHOICE_KEEP_ALL
-                attack_instance["hit_modifier_choice"] = choice
-                ignore_choice = choice
-            if ignore_choice is None:
-                ignore_choice = CHOICE_KEEP_ALL
-            if ignore_choice != CHOICE_KEEP_ALL:
-                kept_skill, _ignored_skill = filter_signed_modifiers(skill_mods, ignore_choice)
-                kept_hit, _ignored_hit = filter_signed_modifiers(hit_mods, ignore_choice)
-                skill_mods = kept_skill
-                hit_mods = kept_hit
+                if allow_skill and skill_mods:
+                    provider_attr = "skill_modifier_choice_provider"
+                    if game_map is not None and not callable(getattr(game_map, provider_attr, None)):
+                        provider_attr = "hit_modifier_choice_provider"
+                    _choice, skill_mods, _ignored = _resolve_modifier_choice(
+                        skill_mods,
+                        choice_key="skill_modifier_choice",
+                        provider_attr=provider_attr,
+                        ability_label=f"{ignore_rule.get('name', 'Ignore modifiers')} ({skill_label})",
+                        player=player,
+                        game_map=game_map,
+                    )
+                if allow_hit and hit_mods:
+                    _choice, hit_mods, _ignored = _resolve_modifier_choice(
+                        hit_mods,
+                        choice_key="hit_modifier_choice",
+                        provider_attr="hit_modifier_choice_provider",
+                        ability_label=f"{ignore_rule.get('name', 'Ignore modifiers')} (Hit roll)",
+                        player=player,
+                        game_map=game_map,
+                    )
 
         if driven_by_ultimate_rage:
             skill_choice = attack_instance.get("skill_modifier_choice")
             hit_choice = attack_instance.get("hit_modifier_choice")
+            ignored_skill = []
+            ignored_hit = []
+            skill_filtered = False
+            hit_filtered = False
             if roll_value is None and skill_choice is None and skill_mods:
                 player = None
                 game_map = None
@@ -3626,26 +3991,18 @@ class WargearProfile:
                 except Exception:
                     player = None
                     game_map = None
-                options = options_for_signed_pairs(skill_mods)
-                if options:
-                    choice = None
-                    provider = getattr(game_map, "skill_modifier_choice_provider", None) if game_map is not None else None
-                    if callable(provider):
-                        try:
-                            choice = provider(
-                                player=player,
-                                attacker=attacker,
-                                target=target,
-                                weapon_profile=self,
-                                ability_name=f"{driven_rule_name} (Weapon Skill)",
-                                choices=options,
-                            )
-                        except Exception:
-                            choice = None
-                    if choice not in options:
-                        choice = CHOICE_KEEP_ALL
-                    attack_instance["skill_modifier_choice"] = choice
-                    skill_choice = choice
+                choice, skill_mods, ignored_skill = _resolve_modifier_choice(
+                    skill_mods,
+                    choice_key="skill_modifier_choice",
+                    provider_attr="skill_modifier_choice_provider"
+                    if (game_map is None or callable(getattr(game_map, "skill_modifier_choice_provider", None)))
+                    else "hit_modifier_choice_provider",
+                    ability_label=f"{driven_rule_name} (Weapon Skill)",
+                    player=player,
+                    game_map=game_map,
+                )
+                skill_choice = choice
+                skill_filtered = True
             if roll_value is None and hit_choice is None and hit_mods:
                 player = None
                 game_map = None
@@ -3657,33 +4014,24 @@ class WargearProfile:
                 except Exception:
                     player = None
                     game_map = None
-                options = options_for_signed_pairs(hit_mods)
-                if options:
-                    choice = None
-                    provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
-                    if callable(provider):
-                        try:
-                            choice = provider(
-                                player=player,
-                                attacker=attacker,
-                                target=target,
-                                weapon_profile=self,
-                                ability_name=f"{driven_rule_name} (Hit roll)",
-                                choices=options,
-                            )
-                        except Exception:
-                            choice = None
-                    if choice not in options:
-                        choice = CHOICE_KEEP_ALL
-                    attack_instance["hit_modifier_choice"] = choice
-                    hit_choice = choice
+                choice, hit_mods, ignored_hit = _resolve_modifier_choice(
+                    hit_mods,
+                    choice_key="hit_modifier_choice",
+                    provider_attr="hit_modifier_choice_provider",
+                    ability_label=f"{driven_rule_name} (Hit roll)",
+                    player=player,
+                    game_map=game_map,
+                )
+                hit_choice = choice
+                hit_filtered = True
             if skill_choice is None:
                 skill_choice = CHOICE_KEEP_ALL
             if hit_choice is None:
                 hit_choice = CHOICE_KEEP_ALL
             if skill_choice != CHOICE_KEEP_ALL:
-                kept_skill, ignored_skill = filter_signed_modifiers(skill_mods, skill_choice)
-                skill_mods = kept_skill
+                if not skill_filtered:
+                    kept_skill, ignored_skill = filter_signed_modifiers(skill_mods, skill_choice)
+                    skill_mods = kept_skill
                 try:
                     if ignored_skill:
                         sr = getattr(attacker_unit, "special_rules", None)
@@ -3711,8 +4059,9 @@ class WargearProfile:
                 except Exception:
                     pass
             if hit_choice != CHOICE_KEEP_ALL:
-                kept_hit, ignored_hit = filter_signed_modifiers(hit_mods, hit_choice)
-                hit_mods = kept_hit
+                if not hit_filtered:
+                    kept_hit, ignored_hit = filter_signed_modifiers(hit_mods, hit_choice)
+                    hit_mods = kept_hit
                 try:
                     if ignored_hit:
                         sr = getattr(attacker_unit, "special_rules", None)
@@ -4834,6 +5183,19 @@ class WargearProfile:
             hit_result['roll'] = dice_roll
             hit_result['special_effects'].append("Leading ability: set roll to 6")
 
+        new_roll, decision = self._maybe_apply_model_unmodified_six(
+            attacker,
+            roll_type="hit",
+            roll_value=dice_roll,
+            needed=final_needed,
+            attacker=attacker,
+            target=target,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            hit_result['roll'] = dice_roll
+            hit_result['special_effects'].append("Ability: set roll to 6")
+
         # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         new_roll, decision = self._maybe_apply_aspect_shrine_token(
             attacker,
@@ -5016,6 +5378,9 @@ class WargearProfile:
                     if choice == "RENDAX":
                         martial_katah_lethal = True
                     elif choice == "DACATARAI":
+                        martial_katah_sustained = True
+                    elif choice == "BOTH":
+                        martial_katah_lethal = True
                         martial_katah_sustained = True
         except Exception:
             martial_katah_lethal = False
@@ -7260,6 +7625,19 @@ class WargearProfile:
             wound_result['roll'] = dice_roll
             wound_result['special_effects'].append("Leading ability: set roll to 6")
 
+        new_roll, decision = self._maybe_apply_model_unmodified_six(
+            attacker,
+            roll_type="wound",
+            roll_value=dice_roll,
+            needed=needed_for_prompt,
+            attacker=attacker,
+            target=target,
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            wound_result['roll'] = dice_roll
+            wound_result['special_effects'].append("Ability: set roll to 6")
+
         # Aspect Shrine Token (Aeldari): optionally set the roll to an unmodified 6.
         new_roll, decision = self._maybe_apply_aspect_shrine_token(
             attacker,
@@ -7787,6 +8165,20 @@ class WargearProfile:
                 )
             except Exception:
                 pass
+
+        # Model ability: once per battle, optionally set save roll to an unmodified 6.
+        new_roll, decision = self._maybe_apply_model_unmodified_six(
+            target_model,
+            roll_type="save",
+            roll_value=dice_roll,
+            needed=save_value,
+            attacker=None,
+            target=getattr(target_model, "parent_unit", None),
+        )
+        if new_roll is not None and int(new_roll) != int(dice_roll):
+            dice_roll = int(new_roll)
+            save_result['roll'] = dice_roll
+            save_result['special_effects'].append("Ability: set roll to 6")
         
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             save_result['saved'] = False
@@ -7973,6 +8365,15 @@ class WargearProfile:
         }
         rerolls_allowed = bool(allow_rerolls)
 
+        damage_taken_override = 0
+        damage_taken_source = ""
+        try:
+            if target_model is not None and hasattr(target_model, "get_temporary_damage_taken_override"):
+                damage_taken_override, damage_taken_source = target_model.get_temporary_damage_taken_override()
+        except Exception:
+            damage_taken_override = 0
+            damage_taken_source = ""
+
         damage_override = 0
         damage_override_source = ""
         try:
@@ -7988,7 +8389,17 @@ class WargearProfile:
             damage_override_source = ""
         
         # Calculate base Damage characteristic with detailed tracking
-        if damage_override:
+        if damage_taken_override:
+            try:
+                damage_value = int(damage_taken_override)
+            except Exception:
+                damage_value = 0
+            damage_result["damage_expression"] = str(damage_taken_override)
+            damage_result["damage_rolled"] = int(damage_value)
+            if damage_taken_source:
+                damage_result["special_effects"].append(f"{damage_taken_source}: Damage {int(damage_value)}")
+            rerolls_allowed = False
+        elif damage_override:
             try:
                 damage_value = int(damage_override)
             except Exception:

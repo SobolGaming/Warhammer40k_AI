@@ -373,6 +373,16 @@ class Player:
             return members if members else [unit]
         return [unit]
 
+    def _unit_is_alive_or_unknown(self, unit) -> bool:
+        if unit is None:
+            return False
+        alive_attr = getattr(unit, "is_alive", None)
+        if callable(alive_attr):
+            return bool(alive_attr())
+        if alive_attr is None:
+            return True
+        return bool(alive_attr)
+
     def _should_preview_optional_ability(self, key: str, context: dict, *, assume: bool | None) -> bool:
         if assume is True:
             return True
@@ -422,7 +432,7 @@ class Player:
         from warhammer40k_ai.utility.aura_utils import unit_within_range_of_unit
 
         for u in list(getattr(army, "units", []) or []):
-            if not u.is_alive():
+            if not self._unit_is_alive_or_unknown(u):
                 continue
             has_ability = False
             for ab in (getattr(u, "possible_abilities", []) or []):
@@ -500,7 +510,7 @@ class Player:
 
         names: list[str] = []
         for u in list(getattr(army, "units", []) or []):
-            if not u.is_alive():
+            if not self._unit_is_alive_or_unknown(u):
                 continue
             sr = getattr(u, "special_rules", None)
             if not isinstance(sr, dict):
@@ -587,7 +597,7 @@ class Player:
         auto_specs: list[dict] = []
         optional_specs: list[dict] = []
         for u in list(getattr(army, "units", []) or []):
-            if not u.is_alive():
+            if not self._unit_is_alive_or_unknown(u):
                 continue
             sr = getattr(u, "special_rules", None)
             if not isinstance(sr, dict):
@@ -707,7 +717,7 @@ class Player:
                 raise TypeError("special_rules must be a dict for Gift of Foresight.")
             if not sr.get("enhancement_free_command_reroll_once_per_battle_round", False):
                 continue
-            if not u.is_alive():
+            if not self._unit_is_alive_or_unknown(u):
                 continue
             return True
         return False
@@ -722,10 +732,7 @@ class Player:
                 continue
             if not sr.get("enhancement_faultless_opportunist", False):
                 continue
-            try:
-                if callable(getattr(u, "is_alive", None)) and not u.is_alive():
-                    continue
-            except Exception:
+            if not self._unit_is_alive_or_unknown(u):
                 continue
             return True
         return False
@@ -1050,7 +1057,7 @@ class Player:
         """Compute the average distance of the player's alive units to the objective."""
         distances = []
         for unit in self.get_army().units:
-            if unit.is_alive() and unit.deployed:
+            if self._unit_is_alive_or_unknown(unit) and unit.deployed:
                 # Find the model closest to the objective
                 obj_pos = (objective.location.x, objective.location.y, objective.location.z)
                 closest_distance = float('inf')

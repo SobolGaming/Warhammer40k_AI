@@ -919,6 +919,110 @@ class Game:
         - Enhancements that grant Fight First (Once per battle, start of Fight phase).
         """
         pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname:
+            for p in list(getattr(self, "players", []) or []):
+                if p is None:
+                    continue
+                army = p.get_army()
+                if army is None:
+                    continue
+                for unit in list(army.units):
+                    if unit is None:
+                        continue
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None or root is not unit:
+                        continue
+                    if not root.is_alive():
+                        continue
+                    try:
+                        if not getattr(root, "deployed", True):
+                            continue
+                        if root.is_in_reserves() or root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+
+                    # Model-level: start-of-any-phase damage set to 1 (once per battle).
+                    try:
+                        models = list(root.get_attached_unit_models() or [])
+                    except Exception:
+                        models = list(getattr(root, "models", []) or [])
+                    for model in list(models or []):
+                        if not getattr(model, "is_alive", False):
+                            continue
+                        specs = []
+                        try:
+                            specs = list(root.model_start_any_phase_damage_set_one_specs(model) or [])
+                        except Exception:
+                            specs = []
+                        if not specs:
+                            continue
+                        for spec in specs:
+                            key = str(spec.get("key") or "start_any_phase_damage_set_one").strip().lower()
+                            if not key:
+                                key = "start_any_phase_damage_set_one"
+                            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                                continue
+                            unit_id = maybe_entity_id(root)
+                            model_id = maybe_entity_id(model)
+                            ability_name = str(spec.get("source", "") or "Start of phase damage set to 1").strip()
+                            ctx = {
+                                "ability_name": ability_name,
+                                "unit": getattr(root, "name", "") or "",
+                                "model": getattr(model, "name", "") or "",
+                                "phase": pname.replace("_", " ").title(),
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "buff_key": key,
+                            }
+                            message = (
+                                f"Activate {ability_name} for {getattr(model, 'name', 'Model')} "
+                                f"({getattr(root, 'name', 'Unit')})?"
+                            )
+                            self._queue_optional_ability_confirmation(
+                                player=p,
+                                ability_key="start_any_phase_damage_set_one",
+                                ability_name=ability_name,
+                                message=message,
+                                context=ctx,
+                                payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
+                                instance_key=f"{model_id}:{key}",
+                            )
+
+                    # Unit-level: start-of-any-phase FNP (once per battle).
+                    try:
+                        specs = list(root.unit_start_any_phase_fnp_specs() or [])
+                    except Exception:
+                        specs = []
+                    for spec in specs:
+                        ability_key = str(spec.get("ability_key") or "start_any_phase_fnp").strip().lower()
+                        if not ability_key:
+                            ability_key = "start_any_phase_fnp"
+                        if root.has_used_unit_once_per_battle(ability_key):
+                            continue
+                        unit_id = maybe_entity_id(root)
+                        ability_name = str(spec.get("source", "") or "Start of phase FNP").strip()
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(root, "name", "") or "",
+                            "phase": pname.replace("_", " ").title(),
+                            "unit_id": unit_id,
+                            "ability_key": ability_key,
+                            "fnp_value": int(spec.get("value", 0) or 0),
+                        }
+                        message = f"Activate {ability_name} for {getattr(root, 'name', 'Unit')}?"
+                        self._queue_optional_ability_confirmation(
+                            player=p,
+                            ability_key="start_any_phase_fnp",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={"unit_id": unit_id, "ability_key": ability_key},
+                            instance_key=f"{unit_id}:{ability_key}",
+                        )
         if pname == "FIGHT_PHASE":
             if player is None:
                 return
@@ -1046,6 +1150,115 @@ class Game:
                     payload={"unit_id": ctx.get("unit_id")},
                     instance_key=str(ctx.get("unit_id") or ""),
                 )
+
+            # Moment Shackle: once per battle, start of Fight phase, choose one effect.
+            from .decision_kinds import DECISION_CHOOSE_MOMENT_SHACKLE
+            from .decisions import DecisionOption, DecisionRequest
+
+            pending_models = set()
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if getattr(req, "decision_type", None) != DECISION_CHOOSE_MOMENT_SHACKLE:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                try:
+                    if not getattr(unit, "deployed", True):
+                        continue
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    models = list(unit.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(unit, "models", []) or [])
+                for model in list(models or []):
+                    if not getattr(model, "is_alive", False):
+                        continue
+                    spec = None
+                    try:
+                        spec = unit.model_moment_shackle_spec(model)
+                    except Exception:
+                        spec = None
+                    if not spec:
+                        continue
+                    ability_key = str(spec.get("ability_key") or "moment_shackle").strip().lower() or "moment_shackle"
+                    if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                        continue
+                    unit_id = maybe_entity_id(unit)
+                    model_id = maybe_entity_id(model)
+                    if model_id and str(model_id) in pending_models:
+                        continue
+                    ability_name = str(spec.get("source") or "Moment Shackle").strip() or "Moment Shackle"
+                    weapon_name = str(spec.get("weapon_name") or "Watcher's Axe").strip() or "Watcher's Axe"
+                    try:
+                        attacks = int(spec.get("attacks", 12) or 12)
+                    except Exception:
+                        attacks = 12
+                    try:
+                        invuln = int(spec.get("invuln", 2) or 2)
+                    except Exception:
+                        invuln = 2
+                    ctx = {
+                        "ability_name": ability_name,
+                        "unit": getattr(unit, "name", "") or "",
+                        "model": getattr(model, "name", "") or "",
+                        "phase": "Fight phase",
+                        "unit_id": unit_id,
+                        "model_id": model_id,
+                        "ability_key": ability_key,
+                    }
+                    options = [
+                        DecisionOption.create(
+                            "Do not use",
+                            payload={
+                                "action": "skip",
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                                "summary": "Do not use Moment Shackle this phase.",
+                            },
+                        ),
+                        DecisionOption.create(
+                            f"{weapon_name} Attacks {int(attacks)}",
+                            payload={
+                                "choice": "attacks",
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                                "weapon_name": weapon_name,
+                                "attacks": int(attacks),
+                                "summary": f"{weapon_name} Attacks set to {int(attacks)} until end of phase.",
+                            },
+                        ),
+                        DecisionOption.create(
+                            f"Invulnerable Save {int(invuln)}+",
+                            payload={
+                                "choice": "invuln",
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "ability_key": ability_key,
+                                "invuln": int(invuln),
+                                "summary": f"Gain a {int(invuln)}+ invulnerable save until end of phase.",
+                            },
+                        ),
+                    ]
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_MOMENT_SHACKLE,
+                        f"{ability_name}: select one effect.",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
             return
 
         if pname != "COMMAND_PHASE":
@@ -2539,6 +2752,10 @@ class Game:
                 ability = root.get_end_of_opponent_turn_strategic_reserves_ability()
                 if not ability:
                     continue
+                ability_key = str(ability.get("ability_key") or "opponent_turn_strategic_reserves").strip().lower()
+                if ability.get("once_per_battle") and ability_key:
+                    if root.has_used_unit_once_per_battle(ability_key):
+                        continue
                 engaged = False
                 for enemy in list(game_map.get_enemy_units(root) or []):
                     if not enemy.is_alive():
@@ -2561,11 +2778,14 @@ class Game:
                 if unit is None:
                     continue
                 unit_id = maybe_entity_id(unit)
+                ability_key = str(ability.get("ability_key") or "opponent_turn_strategic_reserves").strip().lower()
                 ctx = {
                     "ability_name": ability.get("name", "") or "",
                     "unit": getattr(unit, "name", "") or "",
                     "phase": "End of opponent's turn",
                     "unit_id": unit_id,
+                    "ability_key": ability_key,
+                    "once_per_battle": bool(ability.get("once_per_battle")),
                 }
                 message = (
                     f"{getattr(unit, 'name', 'Unit')} can enter Strategic Reserves at the end of the opponent's turn.\n\n"
@@ -2577,7 +2797,7 @@ class Game:
                     ability_name=ctx["ability_name"] or "Strategic Reserves",
                     message=message,
                     context=ctx,
-                    payload={"unit_id": unit_id},
+                    payload={"unit_id": unit_id, "ability_key": ability_key, "once_per_battle": bool(ability.get("once_per_battle"))},
                     instance_key=str(unit_id or ""),
                 )
 
@@ -4984,6 +5204,7 @@ class Game:
         range_value: int | None = None,
         allow_engagement_range: bool | None = None,
         allowed_model_ids: list[str] | None = None,
+        allow_skip: bool | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -5018,6 +5239,8 @@ class Game:
         ctx["max_distance"] = int(max_distance)
         if allowed_model_ids is not None:
             ctx["allowed_model_ids"] = list(allowed_model_ids)
+        if allow_skip is not None:
+            ctx["allow_skip"] = bool(allow_skip)
         request = DecisionRequest.create(
             DECISION_MOVE_UNIT,
             f"Move {getattr(unit, 'name', 'Unit')} ({movement_type})",
@@ -5282,6 +5505,8 @@ class Game:
             "waaagh",
             "possessed_lord",
             "fight_phase_melee_ap_boost",
+            "start_any_phase_damage_set_one",
+            "start_any_phase_fnp",
             "movement_phase_move_weapon_bonus",
             "hand_of_asuryan",
             "flickerjump",
@@ -5298,6 +5523,8 @@ class Game:
             "battle_focus_flitting_shadows",
             "battle_focus_sudden_strike",
             "battle_focus_fade_back",
+            "sentinel_storm",
+            "sweeping_advance",
         ):
             return
         selected = None
@@ -5370,6 +5597,168 @@ class Game:
                 return
             ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
             model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
+            return
+
+        if ability_key == "start_any_phase_damage_set_one":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(payload.get("buff_key") or ctx.get("buff_key") or "start_any_phase_damage_set_one").strip().lower()
+            if not key:
+                key = "start_any_phase_damage_set_one"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Start of phase damage set to 1").strip()
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            if hasattr(model, "set_temporary_damage_taken_override"):
+                model.set_temporary_damage_taken_override(
+                    key=key,
+                    value=1,
+                    source=ability_name,
+                    expires_phase=phase_name,
+                )
+            model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
+            return
+
+        if ability_key == "start_any_phase_fnp":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                if not getattr(root, "deployed", True):
+                    return
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            ability_name = str(ctx.get("ability_name", "") or "Start of phase FNP").strip()
+            ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "start_any_phase_fnp").strip().lower()
+            if not ability_key:
+                ability_key = "start_any_phase_fnp"
+            if root.has_used_unit_once_per_battle(ability_key):
+                return
+            try:
+                fnp_val = int(ctx.get("fnp_value", 0) or 0)
+            except Exception:
+                fnp_val = 0
+            if fnp_val <= 0:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            for m in list(models or []):
+                if not getattr(m, "is_alive", False):
+                    continue
+                if hasattr(m, "set_temporary_fnp"):
+                    m.set_temporary_fnp(
+                        key=f"{ability_key}:{get_entity_id(m)}",
+                        value=fnp_val,
+                        source=ability_name,
+                        expires_phase=phase_name,
+                    )
+            root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
+            return
+
+        if ability_key == "sweeping_advance":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            model = self._resolve_model_by_id(model_id)
+            if unit is None or model is None:
+                return
+            if not unit.is_alive() or not getattr(unit, "deployed", True):
+                return
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    return
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                    return
+            except Exception:
+                return
+            key = str(payload.get("ability_key") or ctx.get("ability_key") or "sweeping_advance").strip().lower()
+            if not key:
+                key = "sweeping_advance"
+            try:
+                if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                    return
+            except Exception:
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Sweeping Advance").strip() or "Sweeping Advance"
+
+            engaged = False
+            try:
+                enemies = list(getattr(self.map, "get_enemy_units", lambda _u: [])(root) or [])
+            except Exception:
+                enemies = []
+            for enemy in list(enemies or []):
+                if enemy is None or not enemy.is_alive():
+                    continue
+                try:
+                    if self.map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                except Exception:
+                    continue
+
+            movement_type = "fall_back" if engaged else "move"
+            try:
+                max_distance = int(root.get_effective_model_characteristic(model, "movement", game_map=self.map) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                try:
+                    max_distance = int(getattr(root, "movement", 0) or 0)
+                except Exception:
+                    max_distance = 0
+            if max_distance <= 0:
+                return
+
+            model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            self._queue_reactive_move_movement_decision(
+                player=player,
+                unit=root,
+                max_distance=max_distance,
+                kind="sweeping_advance",
+                movement_type=movement_type,
+                source=ability_name,
+                allow_skip=False,
+            )
             return
 
         if ability_key == "movement_phase_move_weapon_bonus":
@@ -5458,6 +5847,39 @@ class Game:
             if ability_name:
                 sr["flickerjump_source"] = ability_name
             unit.special_rules = sr
+            return
+
+        if ability_key == "sentinel_storm":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                if not getattr(root, "deployed", True):
+                    return
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            ability_name = str(ctx.get("ability_name", "") or "Shoot again").strip()
+            ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "post_shoot_shoot_again").strip().lower()
+            if not ability_key:
+                ability_key = "post_shoot_shoot_again"
+            if root.has_used_unit_once_per_battle(ability_key):
+                return
+            root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            self._queue_shoot_again_decision(player=player, unit=root, source=ability_name)
             return
 
         if ability_key == "daemonic_patrons":
@@ -5556,6 +5978,8 @@ class Game:
             unit = self._resolve_unit_by_id(unit_id)
             if unit is None:
                 return
+            per_battle = bool(payload.get("once_per_battle")) or bool(ctx.get("once_per_battle"))
+            per_battle_key = str(payload.get("ability_key") or ctx.get("ability_key") or "opponent_turn_strategic_reserves").strip().lower()
             used = unit.enter_strategic_reserves_midgame(
                 game=self,
                 game_map=getattr(self, "map", None),
@@ -5570,6 +5994,8 @@ class Game:
                         player,
                         f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.",
                     )
+                if per_battle and per_battle_key:
+                    unit.mark_unit_once_per_battle_used(per_battle_key, ability_name=ability_name)
             return
 
         if ability_key == "opponent_turn_destroyed_reposition":
@@ -5927,6 +6353,39 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _queue_shoot_again_decision(
+        self,
+        *,
+        player,
+        unit,
+        source: str | None,
+    ) -> DecisionRequest | None:
+        """Queue a standard shooting declaration for a unit that can shoot again."""
+        if player is None or unit is None:
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        options = [
+            DecisionOption.create("Confirm", payload={"action": "confirm", "unit_id": unit_id}),
+            DecisionOption.create("Skip", payload={"action": "skip", "unit_id": unit_id}),
+        ]
+        source = str(source or "Shoot again").strip() or "Shoot again"
+        ctx = {
+            "unit_id": unit_id,
+            "out_of_phase": True,
+            "shoot_again_source": source,
+        }
+        request = DecisionRequest.create(
+            DECISION_DECLARE_SHOTS,
+            f"{source}: Declare shots for {getattr(unit, 'name', 'Unit')}",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _maybe_queue_setup_reactive_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
         if request is None or result is None:
             return
@@ -6223,6 +6682,16 @@ class Game:
         model = self._resolve_model_by_id(model_id) if model_id else None
         if kind == "move_over":
             self.resolve_move_over_mortal_wounds(unit, model, target_unit, spec)
+            if spec.get("once_per_battle"):
+                ability_key = str(spec.get("ability_key") or "").strip().lower()
+                if ability_key:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is not None:
+                        ability_name = str(spec.get("source", "") or "Move-over mortals").strip() or "Move-over mortals"
+                        root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
             return
         if model is None:
             return
@@ -6767,6 +7236,12 @@ class Game:
                 return False
             return model in killed_models
 
+        def _unit_killed_target(target) -> bool:
+            if not isinstance(killing_models_by_target, dict):
+                return False
+            killed_models = killing_models_by_target.get(target)
+            return bool(killed_models)
+
         triggers: list[tuple[Any, dict, list[Any]]] = []
         for model in list(attacker_unit.models or []):
             if not getattr(model, "is_alive", False):
@@ -6801,6 +7276,32 @@ class Game:
                 if candidates:
                     triggers.append((model, spec, candidates))
 
+        unit_specs = attacker_unit.unit_post_shoot_battleshock_specs() or []
+        for spec in unit_specs:
+            infantry_only = bool(spec.get("infantry_only", False))
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                if infantry_only:
+                    is_infantry_fn = getattr(target_unit, "is_infantry", None)
+                    if callable(is_infantry_fn):
+                        is_infantry = bool(is_infantry_fn())
+                    else:
+                        is_infantry = bool(getattr(target_unit, "is_infantry", False))
+                    if not is_infantry:
+                        continue
+                if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if candidates:
+                triggers.append((None, spec, candidates))
+
         if not triggers:
             return
 
@@ -6818,8 +7319,13 @@ class Game:
                 except Exception:
                     modifier = 0
                 try:
-                    if spec.get("test_modifier_on_kill") and _model_killed_target(model, cand):
-                        modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
+                    if spec.get("test_modifier_on_kill"):
+                        if model is None:
+                            if _unit_killed_target(cand):
+                                modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
+                        else:
+                            if _model_killed_target(model, cand):
+                                modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
                 except Exception:
                     pass
                 payload = {"unit_id": get_entity_id(cand)}
@@ -6840,11 +7346,66 @@ class Game:
                 options=options,
                 context={
                     "attacker_unit_id": get_entity_id(attacker_unit),
-                    "model_id": get_entity_id(model),
+                    "model_id": get_entity_id(model) if model is not None else None,
                     "ability_name": ability_name,
                 },
             )
             self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_shoot_again(
+        self,
+        attacker_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Shoot-again abilities require an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        specs = root.unit_post_shoot_shoot_again_specs() or []
+        if not specs:
+            return
+        for spec in list(specs or []):
+            ability_name = str(spec.get("source", "") or "Shoot again").strip() or "Shoot again"
+            ability_key = str(spec.get("ability_key") or "post_shoot_shoot_again").strip().lower()
+            if not ability_key:
+                ability_key = "post_shoot_shoot_again"
+            if root.has_used_unit_once_per_battle(ability_key):
+                continue
+            unit_id = maybe_entity_id(root)
+            ctx = {
+                "ability_name": ability_name,
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "ability_key": ability_key,
+                "phase": "Shooting phase",
+            }
+            message = f"Use {ability_name} to shoot again for {getattr(root, 'name', 'Unit')}?"
+            self._queue_optional_ability_confirmation(
+                player=attacker_player,
+                ability_key="sentinel_storm",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "ability_key": ability_key},
+                instance_key=f"{unit_id}:{ability_key}",
+            )
 
     def _on_unit_shooting_resolved_post_shoot_disembark_wound_reroll(
         self,
@@ -8673,6 +9234,10 @@ class Game:
             move_types = set(spec.get("move_types") or [])
             if action_key not in move_types:
                 continue
+            if spec.get("once_per_battle"):
+                ability_key = str(spec.get("ability_key") or "").strip().lower()
+                if ability_key and root.has_used_unit_once_per_battle(ability_key):
+                    continue
             filtered = list(candidates)
             if spec.get("exclude_monster_vehicle"):
                 filtered = [
@@ -9178,6 +9743,93 @@ class Game:
                         candidates=candidates,
                         spec=spec,
                     )
+
+    def _on_phase_end_sweeping_advance(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: optional Sweeping Advance move for eligible models."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for unit in list(army.units or []):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                try:
+                    if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    models = list(getattr(unit, "models", []) or [])
+                except Exception:
+                    models = []
+                for model in list(models or []):
+                    if not getattr(model, "is_alive", True):
+                        continue
+                    try:
+                        specs = list(unit.model_end_of_fight_sweeping_advance_specs(model) or [])
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "sweeping_advance").strip().lower()
+                        if not key:
+                            key = "sweeping_advance"
+                        if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(root)
+                        model_id = maybe_entity_id(model)
+                        if not unit_id or not model_id:
+                            continue
+                        ability_name = str(spec.get("source", "") or "Sweeping Advance").strip() or "Sweeping Advance"
+                        message = f"Use {ability_name} for {getattr(unit, 'name', 'Unit')}?"
+                        ctx = {
+                            "ability_name": ability_name,
+                            "phase": "Fight phase",
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(model, "name", "") or "",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "ability_key": key,
+                        }
+                        self._queue_optional_ability_confirmation(
+                            player=p,
+                            ability_key="sweeping_advance",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "ability_key": key,
+                            },
+                            instance_key=f"{unit_id}:{model_id}",
+                        )
+        return
 
     def _resolve_charge_phase_bodyguard_loss(self, leader_unit, bodyguard, model, ability):
         if model is None:
@@ -14895,6 +15547,23 @@ class Game:
                 return None
             if not charging_unit.can_declare_charge_against(tgt, self, out_of_turn=True):
                 return None
+
+        if not out_of_turn and getattr(charging_unit.round_state, "advanced_this_round", False):
+            try:
+                always_ok = charging_unit._advance_and_charge_always_available()
+            except Exception:
+                always_ok = False
+            if not always_ok:
+                spec = None
+                try:
+                    spec = charging_unit._advance_and_charge_once_per_battle_spec()
+                except Exception:
+                    spec = None
+                if isinstance(spec, dict):
+                    ability_key = str(spec.get("ability_key") or "").strip().lower()
+                    if ability_key:
+                        ability_name = str(spec.get("source", "") or "Advance and Charge").strip() or "Advance and Charge"
+                        charging_unit.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
 
         if not hasattr(self, "event_system") or not hasattr(self.event_system, "publish"):
             raise RuntimeError("Event system missing for charge_declared event.")
