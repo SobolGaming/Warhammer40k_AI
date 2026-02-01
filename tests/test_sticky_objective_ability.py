@@ -60,6 +60,7 @@ class TestStickyObjectiveAbility(unittest.TestCase):
         player = Player("P1", control=PlayerControl.LOCAL, army=army)
 
         game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+        game.map.units = [unit]
 
         objective_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)
         objective = Objective(
@@ -89,6 +90,59 @@ class TestStickyObjectiveAbility(unittest.TestCase):
             "that objective marker remains under your control until your opponent's Level of Control over that "
             "objective marker is greater than yours at the end of a phase."
         )
+
+    def test_command_phase_sticky_objective_transport_clause_applies(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game, BattleRoundPhases
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        ability = {
+            "name": "Sadistic Raiders",
+            "description": (
+                "At the end of your Command phase, if you control an objective marker that this unit "
+                "(or a Transport it is embarked within) is within range of, that objective marker remains under "
+                "your control until your opponent's Level of Control over that objective marker is greater than "
+                "yours at the end of a phase."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Sticky Unit", abilities=[ability])
+        transport = _make_unit("Transport", abilities=[])
+        transport.keywords.append("Transport")
+        transport.transport_passengers = [unit]
+        unit.embarked_in = transport
+        unit.deployed = True
+        transport.deployed = True
+
+        # Keep the sticky unit far away; transport within range should satisfy the clause.
+        unit.models[0].set_location(100.0, 0.0, 0.0, 0.0)
+        transport.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+
+        army = Army("Test Faction", "Detachment")
+        army.faction_id = "TF"
+        army.add_unit(unit)
+        army.add_unit(transport)
+        player = Player("P1", control=PlayerControl.LOCAL, army=army)
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+        game.map.units = [unit, transport]
+
+        objective_point = ObjectivePoint(0.0, 0.0, 0.0, control_radius=3.0)
+        objective = Objective(
+            name="Objective",
+            category=ObjectiveCategory.PRIMARY,
+            points=0,
+            description="",
+            conditions=lambda _g: False,
+            location=objective_point,
+        )
+        game.map.objectives = [objective]
+
+        game.event_system.publish("phase_end", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+        self.assertIs(objective_point.sticky_controller, player)
 
 
 if __name__ == "__main__":

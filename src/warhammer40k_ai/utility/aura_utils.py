@@ -6,6 +6,7 @@ from typing import Iterable, Optional
 
 from shapely.ops import unary_union
 from shapely.geometry import Point as ShapelyPoint
+from .constants import ENGAGEMENT_RANGE_HORIZONTAL, ENGAGEMENT_RANGE_VERTICAL
 
 
 @dataclass(frozen=True)
@@ -234,6 +235,27 @@ def unit_within_range_of_unit(
         for tm in t_alive:
             if distance_between_models_bases_3d(sm, tm) <= r + 1e-6:
                 return True
+    return False
+
+
+def model_within_engagement_range_of_unit(model, target_unit) -> bool:
+    """Check if a single model is within Engagement Range of a target unit."""
+    if model is None or target_unit is None:
+        return False
+    if not getattr(model, "is_alive", False):
+        return False
+    get_collision = getattr(target_unit, "get_models_for_collision", None)
+    if callable(get_collision):
+        t_models = list(get_collision() or [])
+    else:
+        t_models = list(getattr(target_unit, "models", []) or [])
+    for t_model in t_models:
+        if not getattr(t_model, "is_alive", False):
+            continue
+        horizontal = float(horizontal_distance_between_bases_2d(model.model_base, t_model.model_base))
+        vertical = float(vertical_distance_between_bases(model.model_base, t_model.model_base))
+        if horizontal <= ENGAGEMENT_RANGE_HORIZONTAL and vertical <= ENGAGEMENT_RANGE_VERTICAL:
+            return True
     return False
 
 

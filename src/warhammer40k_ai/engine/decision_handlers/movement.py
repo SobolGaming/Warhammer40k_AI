@@ -733,6 +733,26 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             member.mark_brazen_fury_used(game)
     if movement_type == "reactive":
         _clear_battle_focus_reactive_flags(unit)
+        if str(ctx.get("reactive_move_kind", "") or "").strip() == "tactical_acumen":
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            player = None
+            try:
+                player = unit.get_parent_army().player
+            except Exception:
+                player = None
+            if player is None:
+                try:
+                    player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    player = None
+            sr["tactical_acumen_no_charge_turn_owner"] = str(getattr(player, "id", "") or "")
+            try:
+                sr["tactical_acumen_no_charge_turn"] = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                sr["tactical_acumen_no_charge_turn"] = 0
+            unit.special_rules = sr
     return None
 
 

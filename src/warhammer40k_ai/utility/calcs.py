@@ -1431,6 +1431,7 @@ def get_validation_rules(
     phase_move_types: set[str] = set()
     phase_move_terrain_only_types: set[str] = set()
     phase_engagement_types: set[str] = set()
+    phase_move_block_titanic_types: set[str] = set()
     auto_pass_desperate_escape = False
     try:
         sr = getattr(moving_unit, "special_rules", None)
@@ -1438,6 +1439,10 @@ def get_validation_rules(
             phase_move_types = _coerce_move_types(sr.get("bearer_unit_phase_move_types"))
             phase_move_terrain_only_types = _coerce_move_types(sr.get("bearer_unit_phase_move_terrain_only_types"))
             phase_engagement_types = _coerce_move_types(sr.get("bearer_unit_phase_move_engagement_types"))
+            phase_move_block_titanic_types = _coerce_move_types(sr.get("bearer_unit_phase_move_block_titanic_types"))
+            phase_move_types.update(_coerce_move_types(sr.get("titanic_phase_move_types")))
+            phase_engagement_types.update(_coerce_move_types(sr.get("titanic_phase_move_engagement_types")))
+            phase_move_block_titanic_types.update(_coerce_move_types(sr.get("titanic_phase_move_block_titanic_types")))
             auto_pass_desperate_escape = bool(sr.get("bearer_unit_auto_pass_desperate_escape"))
     except Exception:
         pass
@@ -1448,7 +1453,9 @@ def get_validation_rules(
         base_rules['can_move_through_friendly_models'] = True
         base_rules['can_move_through_terrain'] = True
         base_rules['ignore_enemy_models_blocking'] = True
-        if base_rules.get('block_titanic_models', False):
+        if move_tag in phase_move_block_titanic_types:
+            base_rules['block_titanic_models'] = True
+        elif base_rules.get('block_titanic_models', False):
             base_rules['block_titanic_models'] = False
     elif move_tag and move_tag in phase_move_terrain_only_types:
         base_rules['can_move_through_terrain'] = True

@@ -1648,6 +1648,8 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "On set up: until end of the turn, successful unmodified hit rolls with ranged attacks count as critical hits.",
         ),
+        ("AE", "Empyric Ambush"): ("Supported", "Leading: unit can declare a charge in a turn it used Flickerjump."),
+        ("AE", "Cluster Caltrops"): ("Supported", "Re-roll move-over mortal wound dice (one per model with Cluster Caltrops)."),
         ("AE", "SERVANT OF THE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
         ("AE", "SERVANT OFTHE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
         ("AE", "AVATAR OF THE WHISPERING GOD"): ("Supported", "Ynnari Epic Hero restriction enforced during army validation."),
@@ -1681,9 +1683,25 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Bearer has a 4+ invulnerable save and reduces allocated attack damage by 1.",
         ),
+        ("AE", "Shadow Field"): (
+            "Supported",
+            "Bearer cannot re-roll invulnerable saves; first failed invulnerable save breaks the invulnerable save for the rest of the battle.",
+        ),
         ("AE", "Crystalline Targeting"): (
             "Supported",
             "After shooting: select a hit enemy unit; friendly AELDARI attacks vs it improve AP by 1 until end of phase (per-target once per turn).",
+        ),
+        ("AE", "Whispering Web"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly keyword attacks score critical hits on X+ vs that unit until end of turn.",
+        ),
+        ("AE", "Death is Not Enough"): (
+            "Supported",
+            "After shooting: select a hit enemy unit (excluding MONSTER/VEHICLE) to take a Battle-shock test; apply the on-kill modifier if triggered.",
+        ),
+        ("AE", "Sonic Destruction"): (
+            "Supported",
+            "Vibro cannon attacks gain +S/AP/D per other friendly platform that targeted the same enemy unit this phase.",
         ),
         ("AE", "Fog of Dreams (Psychic)"): (
             "Supported",
@@ -1696,6 +1714,62 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AE", "Whirling Death"): (
             "Supported",
             "Leading: Advance without roll; +6\" Move; ignore vertical distance during Advance moves.",
+        ),
+        ("AE", "Tactical Acumen"): (
+            "Supported",
+            "Leading: after shooting, unit can make a Normal move up to X\" and cannot charge that turn.",
+        ),
+        ("AE", "Spirit Mark (Psychic)"): (
+            "Supported",
+            "Movement phase: select friendly WRAITH CONSTRUCT within range and a visible enemy; Sustained Hits vs that enemy until your next Movement phase.",
+        ),
+        ("AE", "Tears of Isha (Psychic)"): (
+            "Supported",
+            "Command phase: select friendly WRAITH CONSTRUCT within range; return 1 destroyed model (optional) or heal D3; each unit once per turn.",
+        ),
+        ("AE", "Word of the Phoenix (Psychic)"): (
+            "Supported",
+            "Leading: in your Command phase, on 2+ return D3+1 destroyed bodyguard models (excluding support weapon models).",
+        ),
+        ("AE", "Face of Death"): (
+            "Supported",
+            "After shooting: select a hit enemy unit to take a Battle-shock test at -1.",
+        ),
+        ("AE", "Fire Support"): (
+            "Supported",
+            "After shooting: select a hit enemy unit; friendly units disembarked from this transport re-roll Wound rolls vs it until end of phase.",
+        ),
+        ("AE", "Fleet of Foot"): (
+            "Supported",
+            "Fade Back Agile Manoeuvre without spending a Battle Focus token; does not consume phase maneuver usage.",
+        ),
+        ("AE", "Hand of Asuryan"): (
+            "Supported",
+            "Once per battle (when selected to shoot): Bloody Twins Damage 3 and gains ANTI-INFANTRY 5+ and DEVASTATING WOUNDS until end of phase.",
+        ),
+        ("AE", "Harvester of Souls"): (
+            "Supported",
+            "Leading: after selecting targets (single target), roll D6 for that unit and enemies within 3\"; on 5+ they suffer D3 mortal wounds after attacks.",
+        ),
+        ("AE", "Herald of Ynnead"): (
+            "Supported",
+            "Start of Fight phase: select engaged enemy unit; friendly AELDARI re-roll Wound rolls of 1 vs it until phase end.",
+        ),
+        ("AE", "Misfortune (Psychic)"): (
+            "Supported",
+            "End of Movement phase: select visible enemy within 18\"; that unit suffers -1 to wound rolls until your next Command phase (per-target once per turn).",
+        ),
+        ("AE", "Monofilament Web"): (
+            "Supported",
+            "After shooting with doomweaver hits, target is pinned (-2 Move/-2 Charge) until your next turn.",
+        ),
+        ("AE", "Piratical Raiders"): (
+            "Supported",
+            "Start of battle: select an enemy unit; this unit's weapons gain Lethal Hits and Precision vs that unit.",
+        ),
+        ("AE", "Point-blank Devastation"): (
+            "Supported",
+            "Within half range: can re-roll attack dice for heavy wraithcannon or suncannon.",
         ),
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
@@ -1986,6 +2060,7 @@ def _classify_ability_base(
     phase_terrain_support = _leading_unit_move_and_phase_terrain_support(description)
     move_over_friendly_support = _move_over_friendly_monster_vehicle_support(description)
     move_over_low_terrain_support = _move_over_low_terrain_support(description)
+    titanic_move_through_support = _titanic_move_through_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
@@ -1998,6 +2073,7 @@ def _classify_ability_base(
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
     unit_wound_reroll_support = _unit_wound_reroll_ones_support(description)
     target_hit_penalty_support = _target_hit_roll_penalty_support(description)
+    defensive_wound_penalty_support = _defensive_wound_penalty_support(description)
     strength_gt_toughness_wound_penalty_support = _defensive_strength_gt_toughness_wound_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
@@ -2005,6 +2081,7 @@ def _classify_ability_base(
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
     transport_support = _transport_disembark_support(description)
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
+    end_of_fight_embark_support = _end_of_fight_embark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     sticky_support = _sticky_objective_support(description)
@@ -2025,11 +2102,14 @@ def _classify_ability_base(
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
+    fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_visible_wound_bonus_support = _movement_phase_end_visible_wound_bonus_support(description)
+    movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
+    grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
@@ -2071,12 +2151,16 @@ def _classify_ability_base(
         return move_over_friendly_support
     if move_over_low_terrain_support:
         return move_over_low_terrain_support
+    if titanic_move_through_support:
+        return titanic_move_through_support
     if move_over_mortal_support:
         return move_over_mortal_support
     if ranged_ignore_bs_hit_support:
         return ranged_ignore_bs_hit_support
     if ranged_targeting_restriction_support:
         return ranged_targeting_restriction_support
+    if fight_phase_below_starting_strength_fight_first_support:
+        return fight_phase_below_starting_strength_fight_first_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)
@@ -2157,6 +2241,8 @@ def _classify_ability_base(
         return unit_wound_reroll_support
     if target_hit_penalty_support:
         return target_hit_penalty_support
+    if defensive_wound_penalty_support:
+        return defensive_wound_penalty_support
     if strength_gt_toughness_wound_penalty_support:
         return strength_gt_toughness_wound_penalty_support
     if melee_damage_support:
@@ -2167,6 +2253,8 @@ def _classify_ability_base(
         return attached_possessed_support
     if attached_battleline_infiltrators_support:
         return attached_battleline_infiltrators_support
+    if end_of_fight_embark_support:
+        return end_of_fight_embark_support
     if transport_support:
         return transport_support
     if transport_reactive_disembark_support:
@@ -2219,8 +2307,12 @@ def _classify_ability_base(
         return movement_phase_normal_move_weapon_attacks_bonus_support
     if movement_phase_speed_mortal_support:
         return movement_phase_speed_mortal_support
+    if grenade_pack_flyover_support:
+        return grenade_pack_flyover_support
     if movement_phase_visible_wound_bonus_support:
         return movement_phase_visible_wound_bonus_support
+    if movement_phase_visible_hit_bonus_support:
+        return movement_phase_visible_hit_bonus_support
     if battle_focus_token_refund_support:
         return battle_focus_token_refund_support
     if start_of_battle_keyword_reroll_support:
@@ -3432,6 +3524,35 @@ def _battle_focus_agile_maneuver_token_refund_support(description: str) -> Optio
     )
 
 
+def _defensive_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this) model is leading (?:this|a) unit )?"
+        r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
+        r"(?:targets|target|is allocated to) "
+        r"(?P<scope>this model|this unit|this model s unit|a model in this unit) "
+        r"subtract (?P<val>\d+) from (?:the|that|that attacks) wound roll(?:s)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = m.group("val")
+    scope_raw = m.group("scope") or "this model"
+    scope_text = "Model" if "model" in scope_raw else "Unit"
+    atype = (m.group("atype") or "").strip().lower()
+    if atype == "melee":
+        attack_scope = "melee"
+    elif atype == "ranged":
+        attack_scope = "ranged"
+    else:
+        attack_scope = "all"
+    return ("Supported", f"{scope_text} targeted: -{val} to wound vs {attack_scope} attacks.")
+
+
 def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -3439,9 +3560,10 @@ def _defensive_strength_gt_toughness_wound_penalty_support(description: str) -> 
     if not norm:
         return None
     pattern = (
+        r"(?:while (?:(?:a|an|the) [a-z0-9 ]+|this) model is leading (?:this|a) unit )?"
         r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
         r"(?:targets|target|is allocated to) "
-        r"(?P<scope>this model|this unit|a model in this unit) "
+        r"(?P<scope>this model|this unit|this model s unit|a model in this unit) "
         r"if (?:the )?(?:strength characteristic of that attack|that attacks strength characteristic) "
         r"is greater than "
         r"(?:the toughness characteristic of (?:this model|this unit|that model)|(?:this model|this unit|that model)s toughness characteristic) "
@@ -3758,6 +3880,15 @@ def _leading_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         if "excluding support weapon models" in normalized:
             note = "Leading: once per phase, can set one Hit/Wound/Damage roll to an unmodified 6 (excluding Support Weapon models)."
         return ("Supported", note)
+    overlord_pattern = (
+        r"while this model is leading a unit each time a model in that unit makes an attack reroll a wound roll of 1 "
+        r"while that unit is below its starting strength each time a model in that unit makes an attack you can reroll the wound roll instead"
+    )
+    if re.fullmatch(overlord_pattern, normalized):
+        return (
+            "Supported",
+            "Leading: re-roll Wound rolls of 1; while below Starting Strength, re-roll the Wound roll instead.",
+        )
     notes: List[str] = []
     lethal_melee = re.search(
         r"melee weapons equipped by models in that unit have the \[?lethal hits\]? ability",
@@ -3933,6 +4064,11 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
         r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
         re.IGNORECASE,
     )
+    closest_clause_re = re.compile(
+        r"^if (?:that attack targets|the target of that attack is) the closest (?:eligible )?(?:enemy )?(?:unit|target)"
+        r"\s*[,;:]?\s*(?:you can\s*)?re-?roll the hit roll instead$",
+        re.IGNORECASE,
+    )
 
     base_sentences: List[str] = []
     base_atype = None
@@ -3968,10 +4104,19 @@ def _unit_hit_reroll_ones_support(description: str) -> Optional[Tuple[str, str]]
 
     notes = [f"Unit attacks re-roll Hit rolls of 1 for {attack_scope} attacks."]
     objective_sentences = [s for s in sentences if objective_clause_re.match(s.lower())]
-    unsupported = [s for s in sentences if s not in base_sentences and not objective_clause_re.match(s.lower())]
+    closest_sentences = [s for s in sentences if closest_clause_re.match(s.lower())]
+    unsupported = [
+        s
+        for s in sentences
+        if s not in base_sentences
+        and not objective_clause_re.match(s.lower())
+        and not closest_clause_re.match(s.lower())
+    ]
 
     if objective_sentences:
         notes.append("If the target is within range of an objective marker, the Hit roll can be re-rolled instead (optional).")
+    if closest_sentences:
+        notes.append("If the target is the closest eligible target, the Hit roll can be re-rolled instead (optional).")
 
     if multiple_bases or unsupported:
         notes.append("Additional clauses not handled.")
@@ -4145,6 +4290,38 @@ def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
     return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{val} Damage.")
 
 
+def _end_of_fight_embark_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of the fight phase if there are no models currently embarked within this transport you can select one friendly "
+        r"(?P<keyword>[a-z0-9 ]+) infantry unit "
+        r"(?:that only includes models from the units listed in this (?:unit s|units) transport section )?"
+        r"(?:that )?has (?P<max>\d+) or fewer models "
+        r"(?:and )?that is wholly within (?P<range>\d+) of this transport "
+        r"(?:you cannot select a unit that can fly )?"
+        r"unless that unit is within engagement range of one or more enemy units it can embark within this transport"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    keyword = (m.group("keyword") or "friendly").strip().upper()
+    max_models = m.group("max") or ""
+    range_val = m.group("range") or ""
+    notes = [f"End of Fight phase: empty transport can embark friendly {keyword} INFANTRY"]
+    if max_models:
+        notes.append(f"<= {max_models} models")
+    if range_val:
+        notes.append(f"wholly within {range_val}\"")
+    if "cannot select a unit that can fly" in norm:
+        notes.append("(no FLY)")
+    notes.append("if not within Engagement Range.")
+    return ("Supported", " ".join(notes))
+
+
 def _transport_disembark_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -4250,7 +4427,17 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
         r"that objective marker remains under your control until your opponents level of control over that "
         r"objective marker is greater than yours at the end of a phase"
     )
-    if not (re.fullmatch(legacy, norm) or re.fullmatch(legacy_timed, norm) or re.fullmatch(loc, norm)):
+    loc_control = (
+        r"at the end of your command phase if you control an objective marker that this unit "
+        r"(?:or a transport it is embarked within )?is within range of that objective marker remains under your control "
+        r"until your opponents level of control over that objective marker is greater than yours at the end of a phase"
+    )
+    if not (
+        re.fullmatch(legacy, norm)
+        or re.fullmatch(legacy_timed, norm)
+        or re.fullmatch(loc, norm)
+        or re.fullmatch(loc_control, norm)
+    ):
         return None
     return ("Supported", "End of Command phase: objective becomes sticky while you controlled it.")
 
@@ -4345,10 +4532,15 @@ def _enemy_fall_back_desperate_escape_support(description: str) -> Optional[Tupl
     if not norm:
         return None
     base = (
-        r"each time an enemy unit(?: excluding monsters and vehicles)? within engagement range of one or more units from your army with this ability falls back "
-        r"models in that enemy unit must take desperate escape tests?"
+        r"each time an enemy unit(?: excluding monsters and vehicles)? within engagement range of "
+        r"(?:this unit|one or more units from your army with this ability) "
+        r"(?:falls back|is selected to fall back) "
+        r"(?:all )?(?:models in that enemy unit|that unit) must take (?:a )?desperate escape tests?"
     )
-    penalty_clause = r"(?: when doing so if that enemy unit is also battle shocked subtract (?P<pen>\d+) from each of those desperate escape tests)?"
+    penalty_clause = (
+        r"(?: (?:when doing so )?if that enemy unit is (?:also )?battle shocked subtract (?P<pen>\d+) from "
+        r"(?:each of those desperate escape tests|each of those tests|that test))?"
+    )
     m = re.fullmatch(base + penalty_clause, norm)
     if not m:
         return None
@@ -4623,6 +4815,24 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
 
 
+def _fight_phase_below_starting_strength_fight_first_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the fight phase if this model\s*s unit is below its starting strength until the end of the phase "
+        r"models in that unit have the fights first ability"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Start of Fight phase: if the unit is below Starting Strength, it gains Fights First until end of phase.",
+    )
+
+
 def _fight_phase_end_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -4708,7 +4918,7 @@ def _movement_phase_end_visible_wound_bonus_support(description: str) -> Optiona
     pattern = (
         r"at the end of your movement phase select one enemy unit within (?P<range>\d+) of and visible to this model "
         r"until the start of your next command phase each time a friendly (?P<keyword>[a-z0-9 ]+) models? make(?:s)? an attack that targets that enemy unit "
-        r"add (?P<bonus>\d+) to the wound rolls?"
+        r"add (?P<bonus>\d+) to the wound rolls?(?: each unit can only be selected for this ability once per turn)?"
     )
     m = re.fullmatch(pattern, norm)
     if not m:
@@ -4719,6 +4929,56 @@ def _movement_phase_end_visible_wound_bonus_support(description: str) -> Optiona
     return (
         "Supported",
         f"End of Movement phase: select visible enemy within {range_val}\"; friendly {keyword} models gain +{bonus} to wound vs that target until next Command phase.",
+    )
+
+
+def _movement_phase_end_visible_hit_bonus_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the end of your movement phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"until the start of your next command phase each time a friendly (?P<keyword>[a-z0-9 ]+) models? make(?:s)? an attack that targets that enemy unit "
+        r"add (?P<bonus>\d+) to the hit rolls?(?: each unit can only be selected for this ability once per turn)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "18"
+    keyword = (m.group("keyword") or "friendly").strip().upper()
+    bonus = m.group("bonus") or "1"
+    return (
+        "Supported",
+        f"End of Movement phase: select visible enemy within {range_val}\"; friendly {keyword} models gain +{bonus} to hit vs that target until next Command phase.",
+    )
+
+
+def _grenade_pack_flyover_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per turn in your movement phase when this unit is set up on the battlefield or ends a normal advance or fall back move "
+        r"it can use this ability if it does select one enemy unit within (?P<range>\d+) of and visible to this unit "
+        r"and roll one d6 for each (?P<models>[a-z0-9 ]+) model in this unit "
+        r"for each (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>\d+) mortal wounds? "
+        r"(?:to a maximum of (?P<cap>\d+) mortal wounds?)? "
+        r"each time this unit uses this ability until the end of the turn you cannot target this unit with the grenade stratagem"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    range_val = m.group("range") or "8"
+    threshold = m.group("threshold") or "4"
+    cap = m.group("cap") or ""
+    cap_note = f" (max {cap})" if cap else ""
+    return (
+        "Supported",
+        f"Movement phase (once per turn): select visible enemy within {range_val}\"; roll D6 per model, each {threshold}+ inflicts 1 mortal wound{cap_note}; cannot be targeted by Grenade stratagem that turn.",
     )
 
 
@@ -5224,6 +5484,37 @@ def _move_over_low_terrain_support(description: str) -> Optional[Tuple[str, str]
     return ("Supported", f"{type_label}: move over terrain features <= {height}\".")
 
 
+def _titanic_move_through_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    agility_pattern = (
+        r"each time this model makes a normal advance or fall back move it can move through models and terrain features "
+        r"when doing so it can move within engagement range of enemy models but cannot end that move within engagement range of them"
+    )
+    strides_pattern = (
+        r"each time this model makes a normal advance or fall back move it can move through models excluding titanic models "
+        r"and sections of terrain features that are (?P<height>\d+) or less in height when doing so it can move within engagement range of enemy models "
+        r"but cannot end that move within engagement range of them it can also move through sections of terrain features that are more than (?P=height) "
+        r"in height but if it does after it has moved roll one d6 on a 1 this model is battle shocked"
+    )
+    if re.fullmatch(agility_pattern, norm):
+        return (
+            "Supported",
+            "Normal/Advance/Fall Back: move through models and terrain; can move within Engagement Range but cannot end there.",
+        )
+    m = re.fullmatch(strides_pattern, norm)
+    if not m:
+        return None
+    height = m.group("height") or "4"
+    return (
+        "Supported",
+        f"Normal/Advance/Fall Back: move through models (excluding TITANIC) and terrain <= {height}\"; can move within Engagement Range but cannot end there. Crossing >{height}\" terrain risks Battle-shock on 1.",
+    )
+
+
 def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, str]]:
     if not description:
         return None
@@ -5234,7 +5525,7 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
         r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
         r"(?:that )?(?:it )?moved over during that move "
-        r"(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
+        r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
     )
@@ -5244,7 +5535,7 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
             r"each time this unit ends a (?P<moves>[a-z ]+) move "
             r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters and vehicles)? "
             r"(?:that )?(?:it )?moved over during that move "
-            r"(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
+            r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
             r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
             r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?"
         )

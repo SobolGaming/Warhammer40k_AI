@@ -398,9 +398,11 @@ def _validate_allocate_damage(game: object, request: DecisionRequest, result: De
         return errors
     payload = _option_payload(request, result)
     model_val = payload.get("model_id", payload.get("model"))
-    if model_val in (None, ""):
-        return ()
     ctx = dict(getattr(request, "context", {}) or {})
+    if model_val in (None, "") or str(payload.get("action", "") or "") == "skip":
+        if not bool(ctx.get("allow_skip", True)):
+            return ("Skipping damage allocation is not allowed.",)
+        return ()
     allowed_ids = {str(v) for v in list(ctx.get("allowed_model_ids") or []) if v is not None}
     if allowed_ids and str(model_val) not in allowed_ids:
         return ("Damage allocation model is not eligible.",)

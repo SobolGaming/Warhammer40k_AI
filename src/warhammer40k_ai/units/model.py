@@ -450,6 +450,45 @@ class Model:
         self.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
         return True
 
+    def activate_hand_of_asuryan(
+        self,
+        *,
+        key: str = "hand_of_asuryan",
+        ability_name: str = "Hand of Asuryan",
+        weapon_name: str = "Bloody Twins",
+    ) -> bool:
+        """
+        Once per battle, when selected to shoot:
+        - Bloody Twins has Damage 3
+        - Gains [ANTI-INFANTRY 5+] and [DEVASTATING WOUNDS] until end of phase
+        """
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        if self.has_used_once_per_battle(key):
+            return False
+        weapon_name = str(weapon_name or "").strip()
+        if not weapon_name:
+            return False
+        label = str(ability_name or "").strip() or "Hand of Asuryan"
+        self.set_temporary_weapon_keyword_bonuses(
+            key=f"{key}:keywords",
+            weapon_name=weapon_name,
+            keywords=["ANTI-INFANTRY 5+", "DEVASTATING WOUNDS"],
+            source=label,
+            expires_phase="SHOOTING_PHASE",
+            attack_type="ranged",
+        )
+        self.set_temporary_weapon_damage_override(
+            key=f"{key}:damage",
+            weapon_name=weapon_name,
+            damage_value=3,
+            source=label,
+            expires_phase="SHOOTING_PHASE",
+        )
+        self.mark_used_once_per_battle(key, ability_name=label, source="datasheet")
+        return True
+
     def get_temporary_melee_attacks_bonus(self) -> int:
         eff = getattr(self, "_temporary_effects", {}) or {}
         if not isinstance(eff, dict) or not eff:
@@ -612,6 +651,69 @@ class Model:
                     label = source or str(key or weapon_name)
                     reasons.append(f"{label} +{bonus_val}S ({key_norm}) [temporary]")
         return int(total), reasons
+
+    def set_temporary_weapon_damage_override(
+        self,
+        *,
+        key: str,
+        weapon_name: str,
+        damage_value: int,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            damage_value = int(damage_value or 0)
+        except Exception:
+            damage_value = 0
+        if damage_value <= 0:
+            effects.pop(key_norm, None)
+            return
+        weapon_name = str(weapon_name or "").strip()
+        if not weapon_name:
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        label = str(source or "").strip() or "Weapon damage override"
+        entry["weapon_damage_override"] = {weapon_name: int(damage_value)}
+        entry["weapon_damage_override_source"] = label
+        effects[key_norm] = entry
+
+    def get_temporary_weapon_damage_override(self, weapon_name: str) -> tuple[int, str]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, ""
+        target = self._normalize_weapon_name(weapon_name)
+        if not target:
+            return 0, ""
+        best_val = 0
+        best_source = ""
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            bonus_map = v.get("weapon_damage_override")
+            if not isinstance(bonus_map, dict):
+                continue
+            source = str(v.get("weapon_damage_override_source") or "").strip()
+            for key, dmg in bonus_map.items():
+                key_norm = self._normalize_weapon_name(str(key or ""))
+                if not key_norm:
+                    continue
+                if key_norm != target and key_norm not in target and target not in key_norm:
+                    continue
+                try:
+                    dmg_val = int(dmg or 0)
+                except Exception:
+                    dmg_val = 0
+                if dmg_val > best_val:
+                    best_val = int(dmg_val)
+                    best_source = source or str(key or weapon_name)
+        return int(best_val), best_source
 
     def set_temporary_weapon_keyword_bonuses(
         self,

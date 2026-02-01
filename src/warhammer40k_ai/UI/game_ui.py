@@ -4343,6 +4343,243 @@ class GameView:
                     pass
                 return
 
+            if ability == "movement_phase_visible_hit_bonus":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "movement_phase_hit_bonus_dialog") or self.movement_phase_hit_bonus_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.movement_phase_hit_bonus_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.movement_phase_hit_bonus_dialog = None
+                dlg = self.movement_phase_hit_bonus_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                model_name = ""
+                unit_name = ""
+                try:
+                    model_id = str(ctx.get("model_id", "") or "")
+                    if model_id:
+                        reg = getattr(game, "entity_registry", None)
+                        if reg is not None:
+                            model = reg.get(model_id, kind="model")
+                            if model is not None:
+                                model_name = getattr(model, "name", "") or ""
+                                unit = getattr(model, "parent_unit", None)
+                                if unit is not None:
+                                    unit_name = getattr(unit, "name", "") or ""
+                except Exception:
+                    model_name = ""
+                    unit_name = ""
+
+                ability_name = str(ctx.get("ability_name", "") or "Movement phase hit bonus").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                keyword = str(ctx.get("keyword", "") or "").strip().upper()
+                try:
+                    bonus = int(ctx.get("bonus", 0) or 0)
+                except Exception:
+                    bonus = 0
+
+                header = "Select an enemy unit."
+                if model_name and unit_name:
+                    header = f"{model_name} ({unit_name})"
+                elif unit_name:
+                    header = unit_name
+
+                subtitle = "Select an enemy unit visible to this model."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+                if keyword and bonus:
+                    subtitle = f"{subtitle} Friendly {keyword} models: +{bonus} to hit."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "grenade_pack_flyover":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                if not hasattr(self, "grenade_pack_flyover_dialog") or self.grenade_pack_flyover_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.grenade_pack_flyover_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.grenade_pack_flyover_dialog = None
+                dlg = self.grenade_pack_flyover_dialog
+                if dlg is None:
+                    return
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Grenade Pack Flyover").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    threshold = int(ctx.get("threshold", 0) or 0)
+                except Exception:
+                    threshold = 0
+                try:
+                    mortal_per = int(ctx.get("mortal_per_success", 1) or 0)
+                except Exception:
+                    mortal_per = 0
+                try:
+                    max_mortal = int(ctx.get("max_mortal", 0) or 0)
+                except Exception:
+                    max_mortal = 0
+
+                header = str(ctx.get("unit", "") or "Unit")
+                subtitle = "Select an enemy unit for grenade pack flyover."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+                if threshold and mortal_per:
+                    subtitle = f"{subtitle} Each {threshold}+ causes {mortal_per} mortal wound(s)."
+                if max_mortal:
+                    subtitle = f"{subtitle} Max {max_mortal} mortal wounds."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "end_of_fight_embark":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                if not hasattr(self, "end_of_fight_embark_dialog") or self.end_of_fight_embark_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.end_of_fight_embark_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.end_of_fight_embark_dialog = None
+                dlg = self.end_of_fight_embark_dialog
+                if dlg is None:
+                    return
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "End of fight embark").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                try:
+                    max_models = int(ctx.get("max_models", 0) or 0)
+                except Exception:
+                    max_models = 0
+                keyword = str(ctx.get("keyword", "") or "").strip().upper()
+
+                header = str(ctx.get("unit", "") or "Transport")
+                subtitle = "Select a friendly unit to embark."
+                if range_value:
+                    subtitle = f"{subtitle} Wholly within {range_value}\"."
+                if max_models:
+                    subtitle = f"{subtitle} Max {max_models} models."
+                if keyword:
+                    subtitle = f"{subtitle} Keyword: {keyword}."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability == "aeldari_guiding_presence":
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import first_option_id
@@ -4504,6 +4741,193 @@ class GameView:
                     pass
                 return
 
+            if ability == "spirit_mark_friendly":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "spirit_mark_friendly_dialog") or self.spirit_mark_friendly_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.spirit_mark_friendly_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.spirit_mark_friendly_dialog = None
+                dlg = self.spirit_mark_friendly_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                model_name = ""
+                unit_name = ""
+                try:
+                    model_id = str(ctx.get("model_id", "") or "")
+                    if model_id:
+                        reg = getattr(game, "entity_registry", None)
+                        if reg is not None:
+                            model = reg.get(model_id, kind="model")
+                            if model is not None:
+                                model_name = getattr(model, "name", "") or ""
+                                unit = getattr(model, "parent_unit", None)
+                                if unit is not None:
+                                    unit_name = getattr(unit, "name", "") or ""
+                except Exception:
+                    model_name = ""
+                    unit_name = ""
+
+                ability_name = str(ctx.get("ability_name", "") or "Spirit Mark").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                keyword = str(ctx.get("keyword", "") or "").strip()
+
+                header = "Select a friendly unit."
+                if model_name and unit_name:
+                    header = f"{model_name} ({unit_name})"
+                elif unit_name:
+                    header = unit_name
+
+                subtitle = "Select a friendly unit to mark."
+                if keyword:
+                    subtitle = f"Select a friendly {keyword.upper()} unit to mark."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "spirit_mark_enemy":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "spirit_mark_enemy_dialog") or self.spirit_mark_enemy_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.spirit_mark_enemy_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.spirit_mark_enemy_dialog = None
+                dlg = self.spirit_mark_enemy_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Spirit Mark").strip()
+                header = "Select an enemy unit."
+                subtitle = "Select a visible enemy unit to mark."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "tears_of_isha_target":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "tears_of_isha_dialog") or self.tears_of_isha_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.tears_of_isha_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.tears_of_isha_dialog = None
+                dlg = self.tears_of_isha_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Tears of Isha").strip()
+                keyword = str(ctx.get("keyword", "") or "").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+
+                header = "Select a friendly unit."
+                subtitle = "Select a friendly unit to heal or return a model."
+                if keyword:
+                    subtitle = f"Select a friendly {keyword.upper()} unit to heal or return a model."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability == "aeldari_guileful_strategist":
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import first_option_id
@@ -4595,6 +5019,60 @@ class GameView:
                 subtitle = "Target loses Benefit of Cover until end of phase."
                 if weapon_name:
                     subtitle = f"Hit by {weapon_name}: {subtitle}"
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "post_shoot_crit_hit_threshold":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "post_shoot_crit_hit_threshold_dialog") or self.post_shoot_crit_hit_threshold_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.post_shoot_crit_hit_threshold_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.post_shoot_crit_hit_threshold_dialog = None
+                dlg = self.post_shoot_crit_hit_threshold_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Post-shoot crit bonus").strip()
+                keyword = str(ctx.get("keyword", "") or "").strip()
+                try:
+                    threshold = int(ctx.get("threshold", 6) or 6)
+                except Exception:
+                    threshold = 6
+                header = "Select an enemy unit."
+                keyword_label = keyword.upper() if keyword else "friendly"
+                subtitle = f"{keyword_label} models score critical hits on {int(threshold)}+ vs target until end of turn."
 
                 dlg.show(
                     title=ability_name,

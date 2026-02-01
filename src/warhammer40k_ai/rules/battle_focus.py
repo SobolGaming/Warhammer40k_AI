@@ -455,11 +455,7 @@ class BattleFocusManager:
             return []
         if not self._army_has_battle_focus():
             return []
-        if int(self.tokens or 0) <= 0:
-            return []
         self._sync_phase(game)
-        if self._maneuver_used_this_phase(self.MANEUVER_FADE_BACK):
-            return []
 
         candidates = []
         for unit in hit_units:
@@ -474,6 +470,16 @@ class BattleFocusManager:
                 continue
             if bool(getattr(unit, "is_titanic", False)):
                 continue
+            has_fleet_of_foot = False
+            try:
+                has_fleet_of_foot = bool(getattr(unit, "has_fleet_of_foot", lambda: False)())
+            except Exception:
+                has_fleet_of_foot = False
+            if not has_fleet_of_foot:
+                if int(self.tokens or 0) <= 0:
+                    continue
+                if self._maneuver_used_this_phase(self.MANEUVER_FADE_BACK):
+                    continue
             if not self._can_use_unit_this_phase(unit):
                 continue
             candidates.append(unit)
@@ -716,10 +722,16 @@ class BattleFocusManager:
         except Exception:
             return
         self._sync_phase(game)
-        if self._maneuver_used_this_phase(self.MANEUVER_FADE_BACK):
-            return
-        if int(self.tokens or 0) <= 0:
-            return
+        has_fleet_of_foot = False
+        try:
+            has_fleet_of_foot = bool(getattr(target_unit, "has_fleet_of_foot", lambda: False)())
+        except Exception:
+            has_fleet_of_foot = False
+        if not has_fleet_of_foot:
+            if self._maneuver_used_this_phase(self.MANEUVER_FADE_BACK):
+                return
+            if int(self.tokens or 0) <= 0:
+                return
         if not self._unit_has_battle_focus(target_unit):
             return
         if bool(getattr(target_unit, "is_titanic", False)):
@@ -804,11 +816,18 @@ class BattleFocusManager:
             return
         if not self._can_use_unit_this_phase(unit):
             return
-        if self._maneuver_used_this_phase(maneuver):
-            return
-        if not self._spend_token():
-            return
-        self._maybe_refund_token_on_agile_maneuver(unit, game, maneuver)
+        has_fleet_of_foot = False
+        try:
+            if maneuver == self.MANEUVER_FADE_BACK:
+                has_fleet_of_foot = bool(getattr(unit, "has_fleet_of_foot", lambda: False)())
+        except Exception:
+            has_fleet_of_foot = False
+        if not has_fleet_of_foot:
+            if self._maneuver_used_this_phase(maneuver):
+                return
+            if not self._spend_token():
+                return
+            self._maybe_refund_token_on_agile_maneuver(unit, game, maneuver)
 
         sr = getattr(unit, "special_rules", None)
         if not isinstance(sr, dict):
@@ -859,12 +878,16 @@ class BattleFocusManager:
             except Exception:
                 player = None
             try:
-                if hasattr(game, "request_dice_roll"):
-                    sr["battle_focus_reactive_move_pending"] = True
-                    unit.special_rules = sr
-                    game.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
-                    self._mark_used(unit, maneuver)
-                    return
+                    if hasattr(game, "request_dice_roll"):
+                        sr["battle_focus_reactive_move_pending"] = True
+                        unit.special_rules = sr
+                        game.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+                        if has_fleet_of_foot:
+                            uid = self._unit_id(unit)
+                            self._units_used_this_phase.add(uid)
+                        else:
+                            self._mark_used(unit, maneuver)
+                        return
             except Exception:
                 # Fall back to immediate roll if dice request fails.
                 sr.pop("battle_focus_reactive_move_pending", None)
@@ -883,7 +906,11 @@ class BattleFocusManager:
             sr["battle_focus_reactive_move_expires_phase"] = phase_name
             unit.special_rules = sr
 
-        self._mark_used(unit, maneuver)
+        if has_fleet_of_foot:
+            uid = self._unit_id(unit)
+            self._units_used_this_phase.add(uid)
+        else:
+            self._mark_used(unit, maneuver)
 
     def cleanup_on_phase_end(self, phase, player) -> None:
         pname = str(getattr(phase, "name", "") or phase or "").strip().upper()

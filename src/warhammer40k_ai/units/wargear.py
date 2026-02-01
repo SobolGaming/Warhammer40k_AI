@@ -816,6 +816,37 @@ class WargearProfile:
             entry_phase = str(entry.get("expires_phase") or "").strip().upper()
             if entry_phase and phase_key and entry_phase != phase_key:
                 continue
+            req_kw = str(entry.get("requires_leading_keyword", "") or "").strip()
+            if req_kw:
+                try:
+                    root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+                except Exception:
+                    root = target_unit
+                try:
+                    leaders = list(getattr(root, "attached_leaders", []) or [])
+                except Exception:
+                    leaders = []
+                if not leaders:
+                    continue
+                try:
+                    from ..utility.keyword_utils import unit_has_keyword
+                except Exception:
+                    unit_has_keyword = None
+                matched = False
+                for leader in leaders:
+                    if leader is None:
+                        continue
+                    try:
+                        if unit_has_keyword is not None and unit_has_keyword(leader, req_kw):
+                            matched = True
+                            break
+                        if hasattr(leader, "has_any_keyword") and leader.has_any_keyword(req_kw):
+                            matched = True
+                            break
+                    except Exception:
+                        continue
+                if not matched:
+                    continue
             out.append(entry)
         if key == "defensive_wound_mods":
             try:
@@ -918,6 +949,70 @@ class WargearProfile:
                     )
                 except Exception:
                     pass
+            # Point-blank Devastation: optional reroll of attack dice within half range.
+            try:
+                if roll_value is None and isinstance(self.attacks, Count) and self.attacks.ctype.name == "DICE":
+                    unit = attacker.parent_unit
+                    rule = None
+                    if unit is not None and hasattr(unit, "get_point_blank_devastation_rule"):
+                        rule = unit.get_point_blank_devastation_rule(attacker)
+                    if rule and dice_rolls:
+                        weapon_name = ""
+                        try:
+                            if getattr(self, "parent_wargear", None) is not None:
+                                weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                            if not weapon_name:
+                                weapon_name = str(getattr(self, "name", "") or "")
+                        except Exception:
+                            weapon_name = ""
+                        weapon_names = list(rule.get("weapon_names", []) or [])
+                        if weapon_name and weapon_names and hasattr(unit, "_weapon_name_matches"):
+                            if unit._weapon_name_matches(weapon_names, weapon_name):
+                                effective_range_max = self._effective_range_max(attacker)
+                                if effective_range_max:
+                                    within_half_range = float(closest_dist or 0.0) <= (float(effective_range_max) / 2.0)
+                                else:
+                                    within_half_range = False
+                                if within_half_range:
+                                    do_reroll = False
+                                    game = None
+                                    player = None
+                                    try:
+                                        army = unit.get_parent_army()
+                                        player = getattr(army, "player", None) if army is not None else None
+                                        game = getattr(player, "game", None) if player is not None else None
+                                    except Exception:
+                                        game = None
+                                        player = None
+                                    provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None) if game is not None else None
+                                    reason = str(rule.get("source", "") or "Point-blank Devastation").strip() or "Point-blank Devastation"
+                                    if provider is not None:
+                                        do_reroll = bool(
+                                            provider(
+                                                player=player,
+                                                unit=unit,
+                                                roll_type="attacks",
+                                                value=num_attacks,
+                                                dice=dice_rolls,
+                                                reason=reason,
+                                            )
+                                        )
+                                    else:
+                                        try:
+                                            avg = float(self.attacks.stat_average())
+                                            do_reroll = float(num_attacks) < avg
+                                        except Exception:
+                                            do_reroll = False
+                                    if do_reroll:
+                                        new_num, new_rolls = self.attacks.resolve_detailed()
+                                        num_attacks = new_num
+                                        attack_result.attacks_rolled = new_num
+                                        attack_result.attacks_dice_rolls = list(new_rolls or [])
+                                        attack_result.attacks_special_modifiers.append(
+                                            f"{reason}: re-rolled attacks"
+                                        )
+            except Exception:
+                pass
         else:
             num_attacks = self.attacks or 0
             attack_result.attacks_rolled = num_attacks
@@ -1520,6 +1615,33 @@ class WargearProfile:
             attack_result.attacks_special_modifiers.append(
                 f"Twist of Fate (AP improved by {int(cabal_ap_bonus)})"
             )
+        sonic_bonus = 0
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_sonic_destruction_bonus"):
+                weapon_name = ""
+                try:
+                    if getattr(self, "parent_wargear", None) is not None:
+                        weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+                    if not weapon_name:
+                        weapon_name = str(getattr(self, "name", "") or "")
+                except Exception:
+                    weapon_name = ""
+                sonic_bonus = int(
+                    unit.get_sonic_destruction_bonus(
+                        model=attacker,
+                        target=target,
+                        weapon_profile=self,
+                        weapon_name=weapon_name,
+                    ) or 0
+                )
+        except Exception:
+            sonic_bonus = 0
+        if sonic_bonus:
+            effective_ap = int(effective_ap) - int(sonic_bonus)
+            attack_result.attacks_special_modifiers.append(
+                f"Sonic Destruction (+{int(sonic_bonus)} S/AP/D)"
+            )
 
         # CONVERSION: Determine if Conversion is active for this attack sequence
         # Conversion grants critical hits on unmodified successful hit rolls of 4+
@@ -1568,6 +1690,8 @@ class WargearProfile:
                 'conversion_active': conversion_active,
                 'distance_to_target': closest_dist,
             }
+            if sonic_bonus:
+                attack_instance["sonic_destruction_bonus"] = int(sonic_bonus)
             if attacker_unit is not None:
                 attack_instance["attacker_unit"] = attacker_unit
             if attacker_key is not None:
@@ -1605,6 +1729,8 @@ class WargearProfile:
                             'damage': 0,
                             'target_toughness_override': kill_team_toughness,
                         }
+                        if sonic_bonus:
+                            extra_instance["sonic_destruction_bonus"] = int(sonic_bonus)
                         if attacker_unit is not None:
                             extra_instance["attacker_unit"] = attacker_unit
                         if attacker_key is not None:
@@ -2758,6 +2884,7 @@ class WargearProfile:
                     model=attacker,
                     weapon_profile=self,
                     weapon_name=weapon_name,
+                    target=target,
                 )
                 _apply_keyword_bonus(model_bonus, lance_label="Ability")
 
@@ -3365,6 +3492,16 @@ class WargearProfile:
             from ..rules.psychic_guidance import psychic_guidance_hit_bonus_applies
             if psychic_guidance_hit_bonus_applies(attacker_unit):
                 _add_hit_mod(1, "+1 to hit from Psychic Guidance")
+        # Movement phase selected target hit bonus (e.g., Aeldari).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            bonus, reason = target.get_movement_phase_visible_hit_bonus(attacker_unit, game=game)
+            if bonus:
+                _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Movement phase bonus")
+        except Exception:
+            pass
         from ..utility.modifier_choice import (
             CHOICE_KEEP_ALL,
             CHOICE_IGNORE_NEGATIVE,
@@ -5305,6 +5442,13 @@ class WargearProfile:
                         )
         except Exception:
             pass
+        try:
+            sonic_bonus = int(attack_instance.get("sonic_destruction_bonus", 0) or 0)
+        except Exception:
+            sonic_bonus = 0
+        if sonic_bonus and isinstance(strength, int):
+            strength = strength + int(sonic_bonus)
+            wound_result.setdefault("modifiers", []).append(f"+{int(sonic_bonus)}S from Sonic Destruction")
         # Drukhari: Power from Pain (Macro-steroids) set melee Strength.
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -7314,6 +7458,18 @@ class WargearProfile:
             'special_effects': []
         }
         rerolls_allowed = bool(allow_rerolls)
+        shadow_field_active = False
+        shadow_field_broken = False
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None and hasattr(t_unit, "model_has_shadow_field_ability"):
+                shadow_field_active = bool(t_unit.model_has_shadow_field_ability(target_model))
+                if shadow_field_active and hasattr(t_unit, "is_shadow_field_broken"):
+                    shadow_field_broken = bool(t_unit.is_shadow_field_broken(target_model))
+        except Exception:
+            shadow_field_active = False
+            shadow_field_broken = False
+        shadow_field_block_invuln = bool(shadow_field_active and shadow_field_broken)
         
         # Stratagem / rule-driven defensive modifiers that need to be reflected in the attack_instance.
         # - GO TO GROUND: 6++ invulnerable + Benefit of Cover until end of phase.
@@ -7479,7 +7635,7 @@ class WargearProfile:
         # Invulnerable override (e.g. GO TO GROUND 6++) can grant an invuln save even if the model lacks one.
         try:
             inv_override = attack_instance.get("inv_save_override", None)
-            if inv_override is not None:
+            if inv_override is not None and not shadow_field_block_invuln:
                 inv_override = int(inv_override)
                 if inv_override and inv_override < save_value:
                     save_value = inv_override
@@ -7493,7 +7649,7 @@ class WargearProfile:
         except Exception:
             pass
         
-        if inv_save:
+        if inv_save and not shadow_field_block_invuln:
             # Check invulnerable save condition (string-based, not callable)
             condition_met = True
             if inv_save_condition and inv_save_condition.strip():
@@ -7503,6 +7659,12 @@ class WargearProfile:
                 save_value = inv_save
                 save_result['save_type'] = 'invulnerable'
                 save_result['final_save'] = save_value
+
+        shadow_field_no_reroll = False
+        if shadow_field_active and not shadow_field_block_invuln:
+            if save_result.get("save_type") == "invulnerable":
+                shadow_field_no_reroll = True
+                save_result['special_effects'].append("Shadow Field: no invulnerable re-rolls")
 
         # Provide reroll callback for save
         def _reroll_save():
@@ -7559,6 +7721,8 @@ class WargearProfile:
                 game = unit.get_parent_army().player.game
                 from ..utility.reroll_tracker import prepare_reroll_event
                 roll_id, reroll_cb, reroll_locked = prepare_reroll_event(game, _reroll_save)
+                if shadow_field_no_reroll:
+                    reroll_locked = True
                 game.event_system.publish(
                     "roll_made",
                     player=unit.get_parent_army().player,
@@ -7591,6 +7755,17 @@ class WargearProfile:
 
             if dice_modifier != 0:
                 save_result['special_effects'].append(f"Modifier {dice_modifier:+d}")
+
+        # Shadow Field: on first failed invulnerable save, bearer loses invulnerable save.
+        try:
+            if shadow_field_active and not shadow_field_broken:
+                if save_result.get("save_type") == "invulnerable" and not save_result.get("saved", False):
+                    t_unit = getattr(target_model, "parent_unit", None)
+                    if t_unit is not None and hasattr(t_unit, "mark_shadow_field_broken"):
+                        t_unit.mark_shadow_field_broken(target_model)
+                    save_result['special_effects'].append("Shadow Field broken")
+        except Exception:
+            pass
 
         # Channeller Stones: first failed save each turn sets Damage to 0.
         try:
@@ -7746,9 +7921,33 @@ class WargearProfile:
             'special_effects': []
         }
         rerolls_allowed = bool(allow_rerolls)
+
+        damage_override = 0
+        damage_override_source = ""
+        try:
+            weapon_name = ""
+            if getattr(self, "parent_wargear", None) is not None:
+                weapon_name = str(getattr(self.parent_wargear, "name", "") or "")
+            if not weapon_name:
+                weapon_name = str(getattr(self, "name", "") or "")
+            if attacker is not None and hasattr(attacker, "get_temporary_weapon_damage_override"):
+                damage_override, damage_override_source = attacker.get_temporary_weapon_damage_override(weapon_name)
+        except Exception:
+            damage_override = 0
+            damage_override_source = ""
         
         # Calculate base Damage characteristic with detailed tracking
-        if isinstance(self.damage, DiceCollection):
+        if damage_override:
+            try:
+                damage_value = int(damage_override)
+            except Exception:
+                damage_value = 0
+            damage_result["damage_expression"] = str(damage_override)
+            damage_result["damage_rolled"] = int(damage_value)
+            if damage_override_source:
+                damage_result["special_effects"].append(f"{damage_override_source}: Damage {int(damage_value)}")
+            rerolls_allowed = False
+        elif isinstance(self.damage, DiceCollection):
             # Provide reroll callback for damage
             def _reroll_damage():
                 new_val, new_rolls = self.damage.roll_detailed()
@@ -7810,6 +8009,14 @@ class WargearProfile:
             damage_value = self.damage
             damage_result['damage_dice_rolls'] = []
         damage_result['damage_rolled'] = damage_value
+        try:
+            sonic_bonus = int(attack_instance.get("sonic_destruction_bonus", 0) or 0)
+        except Exception:
+            sonic_bonus = 0
+        if sonic_bonus:
+            damage_value = int(damage_value) + int(sonic_bonus)
+            damage_result['damage_rolled'] = damage_value
+            damage_result['special_effects'].append(f"+{int(sonic_bonus)} Damage (Sonic Destruction)")
 
         # D-cannon: re-roll Damage roll of 1; vs TITANIC you can re-roll the Damage roll instead.
         try:

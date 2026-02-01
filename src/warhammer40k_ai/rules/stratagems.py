@@ -8241,6 +8241,14 @@ class StratagemManager:
                         or getattr(rs, "shot_this_round", False)
                     ):
                         return False
+                    sr = getattr(u, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("grenade_pack_flyover_no_grenade_turn_owner"):
+                        owner = str(sr.get("grenade_pack_flyover_no_grenade_turn_owner") or "")
+                        turn = int(sr.get("grenade_pack_flyover_no_grenade_turn", 0) or 0)
+                        current_player = getattr(self, "player", None)
+                        if owner and current_player is not None:
+                            if owner == str(getattr(current_player, "id", "") or "") and int(getattr(self.game, "turn", 0) or 0) == turn:
+                                return False
                     if self.game and getattr(self.game, "map", None):
                         if any(
                             self.game.map.is_within_engagement_range(u, e)

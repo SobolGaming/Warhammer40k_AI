@@ -1275,8 +1275,8 @@ class Game:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
-    def _on_phase_start_movement_phase_visible_wound_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
-        """Clear movement-phase wound bonus markers at the start of the owner's Command phase."""
+    def _on_phase_start_pinned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Pinned effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "COMMAND_PHASE":
             return
@@ -1287,32 +1287,167 @@ class Game:
             return
         for p in list(self.players or []):
             if p is None:
-                raise RuntimeError("Movement phase wound bonus cleanup requires players.")
+                raise RuntimeError("Pinned cleanup requires players.")
             army = p.get_army()
             if army is None:
-                raise RuntimeError(f"Movement phase wound bonus cleanup requires an army for {p.name}.")
+                raise RuntimeError(f"Pinned cleanup requires an army for {p.name}.")
             for unit in list(army.units):
                 sr = getattr(unit, "special_rules", None)
                 if not isinstance(sr, dict):
                     continue
-                if str(sr.get("movement_phase_visible_wound_bonus_owner", "") or "") != owner_id:
+                if str(sr.get("pinned_owner", "") or "") != owner_id:
                     continue
-                if sr.get("movement_phase_visible_wound_bonus_active"):
-                    clear_fn = getattr(unit, "clear_movement_phase_visible_wound_bonus", None)
+                if sr.get("pinned_active"):
+                    clear_fn = getattr(unit, "clear_pinned", None)
                     if callable(clear_fn):
                         clear_fn()
                     else:
                         for key in (
-                            "movement_phase_visible_wound_bonus_active",
-                            "movement_phase_visible_wound_bonus_owner",
-                            "movement_phase_visible_wound_bonus_turn",
-                            "movement_phase_visible_wound_bonus_source",
-                            "movement_phase_visible_wound_bonus_keyword",
-                            "movement_phase_visible_wound_bonus_value",
-                            "movement_phase_visible_wound_bonus_model_id",
+                            "pinned_active",
+                            "pinned_owner",
+                            "pinned_turn",
+                            "pinned_source",
+                            "pinned_move_penalty",
+                            "pinned_charge_penalty",
                         ):
                             sr.pop(key, None)
                         unit.special_rules = sr
+
+    def _on_phase_start_misfortune_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Misfortune effects at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Misfortune cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Misfortune cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("misfortune_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("misfortune_active") or sr.get("misfortune_selected_turn"):
+                    for key in (
+                        "misfortune_active",
+                        "misfortune_owner",
+                        "misfortune_turn",
+                        "misfortune_source",
+                        "misfortune_penalty",
+                        "misfortune_selected_owner",
+                        "misfortune_selected_turn",
+                    ):
+                        sr.pop(key, None)
+                    unit.special_rules = sr
+
+    def _cleanup_movement_phase_visible_bonus(self, player=None, phase=None, *, kind: str) -> None:
+        """Clear movement-phase hit/wound bonus markers at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        kind_key = str(kind or "").strip().lower()
+        if kind_key not in ("hit", "wound"):
+            return
+        active_key = f"movement_phase_visible_{kind_key}_bonus_active"
+        owner_key = f"movement_phase_visible_{kind_key}_bonus_owner"
+        turn_key = f"movement_phase_visible_{kind_key}_bonus_turn"
+        source_key = f"movement_phase_visible_{kind_key}_bonus_source"
+        keyword_key = f"movement_phase_visible_{kind_key}_bonus_keyword"
+        value_key = f"movement_phase_visible_{kind_key}_bonus_value"
+        model_key = f"movement_phase_visible_{kind_key}_bonus_model_id"
+        clear_method = f"clear_movement_phase_visible_{kind_key}_bonus"
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Movement phase bonus cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Movement phase bonus cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get(owner_key, "") or "") != owner_id:
+                    continue
+                if sr.get(active_key):
+                    clear_fn = getattr(unit, clear_method, None)
+                    if callable(clear_fn):
+                        clear_fn()
+                    else:
+                        for key in (
+                            active_key,
+                            owner_key,
+                            turn_key,
+                            source_key,
+                            keyword_key,
+                            value_key,
+                            model_key,
+                        ):
+                            sr.pop(key, None)
+                        unit.special_rules = sr
+
+    def _on_phase_start_movement_phase_visible_wound_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear movement-phase wound bonus markers at the start of the owner's Command phase."""
+        self._cleanup_movement_phase_visible_bonus(player=player, phase=phase, kind="wound")
+
+    def _on_phase_start_movement_phase_visible_hit_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear movement-phase hit bonus markers at the start of the owner's Command phase."""
+        self._cleanup_movement_phase_visible_bonus(player=player, phase=phase, kind="hit")
+
+    def _on_phase_start_spirit_mark_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Spirit Mark effects at the start of the owner's Movement phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Spirit Mark cleanup requires an army for {getattr(player, 'name', 'player')}.")
+        for unit in list(getattr(army, "units", []) or []):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("spirit_mark_active"):
+                continue
+            if str(sr.get("spirit_mark_owner", "") or "") != owner_id:
+                continue
+            try:
+                mark_turn = int(sr.get("spirit_mark_turn", 0) or 0)
+            except Exception:
+                mark_turn = 0
+            if mark_turn == int(turn or 0):
+                continue
+            for key in (
+                "spirit_mark_active",
+                "spirit_mark_owner",
+                "spirit_mark_turn",
+                "spirit_mark_source",
+                "spirit_mark_target_id",
+                "spirit_mark_sustained_hits_value",
+                "spirit_mark_keyword",
+            ):
+                sr.pop(key, None)
+            unit.special_rules = sr
 
     def _on_phase_start_engagement_battleshock(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: enemy units within Engagement Range of a model must take Battle-shock tests."""
@@ -1323,24 +1458,7 @@ class Game:
         if game_map is None:
             raise RuntimeError("Engagement Battle-shock requires a game map.")
 
-        from ..utility.aura_utils import horizontal_distance_between_bases_2d, vertical_distance_between_bases
-
-        def _model_in_engagement_with_unit(model, target_unit) -> bool:
-            if not getattr(model, "is_alive", False):
-                return False
-            get_collision = getattr(target_unit, "get_models_for_collision", None)
-            if callable(get_collision):
-                t_models = list(get_collision() or [])
-            else:
-                t_models = list(target_unit.models or [])
-            for t_model in t_models:
-                if not getattr(t_model, "is_alive", False):
-                    continue
-                horizontal = float(horizontal_distance_between_bases_2d(model.model_base, t_model.model_base))
-                vertical = float(vertical_distance_between_bases(model.model_base, t_model.model_base))
-                if horizontal <= ENGAGEMENT_RANGE_HORIZONTAL and vertical <= ENGAGEMENT_RANGE_VERTICAL:
-                    return True
-            return False
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
 
         def _apply_battleshock(target_unit, *, modifier: int = 0, reason: str = "") -> None:
             if target_unit is None:
@@ -1369,7 +1487,7 @@ class Game:
                     return False
             for model in list(getattr(source_unit, "models", []) or []):
                 try:
-                    if _model_in_engagement_with_unit(model, target_unit):
+                    if model_within_engagement_range_of_unit(model, target_unit):
                         return True
                 except Exception:
                     continue
@@ -1456,7 +1574,7 @@ class Game:
                         except Exception:
                             penalty = 0
                         for enemy_root in enemy_roots:
-                            if not _model_in_engagement_with_unit(model, enemy_root):
+                            if not model_within_engagement_range_of_unit(model, enemy_root):
                                 continue
                             mod = 0
                             reason = ""
@@ -1471,6 +1589,199 @@ class Game:
                                     p,
                                     f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
                                 )
+
+    def _on_phase_start_empowered_by_death(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase: below Starting Strength units with Empowered by Death gain Fight First until end of phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            processed: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                except Exception:
+                    root = unit
+                root_id = str(get_entity_id(root) or "")
+                if root_id and root_id in processed:
+                    continue
+                try:
+                    if not getattr(unit, "has_empowered_by_death", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if not root.is_alive() or not getattr(root, "deployed", True):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not root.is_below_starting_strength():
+                        continue
+                except Exception:
+                    continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["empowered_by_death_active"] = True
+                sr["empowered_by_death_expires_phase"] = "FIGHT_PHASE"
+                try:
+                    sources = list(unit.empowered_by_death_sources() or [])
+                    if sources:
+                        sr["empowered_by_death_source"] = sources[0]
+                except Exception:
+                    pass
+                root.special_rules = sr
+                if root_id:
+                    processed.add(root_id)
+
+    def _on_phase_start_herald_of_ynnead(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: select an engaged enemy unit to mark for wound reroll 1s (Herald of Ynnead)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        from ..utility.aura_utils import model_within_engagement_range_of_unit
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "herald_of_ynnead":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+                for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id and model_id in pending_models:
+                        continue
+                    specs = root.model_start_fight_phase_engagement_wound_reroll_ones_specs(model) or []
+                    if not specs:
+                        continue
+                    spec = specs[0]
+                    ability_name = str(spec.get("source", "") or "Herald of Ynnead").strip() or "Herald of Ynnead"
+                    keyword = str(spec.get("keyword", "") or "aeldari").strip().lower() or "aeldari"
+
+                    candidates = []
+                    seen_enemy = set()
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if enemy is None:
+                            continue
+                        try:
+                            enemy_root = enemy.get_attached_unit_root()
+                        except Exception:
+                            enemy_root = enemy
+                        if enemy_root is None or not enemy_root.is_alive():
+                            continue
+                        try:
+                            if not getattr(enemy_root, "deployed", True):
+                                continue
+                            if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        eid = str(get_entity_id(enemy_root) or "")
+                        if not eid or eid in seen_enemy:
+                            continue
+                        seen_enemy.add(eid)
+                        if not model_within_engagement_range_of_unit(model, enemy_root):
+                            continue
+                        candidates.append(enemy_root)
+
+                    if not candidates:
+                        continue
+                    try:
+                        candidates = sorted(candidates, key=_unit_sort_key)
+                    except Exception:
+                        pass
+                    options = []
+                    for cand in candidates:
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={"target_unit_id": get_entity_id(cand)},
+                            )
+                        )
+                    if not options:
+                        continue
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a target.",
+                        player_id=getattr(p, "id", None),
+                        options=options,
+                        context={
+                            "ability": "herald_of_ynnead",
+                            "ability_name": ability_name,
+                            "attacker_unit_id": get_entity_id(root),
+                            "model_id": model_id,
+                            "keyword": keyword,
+                        },
+                    )
+                    self.request_decision(request)
 
     def _on_phase_start_hallowed_ground(self, player=None, phase=None, **_kwargs) -> None:
         if phase is None:
@@ -1779,6 +2090,259 @@ class Game:
                     ability_name=ability_name,
                     range_inches=3,
                     allow_skip=True,
+                )
+
+    def _on_phase_start_tears_of_isha(self, player=None, phase=None, **_kwargs) -> None:
+        """Spiritseer: Tears of Isha selection at start of Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Tears of Isha requires an army for {player.name}.")
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Tears of Isha requires a game map.")
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        queue = getattr(self, "decision_queue", None)
+        pending_model_ids = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "tears_of_isha_target":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_model_ids.add(mid)
+
+        def _unit_has_keyword(root, keyword: str) -> bool:
+            if not keyword:
+                return True
+            try:
+                return bool(root.has_any_keyword(keyword) or root.has_keyword(keyword))
+            except Exception:
+                pass
+            try:
+                keys = list(getattr(root, "keywords", []) or []) + list(getattr(root, "faction_keywords", []) or [])
+            except Exception:
+                keys = []
+            return any(str(k or "").strip().upper() == str(keyword).strip().upper() for k in keys)
+
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            for model in list(getattr(unit, "models", []) or []):
+                if model is None:
+                    continue
+                try:
+                    if not getattr(model, "is_alive", True):
+                        continue
+                except Exception:
+                    continue
+                mid = str(get_entity_id(model) or "")
+                if mid and mid in pending_model_ids:
+                    continue
+                specs = unit.model_tears_of_isha_specs(model) or []
+                if not specs:
+                    continue
+                seen_specs = set()
+                for spec in list(specs or []):
+                    ability_name = str(spec.get("source", "") or "Tears of Isha").strip() or "Tears of Isha"
+                    key = (mid, ability_name.lower())
+                    if key in seen_specs:
+                        continue
+                    seen_specs.add(key)
+                    keyword = str(spec.get("keyword", "") or "").strip()
+                    try:
+                        rng = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        rng = 0
+                    if rng <= 0:
+                        continue
+                    candidates = []
+                    seen_units = set()
+                    for cand in list(getattr(army, "units", []) or []):
+                        if cand is None:
+                            continue
+                        try:
+                            root = cand.get_attached_unit_root()
+                        except Exception:
+                            root = cand
+                        rid = str(get_entity_id(root) or "")
+                        if not rid or rid in seen_units:
+                            continue
+                        seen_units.add(rid)
+                        try:
+                            if not getattr(root, "is_alive", lambda: False)():
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if not getattr(root, "deployed", True):
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            if root.is_in_reserves() or root.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        if not _unit_has_keyword(root, keyword):
+                            continue
+                        sr = getattr(root, "special_rules", None)
+                        if isinstance(sr, dict):
+                            if str(sr.get("tears_of_isha_selected_turn_owner", "") or "") == owner_id:
+                                try:
+                                    selected_turn = int(sr.get("tears_of_isha_selected_turn", 0) or 0)
+                                except Exception:
+                                    selected_turn = 0
+                                if selected_turn == int(turn or 0):
+                                    continue
+                        if not self._unit_within_range_of_model(model, root, range_value=float(rng)):
+                            continue
+                        candidates.append(root)
+                    if not candidates:
+                        continue
+                    try:
+                        candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+                    except Exception:
+                        candidates = list(candidates)
+                    options = [
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                        for cand in list(candidates)
+                    ]
+                    if not options:
+                        continue
+                    ctx = {
+                        "ability": "tears_of_isha_target",
+                        "ability_name": ability_name,
+                        "phase": "Command phase",
+                        "unit": getattr(unit, "name", "") or "",
+                        "unit_id": get_entity_id(unit),
+                        "source_unit_id": get_entity_id(unit),
+                        "model": getattr(model, "name", "") or "",
+                        "model_id": mid,
+                        "range": int(rng),
+                        "keyword": keyword,
+                    }
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a unit.",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    self.request_decision(request)
+
+    def _on_phase_start_word_of_phoenix(self, player=None, phase=None, **_kwargs) -> None:
+        """Word of the Phoenix (Psychic): return destroyed bodyguard models on a 2+."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Word of the Phoenix requires an army for {player.name}.")
+
+        from ..utility.event_bus import append_dice
+
+        seen_roots = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            rid = str(get_entity_id(root) or "")
+            if not rid or rid in seen_roots:
+                continue
+            seen_roots.add(rid)
+            try:
+                if not getattr(root, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            specs = root.leading_word_of_phoenix_specs() or []
+            if not specs:
+                continue
+            for spec in list(specs or []):
+                leader = spec.get("leader")
+                if leader is None:
+                    continue
+                try:
+                    if not getattr(leader, "is_alive", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if leader.get_attached_unit_root() is not root:
+                        continue
+                except Exception:
+                    pass
+                ability_name = str(spec.get("source", "") or "Word of the Phoenix").strip() or "Word of the Phoenix"
+                roll = int(get_roll("D6") or 0)
+                if append_dice and player is not None:
+                    append_dice(player, f"{ability_name} roll: {roll}")
+                if roll < 2:
+                    continue
+                amount = int(get_roll("D3") or 0) + 1
+                if amount <= 0:
+                    continue
+                destroyed = list(getattr(root, "models_lost", []) or [])
+                if destroyed:
+                    filtered = []
+                    for m in destroyed:
+                        try:
+                            pu = getattr(m, "parent_unit", None)
+                            if pu is not None and hasattr(pu, "has_support_weapon_ability"):
+                                if pu.has_support_weapon_ability():
+                                    continue
+                        except Exception:
+                            pass
+                        filtered.append(m)
+                    destroyed = filtered
+                if not destroyed:
+                    continue
+                allowed_ids = [get_entity_id(m) for m in destroyed if get_entity_id(m)]
+                self._queue_bodyguard_return_decision(
+                    player=player,
+                    leader_unit=leader,
+                    bodyguard_unit=root,
+                    ability={"name": ability_name},
+                    remaining=int(amount),
+                    allowed_model_ids=allowed_ids,
+                    allow_skip=False,
                 )
 
     def _on_phase_start_voice_of_command(self, player=None, phase=None, **_kwargs) -> None:
@@ -2133,6 +2697,28 @@ class Game:
                                 "post_shoot_ap_bonus_selected_phase",
                             ):
                                 sr.pop(k, None)
+                exp = str(sr.get("post_shoot_disembark_wound_reroll_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_disembark_wound_reroll_active",
+                        "post_shoot_disembark_wound_reroll_expires_phase",
+                        "post_shoot_disembark_wound_reroll_source",
+                        "post_shoot_disembark_wound_reroll_target_id",
+                        "post_shoot_disembark_wound_reroll_owner",
+                        "post_shoot_disembark_wound_reroll_turn",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("herald_of_ynnead_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "herald_of_ynnead_active",
+                        "herald_of_ynnead_expires_phase",
+                        "herald_of_ynnead_source",
+                        "herald_of_ynnead_keyword",
+                        "herald_of_ynnead_owner",
+                        "herald_of_ynnead_turn",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("fury_of_titan_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("fury_of_titan_active", "fury_of_titan_expires_phase"):
@@ -2162,6 +2748,14 @@ class Game:
                         "enhancement_fight_first_active",
                         "enhancement_fight_first_expires_phase",
                         "enhancement_fight_first_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("empowered_by_death_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "empowered_by_death_active",
+                        "empowered_by_death_expires_phase",
+                        "empowered_by_death_source",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("enhancement_bearer_melee_attacks_bonus_expires_phase", "") or "").strip().upper()
@@ -2261,6 +2855,35 @@ class Game:
                             "wargear_charge_keyword_hits_turn",
                         ):
                             sr.pop(k, None)
+                    owner = str(sr.get("post_shoot_crit_hit_threshold_owner", "") or "")
+                    try:
+                        turn = int(sr.get("post_shoot_crit_hit_threshold_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "post_shoot_crit_hit_threshold_active",
+                                "post_shoot_crit_hit_threshold_owner",
+                                "post_shoot_crit_hit_threshold_turn",
+                                "post_shoot_crit_hit_threshold_source",
+                                "post_shoot_crit_hit_threshold_keyword",
+                                "post_shoot_crit_hit_threshold_value",
+                                "post_shoot_crit_hit_threshold_expires_phase",
+                            ):
+                                sr.pop(k, None)
+                    owner = str(sr.get("tactical_acumen_no_charge_turn_owner", "") or "")
+                    try:
+                        turn = int(sr.get("tactical_acumen_no_charge_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "tactical_acumen_no_charge_turn_owner",
+                                "tactical_acumen_no_charge_turn",
+                            ):
+                                sr.pop(k, None)
         for p in list(self.players or []):
             if p is None:
                 raise RuntimeError("Phase-end cleanup requires players.")
@@ -2312,7 +2935,13 @@ class Game:
                         if getattr(loc, "controlling_player", None) is not player:
                             continue
                         if not root.is_within_objective_range(loc):
-                            continue
+                            sr = getattr(root, "special_rules", None)
+                            allow_transport = bool(isinstance(sr, dict) and sr.get("sticky_objectives_allow_embarked_transport"))
+                            if not allow_transport:
+                                continue
+                            transport = getattr(root, "embarked_in", None)
+                            if transport is None or not transport.is_within_objective_range(loc):
+                                continue
                         if hasattr(loc, "set_sticky_control"):
                             loc.set_sticky_control(player, source="unit_sticky_objective")
                         else:
@@ -2371,6 +3000,16 @@ class Game:
                             sr.pop(k, None)
                     if str(sr.get("fire_and_fade_no_embark_turn_owner", "") or "") == owner_id:
                         for k in ("fire_and_fade_no_embark_turn_owner", "fire_and_fade_no_embark_turn"):
+                            sr.pop(k, None)
+                    if str(sr.get("grenade_pack_flyover_used_turn_owner", "") or "") == owner_id:
+                        for k in (
+                            "grenade_pack_flyover_used_turn_owner",
+                            "grenade_pack_flyover_used_turn",
+                            "grenade_pack_flyover_source",
+                        ):
+                            sr.pop(k, None)
+                    if str(sr.get("grenade_pack_flyover_no_grenade_turn_owner", "") or "") == owner_id:
+                        for k in ("grenade_pack_flyover_no_grenade_turn_owner", "grenade_pack_flyover_no_grenade_turn"):
                             sr.pop(k, None)
                     if str(sr.get("flickerjump_no_charge_turn_owner", "") or "") == owner_id:
                         for k in ("flickerjump_no_charge_turn_owner", "flickerjump_no_charge_turn"):
@@ -2603,6 +3242,129 @@ class Game:
                     maneuver="opportunity",
                     moving_unit=unit,
                 )
+
+    def _maybe_queue_spirit_mark(self, unit=None, action: str | None = None) -> None:
+        if unit is None:
+            return
+        if not self.is_movement_phase():
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back"):
+            return
+        try:
+            if not getattr(unit, "is_alive", lambda: False)():
+                return
+        except Exception:
+            return
+        try:
+            if not getattr(unit, "deployed", True):
+                return
+        except Exception:
+            return
+        try:
+            if unit.is_in_reserves() or unit.is_embarked:
+                return
+        except Exception:
+            pass
+        owner = None
+        try:
+            owner = unit.get_parent_army().player
+        except Exception:
+            owner = None
+        if owner is None or owner is not self.get_current_player():
+            return
+        try:
+            army = owner.get_army()
+        except Exception:
+            army = None
+        if army is None:
+            return
+
+        def _unit_has_keyword(root, keyword: str) -> bool:
+            if not keyword:
+                return True
+            try:
+                return bool(root.has_any_keyword(keyword) or root.has_keyword(keyword))
+            except Exception:
+                pass
+            try:
+                keys = list(getattr(root, "keywords", []) or []) + list(getattr(root, "faction_keywords", []) or [])
+            except Exception:
+                keys = []
+            return any(str(k or "").strip().upper() == str(keyword).strip().upper() for k in keys)
+
+        for model in list(getattr(unit, "models", []) or []):
+            if model is None:
+                continue
+            try:
+                if not getattr(model, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            specs = unit.model_spirit_mark_specs(model) or []
+            if not specs:
+                continue
+            for spec in list(specs or []):
+                keyword = str(spec.get("keyword", "") or "").strip()
+                try:
+                    rng = int(spec.get("range", 0) or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0:
+                    continue
+                candidates = []
+                seen = set()
+                for cand in list(getattr(army, "units", []) or []):
+                    if cand is None:
+                        continue
+                    try:
+                        root = cand.get_attached_unit_root()
+                    except Exception:
+                        root = cand
+                    rid = str(get_entity_id(root) or "")
+                    if not rid or rid in seen:
+                        continue
+                    seen.add(rid)
+                    try:
+                        if not getattr(root, "is_alive", lambda: False)():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if not getattr(root, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if root.is_in_reserves() or root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    if not _unit_has_keyword(root, keyword):
+                        continue
+                    try:
+                        if root.has_any_keyword("TITANIC") or root.has_keyword("TITANIC"):
+                            continue
+                    except Exception:
+                        pass
+                    if not self._unit_within_range_of_model(model, root, range_value=float(rng)):
+                        continue
+                    candidates.append(root)
+                if not candidates:
+                    continue
+                self._queue_spirit_mark_friendly_selection(
+                    player=owner,
+                    source_unit=unit,
+                    model=model,
+                    candidates=candidates,
+                    spec=spec,
+                )
+
+    def _on_unit_move_started_spirit_mark(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        self._maybe_queue_spirit_mark(unit=unit, action=action)
+
+    def _on_unit_move_ended_spirit_mark(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        self._maybe_queue_spirit_mark(unit=unit, action=action)
 
     def _player_has_optional_decision_hook(self, player, key: str) -> bool:
         if player is None:
@@ -3026,6 +3788,55 @@ class Game:
                 )
         return None
 
+    def _visible_enemy_candidates_for_model(
+        self,
+        *,
+        source_unit,
+        model,
+        enemy_roots: list,
+        range_value: float,
+        game_map,
+    ) -> list:
+        """Return visible enemy units within range of a source model."""
+        if source_unit is None or model is None or game_map is None:
+            return []
+        try:
+            max_range = float(range_value or 0.0)
+        except Exception:
+            max_range = 0.0
+        if max_range <= 0:
+            return []
+        from ..utility.aura_utils import distance_between_models_bases_3d
+
+        candidates = []
+        for enemy_root in list(enemy_roots or []):
+            try:
+                target_models = list(enemy_root.get_models_for_collision() or [])
+            except Exception:
+                target_models = list(getattr(enemy_root, "models", []) or [])
+            target_models = [tm for tm in target_models if getattr(tm, "is_alive", True)]
+            if not target_models:
+                continue
+            min_dist = float("inf")
+            for tm in target_models:
+                try:
+                    dist = float(distance_between_models_bases_3d(model, tm))
+                except Exception:
+                    dist = float("inf")
+                if dist < min_dist:
+                    min_dist = dist
+            if min_dist > max_range:
+                continue
+            has_los = False
+            try:
+                has_los = bool(source_unit._has_line_of_sight_to_target(model, enemy_root, game_map))
+            except Exception:
+                has_los = False
+            if not has_los:
+                continue
+            candidates.append(enemy_root)
+        return candidates
+
     def _queue_movement_phase_flickerjump(
         self,
         *,
@@ -3091,7 +3902,147 @@ class Game:
             )
         return None
 
+    def _queue_movement_phase_visible_bonus(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+        bonus_kind: str,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        kind_key = str(bonus_kind or "").strip().lower()
+        if kind_key not in ("hit", "wound"):
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        ability_key = f"movement_phase_visible_{kind_key}_bonus"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != ability_key:
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        limit_once = bool(spec.get("limit_once_per_turn")) if isinstance(spec, dict) else False
+        filtered = []
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            if limit_once:
+                sr = getattr(cand, "special_rules", None)
+                if isinstance(sr, dict) and sr.get(f"{ability_key}_active"):
+                    if str(sr.get(f"{ability_key}_owner", "") or "") == owner_id and int(sr.get(f"{ability_key}_turn", 0) or 0) == turn:
+                        continue
+            filtered.append(cand)
+
+        options = []
+        for cand in filtered:
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or f"Movement phase {kind_key} bonus").strip() or f"Movement phase {kind_key} bonus"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        keyword = str(spec.get("keyword", "") or "").strip()
+        try:
+            bonus = int(spec.get("bonus", 0) or 0)
+        except Exception:
+            bonus = 0
+        ctx = {
+            "ability": ability_key,
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "keyword": keyword,
+            "bonus": int(bonus),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_movement_phase_visible_wound_bonus(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        return self._queue_movement_phase_visible_bonus(
+            player=player,
+            source_unit=source_unit,
+            model=model,
+            candidates=candidates,
+            spec=spec,
+            bonus_kind="wound",
+        )
+
+    def _queue_movement_phase_visible_hit_bonus(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        return self._queue_movement_phase_visible_bonus(
+            player=player,
+            source_unit=source_unit,
+            model=model,
+            candidates=candidates,
+            spec=spec,
+            bonus_kind="hit",
+        )
+
+    def _queue_movement_phase_end_misfortune(
         self,
         *,
         player,
@@ -3120,38 +4071,55 @@ class Game:
                 if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
-                if str(ctx.get("ability", "")) != "movement_phase_visible_wound_bonus":
+                if str(ctx.get("ability", "")) != "misfortune":
                     continue
                 if str(ctx.get("model_id", "")) == str(model_id):
                     return None
 
-        options = []
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
         def _cand_sort_key(u):
             try:
                 return str(get_entity_id(u))
             except Exception:
                 return str(getattr(u, "name", "") or "")
+
+        limit_once = bool(spec.get("limit_once_per_turn")) if isinstance(spec, dict) else False
+        filtered = []
         for cand in sorted(list(candidates), key=_cand_sort_key):
-            options.append(
-                DecisionOption.create(
-                    str(getattr(cand, "name", "Unit") or "Unit"),
-                    payload={"target_unit_id": get_entity_id(cand)},
-                )
+            if limit_once:
+                sr = getattr(cand, "special_rules", None)
+                if isinstance(sr, dict):
+                    if str(sr.get("misfortune_selected_owner", "") or "") == owner_id and int(sr.get("misfortune_selected_turn", 0) or 0) == int(turn or 0):
+                        continue
+            filtered.append(cand)
+        if not filtered:
+            return None
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
             )
+            for cand in filtered
+        ]
         if not options:
             return None
-        ability_name = str(spec.get("source", "") or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
+        ability_name = str(spec.get("source", "") or "Misfortune").strip() or "Misfortune"
         try:
             range_value = int(spec.get("range", 0) or 0)
         except Exception:
             range_value = 0
-        keyword = str(spec.get("keyword", "") or "").strip()
         try:
-            bonus = int(spec.get("bonus", 0) or 0)
+            penalty = int(spec.get("penalty", -1) or -1)
         except Exception:
-            bonus = 0
+            penalty = -1
         ctx = {
-            "ability": "movement_phase_visible_wound_bonus",
+            "ability": "misfortune",
             "ability_name": ability_name,
             "phase": "Movement phase",
             "unit": getattr(source_unit, "name", "") or "",
@@ -3160,8 +4128,7 @@ class Game:
             "model": getattr(model, "name", "") or "",
             "model_id": model_id,
             "range": int(range_value),
-            "keyword": keyword,
-            "bonus": int(bonus),
+            "penalty": int(penalty),
         }
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
@@ -3322,6 +4289,192 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _queue_spirit_mark_friendly_selection(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) not in ("spirit_mark_friendly", "spirit_mark_enemy"):
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        sr = getattr(source_unit, "special_rules", None)
+        if isinstance(sr, dict):
+            used_owner = str(sr.get("spirit_mark_used_turn_owner", "") or "")
+            try:
+                used_turn = int(sr.get("spirit_mark_used_turn", 0) or 0)
+            except Exception:
+                used_turn = 0
+            used_ids = list(sr.get("spirit_mark_used_model_ids", []) or [])
+            if owner_id and used_owner == owner_id and used_turn == int(turn or 0):
+                if str(model_id) in [str(v) for v in used_ids if v]:
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Spirit Mark").strip() or "Spirit Mark"
+        ctx = {
+            "ability": "spirit_mark_friendly",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(spec.get("range", 0) or 0),
+            "keyword": str(spec.get("keyword", "") or "").strip(),
+            "sustained_hits_value": int(spec.get("sustained_hits_value", 1) or 1),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a friendly unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_spirit_mark_enemy_selection(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        friendly_unit,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None or friendly_unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        friendly_id = get_entity_id(friendly_unit)
+        if not model_id or not unit_id or not friendly_id:
+            return None
+
+        try:
+            enemies = list(getattr(self.map, "get_enemy_units")(source_unit) or [])
+        except Exception:
+            enemies = []
+        candidates = []
+        seen = set()
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None or not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            rid = str(get_entity_id(root) or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            if not self._model_can_see_unit(model, root, game_map=getattr(self, "map", None)):
+                continue
+            candidates.append(root)
+
+        if not candidates:
+            return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+        ]
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Spirit Mark").strip() or "Spirit Mark"
+        ctx = {
+            "ability": "spirit_mark_enemy",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "friendly_unit_id": friendly_id,
+            "sustained_hits_value": int(spec.get("sustained_hits_value", 1) or 1),
+            "keyword": str(spec.get("keyword", "") or "").strip(),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select an enemy unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_mortal_wounds_target_decision(
         self,
         *,
@@ -3399,6 +4552,290 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _collect_grenade_pack_flyover_candidates(self, unit, spec: dict, game_map) -> list:
+        if unit is None or game_map is None:
+            return []
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        if range_value <= 0:
+            return []
+        try:
+            enemies = list(game_map.get_enemy_units(unit) or [])
+        except Exception:
+            enemies = []
+        candidates = []
+        seen = set()
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None or not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            rid = str(maybe_entity_id(root) or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            try:
+                dist = float(game_map.get_distance_between_units(unit, root))
+            except Exception:
+                dist = float("inf")
+            if dist > float(range_value):
+                continue
+            try:
+                if not unit._attacking_unit_has_any_los_to_target_unit(root, game_map):
+                    continue
+            except Exception:
+                continue
+            candidates.append(root)
+        return list(candidates)
+
+    def _unit_within_range_of_model(self, model, unit, *, range_value: float) -> bool:
+        if model is None or unit is None:
+            return False
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return False
+        try:
+            if not getattr(model, "is_alive", True):
+                return False
+        except Exception:
+            pass
+        try:
+            models = list(unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(unit, "models", []) or [])
+        if not models:
+            return False
+        for tm in models:
+            try:
+                if not getattr(tm, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if distance_between_models_bases_3d(model, tm) <= float(range_value) + 1e-6:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _model_can_see_unit(self, model, unit, *, game_map=None) -> bool:
+        if model is None or unit is None:
+            return False
+        if game_map is None:
+            game_map = getattr(self, "map", None)
+        can_see_fn = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
+        if not callable(can_see_fn):
+            return False
+        try:
+            targets = list(unit.get_attached_unit_models() or [])
+        except Exception:
+            targets = list(getattr(unit, "models", []) or [])
+        if not targets:
+            return False
+        for tm in targets:
+            try:
+                if not getattr(tm, "is_alive", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if can_see_fn(model, tm):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _queue_grenade_pack_flyover_target_decision(
+        self,
+        *,
+        player,
+        unit,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        unit_id = maybe_entity_id(unit)
+        if not unit_id:
+            return None
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict):
+            if str(sr.get("grenade_pack_flyover_used_turn_owner", "") or "") == owner_id and int(
+                sr.get("grenade_pack_flyover_used_turn", 0) or 0
+            ) == turn:
+                return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "grenade_pack_flyover":
+                    continue
+                if str(ctx.get("unit_id", "")) == str(unit_id):
+                    return None
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        sorted_candidates = [c for c in candidates if c is not None]
+        sorted_candidates.sort(key=lambda c: str(maybe_entity_id(c) or ""))
+        for enemy in sorted_candidates:
+            enemy_id = maybe_entity_id(enemy)
+            if not enemy_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(enemy, "name", "") or "Enemy unit"),
+                    payload={"target_unit_id": enemy_id},
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Grenade Pack Flyover").strip() or "Grenade Pack Flyover"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        try:
+            threshold = int(spec.get("threshold", 0) or 0)
+        except Exception:
+            threshold = 0
+        try:
+            mortal_per = int(spec.get("mortal_per_success", 1) or 0)
+        except Exception:
+            mortal_per = 0
+        try:
+            max_mortal = int(spec.get("max_mortal", 0) or 0)
+        except Exception:
+            max_mortal = 0
+        ctx = {
+            "ability": "grenade_pack_flyover",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "range": int(range_value),
+            "threshold": int(threshold),
+            "mortal_per_success": int(mortal_per),
+            "max_mortal": int(max_mortal),
+            "spec": dict(spec or {}),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_end_of_fight_embark_decision(
+        self,
+        *,
+        player,
+        transport,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or transport is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        transport_id = maybe_entity_id(transport)
+        if not transport_id:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "end_of_fight_embark":
+                    continue
+                if str(ctx.get("transport_id", "")) == str(transport_id):
+                    return None
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        sorted_candidates = [c for c in candidates if c is not None]
+        sorted_candidates.sort(key=lambda c: str(maybe_entity_id(c) or ""))
+        for unit in sorted_candidates:
+            unit_id = maybe_entity_id(unit)
+            if not unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "") or "Unit"),
+                    payload={"target_unit_id": unit_id},
+                )
+            )
+        if len(options) <= 1:
+            return None
+
+        ability_name = str(spec.get("source", "") or "End of fight embark").strip() or "End of fight embark"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        try:
+            max_models = int(spec.get("max_models", 0) or 0)
+        except Exception:
+            max_models = 0
+        keyword = str(spec.get("keyword", "") or "").strip()
+        ctx = {
+            "ability": "end_of_fight_embark",
+            "ability_name": ability_name,
+            "phase": "Fight phase",
+            "unit": getattr(transport, "name", "") or "",
+            "unit_id": transport_id,
+            "transport_id": transport_id,
+            "range": int(range_value),
+            "max_models": int(max_models),
+            "keyword": keyword,
+            "spec": dict(spec or {}),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a unit to embark.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_reactive_move_confirmation(
         self,
         *,
@@ -3459,6 +4896,8 @@ class Game:
         bodyguard_unit,
         ability: dict,
         remaining: int,
+        allowed_model_ids: list[str] | None = None,
+        allow_skip: bool = True,
     ) -> DecisionRequest | None:
         if player is None or leader_unit is None or bodyguard_unit is None:
             return None
@@ -3471,6 +4910,9 @@ class Game:
         if not leader_id:
             return None
         destroyed = list(getattr(bodyguard_unit, "models_lost", []) or [])
+        allowed_set = {str(v) for v in list(allowed_model_ids or []) if v}
+        if allowed_set:
+            destroyed = [m for m in destroyed if str(get_entity_id(m) or "") in allowed_set]
         if not destroyed:
             return None
         queue = getattr(self, "decision_queue", None)
@@ -3491,7 +4933,9 @@ class Game:
         except Exception:
             destroyed_sorted = list(destroyed)
         ability_name = str(ability.get("name", "") or "Bodyguard Return")
-        options = [DecisionOption.create("None", payload={"model_id": None, "action": "skip"})]
+        options = []
+        if allow_skip:
+            options.append(DecisionOption.create("None", payload={"model_id": None, "action": "skip"}))
         used_labels = set()
         for model in destroyed_sorted:
             label = str(getattr(model, "name", "") or "Model")
@@ -3514,6 +4958,7 @@ class Game:
             "remaining": int(remaining or 0),
             "reason": f"{ability_name}: Return bodyguard model",
             "allowed_model_ids": allowed_ids,
+            "allow_skip": bool(allow_skip),
         }
         request = DecisionRequest.create(
             DECISION_ALLOCATE_DAMAGE,
@@ -3838,6 +5283,7 @@ class Game:
             "possessed_lord",
             "fight_phase_melee_ap_boost",
             "movement_phase_move_weapon_bonus",
+            "hand_of_asuryan",
             "flickerjump",
             "daemonic_patrons",
             "power_from_pain_command",
@@ -3953,6 +5399,26 @@ class Game:
                 move_bonus_dice=move_bonus_dice,
                 weapon_name=weapon_name,
                 attacks_bonus=attacks_bonus,
+            )
+            return
+
+        if ability_key == "hand_of_asuryan":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)("hand_of_asuryan"):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(payload.get("ability_name") or ctx.get("ability_name") or "Hand of Asuryan").strip()
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "Bloody Twins").strip()
+            model.activate_hand_of_asuryan(
+                key="hand_of_asuryan",
+                ability_name=ability_name,
+                weapon_name=weapon_name,
             )
             return
 
@@ -4723,6 +6189,8 @@ class Game:
             bodyguard_unit=bodyguard,
             ability={"name": ability_name},
             remaining=remaining,
+            allowed_model_ids=list(ctx.get("allowed_model_ids") or []),
+            allow_skip=bool(ctx.get("allow_skip", True)),
         )
 
     def _maybe_apply_mortal_wounds_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
@@ -5173,11 +6641,83 @@ class Game:
                     hits_by_unit=dict(hits_map),
                 )
 
+    def _on_unit_shooting_resolved_tactical_acumen(
+        self,
+        attacker_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Tactical Acumen requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+        try:
+            if not getattr(attacker_unit, "deployed", True):
+                return
+        except Exception:
+            return
+        try:
+            if attacker_unit.is_in_reserves() or attacker_unit.is_embarked:
+                return
+        except Exception:
+            pass
+
+        specs = attacker_unit.leading_tactical_acumen_specs() or []
+        if not specs:
+            return
+
+        unit_id = maybe_entity_id(attacker_unit)
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_MOVE_UNIT:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("reactive_move_kind", "") or "") != "tactical_acumen":
+                    continue
+                if str(ctx.get("unit_id", "") or "") == str(unit_id or ""):
+                    return
+
+        for spec in specs:
+            leader = spec.get("leader")
+            if leader is None:
+                continue
+            try:
+                if not getattr(leader, "is_alive", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if leader.get_attached_unit_root() is not attacker_unit.get_attached_unit_root():
+                    continue
+            except Exception:
+                pass
+            try:
+                max_distance = int(spec.get("range", 0) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                continue
+            source = str(spec.get("source", "") or "Tactical Acumen").strip() or "Tactical Acumen"
+            self._queue_reactive_move_movement_decision(
+                player=attacker_player,
+                unit=attacker_unit,
+                max_distance=max_distance,
+                kind="tactical_acumen",
+                movement_type="reactive",
+                source=source,
+            )
+
     def _on_unit_shooting_resolved_post_shoot_battleshock(
         self,
         attacker_unit=None,
         hits_by_target=None,
         hit_models_by_target=None,
+        killing_models_by_target=None,
         **_kwargs,
     ) -> None:
         if attacker_unit is None or not hits_by_target:
@@ -5207,6 +6747,26 @@ class Game:
                 return False
             return model in hit_models
 
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _model_killed_target(model, target) -> bool:
+            if not isinstance(killing_models_by_target, dict):
+                return False
+            killed_models = killing_models_by_target.get(target)
+            if not killed_models:
+                return False
+            return model in killed_models
+
         triggers: list[tuple[Any, dict, list[Any]]] = []
         for model in list(attacker_unit.models or []):
             if not getattr(model, "is_alive", False):
@@ -5216,6 +6776,7 @@ class Game:
                 continue
             for spec in specs:
                 infantry_only = bool(spec.get("infantry_only", False))
+                exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
                 candidates: list[Any] = []
                 for target_unit, hits in (hits_by_target or {}).items():
                     if target_unit is None:
@@ -5232,6 +6793,8 @@ class Game:
                             is_infantry = bool(getattr(target_unit, "is_infantry", False))
                         if not is_infantry:
                             continue
+                    if exclude_mv and _is_monster_or_vehicle(target_unit):
+                        continue
                     if not _model_hit_target(model, target_unit):
                         continue
                     candidates.append(target_unit)
@@ -5249,10 +6812,23 @@ class Game:
             ability_name = str(spec.get("source", "") or "Post-shoot Battle-shock").strip() or "Post-shoot Battle-shock"
             options = []
             for cand in list(candidates):
+                modifier = 0
+                try:
+                    modifier = int(spec.get("test_modifier", 0) or 0)
+                except Exception:
+                    modifier = 0
+                try:
+                    if spec.get("test_modifier_on_kill") and _model_killed_target(model, cand):
+                        modifier += int(spec.get("test_modifier_on_kill", 0) or 0)
+                except Exception:
+                    pass
+                payload = {"unit_id": get_entity_id(cand)}
+                if modifier:
+                    payload["battle_shock_test_modifier"] = int(modifier)
                 options.append(
                     DecisionOption.create(
                         str(getattr(cand, "name", "Unit") or "Unit"),
-                        payload={"unit_id": get_entity_id(cand)},
+                        payload=payload,
                     )
                 )
             if not options:
@@ -5265,6 +6841,99 @@ class Game:
                 context={
                     "attacker_unit_id": get_entity_id(attacker_unit),
                     "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_disembark_wound_reroll(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Fire Support requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            return model in hit_models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_disembark_wound_reroll_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Fire Support").strip() or "Fire Support"
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a target.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability": "post_shoot_disembark_wound_reroll",
                     "ability_name": ability_name,
                 },
             )
@@ -5568,6 +7237,164 @@ class Game:
                 },
             )
             self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_pinned(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Pinned requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target_with_weapon(model, target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if not models and weapon_key.endswith("s"):
+                models = target_map.get(weapon_key[:-1])
+            if not models:
+                return False
+            return model in models
+
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_pinned_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                weapon_key = str(spec.get("weapon_key", "") or "")
+                if not weapon_key:
+                    continue
+                try:
+                    move_penalty = int(spec.get("move_penalty", -2) or -2)
+                except Exception:
+                    move_penalty = -2
+                try:
+                    charge_penalty = int(spec.get("charge_penalty", -2) or -2)
+                except Exception:
+                    charge_penalty = -2
+                source = str(spec.get("source", "") or "Pinned").strip() or "Pinned"
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if not _model_hit_target_with_weapon(model, target_unit, weapon_key):
+                        continue
+                    try:
+                        target_root = target_unit.get_attached_unit_root()
+                    except Exception:
+                        target_root = target_unit
+                    owner_id = str(getattr(attacker_player, "id", "") or "")
+                    try:
+                        turn = int(getattr(self, "turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    apply_fn = getattr(target_root, "apply_pinned", None)
+                    if callable(apply_fn):
+                        apply_fn(
+                            owner_id=owner_id,
+                            turn=turn,
+                            source=source,
+                            move_penalty=int(move_penalty),
+                            charge_penalty=int(charge_penalty),
+                        )
+                    else:
+                        sr = getattr(target_root, "special_rules", None)
+                        if not isinstance(sr, dict):
+                            sr = {}
+                        sr["pinned_active"] = True
+                        sr["pinned_owner"] = owner_id
+                        sr["pinned_turn"] = int(turn or 0)
+                        sr["pinned_source"] = source
+                        sr["pinned_move_penalty"] = int(move_penalty)
+                        sr["pinned_charge_penalty"] = int(charge_penalty)
+                        target_root.special_rules = sr
+                    try:
+                        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                        _log_action_for_players(self, attacker_player, f"{source}: {tname} is pinned until your next turn.")
+                    except Exception:
+                        pass
+
+    def _on_unit_shooting_resolved_harvester_of_souls(
+        self,
+        attacker_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        pending = list(sr.get("harvester_of_souls_pending_ids", []) or [])
+        if not pending:
+            return
+        try:
+            marked_turn = int(sr.get("harvester_of_souls_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if marked_turn and current_turn and marked_turn != current_turn:
+            pending = []
+        ability_name = str(sr.get("harvester_of_souls_source", "") or "Harvester of Souls").strip() or "Harvester of Souls"
+        for uid in list(pending or []):
+            target_unit = self._resolve_unit_by_id(uid)
+            if target_unit is None or not target_unit.is_alive():
+                continue
+            try:
+                mortal = int(get_roll("D3") or 0)
+            except Exception:
+                mortal = 0
+            if mortal <= 0:
+                continue
+            root._apply_mortal_wounds_to_unit(target_unit, int(mortal), game_map=getattr(self, "map", None))
+            try:
+                owner = self._resolve_player_by_id(str(sr.get("harvester_of_souls_owner", "") or ""))
+                if owner is not None:
+                    from ..utility.event_bus import append_action
+                    append_action(owner, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds.")
+            except Exception:
+                pass
+        for key in (
+            "harvester_of_souls_pending_ids",
+            "harvester_of_souls_target_id",
+            "harvester_of_souls_source",
+            "harvester_of_souls_owner",
+            "harvester_of_souls_turn",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
 
     def _on_unit_shooting_resolved_post_shoot_suppression(
         self,
@@ -5903,6 +7730,106 @@ class Game:
                     "attack_type": attack_type,
                     "ap_bonus": int(ap_bonus),
                     "limit_scope": limit_scope,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_crit_hit_threshold(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot crit threshold requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            return model in hit_models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_crit_hit_threshold_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot crit bonus").strip() or "Post-shoot crit bonus"
+            keyword = str(spec.get("keyword", "") or "").strip()
+            try:
+                threshold = int(spec.get("threshold", 6) or 6)
+            except Exception:
+                threshold = 6
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_crit_hit_threshold",
+                    "ability_name": ability_name,
+                    "keyword": keyword,
+                    "threshold": int(threshold),
+                    "model_id": get_entity_id(model),
                 },
             )
             self.request_decision(request)
@@ -6431,6 +8358,208 @@ class Game:
         except Exception:
             pass
 
+    def resolve_end_of_fight_embark(self, transport, passenger, spec) -> bool:
+        if transport is None or passenger is None or not isinstance(spec, dict):
+            return False
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return False
+        if not getattr(transport, "is_alive", lambda: False)():
+            return False
+        if not getattr(transport, "deployed", True):
+            return False
+        try:
+            if transport.is_in_reserves() or transport.is_embarked:
+                return False
+        except Exception:
+            pass
+        if not getattr(passenger, "is_alive", lambda: False)():
+            return False
+        if not getattr(passenger, "deployed", True):
+            return False
+        try:
+            if passenger.is_in_reserves() or passenger.is_embarked:
+                return False
+        except Exception:
+            pass
+        if passenger is transport:
+            return False
+        if list(getattr(transport, "transport_passengers", []) or []):
+            return False
+        keyword = str(spec.get("keyword", "") or "").strip()
+        if keyword and not passenger.has_any_keyword(keyword):
+            return False
+        try:
+            max_models = int(spec.get("max_models", 0) or 0)
+        except Exception:
+            max_models = 0
+        if max_models > 0:
+            try:
+                models = list(passenger.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(passenger, "models", []) or [])
+            alive = [m for m in models if getattr(m, "is_alive", True)]
+            if len(alive) > max_models:
+                return False
+        try:
+            range_value = float(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0.0
+        if range_value <= 0:
+            return False
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+            if not unit_wholly_within_range_of_unit(transport, passenger, range_value):
+                return False
+        except Exception:
+            return False
+        # Must not be within Engagement Range of any enemy units.
+        try:
+            enemies = list(game_map.get_enemy_units(passenger) or [])
+        except Exception:
+            enemies = []
+        for enemy in enemies:
+            if enemy is None or not getattr(enemy, "is_alive", lambda: False)():
+                continue
+            if game_map.is_within_engagement_range(passenger, enemy):
+                return False
+        # Cannot embark after disembarking this turn.
+        if getattr(passenger.round_state, "disembarked_this_round", False):
+            return False
+        # Fire and Fade: cannot embark until end of turn.
+        try:
+            sr = getattr(passenger, "special_rules", None)
+        except Exception:
+            sr = None
+        if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+            owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+            turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+            current = self.get_current_player()
+            if owner and current is not None:
+                if owner == str(getattr(current, "id", "") or "") and int(getattr(self, "turn", 0) or 0) == turn:
+                    return False
+        try:
+            if not transport.can_transport(passenger):
+                return False
+        except Exception:
+            return False
+
+        ok = False
+        try:
+            ok = bool(transport.add_passenger(passenger, game_map=game_map))
+        except Exception:
+            ok = False
+        if ok:
+            try:
+                from ..utility.event_bus import append_action
+                player = getattr(transport.get_parent_army(), "player", None)
+                ability_name = str(spec.get("source", "") or "End of fight embark").strip() or "End of fight embark"
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(passenger, 'name', 'Unit')} embarked in {getattr(transport, 'name', 'Transport')}.",
+                    )
+            except Exception:
+                pass
+        return bool(ok)
+
+    def resolve_grenade_pack_flyover(self, unit, target_unit, spec) -> None:
+        if unit is None or target_unit is None or not isinstance(spec, dict):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            models = list(getattr(root, "models", []) or [])
+        except Exception:
+            models = []
+        models = [m for m in models if getattr(m, "is_alive", True)]
+        model_keyword = str(spec.get("model_keyword", "") or "").strip()
+        if model_keyword:
+            key_norm = re.sub(r"[^a-z0-9]+", " ", model_keyword.lower()).strip()
+            key_singular = key_norm[:-1] if key_norm.endswith("s") else key_norm
+
+            def _matches_keyword(model_obj) -> bool:
+                try:
+                    name = str(getattr(model_obj, "name", "") or "").lower()
+                except Exception:
+                    name = ""
+                if not name:
+                    return False
+                name_norm = re.sub(r"[^a-z0-9]+", " ", name).strip()
+                if not name_norm:
+                    return False
+                if key_norm and (key_norm in name_norm or name_norm in key_norm):
+                    return True
+                if key_singular and (key_singular in name_norm or name_norm in key_singular):
+                    return True
+                return False
+
+            try:
+                models = [m for m in models if _matches_keyword(m)]
+            except Exception:
+                pass
+        dice_count = len(models)
+        try:
+            threshold = int(spec.get("threshold", 0) or 0)
+        except Exception:
+            threshold = 0
+        try:
+            mortal_per = int(spec.get("mortal_per_success", 1) or 0)
+        except Exception:
+            mortal_per = 0
+        try:
+            max_mortal = int(spec.get("max_mortal", 0) or 0)
+        except Exception:
+            max_mortal = 0
+        if dice_count <= 0 or threshold <= 0 or mortal_per <= 0:
+            return
+
+        ability_name = str(spec.get("source", "") or "Grenade Pack Flyover").strip() or "Grenade Pack Flyover"
+
+        try:
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+
+        unit_id = get_entity_id(root) if callable(get_entity_id) else None
+        target_id = get_entity_id(target_unit) if callable(get_entity_id) else None
+
+        reason = f"{ability_name}: {getattr(root, 'name', 'Unit')} -> {getattr(target_unit, 'name', 'Target')}"
+        roll_spec = {
+            "dice_count": int(dice_count),
+            "faces": 6,
+            "reason": reason,
+            "roll_type": "grenade_pack_flyover",
+            "unit_id": unit_id,
+            "target_unit_id": target_id,
+            "target_unit_ids": [target_id] if target_id else [],
+            "handler_key": "grenade_pack_flyover",
+            "ability_name": ability_name,
+            "threshold": int(threshold),
+            "mortal_per_success": int(mortal_per),
+            "max_mortal": int(max_mortal),
+        }
+        if bool(getattr(self, "auto_resolve_dice_rolls", False)):
+            try:
+                from ..utility.dice import get_roll
+                roll_spec["fixed_dice"] = [int(get_roll("D6") or 0) for _ in range(int(dice_count))]
+            except Exception:
+                pass
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+        try:
+            self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
+        except Exception:
+            pass
+
     def _on_unit_move_ended_move_over_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -6562,6 +8691,61 @@ class Game:
                 phase="Movement phase",
             )
 
+    def _on_unit_move_ended_grenade_pack_flyover(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance", "fall_back"):
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        try:
+            specs = list(root.unit_grenade_pack_flyover_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return
+        for spec in specs:
+            move_types = set(spec.get("move_types") or [])
+            if action_key not in move_types:
+                continue
+            sr = getattr(root, "special_rules", None)
+            if spec.get("once_per_turn") and isinstance(sr, dict):
+                owner = str(sr.get("grenade_pack_flyover_used_turn_owner", "") or "")
+                turn = int(sr.get("grenade_pack_flyover_used_turn", 0) or 0)
+                if owner and owner == str(getattr(player, "id", "") or "") and int(getattr(self, "turn", 0) or 0) == turn:
+                    continue
+            candidates = self._collect_grenade_pack_flyover_candidates(root, spec, game_map)
+            if not candidates:
+                continue
+            self._queue_grenade_pack_flyover_target_decision(
+                player=player,
+                unit=root,
+                candidates=candidates,
+                spec=spec,
+            )
+
     def _on_unit_move_ended_snared_mortal_wounds(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return
@@ -6617,14 +8801,24 @@ class Game:
                 f"{ability_name}: {getattr(root, 'name', 'Unit')} suffered {int(ones)} mortal wounds.",
             )
 
-    def _on_phase_end_movement_phase_visible_wound_bonus(self, player=None, phase=None, **_kwargs) -> None:
-        """Movement phase end: select a visible enemy unit to receive a temporary wound bonus vs friendly keyword attacks."""
+    def _on_phase_end_movement_phase_visible_bonus(
+        self,
+        *,
+        player=None,
+        phase=None,
+        bonus_kind: str,
+        spec_method: str,
+    ) -> None:
+        """Movement phase end: select a visible enemy unit to receive a temporary hit/wound bonus."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "MOVEMENT_PHASE":
             return
         if player is None or player is not self.get_current_player():
             return
         if not bool(getattr(self, "is_authoritative", True)):
+            return
+        kind_key = str(bonus_kind or "").strip().lower()
+        if kind_key not in ("hit", "wound"):
             return
         army = self._get_player_army(player)
         if army is None:
@@ -6634,7 +8828,6 @@ class Game:
             return
 
         from ..utility.entity_ids import get_entity_id
-        from ..utility.aura_utils import distance_between_models_bases_3d
 
         enemy_units = list(self.get_enemy_units(player) or [])
         enemy_roots = []
@@ -6680,6 +8873,8 @@ class Game:
             except Exception:
                 return str(getattr(u, "name", "") or "")
 
+        queue_fn = self._queue_movement_phase_visible_hit_bonus if kind_key == "hit" else self._queue_movement_phase_visible_wound_bonus
+
         for unit in sorted(list(army.units or []), key=_unit_sort_key):
             if unit is None:
                 continue
@@ -6710,7 +8905,10 @@ class Game:
                     return str(getattr(m, "name", "") or "")
 
             for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
-                specs = root.model_movement_phase_end_visible_wound_bonus_specs(model) or []
+                spec_fn = getattr(root, spec_method, None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
                 if not specs:
                     continue
                 source_unit = getattr(model, "parent_unit", None) or root
@@ -6721,39 +8919,262 @@ class Game:
                         range_value = 0
                     if range_value <= 0:
                         continue
-                    candidates = []
-                    for enemy_root in enemy_roots:
-                        try:
-                            target_models = list(enemy_root.get_models_for_collision() or [])
-                        except Exception:
-                            target_models = list(getattr(enemy_root, "models", []) or [])
-                        target_models = [tm for tm in target_models if getattr(tm, "is_alive", True)]
-                        if not target_models:
-                            continue
-                        min_dist = float("inf")
-                        for tm in target_models:
-                            try:
-                                dist = float(distance_between_models_bases_3d(model, tm))
-                            except Exception:
-                                dist = float("inf")
-                            if dist < min_dist:
-                                min_dist = dist
-                        if min_dist > float(range_value):
-                            continue
-                        has_los = False
-                        try:
-                            has_los = bool(source_unit._has_line_of_sight_to_target(model, enemy_root, game_map))
-                        except Exception:
-                            has_los = False
-                        if not has_los:
-                            continue
-                        candidates.append(enemy_root)
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
                     if not candidates:
                         continue
-                    self._queue_movement_phase_visible_wound_bonus(
+                    queue_fn(
                         player=player,
                         source_unit=source_unit,
                         model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
+    def _on_phase_end_movement_phase_visible_wound_bonus(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select a visible enemy unit to receive a temporary wound bonus vs friendly keyword attacks."""
+        self._on_phase_end_movement_phase_visible_bonus(
+            player=player,
+            phase=phase,
+            bonus_kind="wound",
+            spec_method="model_movement_phase_end_visible_wound_bonus_specs",
+        )
+
+    def _on_phase_end_movement_phase_visible_hit_bonus(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select a visible enemy unit to receive a temporary hit bonus vs friendly keyword attacks."""
+        self._on_phase_end_movement_phase_visible_bonus(
+            player=player,
+            phase=phase,
+            bonus_kind="hit",
+            spec_method="model_movement_phase_end_visible_hit_bonus_specs",
+        )
+
+    def _on_phase_end_misfortune(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select a visible enemy unit to suffer -1 to wound rolls (Misfortune)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+
+        enemy_units = list(self.get_enemy_units(player) or [])
+        enemy_roots = []
+        seen = set()
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None or not getattr(root, "is_alive", lambda: False)():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            rid = str(get_entity_id(root) or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            enemy_roots.append(root)
+
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_movement_phase_end_misfortune_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    self._queue_movement_phase_end_misfortune(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
+    def _on_phase_end_transport_end_of_fight_embark(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: optional embark for empty transports with datasheet abilities."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for transport in list(army.units or []):
+                if transport is None:
+                    continue
+                if not transport.is_alive() or not getattr(transport, "deployed", True):
+                    continue
+                try:
+                    if transport.is_in_reserves() or transport.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if list(getattr(transport, "transport_passengers", []) or []):
+                    continue
+                try:
+                    specs = list(transport.unit_end_of_fight_embark_specs() or [])
+                except Exception:
+                    specs = []
+                if not specs:
+                    continue
+                for spec in specs:
+                    try:
+                        max_models = int(spec.get("max_models", 0) or 0)
+                    except Exception:
+                        max_models = 0
+                    try:
+                        range_value = float(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0.0
+                    if range_value <= 0:
+                        continue
+                    keyword = str(spec.get("keyword", "") or "").strip()
+                    candidates = []
+                    for unit in list(army.units or []):
+                        if unit is None or unit is transport:
+                            continue
+                        if not unit.is_alive() or not getattr(unit, "deployed", True):
+                            continue
+                        try:
+                            if unit.is_in_reserves() or unit.is_embarked:
+                                continue
+                        except Exception:
+                            pass
+                        if not getattr(unit, "is_infantry", False):
+                            continue
+                        if keyword and not unit.has_any_keyword(keyword):
+                            continue
+                        if max_models > 0:
+                            try:
+                                models = list(unit.get_attached_unit_models() or [])
+                            except Exception:
+                                models = list(getattr(unit, "models", []) or [])
+                            alive = [m for m in models if getattr(m, "is_alive", True)]
+                            if len(alive) > max_models:
+                                continue
+                        if getattr(unit.round_state, "disembarked_this_round", False):
+                            continue
+                        sr = getattr(unit, "special_rules", None)
+                        if isinstance(sr, dict) and sr.get("fire_and_fade_no_embark_turn_owner"):
+                            owner = str(sr.get("fire_and_fade_no_embark_turn_owner") or "")
+                            turn = int(sr.get("fire_and_fade_no_embark_turn", 0) or 0)
+                            if owner and owner == str(getattr(p, "id", "") or "") and int(getattr(self, "turn", 0) or 0) == turn:
+                                continue
+                        try:
+                            if not transport.can_transport(unit):
+                                continue
+                        except Exception:
+                            continue
+                        if not unit_wholly_within_range_of_unit(transport, unit, range_value):
+                            continue
+                        # Must not be within Engagement Range of any enemy units.
+                        enemies = list(game_map.get_enemy_units(unit) or [])
+                        engaged = False
+                        for enemy in enemies:
+                            if enemy is None or not enemy.is_alive():
+                                continue
+                            if game_map.is_within_engagement_range(unit, enemy):
+                                engaged = True
+                                break
+                        if engaged:
+                            continue
+                        candidates.append(unit)
+                    if not candidates:
+                        continue
+                    self._queue_end_of_fight_embark_decision(
+                        player=p,
+                        transport=transport,
                         candidates=candidates,
                         spec=spec,
                     )
@@ -7429,6 +9850,59 @@ class Game:
         if unit is None:
             return
         self._maybe_prompt_transport_reactive_disembark(unit, trigger="set_up")
+
+    def _on_unit_set_up_grenade_pack_flyover(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "MOVEMENT_PHASE":
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or root is not unit:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        try:
+            specs = list(root.unit_grenade_pack_flyover_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return
+        for spec in specs:
+            if not spec.get("trigger_on_setup"):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if spec.get("once_per_turn") and isinstance(sr, dict):
+                owner = str(sr.get("grenade_pack_flyover_used_turn_owner", "") or "")
+                turn = int(sr.get("grenade_pack_flyover_used_turn", 0) or 0)
+                if owner and owner == str(getattr(player, "id", "") or "") and int(getattr(self, "turn", 0) or 0) == turn:
+                    continue
+            candidates = self._collect_grenade_pack_flyover_candidates(root, spec, game_map)
+            if not candidates:
+                continue
+            self._queue_grenade_pack_flyover_target_decision(
+                player=player,
+                unit=root,
+                candidates=candidates,
+                spec=spec,
+            )
 
     def _on_unit_set_up_cry_of_the_wind(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -8114,6 +10588,209 @@ class Game:
                 context=ctx,
             )
             self.request_decision(req)
+
+    def _on_shooting_targets_selected_hand_of_asuryan(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "hand_of_asuryan":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return ""
+
+        for model in sorted(list(getattr(root, "models", []) or []), key=_sort_key):
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)("hand_of_asuryan"):
+                continue
+            specs = root.model_hand_of_asuryan_specs(model) or []
+            if not specs:
+                continue
+            spec = specs[0]
+            weapon_name = str(spec.get("weapon_name", "") or "Bloody Twins").strip() or "Bloody Twins"
+            ability_name = str(spec.get("source", "") or "Hand of Asuryan").strip() or "Hand of Asuryan"
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "hand_of_asuryan",
+                "ability_name": ability_name,
+                "phase": "Shooting phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+                "weapon_name": weapon_name,
+            }
+            message = f"Use {ability_name} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="hand_of_asuryan",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id, "weapon_name": weapon_name},
+                instance_key=f"{model_id}:hand_of_asuryan",
+            )
+            return
+
+    def _on_shooting_targets_selected_harvester_of_souls(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        specs = root.leading_harvester_of_souls_specs() or []
+        if not specs:
+            return
+        spec = specs[0]
+        leader = spec.get("leader")
+        if leader is not None and not getattr(leader, "is_alive", False):
+            return
+        unique_targets = []
+        seen = set()
+        for t in list(target_units or []):
+            if t is None:
+                continue
+            try:
+                target_root = t.get_attached_unit_root()
+            except Exception:
+                target_root = t
+            if target_root is None:
+                continue
+            tid = str(get_entity_id(target_root) or "")
+            if not tid or tid in seen:
+                continue
+            seen.add(tid)
+            unique_targets.append(target_root)
+        if len(unique_targets) != 1:
+            return
+        target_root = unique_targets[0]
+        if target_root.get_parent_army() == root.get_parent_army():
+            return
+        if not target_root.is_alive():
+            return
+        ability_name = str(spec.get("source", "") or "Harvester of Souls").strip() or "Harvester of Souls"
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+        enemy_roots = []
+        seen_enemy = set()
+        for enemy in list(self.get_enemy_units(player) or []):
+            if enemy is None:
+                continue
+            try:
+                eroot = enemy.get_attached_unit_root()
+            except Exception:
+                eroot = enemy
+            if eroot is None or not eroot.is_alive():
+                continue
+            try:
+                if not getattr(eroot, "deployed", True):
+                    continue
+                if eroot.is_in_reserves() or eroot.is_embarked:
+                    continue
+            except Exception:
+                pass
+            eid = str(get_entity_id(eroot) or "")
+            if not eid or eid in seen_enemy:
+                continue
+            seen_enemy.add(eid)
+            enemy_roots.append(eroot)
+        candidates = [target_root]
+        for enemy_root in enemy_roots:
+            if enemy_root is target_root:
+                continue
+            if unit_within_range_of_unit(target_root, enemy_root, 3.0):
+                candidates.append(enemy_root)
+        if not candidates:
+            return
+        try:
+            owner_id = str(getattr(player, "id", "") or "")
+        except Exception:
+            owner_id = ""
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        marked_ids: list[str] = []
+        for cand in list(candidates):
+            try:
+                roll = int(get_roll("D6") or 0)
+            except Exception:
+                roll = 0
+            if roll >= 5:
+                cid = str(get_entity_id(cand) or "")
+                if cid and cid not in marked_ids:
+                    marked_ids.append(cid)
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        for key in (
+            "harvester_of_souls_pending_ids",
+            "harvester_of_souls_target_id",
+            "harvester_of_souls_source",
+            "harvester_of_souls_owner",
+            "harvester_of_souls_turn",
+        ):
+            sr.pop(key, None)
+        if marked_ids:
+            sr["harvester_of_souls_pending_ids"] = list(marked_ids)
+            sr["harvester_of_souls_target_id"] = str(get_entity_id(target_root) or "")
+            sr["harvester_of_souls_source"] = ability_name
+            sr["harvester_of_souls_owner"] = owner_id
+            sr["harvester_of_souls_turn"] = int(turn or 0)
+        root.special_rules = sr
 
     def _on_fight_unit_selected_dark_pacts(self, unit=None, **_kwargs) -> None:
         if unit is None:

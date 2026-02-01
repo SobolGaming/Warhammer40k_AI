@@ -508,6 +508,14 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
             scope = "leading"
             norm = norm[m.end():].strip()
 
+    prefix_condition = None
+    m = re.match(r"^(?:while|if)\s+([^,]+),\s*(.+)$", norm, flags=re.IGNORECASE)
+    if m:
+        cond = _parse_condition(m.group(1).strip())
+        if cond is not None:
+            prefix_condition = cond
+            norm = m.group(2).strip()
+
     trigger_condition = None
     subject = ""
     attack_type = "any"
@@ -568,6 +576,15 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
             else:
                 return None
 
+    def _merge_conditions(a: Optional[AttackRollCondition], b: Optional[AttackRollCondition]) -> Optional[AttackRollCondition]:
+        if a is None:
+            return b
+        if b is None:
+            return a
+        return a.merge(b)
+
+    base_condition = _merge_conditions(prefix_condition, trigger_condition)
+
     if subject.startswith("a_model_in_"):
         subject = subject.replace("a_model_in_", "model_in_")
 
@@ -584,7 +601,7 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
         eff = _parse_effect_clause(clause)
         if eff is None:
             return None
-        merged_cond = trigger_condition.merge(eff.condition) if (trigger_condition and eff.condition) else trigger_condition or eff.condition
+        merged_cond = _merge_conditions(base_condition, eff.condition)
         effects.append(
             AttackRollEffect(
                 roll=eff.roll,
@@ -602,7 +619,7 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
         subject=subject,
         attack_type=attack_type,
         effects=tuple(effects),
-        trigger_condition=trigger_condition,
+        trigger_condition=base_condition,
         aura_range=aura_range,
         aura_faction=aura_faction,
         aura_friendly=aura_friendly,
