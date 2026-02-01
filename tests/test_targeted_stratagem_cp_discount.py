@@ -69,6 +69,18 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
             "of that Stratagem by 1CP."
         )
 
+    def _select_model_ability_texts(self):
+        return [
+            (
+                "Once per battle round, you can select one model from your army with this ability. That model's unit can be "
+                "targeted with a Stratagem. If it does, reduce the CP cost of that use of that Stratagem by 1CP."
+            ),
+            (
+                "Once per battle round, you can select one model from your army with this ability and target that model's unit "
+                "with a Stratagem. If it does, reduce the CP cost of that use of that Stratagem by 1CP."
+            ),
+        ]
+
     def test_parses_targeted_stratagem_cp_discount(self):
         ability = {
             "name": "Strategic Coordination",
@@ -80,6 +92,20 @@ class TestTargetedStratagemCpDiscount(unittest.TestCase):
         self.assertTrue(unit.special_rules.get("stratagem_target_cp_discount"))
         sources = unit.special_rules.get("stratagem_target_cp_discount_sources", [])
         self.assertIn("Strategic Coordination", sources)
+
+    def test_parses_select_model_stratagem_cp_discount_variants(self):
+        for text in self._select_model_ability_texts():
+            with self.subTest(text=text):
+                ability = {
+                    "name": "Strategic Coordination",
+                    "description": text,
+                    "type": "Datasheet",
+                    "parameter": "",
+                }
+                unit = _make_unit("Coordinator", abilities=[ability])
+                self.assertTrue(unit.special_rules.get("stratagem_target_cp_discount"))
+                sources = unit.special_rules.get("stratagem_target_cp_discount_sources", [])
+                self.assertIn("Strategic Coordination", sources)
 
     def test_discount_applies_once_per_battle_round(self):
         from warhammer40k_ai.rules.stratagems import Stratagem

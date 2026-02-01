@@ -1377,6 +1377,12 @@ class Unit:
         r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
         re.IGNORECASE,
     )
+    _TARGETED_STRATAGEM_CP_DISCOUNT_SELECT_RE = re.compile(
+        r"once\s+per\s+battle\s+round\s+you\s+can\s+select\s+one\s+model\s+from\s+your\s+army\s+with\s+this\s+ability\s+"
+        r"(?:that\s+models\s+unit\s+can\s+be\s+targeted\s+with\s+a\s+stratagem|and\s+target\s+that\s+models\s+unit\s+with\s+a\s+stratagem)\s+"
+        r"(?:if\s+it\s+does\s+)?reduce\s+the\s+cp\s+cost\s+of\s+that\s+(?:use|usage)\s+of\s+that\s+stratagem\s+by\s+1\s*cp",
+        re.IGNORECASE,
+    )
     _TARGETED_STRATAGEM_CP_DISCOUNT_AURA_RE = re.compile(
         r"once\s+per\s+battle\s+round\s+one\s+(?:unit|model)\s+from\s+your\s+army\s+with\s+this\s+ability\s+can\s+use\s+it\s+when\s+a\s+friendly\s+"
         r"(?P<keyword>[a-z0-9 ]+?)\s+unit\s+within\s+(?P<range>\d+)\s+of\s+(?:that|this)\s+model\s+is\s+targeted\s+with\s+a\s+stratagem\s+"
@@ -2514,7 +2520,7 @@ class Unit:
             if not norm:
                 continue
 
-            if self._TARGETED_STRATAGEM_CP_DISCOUNT_RE.fullmatch(norm):
+            if self._TARGETED_STRATAGEM_CP_DISCOUNT_RE.fullmatch(norm) or self._TARGETED_STRATAGEM_CP_DISCOUNT_SELECT_RE.fullmatch(norm):
                 if name:
                     names.append(name)
                 else:

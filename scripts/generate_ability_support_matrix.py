@@ -3814,11 +3814,18 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    direct_pattern = (
-        r"once per battle round one (?:unit|model) from your army with this ability can use it when "
-        r"(?:its unit|this models unit|that models unit) is targeted with a stratagem(?: if it does)? reduce the cp cost of that "
-        r"(?:use|usage) of that stratagem by 1 ?cp"
-    )
+    direct_patterns = [
+        (
+            r"once per battle round one (?:unit|model) from your army with this ability can use it when "
+            r"(?:its unit|this models unit|that models unit) is targeted with a stratagem(?: if it does)? reduce the cp cost of that "
+            r"(?:use|usage) of that stratagem by 1 ?cp"
+        ),
+        (
+            r"once per battle round you can select one model from your army with this ability "
+            r"(?:that models unit can be targeted with a stratagem|and target that models unit with a stratagem) "
+            r"(?:if it does)? reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp"
+        ),
+    ]
     aura_pattern = (
         r"once per battle round one (?:unit|model) from your army with this ability can use it when a friendly "
         r"(?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of (?:that|this) model is targeted with a stratagem(?: if it does)? "
@@ -3832,7 +3839,7 @@ def _targeted_stratagem_cp_discount_support(description: str) -> Optional[Tuple[
         r"once per battle round one friendly (?P<keyword>[a-z0-9 ]+?) unit within (?P<range>\d+) of this model can be targeted with a "
         r"stratagem(?: if it does)? reduce the cp cost of that (?:use|usage) of that stratagem by 1 ?cp"
     )
-    for pattern in (direct_pattern, aura_pattern, aura_alt_pattern, aura_alt2_pattern):
+    for pattern in (*direct_patterns, aura_pattern, aura_alt_pattern, aura_alt2_pattern):
         m = re.fullmatch(pattern, norm)
         if not m:
             continue
