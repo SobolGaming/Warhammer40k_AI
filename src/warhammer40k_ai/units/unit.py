@@ -1355,6 +1355,14 @@ class Unit:
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
         re.IGNORECASE,
     )
+    _OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE = re.compile(
+        r"(?:while|if)\s+(?:this\s+unit|the\s+bearer'?s\s+unit|that\s+unit)\s+is\s+within\s+range\s+of\s+"
+        r"(?:an|one\s+or\s+more)\s+objective\s+marker(?:s)?(?P<controlled>\s+you\s+control)?\s*,?\s*"
+        r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+"
+        r"(?:this\s+unit|the\s+bearer'?s\s+unit|that\s+unit),?\s*models\s+in\s+"
+        r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_BENEFIT_OF_COVER_RE = re.compile(
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+"
         r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),?\s*models\s+in\s+"
@@ -3656,14 +3664,33 @@ class Unit:
                     if self._BEARER_UNIT_ASSAULT_RANGED_RE.search(sentence):
                         assault_ranged = True
 
-                    m = self._BEARER_UNIT_BENEFIT_OF_COVER_RE.search(sentence)
+                    objective_cover_matched = False
+                    m = self._OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE.search(sentence)
                     if m:
                         atype = (m.group("atype") or "any").strip().lower()
+                        controlled = bool(m.group("controlled"))
                         source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
-                        key = (atype, source.lower())
+                        key = (atype, source.lower(), "objective", "controlled" if controlled else "any")
                         if key not in benefit_of_cover_seen:
                             benefit_of_cover_seen.add(key)
-                            benefit_of_cover_entries.append({"attack_type": atype, "source": source})
+                            benefit_of_cover_entries.append(
+                                {
+                                    "attack_type": atype,
+                                    "source": source,
+                                    "requires_objective": True,
+                                    "requires_objective_controlled": bool(controlled),
+                                }
+                            )
+                        objective_cover_matched = True
+                    if not objective_cover_matched:
+                        m = self._BEARER_UNIT_BENEFIT_OF_COVER_RE.search(sentence)
+                        if m:
+                            atype = (m.group("atype") or "any").strip().lower()
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            key = (atype, source.lower(), "any", "any")
+                            if key not in benefit_of_cover_seen:
+                                benefit_of_cover_seen.add(key)
+                                benefit_of_cover_entries.append({"attack_type": atype, "source": source})
 
                     m = self._BEARER_UNIT_TARGET_HIT_PENALTY_RE.search(sentence)
                     if m:
@@ -13513,20 +13540,19 @@ class Unit:
                     continue
         return False
 
-    def _attacker_within_objective_controlled(self, game_map=None) -> bool:
-        """Return True if this unit is within range of an objective marker it controls."""
+    def _objective_in_range(self, game_map=None):
+        """Return the first objective marker this unit is within range of, if any."""
         try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
         if root is None:
-            return False
+            return None
         try:
             if root.is_in_reserves() or root.is_embarked:
-                return False
+                return None
         except Exception:
             pass
-        game = None
         if game_map is None:
             try:
                 game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
@@ -13534,18 +13560,38 @@ class Unit:
                 game = None
             game_map = getattr(game, "map", None) if game is not None else None
         if game_map is None:
-            return False
+            return None
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        if not objectives:
+            return None
+        for obj in objectives:
+            loc = getattr(obj, "location", None) or obj
+            if loc is None:
+                continue
+            try:
+                if bool(getattr(loc, "removed", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                if root.is_within_objective_range(loc):
+                    return obj
+            except Exception:
+                continue
+        return None
+
+    def is_within_any_objective_range(self, game_map=None) -> bool:
+        """Return True if this unit is within range of any objective marker."""
+        return self._objective_in_range(game_map) is not None
+
+    def _within_controlled_objective_range(self, game_map=None) -> bool:
+        """Return True if this unit is within range of an objective marker it controls."""
         try:
-            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None) if game is None else game
+            root = self.get_attached_unit_root()
         except Exception:
-            game = None
-        if game is None or not hasattr(game, "_unit_within_range_of_objective"):
-            return False
-        try:
-            obj = game._unit_within_range_of_objective(root)
-        except Exception:
-            obj = None
-        if obj is None:
+            root = self
+        obj = self._objective_in_range(game_map)
+        if obj is None or root is None:
             return False
         loc = getattr(obj, "location", None) or obj
         controller = getattr(loc, "controlling_player", None)
@@ -13553,6 +13599,10 @@ class Unit:
             return controller is root.get_parent_army().player
         except Exception:
             return False
+
+    def _attacker_within_objective_controlled(self, game_map=None) -> bool:
+        """Return True if this unit is within range of an objective marker it controls."""
+        return bool(self._within_controlled_objective_range(game_map))
 
     def can_reroll_advance_roll(self) -> bool:
         """

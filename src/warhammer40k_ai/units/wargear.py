@@ -7967,9 +7967,13 @@ class WargearProfile:
                 if is_ranged:
                     sources = []
                     for entry in entries:
+                        requires_objective = False
+                        requires_controlled = False
                         if isinstance(entry, dict):
                             atype = str(entry.get("attack_type") or "any").strip().lower()
                             src = str(entry.get("source") or "Bearer unit ability").strip() or "Bearer unit ability"
+                            requires_objective = bool(entry.get("requires_objective"))
+                            requires_controlled = bool(entry.get("requires_objective_controlled"))
                         elif isinstance(entry, (tuple, list)):
                             atype = str(entry[0] if entry else "any").strip().lower()
                             src = str(entry[1]) if len(entry) > 1 else "Bearer unit ability"
@@ -7977,6 +7981,28 @@ class WargearProfile:
                             continue
                         if atype not in ("any", "ranged"):
                             continue
+                        if requires_objective or requires_controlled:
+                            game_map = None
+                            try:
+                                attacker_unit = attack_instance.get("attacker_unit")
+                            except Exception:
+                                attacker_unit = None
+                            try:
+                                if attacker_unit is not None:
+                                    game_map = getattr(getattr(attacker_unit.get_parent_army(), "player", None), "game", None).map
+                            except Exception:
+                                game_map = None
+                            if game_map is None:
+                                try:
+                                    game_map = getattr(getattr(t_unit.get_parent_army(), "player", None), "game", None).map
+                                except Exception:
+                                    game_map = None
+                            if requires_controlled:
+                                if not t_unit._within_controlled_objective_range(game_map=game_map):
+                                    continue
+                            elif requires_objective:
+                                if not t_unit.is_within_any_objective_range(game_map=game_map):
+                                    continue
                         sources.append(src)
                     if sources:
                         attack_instance.setdefault("benefit_of_cover", True)

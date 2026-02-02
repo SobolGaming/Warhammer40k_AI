@@ -2848,6 +2848,26 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"Bearer's unit: {effect}")
 
     m = re.search(
+        r"(?:while|if)\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+is\s+within\s+range\s+of\s+"
+        r"(?:an|one\s+or\s+more)\s+objective\s+marker(?:s)?(?:\s+you\s+control)?\s*,?\s*each\s+time\s+"
+        r"(?:a|an)\s+(?:(melee|ranged)\s+)?attack\s+targets\s+"
+        r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),\s*models\s+in\s+"
+        r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        scope = (m.group(1) or "").strip().lower()
+        scope_text = scope if scope in ("melee", "ranged") else "ranged"
+        controlled = "you control" in m.group(0)
+        cond = "while within range of an objective marker you control" if controlled else "while within range of an objective marker"
+        effect = f"Benefit of Cover vs {scope_text} attacks that target the unit."
+        if leading_prefix:
+            notes.append(f"{leading_prefix}{cond}: {effect}")
+        else:
+            notes.append(f"Bearer's unit: {cond}; {effect}")
+
+    m = re.search(
         r"each\s+time\s+(?:a|an)\s+(?:(melee|ranged)\s+)?attack\s+targets\s+"
         r"(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),\s*models\s+in\s+"
         r"(?:it|that\s+unit|this\s+unit|the\s+bearer'?s\s+unit)\s+(?:have|gain)\s+the\s+benefit\s+of\s+cover",
@@ -2900,6 +2920,8 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}add \d+ to the range characteristic of melta weapons equipped by models in {unit_ref}",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} subtract 1 from the hit roll",
+        rf"{lead_prefix}(?:while|if) {unit_ref} is within range of (?:an|one or more) objective marker(?:s)?(?: you control)? each time "
+        rf"(?:a|an) (?:melee |ranged )?attack targets {unit_ref} models in (?:it|{unit_ref}) have the benefit of cover(?: against that attack)?",
         rf"{lead_prefix}each time (?:a|an) (?:melee |ranged )?attack targets {unit_ref} models in (?:it|{unit_ref}) have the benefit of cover(?: against that attack)?",
         rf"{lead_prefix}.*eligible to (?:declare a charge|charge).*",
     ]

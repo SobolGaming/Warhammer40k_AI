@@ -230,6 +230,58 @@ class TestBenefitOfCover:
         res_melee = melee_wp._save_with_tracking(bodyguard.models[0], {"mortal_wound": False}, ap=0)
         assert res_melee["saved"] is False
 
+    def test_objective_range_benefit_of_cover(self, monkeypatch):
+        import warhammer40k_ai.units.wargear as wargear_mod
+        from warhammer40k_ai.engine.game import Game, Battlefield, BattlefieldSize
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.battlefield.map import Objective, ObjectiveCategory, ObjectivePoint
+
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 3)
+
+        ability_text = (
+            "While this unit is within range of an objective marker, each time a ranged attack targets this unit, "
+            "models in this unit have the Benefit of Cover against that attack."
+        )
+        ability = [{
+            "name": "Twisted Defence Force",
+            "description": ability_text,
+            "type": "Ability",
+            "parameter": "",
+        }]
+
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+        army_a = Army("Army A", "Detachment A")
+        army_b = Army("Army B", "Detachment B")
+        p1 = Player("P1", PlayerControl.LOCAL, army=army_a)
+        p2 = Player("P2", PlayerControl.REMOTE, army=army_b)
+        game.add_player(p1)
+        game.add_player(p2)
+
+        target = create_unit("Target", 10.0, 10.0, faction="A", model_count=1, save="4", abilities=ability)
+        attacker = create_unit("Attacker", 30.0, 10.0, faction="B", model_count=1, save="4")
+        army_a.add_unit(target)
+        army_b.add_unit(attacker)
+
+        objective_point = ObjectivePoint(10.0, 10.0, 0.0, control_radius=3.0)
+        objective = Objective(
+            name="Test Objective",
+            category=ObjectiveCategory.PRIMARY,
+            points=0,
+            description="",
+            conditions=lambda _g: False,
+            location=objective_point,
+        )
+        game.map.add_objective(objective)
+
+        ranged_wp = WargearProfile("ranged", {"range": "24", "A": "1", "BS_WS": "3", "S": "4", "AP": "0", "D": "1", "description": ""})
+
+        res_in_range = ranged_wp._save_with_tracking(target.models[0], {"mortal_wound": False}, ap=0, roll_value=3, allow_rerolls=False)
+        assert res_in_range["saved"] is True
+
+        target.models[0].set_location(30.0, 30.0, 0.0, 0.0)
+        res_out = ranged_wp._save_with_tracking(target.models[0], {"mortal_wound": False}, ap=0, roll_value=3, allow_rerolls=False)
+        assert res_out["saved"] is False
+
     def test_aura_benefit_of_cover_applies_to_ranged_only(self, monkeypatch):
         import warhammer40k_ai.units.wargear as wargear_mod
         import warhammer40k_ai.utility.aura_effects as aura_mod
