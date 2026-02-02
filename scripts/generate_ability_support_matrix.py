@@ -4603,6 +4603,11 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
         r"that objective marker remains under your control even if you have no models within range of it "
         r"until your opponent controls it at (?:the )?start or end of any turn"
     )
+    legacy_timed_control = (
+        r"if you control an objective marker at the end of your command phase and this unit is within range of that objective marker "
+        r"that objective marker remains under your control even if you have no models within range of it "
+        r"until your opponent controls it at (?:the )?start or end of any turn"
+    )
     loc = (
         r"at the end of your command phase if this unit is within range of an objective marker you control "
         r"that objective marker remains under your control until your opponents level of control over that "
@@ -4616,6 +4621,7 @@ def _sticky_objective_support(description: str) -> Optional[Tuple[str, str]]:
     if not (
         re.fullmatch(legacy, norm)
         or re.fullmatch(legacy_timed, norm)
+        or re.fullmatch(legacy_timed_control, norm)
         or re.fullmatch(loc, norm)
         or re.fullmatch(loc_control, norm)
     ):
