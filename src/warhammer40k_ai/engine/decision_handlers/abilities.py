@@ -25,6 +25,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_MOMENT_SHACKLE,
     DECISION_CHOOSE_PATH_OF_WARRIOR,
     DECISION_CHOOSE_CRUEL_AMUSEMENT,
+    DECISION_CHOOSE_MASTER_OF_MAGICKS,
     DECISION_CHOOSE_DANCE_OF_DEATH,
     DECISION_CHOOSE_LIMB_FROM_LIMB,
     DECISION_CHOOSE_RED_WRATH,
@@ -691,6 +692,84 @@ def _apply_choose_cruel_amusement(game: object, request: DecisionRequest, result
             "IGNORES_COVER": "Ignores Cover",
             "PRECISION": "Precision",
             "SUSTAINED_HITS_3": "Sustained Hits 3",
+        }.get(choice_key, choice_key.title())
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {getattr(model, 'name', 'Model')} grants {label} to {weapon_name}.",
+        )
+    except Exception:
+        pass
+    return str(choice_key)
+
+
+def _validate_choose_master_of_magicks(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    model_val = payload.get("model_id") or payload.get("model") or request.context.get("model_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    if model_val is None or not choice:
+        return ("Master of Magicks requires model_id and choice.",)
+    model = resolve_model(game, model_val)
+    if model is None:
+        return ("Master of Magicks model not found.",)
+    choice_key = str(choice or "").strip().upper()
+    if choice_key not in ("IGNORES_COVER", "LETHAL_HITS", "SUSTAINED_HITS_D3"):
+        return ("Master of Magicks choice must be Ignores Cover, Lethal Hits, or Sustained Hits D3.",)
+    return ()
+
+
+def _apply_choose_master_of_magicks(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    model = resolve_model(game, payload.get("model_id") or payload.get("model") or request.context.get("model_id"))
+    if model is None:
+        raise RuntimeError("Master of Magicks model not found.")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    choice_key = str(choice or "").strip().upper()
+    keyword_map = {
+        "IGNORES_COVER": ["IGNORES COVER"],
+        "LETHAL_HITS": ["LETHAL HITS"],
+        "SUSTAINED_HITS_D3": ["SUSTAINED HITS D3"],
+    }
+    keywords = keyword_map.get(choice_key)
+    if not keywords:
+        raise RuntimeError("Master of Magicks choice invalid.")
+    weapon_name = str(payload.get("weapon_name") or request.context.get("weapon_name") or "bolt of change").strip()
+    ability_name = str(payload.get("ability_name") or request.context.get("ability_name") or "Master of Magicks").strip()
+    model_id = getattr(model, "id", None) or getattr(model, "_id", None)
+    key = f"master_of_magicks:{model_id or ''}"
+    if hasattr(model, "set_temporary_weapon_keyword_bonuses"):
+        model.set_temporary_weapon_keyword_bonuses(
+            key=key,
+            weapon_name=weapon_name,
+            keywords=list(keywords),
+            source=ability_name,
+            expires_phase="SHOOTING_PHASE",
+            attack_type="ranged",
+        )
+    try:
+        unit = getattr(model, "parent_unit", None)
+        if unit is not None:
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+        else:
+            root = None
+        player = None
+        if root is not None:
+            army = root.get_parent_army()
+            player = getattr(army, "player", None) if army is not None else None
+        label = {
+            "IGNORES_COVER": "Ignores Cover",
+            "LETHAL_HITS": "Lethal Hits",
+            "SUSTAINED_HITS_D3": "Sustained Hits D3",
         }.get(choice_key, choice_key.title())
         _log_action_for_players(
             game,
@@ -3653,6 +3732,7 @@ register_decision_handler(DECISION_CHOOSE_MARTIAL_KATAH, validate=_validate_choo
 register_decision_handler(DECISION_CHOOSE_MOMENT_SHACKLE, validate=_validate_choose_moment_shackle, apply=_apply_choose_moment_shackle)
 register_decision_handler(DECISION_CHOOSE_PATH_OF_WARRIOR, validate=_validate_choose_path_of_warrior, apply=_apply_choose_path_of_warrior)
 register_decision_handler(DECISION_CHOOSE_CRUEL_AMUSEMENT, validate=_validate_choose_cruel_amusement, apply=_apply_choose_cruel_amusement)
+register_decision_handler(DECISION_CHOOSE_MASTER_OF_MAGICKS, validate=_validate_choose_master_of_magicks, apply=_apply_choose_master_of_magicks)
 register_decision_handler(DECISION_CHOOSE_DANCE_OF_DEATH, validate=_validate_choose_dance_of_death, apply=_apply_choose_dance_of_death)
 register_decision_handler(DECISION_CHOOSE_LIMB_FROM_LIMB, validate=_validate_choose_limb_from_limb, apply=_apply_choose_limb_from_limb)
 register_decision_handler(DECISION_CHOOSE_RED_WRATH, validate=_validate_choose_red_wrath, apply=_apply_choose_red_wrath)

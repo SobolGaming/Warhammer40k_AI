@@ -11844,6 +11844,102 @@ class Game:
             )
             self.request_decision(req)
 
+    def _on_shooting_targets_selected_master_of_magicks(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        try:
+            entries = list(root.iter_master_of_magicks_models() or [])
+        except Exception:
+            entries = []
+        if not entries:
+            return
+        from .decision_kinds import DECISION_CHOOSE_MASTER_OF_MAGICKS
+        from .decisions import DecisionOption, DecisionRequest
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_MASTER_OF_MAGICKS:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _sort_key(entry):
+            try:
+                return str(get_entity_id(entry.get("model")))
+            except Exception:
+                return ""
+
+        for entry in sorted(list(entries or []), key=_sort_key):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            try:
+                key_norm = f"master_of_magicks:{model_id}".strip().lower()
+                eff = getattr(model, "_temporary_effects", None)
+                if isinstance(eff, dict) and key_norm in eff:
+                    exp = str((eff.get(key_norm, {}) or {}).get("expires_phase", "") or "").strip().upper()
+                    if exp == "SHOOTING_PHASE":
+                        continue
+            except Exception:
+                pass
+            weapon_name = str(entry.get("weapon_name", "") or "bolt of change")
+            ability_name = str(entry.get("source", "") or "Master of Magicks").strip() or "Master of Magicks"
+            options = [
+                DecisionOption.create(
+                    "Ignores Cover",
+                    payload={"choice": "IGNORES_COVER", "summary": "Weapon gains [IGNORES COVER] until end of phase."},
+                ),
+                DecisionOption.create(
+                    "Lethal Hits",
+                    payload={"choice": "LETHAL_HITS", "summary": "Weapon gains [LETHAL HITS] until end of phase."},
+                ),
+                DecisionOption.create(
+                    "Sustained Hits D3",
+                    payload={"choice": "SUSTAINED_HITS_D3", "summary": "Weapon gains [SUSTAINED HITS D3] until end of phase."},
+                ),
+            ]
+            ctx = {
+                "unit_id": get_entity_id(root),
+                "model_id": model_id,
+                "weapon_name": weapon_name,
+                "ability_name": ability_name,
+                "phase_name": "SHOOTING_PHASE",
+            }
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_MASTER_OF_MAGICKS,
+                f"{ability_name}: select a weapon ability.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(req)
+
     def _on_shooting_targets_selected_hand_of_asuryan(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

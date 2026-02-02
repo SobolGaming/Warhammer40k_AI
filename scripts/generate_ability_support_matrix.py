@@ -1630,6 +1630,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Post-shoot: select a hit enemy non-MONSTER/VEHICLE unit, roll 1D6; on 4+, it is aflame until end of opponent's next turn (-2\" Move, -2 Advance, -2 Charge).",
         ),
+        ("CD", "Master of Magicks (Psychic)"): (
+            "Supported",
+            "Shooting phase: choose Ignores Cover, Lethal Hits, or Sustained Hits D3 for Bolt of Change until end of phase.",
+        ),
         ("CD", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITANIC units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
@@ -2014,6 +2018,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
+        ("TS", "Master of Magicks (Psychic)"): (
+            "Supported",
+            "Shooting phase: choose Ignores Cover, Lethal Hits, or Sustained Hits D3 for Bolt of Change until end of phase.",
+        ),
         ("DG", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITAN units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",

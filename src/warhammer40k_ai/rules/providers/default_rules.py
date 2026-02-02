@@ -82,6 +82,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_harvester_of_souls"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_blood_surge"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_cruel_amusement"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_master_of_magicks"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_hand_of_asuryan"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_harvester_of_souls"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_blood_surge"),

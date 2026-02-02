@@ -1909,6 +1909,11 @@ class Unit:
         r"until the end of the phase this model s (?P<weapon>[a-z0-9 ]+) has that ability",
         re.IGNORECASE,
     )
+    _MASTER_OF_MAGICKS_RE = re.compile(
+        r"in your shooting phase select one of the following abilities ignores cover lethal hits sustained hits d3 "
+        r"until the end of the phase this model s (?P<weapon>[a-z0-9 ]+) has that ability",
+        re.IGNORECASE,
+    )
     _CRY_OF_THE_WIND_RE = re.compile(
         r"each time this model is set up on the battlefield until the end of the turn "
         r"each time this model makes a ranged attack a successful unmodified hit roll scores a critical hit",
@@ -21296,6 +21301,50 @@ class Unit:
                         "model": model,
                         "weapon_name": weapon_name,
                         "source": str(name or "Cruel Amusement").strip() or "Cruel Amusement",
+                    }
+                )
+                break
+        return results
+
+    def iter_master_of_magicks_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "master of magicks" not in str(name or text_src).lower():
+                    if not root._MASTER_OF_MAGICKS_RE.fullmatch(normalized):
+                        continue
+                weapon_name = "bolt of change"
+                try:
+                    m = root._MASTER_OF_MAGICKS_RE.fullmatch(normalized)
+                    if m:
+                        weapon_name = str(m.group("weapon") or weapon_name).strip() or weapon_name
+                except Exception:
+                    weapon_name = "bolt of change"
+                results.append(
+                    {
+                        "model": model,
+                        "weapon_name": weapon_name,
+                        "source": str(name or "Master of Magicks").strip() or "Master of Magicks",
                     }
                 )
                 break

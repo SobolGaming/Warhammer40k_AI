@@ -3101,6 +3101,7 @@ class GameView:
                 DECISION_CHOOSE_PATH_OF_WARRIOR,
                 DECISION_CHOOSE_MOMENT_SHACKLE,
                 DECISION_CHOOSE_CRUEL_AMUSEMENT,
+                DECISION_CHOOSE_MASTER_OF_MAGICKS,
                 DECISION_CHOOSE_DANCE_OF_DEATH,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
@@ -3823,7 +3824,7 @@ class GameView:
                 pass
             return
 
-        if decision_type == DECISION_CHOOSE_CRUEL_AMUSEMENT:
+        if decision_type in (DECISION_CHOOSE_CRUEL_AMUSEMENT, DECISION_CHOOSE_MASTER_OF_MAGICKS):
             if self.martial_katah_dialog is None:
                 try:
                     from .dialogs import MartialKatahDialog
@@ -3837,7 +3838,8 @@ class GameView:
             from .decision_ui_utils import first_option_id
 
             ctx = dict(getattr(request, "context", {}) or {})
-            ability_name = str(ctx.get("ability_name", "") or "Cruel Amusement").strip()
+            default_name = "Cruel Amusement" if decision_type == DECISION_CHOOSE_CRUEL_AMUSEMENT else "Master of Magicks"
+            ability_name = str(ctx.get("ability_name", "") or default_name).strip()
             weapon_name = str(ctx.get("weapon_name", "") or "")
             model_name = ""
             unit_name = ""
