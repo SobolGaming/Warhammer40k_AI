@@ -2215,6 +2215,7 @@ def _classify_ability_base(
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
     leading_leadership_reroll_support = _leading_leadership_reroll_support(description)
+    dark_pacts_leadership_reroll_support = _dark_pacts_leadership_reroll_support(description)
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
@@ -2435,6 +2436,8 @@ def _classify_ability_base(
         return battle_focus_token_refund_support
     if leading_leadership_reroll_support:
         return leading_leadership_reroll_support
+    if dark_pacts_leadership_reroll_support:
+        return dark_pacts_leadership_reroll_support
     if start_of_battle_keyword_reroll_support:
         return start_of_battle_keyword_reroll_support
     if daemonic_patrons_support:
@@ -3784,6 +3787,18 @@ def _leading_leadership_reroll_support(description: str) -> Optional[Tuple[str, 
     if not re.fullmatch(pattern, norm):
         return None
     return ("Supported", "Leading: re-roll Leadership tests taken for the unit.")
+
+
+def _dark_pacts_leadership_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = r"each time the bearers unit takes a leadership test for the dark pacts ability you can reroll that test"
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "Dark Pacts: re-roll the Leadership test for the Dark Pacts ability.")
 
 
 def _defensive_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:

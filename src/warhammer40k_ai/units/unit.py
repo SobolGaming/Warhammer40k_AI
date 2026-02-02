@@ -1816,6 +1816,10 @@ class Unit:
         r"while this model is leading a unit you can re ?roll leadership tests taken for that unit",
         re.IGNORECASE,
     )
+    _DARK_PACTS_LEADERSHIP_REROLL_RE = re.compile(
+        r"each time the (?:bearer s|bearers) unit takes a leadership test for the dark pacts ability you can re ?roll that test",
+        re.IGNORECASE,
+    )
     _CREWED_PLATFORM_RE = re.compile(
         r"when the last (?P<crew>guardian defender|storm guardian) model in this unit is destroyed "
         r"any remaining (?P<platform>heavy weapon platform|serpent s scale platform|serpents scale platform) models in this unit are also destroyed",
@@ -8575,7 +8579,11 @@ class Unit:
         except Exception:
             return 0
 
-    def pass_leadership_check(self) -> bool:
+    def pass_leadership_check(
+        self,
+        extra_reroll_sources: Optional[list[str]] = None,
+        reroll_reason: str = "Leadership re-roll",
+    ) -> bool:
         """Perform a Leadership test by rolling 2D6 against the unit's Leadership characteristic.
         
         Returns:
@@ -8631,6 +8639,17 @@ class Unit:
             reroll_sources = list(root.leading_leadership_reroll_sources() or [])
         except Exception:
             reroll_sources = []
+        if extra_reroll_sources:
+            seen = {str(src or "").strip().lower() for src in reroll_sources if str(src or "").strip()}
+            for src in list(extra_reroll_sources or []):
+                label = str(src or "").strip()
+                if not label:
+                    continue
+                key = label.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                reroll_sources.append(label)
         
         # Provide detailed feedback
         dice_note = ""
@@ -8690,7 +8709,7 @@ class Unit:
                             dice=dice_rolls,
                             needed=int(leadership_value),
                             success=passed,
-                            reason=f"{source_label} (Leadership re-roll)",
+                            reason=f"{source_label} ({reroll_reason})",
                             allow_reroll=True,
                         )
                     )
@@ -11852,6 +11871,50 @@ class Unit:
         root._ability_cache = cache
         return list(sources)
 
+    def dark_pacts_leadership_reroll_sources(self) -> list[str]:
+        """Bearer ability: re-roll Leadership tests taken for Dark Pacts."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "dark_pacts_leadership_reroll_sources"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        sources: list[str] = []
+        seen: set[str] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not self._DARK_PACTS_LEADERSHIP_REROLL_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Dark Pacts re-roll").strip() or "Dark Pacts re-roll"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                sources.append(source)
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(sources)
+        root._ability_cache = cache
+        return list(sources)
+
     def leading_unmodified_six_specs(self) -> list[dict]:
         """
         Leading ability: once per phase, change one hit/wound/damage roll to an unmodified 6.
@@ -14834,7 +14897,19 @@ class Unit:
         passed = True
         if not self._auto_pass_dark_pacts_test():
             try:
-                passed = bool(self.pass_leadership_check())
+                extra_sources = list(self.dark_pacts_leadership_reroll_sources() or [])
+            except Exception:
+                extra_sources = []
+            try:
+                if extra_sources:
+                    passed = bool(
+                        self.pass_leadership_check(
+                            extra_reroll_sources=extra_sources,
+                            reroll_reason="Dark Pacts re-roll",
+                        )
+                    )
+                else:
+                    passed = bool(self.pass_leadership_check())
             except Exception:
                 passed = False
         if not passed:
