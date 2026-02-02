@@ -1,4 +1,5 @@
 ﻿import pytest
+import types
 
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.units.ability import Ability
@@ -349,3 +350,82 @@ def test_champion_slayer_heals_on_destroying_character_or_monster_unit(monkeypat
     assert target.is_alive() is False
     # Heal roll was 4; starting wounds 2 -> 6 would cap at base (6)
     assert attacker.models[0].wounds == 6
+
+
+def test_on_kill_battleshock_triggers_for_units_within_range(monkeypatch):
+    # Rolls: hit=6, wound=6, save=1 (fail)
+    _install_deterministic_rolls(monkeypatch, [6, 6, 1])
+
+    bf = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
+    game = Game(bf)
+
+    p1 = Player("P1", PlayerControl.LOCAL, Army("Army A", "Detachment A"))
+    p2 = Player("P2", PlayerControl.REMOTE, Army("Army B", "Detachment B"))
+    game.add_player(p1)
+    game.add_player(p2)
+
+    attacker = Unit(MockDatasheet("Attacker", model_count=1))
+    attacker.deployed = True
+    attacker.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+
+    target = Unit(MockDatasheet("Target", model_count=1))
+    target.deployed = True
+    target.models[0].set_location(20.0, 10.0, 0.0, 0.0)
+
+    nearby = Unit(MockDatasheet("Nearby", model_count=1))
+    nearby.deployed = True
+    nearby.models[0].set_location(22.0, 10.0, 0.0, 0.0)
+
+    far = Unit(MockDatasheet("Far", model_count=1))
+    far.deployed = True
+    far.models[0].set_location(30.0, 10.0, 0.0, 0.0)
+
+    p1.army.add_unit(attacker)
+    p2.army.add_unit(target)
+    p2.army.add_unit(nearby)
+    p2.army.add_unit(far)
+    game.map.units = [attacker, target, nearby, far]
+
+    gun = Wargear({
+        "name": "Test Gun",
+        "type": "Ranged",
+        "range": "24",
+        "A": "1",
+        "BS_WS": "2",
+        "S": "10",
+        "AP": "0",
+        "D": "1",
+        "description": "",
+    })
+    attacker.models[0].wargear.append(gun)
+
+    ability_text = (
+        "Each time this model makes an attack that targets a unit below half-strength, add 1 to the Hit roll. "
+        "Each time an enemy unit is destroyed as the result of this model's attacks, before removing the last model "
+        "in that unit from the battlefield, each unit from your opponent's army that is within 3\" of it must take "
+        "a Battle-shock test."
+    )
+    attacker.possible_abilities.append(
+        Ability(
+            name="Cruel Ascendancy",
+            faction_id="",
+            description=ability_text,
+            type="Datasheet",
+            parameter="",
+        )
+    )
+    attacker._invalidate_ability_cache()
+
+    called = []
+
+    def _take(self, *_args, **_kwargs):
+        called.append(self.name)
+
+    nearby.take_battle_shock_test = types.MethodType(_take, nearby)
+    far.take_battle_shock_test = types.MethodType(_take, far)
+
+    gun.profiles["default"].attack(target, attacker.models[0], game_map=game.map)
+
+    assert target.is_alive() is False
+    assert "Nearby" in called
+    assert "Far" not in called

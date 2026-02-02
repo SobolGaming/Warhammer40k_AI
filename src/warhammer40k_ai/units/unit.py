@@ -1560,6 +1560,13 @@ class Unit:
         r"subtract (?P<pen>\d+) from that test",
         re.IGNORECASE,
     )
+    _ON_KILL_BATTLESHOCK_WITHIN_RANGE_RE = re.compile(
+        r"each time an enemy unit is destroyed as (?:a|the) result of this (?P<subject>model|unit)(?: s|s)? attacks? "
+        r"before removing the last model in that unit from the battlefield "
+        r"(?:each unit from your opponent(?: s|s)? army|each enemy unit) that (?:is )?within (?P<range>\d+) of it "
+        r"must take a battle shock test",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_DISEMBARK_WOUND_REROLL_RE = re.compile(
         r"in your shooting phase after this model has shot select one enemy unit "
         r"(?:(?:that was )?hit by one or more of those attacks|it scored one or more hits against this phase) "
@@ -26346,6 +26353,117 @@ class Unit:
                         "source": source,
                     }
                 )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def _parse_on_kill_battleshock_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """Parse on-kill Battle-shock aura specs from text (model/unit subject)."""
+        raw = self._normalize_rules_text(ability_desc)
+        if not raw:
+            return []
+        raw = raw.replace("\u2019", "'").replace("\u0192?T", "'")
+        sentences = [part.strip() for part in re.split(r"[.;]+", raw) if part.strip()]
+        if not sentences:
+            sentences = [raw]
+        specs: list[dict] = []
+        source = str(ability_name or "On-kill Battle-shock").strip() or "On-kill Battle-shock"
+        for sentence in sentences:
+            normalized = sentence.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._ON_KILL_BATTLESHOCK_WITHIN_RANGE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            subject = str(m.group("subject") or "").strip().lower()
+            try:
+                rng = int(m.group("range") or 0)
+            except Exception:
+                rng = 0
+            if rng <= 0:
+                continue
+            specs.append(
+                {
+                    "subject": subject,
+                    "range": int(rng),
+                    "source": source,
+                }
+            )
+        return specs
+
+    def model_on_kill_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Model-specific rule: enemy unit destroyed by this model's attacks triggers Battle-shock in a radius."""
+        if model is None:
+            return []
+        cache_key = f"model_on_kill_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            for spec in self._parse_on_kill_battleshock_specs_from_text(name, text_src):
+                if str(spec.get("subject") or "").strip().lower() != "model":
+                    continue
+                rng = int(spec.get("range", 0) or 0)
+                if rng <= 0:
+                    continue
+                source = str(spec.get("source", "") or "On-kill Battle-shock").strip() or "On-kill Battle-shock"
+                key = (source.lower(), int(rng))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"range": int(rng), "source": source})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_on_kill_battleshock_specs(self) -> List[dict]:
+        """Unit-specific rule: enemy unit destroyed by this unit's attacks triggers Battle-shock in a radius."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_on_kill_battleshock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                for spec in u._parse_on_kill_battleshock_specs_from_text(name, text_src):
+                    if str(spec.get("subject") or "").strip().lower() != "unit":
+                        continue
+                    rng = int(spec.get("range", 0) or 0)
+                    if rng <= 0:
+                        continue
+                    source = str(spec.get("source", "") or "On-kill Battle-shock").strip() or "On-kill Battle-shock"
+                    key = (source.lower(), int(rng))
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    specs.append({"range": int(rng), "source": source})
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

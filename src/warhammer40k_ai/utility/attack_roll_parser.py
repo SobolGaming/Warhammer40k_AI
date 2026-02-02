@@ -348,6 +348,12 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
     m = re.fullmatch(r"unit that is below half[- ]strength", t)
     if m:
         return AttackRollCondition(target_below_half_strength=True)
+    m = re.fullmatch(r"unit below (?:its )?starting strength", t)
+    if m:
+        return AttackRollCondition(target_below_starting_strength=True)
+    m = re.fullmatch(r"unit below half[- ]strength", t)
+    if m:
+        return AttackRollCondition(target_below_half_strength=True)
     m = re.fullmatch(r"unit \(excluding (?P<ex>[^)]+)\)", t)
     if m:
         raw = m.group("ex").replace(" and ", ",")

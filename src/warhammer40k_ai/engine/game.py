@@ -5163,7 +5163,7 @@ class Game:
             candidates.append(root)
         return list(candidates)
 
-    def _unit_within_range_of_model(self, model, unit, *, range_value: float) -> bool:
+    def _unit_within_range_of_model(self, model, unit, *, range_value: float, allow_destroyed_source: bool = False) -> bool:
         if model is None or unit is None:
             return False
         try:
@@ -5171,7 +5171,7 @@ class Game:
         except Exception:
             return False
         try:
-            if not getattr(model, "is_alive", True):
+            if not getattr(model, "is_alive", True) and not allow_destroyed_source:
                 return False
         except Exception:
             pass
@@ -11594,6 +11594,125 @@ class Game:
                     amount=amount,
                     reason=spec.get("source_ability", ""),
                 )
+
+    def _on_unit_destroyed_battleshock_on_kill(
+        self,
+        unit=None,
+        destroyed_by_unit=None,
+        destroyed_by_model=None,
+        last_model=None,
+        game_map=None,
+        **_kwargs,
+    ) -> None:
+        """On-kill: enemy units within range of the destroyed unit take Battle-shock tests."""
+        if unit is None:
+            return
+
+        attacker_unit = destroyed_by_unit
+        if attacker_unit is None and destroyed_by_model is not None:
+            attacker_unit = getattr(destroyed_by_model, "parent_unit", None)
+        if attacker_unit is None:
+            return
+
+        try:
+            if attacker_unit.get_parent_army() == unit.get_parent_army():
+                return
+        except Exception:
+            return
+
+        if game_map is None:
+            game_map = getattr(self, "map", None)
+        if game_map is None or last_model is None:
+            return
+
+        specs: list[dict] = []
+        try:
+            if destroyed_by_model is not None:
+                specs.extend(attacker_unit.model_on_kill_battleshock_specs(destroyed_by_model) or [])
+        except Exception:
+            specs = []
+        try:
+            specs.extend(attacker_unit.unit_on_kill_battleshock_specs() or [])
+        except Exception:
+            pass
+        if not specs:
+            return
+
+        unique_specs: list[dict] = []
+        seen_specs: set[tuple[str, int]] = set()
+        for spec in specs:
+            try:
+                rng = int(spec.get("range", 0) or 0)
+            except Exception:
+                rng = 0
+            if rng <= 0:
+                continue
+            source = str(spec.get("source", "") or "").strip().lower()
+            key = (source, int(rng))
+            if key in seen_specs:
+                continue
+            seen_specs.add(key)
+            unique_specs.append({"range": int(rng), "source": spec.get("source", "")})
+
+        if not unique_specs:
+            return
+
+        try:
+            enemies = list(game_map.get_enemy_units(attacker_unit) or [])
+        except Exception:
+            enemies = []
+        if not enemies:
+            return
+
+        enemy_roots: list[Unit] = []
+        seen_ids: set[str] = set()
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            if root is None or not root.is_alive():
+                continue
+            if root is unit:
+                continue
+            try:
+                if not getattr(root, "deployed", True):
+                    continue
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            rid = str(get_entity_id(root) or "")
+            if rid:
+                if rid in seen_ids:
+                    continue
+                seen_ids.add(rid)
+            enemy_roots.append(root)
+
+        if not enemy_roots:
+            return
+
+        for spec in unique_specs:
+            try:
+                rng = float(spec.get("range", 0) or 0)
+            except Exception:
+                rng = 0.0
+            if rng <= 0:
+                continue
+            for enemy_root in enemy_roots:
+                try:
+                    if not self._unit_within_range_of_model(
+                        last_model,
+                        enemy_root,
+                        range_value=rng,
+                        allow_destroyed_source=True,
+                    ):
+                        continue
+                except Exception:
+                    continue
+                enemy_root.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
 
     def _on_unit_destroyed_bloodshed_points(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         """World Eaters: Icon of Khorne grants Bloodshed points on enemy unit destruction."""

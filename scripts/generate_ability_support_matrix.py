@@ -2236,6 +2236,8 @@ def _classify_ability_base(
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
     selected_to_shoot_reroll_support = _selected_to_shoot_single_reroll_support(description)
     attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
+    attack_roll_battleshock_support = _attack_roll_plus_on_kill_battleshock_support(description)
+    on_kill_battleshock_support = _on_kill_battleshock_support(description)
     model_hit_vs_fly_support = _model_hit_bonus_vs_fly_support(description)
     model_target_strength_support = _model_target_strength_hit_wound_support(description)
     model_self_strength_support = _model_self_strength_hit_wound_support(description)
@@ -2464,6 +2466,10 @@ def _classify_ability_base(
         return selected_to_shoot_reroll_support
     if attack_roll_cp_support:
         return attack_roll_cp_support
+    if attack_roll_battleshock_support:
+        return attack_roll_battleshock_support
+    if on_kill_battleshock_support:
+        return on_kill_battleshock_support
     if model_hit_vs_fly_support:
         return model_hit_vs_fly_support
     if model_target_strength_support:
@@ -3306,6 +3312,60 @@ def _attack_roll_plus_cp_on_destroy_support(description: str) -> Optional[Tuple[
     else:
         notes.append("Gain CP on destroying enemy models supported.")
     return ("Supported", " ".join(notes))
+
+
+def _on_kill_battleshock_sentence(sentence: str) -> Optional[int]:
+    if not sentence:
+        return None
+    norm = _norm_rules_text(sentence)
+    if not norm:
+        return None
+    pattern = (
+        r"each time an enemy unit is destroyed as (?:a|the) result of this (?:model|unit)(?: s|s)? attacks? "
+        r"before removing the last model in that unit from the battlefield "
+        r"(?:each unit from your opponent(?: s|s)? army|each enemy unit) that (?:is )?within (?P<range>\d+) of it "
+        r"must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        return int(m.group("range") or 0)
+    except Exception:
+        return None
+
+
+def _on_kill_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    rng = _on_kill_battleshock_sentence(description)
+    if not rng:
+        return None
+    return ("Supported", f"On kill: enemy units within {rng}\" take Battle-shock tests.")
+
+
+def _attack_roll_plus_on_kill_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    chunks, remaining = _split_attack_roll_chunks(description)
+    if not chunks or not remaining:
+        return None
+    for chunk in chunks:
+        rule = parse_attack_roll_text(chunk)
+        if rule is None:
+            return None
+    ranges: list[int] = []
+    for sentence in remaining:
+        rng = _on_kill_battleshock_sentence(sentence)
+        if not rng:
+            return None
+        ranges.append(int(rng))
+    if not ranges:
+        return None
+    unique_ranges = sorted({int(r) for r in ranges if r})
+    if len(unique_ranges) == 1:
+        note = f"Model attack roll modifiers supported. On kill: enemy units within {unique_ranges[0]}\" take Battle-shock tests."
+    else:
+        note = "Model attack roll modifiers supported. On kill: enemy units within range take Battle-shock tests."
+    return ("Supported", note)
 
 
 def _closest_enemy_hit_and_charge_reroll_support(description: str) -> Optional[Tuple[str, str]]:

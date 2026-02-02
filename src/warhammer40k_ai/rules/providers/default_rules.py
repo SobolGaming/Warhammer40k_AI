@@ -47,6 +47,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("model_destroyed", "_on_model_destroyed_rules"),
                 ("model_destroyed", "_on_model_destroyed_phase_kill_tracking"),
                 ("unit_destroyed", "_on_unit_destroyed_rules"),
+                ("unit_destroyed", "_on_unit_destroyed_battleshock_on_kill"),
                 ("unit_destroyed", "_on_unit_destroyed_phase_kill_tracking"),
                 ("unit_destroyed", "_on_unit_destroyed_transport_rules"),
                 ("unit_destroyed", "_on_unit_destroyed_friendly_unit_destroyed_reposition"),
