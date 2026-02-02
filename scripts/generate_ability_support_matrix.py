@@ -2214,6 +2214,7 @@ def _classify_ability_base(
     movement_phase_visible_hit_bonus_support = _movement_phase_end_visible_hit_bonus_support(description)
     grenade_pack_flyover_support = _grenade_pack_flyover_support(description)
     battle_focus_token_refund_support = _battle_focus_agile_maneuver_token_refund_support(description)
+    leading_leadership_reroll_support = _leading_leadership_reroll_support(description)
     start_of_battle_keyword_reroll_support = _start_of_battle_keyword_reroll_ones_support(description)
     daemonic_patrons_support = _daemonic_patrons_support(description)
     return_on_death_support = _return_on_death_support(description)
@@ -2432,6 +2433,8 @@ def _classify_ability_base(
         return movement_phase_visible_hit_bonus_support
     if battle_focus_token_refund_support:
         return battle_focus_token_refund_support
+    if leading_leadership_reroll_support:
+        return leading_leadership_reroll_support
     if start_of_battle_keyword_reroll_support:
         return start_of_battle_keyword_reroll_support
     if daemonic_patrons_support:
@@ -3769,6 +3772,18 @@ def _battle_focus_agile_maneuver_token_refund_support(description: str) -> Optio
         "Supported",
         f"While leading: when spending a Battle Focus token for an Agile Manoeuvre, roll a D6; on {threshold}+ gain 1 token.",
     )
+
+
+def _leading_leadership_reroll_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = r"while this model is leading a unit you can reroll leadership tests taken for that unit"
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "Leading: re-roll Leadership tests taken for the unit.")
 
 
 def _defensive_wound_penalty_support(description: str) -> Optional[Tuple[str, str]]:

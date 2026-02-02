@@ -102,7 +102,7 @@
  | 003 | Y | while this model is leading a unit, each time a model in that unit makes an attack, you can re-roll the hit roll. | 
  | 003 | Y | while this model is leading a unit, models in that unit have the fights first ability. | 
  | 003 | Y | while this model is leading a unit, you can re-roll advance and charge rolls made for that unit. | 
- | 003 | N | while this model is leading a unit, you can re-roll leadership tests taken for that unit. | 
+ | 003 | Y | while this model is leading a unit, you can re-roll leadership tests taken for that unit. | 
  | 003 | P | while this unit contains a traitor ogryn model, character models in this unit have the feel no pain 4+ ability. | 
  | 003 | P | while this unit is leading a unit and contains a cult demagogue model, models in that unit have a 5+ invulnerable save. | 
  | 003 | P | while this unit is within range of an objective marker, each time a ranged attack targets this unit, models in this unit have the benefit of cover against that attack. | 

@@ -1812,6 +1812,10 @@ class Unit:
         r"an agile (?:manoeuvre|maneuver) roll (?:one|1) d6 on a (?P<threshold>\d)\+? you gain 1 battle focus token",
         re.IGNORECASE,
     )
+    _LEADING_LEADERSHIP_REROLL_RE = re.compile(
+        r"while this model is leading a unit you can re ?roll leadership tests taken for that unit",
+        re.IGNORECASE,
+    )
     _CREWED_PLATFORM_RE = re.compile(
         r"when the last (?P<crew>guardian defender|storm guardian) model in this unit is destroyed "
         r"any remaining (?P<platform>heavy weapon platform|serpent s scale platform|serpents scale platform) models in this unit are also destroyed",
@@ -8617,6 +8621,16 @@ class Unit:
             mod_roll = roll_result
         # 10e: lower Leadership is better; you pass if roll <= Ld.
         passed = mod_roll <= leadership_value
+
+        reroll_sources = []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            reroll_sources = list(root.leading_leadership_reroll_sources() or [])
+        except Exception:
+            reroll_sources = []
         
         # Provide detailed feedback
         dice_note = ""
@@ -8641,6 +8655,74 @@ class Unit:
                 print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
             else:
                 print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+
+        if reroll_sources and not passed:
+            want_reroll = True
+            try:
+                player = getattr(self.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+            try:
+                game = getattr(player, "game", None) if player is not None else None
+            except Exception:
+                game = None
+            try:
+                game_map = getattr(game, "map", None) if game is not None else None
+            except Exception:
+                game_map = None
+            try:
+                provider = getattr(game_map, "roll_reroll_provider", None)
+            except Exception:
+                provider = None
+            try:
+                is_human = self._player_has_local_control(player)
+            except Exception:
+                is_human = False
+            source_label = " / ".join(reroll_sources)
+            if is_human and callable(provider):
+                try:
+                    want_reroll = bool(
+                        provider(
+                            player=player,
+                            unit=self,
+                            roll_type="leadership",
+                            value=int(roll_result),
+                            dice=dice_rolls,
+                            needed=int(leadership_value),
+                            success=passed,
+                            reason=f"{source_label} (Leadership re-roll)",
+                            allow_reroll=True,
+                        )
+                    )
+                except Exception:
+                    want_reroll = False
+            if want_reroll:
+                original_roll = roll_result
+                roll_result = get_roll("2D6")
+                try:
+                    mod_roll = int(roll_result) + int(mod)
+                except Exception:
+                    mod_roll = roll_result
+                passed = mod_roll <= leadership_value
+                try:
+                    from ..utility.event_bus import append_action
+                    if player is not None:
+                        append_action(
+                            player,
+                            f"{source_label}: {self.name} re-rolls Leadership test ({original_roll} -> {roll_result}).",
+                        )
+                except Exception:
+                    pass
+                if mod:
+                    print(
+                        f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} (mod {mod:+}) "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                    )
+                else:
+                    print(
+                        f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
+                    )
         
         return passed
 
@@ -11724,6 +11806,51 @@ class Unit:
         cache[cache_key] = list(specs)
         root._ability_cache = cache
         return list(specs)
+
+    def leading_leadership_reroll_sources(self) -> list[str]:
+        """Leading ability: re-roll Leadership tests taken for the attached unit."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_leadership_reroll_sources"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        sources: list[str] = []
+        seen: set[str] = set()
+
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = str(ab or "")
+                    desc = str(ab or "")
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text_src = leader._strip_eligibility_prefix(desc or "")
+            normalized = leader._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._LEADING_LEADERSHIP_REROLL_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Leadership re-roll").strip() or "Leadership re-roll"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            sources.append(source)
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(sources)
+        root._ability_cache = cache
+        return list(sources)
 
     def leading_unmodified_six_specs(self) -> list[dict]:
         """
@@ -18949,6 +19076,13 @@ class Unit:
                     carmine_reroll_available = True
             except Exception:
                 carmine_reroll_available = False
+        leadership_reroll_sources = []
+        if not auto_passed:
+            try:
+                leadership_reroll_sources = list(self.leading_leadership_reroll_sources() or [])
+            except Exception:
+                leadership_reroll_sources = []
+        leadership_reroll_available = bool(leadership_reroll_sources)
 
         if not auto_passed:
             total_mod = int(shadow_mod) + int(extra_mod) + int(post_shoot_mod) + int(aura_mod)
@@ -18988,6 +19122,18 @@ class Unit:
                                 "label": "Re-roll Battle-shock (Carmine Reliquary)",
                                 "mode": "all",
                                 "source": "rule",
+                            }
+                        )
+                    if leadership_reroll_available:
+                        label = "Re-roll Leadership test"
+                        if leadership_reroll_sources:
+                            label = f"Re-roll Leadership ({' / '.join(sorted(leadership_reroll_sources))})"
+                        reroll_rules.append(
+                            {
+                                "action_id": "reroll_leadership_test",
+                                "label": label,
+                                "mode": "all",
+                                "source": "ability",
                             }
                         )
                     fixed_dice = []
@@ -19096,6 +19242,11 @@ class Unit:
                     reroll_sources.append("Icon of War")
                 if carmine_reroll_available:
                     reroll_sources.append("Carmine Reliquary")
+                if leadership_reroll_available:
+                    if leadership_reroll_sources:
+                        reroll_sources.extend(list(leadership_reroll_sources))
+                    else:
+                        reroll_sources.append("Leadership re-roll")
                 if reroll_sources:
                     try:
                         provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
