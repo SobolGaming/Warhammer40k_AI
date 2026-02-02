@@ -546,6 +546,13 @@ class WargearProfile:
             if aura_ap:
                 ap_val -= int(aura_ap)
         try:
+            from ..utility.aura_effects import get_aura_ap_bonus
+            aura_ap, _ = get_aura_ap_bonus(attacker, self, target, game_map=self._get_game_map_from_model(attacker))
+            if aura_ap:
+                ap_val -= int(aura_ap)
+        except Exception:
+            pass
+        try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("sensational_performance_active"):
@@ -7983,6 +7990,40 @@ class WargearProfile:
                                 seen.add(key)
                                 uniq.append(src)
                             attack_instance["benefit_of_cover_source"] = ", ".join(uniq) if uniq else "Bearer unit ability"
+        except Exception:
+            pass
+        # Aura abilities: Benefit of Cover against ranged attacks that target the unit.
+        try:
+            t_unit = getattr(target_model, "parent_unit", None)
+            if t_unit is not None:
+                is_melee = False
+                is_ranged = False
+                try:
+                    if self.parent_wargear is not None:
+                        is_melee = bool(self.parent_wargear.is_melee())
+                        is_ranged = bool(self.parent_wargear.is_ranged())
+                except Exception:
+                    is_melee = False
+                    is_ranged = False
+                if not is_melee and not is_ranged:
+                    try:
+                        is_ranged = bool(getattr(self, "range", None) and int(getattr(self.range, "max", 0) or 0) > 0)
+                    except Exception:
+                        is_ranged = False
+                if is_ranged:
+                    from ..utility.aura_effects import get_aura_benefit_of_cover
+                    has_cover, reasons = get_aura_benefit_of_cover(t_unit)
+                    if has_cover:
+                        attack_instance.setdefault("benefit_of_cover", True)
+                        if "benefit_of_cover_source" not in attack_instance:
+                            attack_instance["benefit_of_cover_source"] = ", ".join(reasons) if reasons else "Aura: Benefit of Cover"
+                        elif reasons:
+                            existing = str(attack_instance.get("benefit_of_cover_source") or "")
+                            parts = [p.strip() for p in existing.split(",") if p.strip()]
+                            for reason in reasons:
+                                if reason not in parts:
+                                    parts.append(reason)
+                            attack_instance["benefit_of_cover_source"] = ", ".join(parts) if parts else existing
         except Exception:
             pass
         # Orks: Waaagh! (5+ invulnerable save while active).

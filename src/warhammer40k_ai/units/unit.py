@@ -468,9 +468,16 @@ class Unit:
                         blue_models_fn = getattr(enemy, "_horrors_has_blue_models", None)
                         if not callable(blue_models_fn) or not blue_models_fn():
                             continue
-                        if unit_within_range_of_unit(enemy, self, 6.0):
-                            mods.append(Modifier(ModifierOp.ADD, 1, source="aura:sullen_malevolence"))
-                            break
+                            if unit_within_range_of_unit(enemy, self, 6.0):
+                                mods.append(Modifier(ModifierOp.ADD, 1, source="aura:sullen_malevolence"))
+                                break
+                try:
+                    from ..utility.aura_effects import get_aura_leadership_bonus
+                    bonus = int(get_aura_leadership_bonus(self, game_map=game_map) or 0)
+                    if bonus:
+                        mods.append(Modifier(ModifierOp.ADD, bonus, source="aura:leadership_add"))
+                except Exception:
+                    pass
 
         afflicted_plague = None
         try:

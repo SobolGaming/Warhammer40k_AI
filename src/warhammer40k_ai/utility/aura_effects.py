@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from .aura_utils import unit_within_range_of_unit
+from .entity_ids import get_entity_id
 
 
 @dataclass(frozen=True)
@@ -76,6 +77,21 @@ def _norm(s: str) -> str:
 
 def _norm_name(s: str) -> str:
     return _norm((s or "").replace("\u2019", "'"))
+
+def _normalize_desc(desc: str) -> str:
+    text = str(desc or "")
+    if not text:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = (
+        text.replace("\u00a0", " ")
+        .replace("\u2019", "'")
+        .replace("\u2018", "'")
+        .replace("\u201c", '"')
+        .replace("\u201d", '"')
+    )
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def _iter_possible_abilities(unit) -> Iterable[object]:
@@ -223,6 +239,56 @@ def _parse_excluded_keywords(desc: str) -> tuple[str, ...]:
             excluded.append(p)
     return tuple(excluded)
 
+def _target_is_closest_enemy_unit(attacker_unit, target_unit, game_map) -> bool:
+    if attacker_unit is None or target_unit is None or game_map is None:
+        return False
+    try:
+        enemies = list(game_map.get_enemy_units(attacker_unit) or [])
+    except Exception:
+        enemies = []
+    if not enemies:
+        return False
+    try:
+        target_root = target_unit.get_attached_unit_root()
+    except Exception:
+        target_root = target_unit
+    target_id = get_entity_id(target_root) if target_root is not None else ""
+    closest = None
+    target_dist = None
+    seen = set()
+    for enemy in enemies:
+        try:
+            root = enemy.get_attached_unit_root()
+        except Exception:
+            root = enemy
+        if root is None:
+            continue
+        rid = get_entity_id(root)
+        if rid in seen:
+            continue
+        seen.add(rid)
+        try:
+            if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+                continue
+        except Exception:
+            pass
+        try:
+            if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
+                continue
+        except Exception:
+            pass
+        try:
+            dist = float(game_map.get_distance_between_units(attacker_unit, root))
+        except Exception:
+            continue
+        if root is target_root or (target_id and target_id == getattr(root, "_id", None)):
+            target_dist = dist
+        if closest is None or dist < closest:
+            closest = dist
+    if closest is None or target_dist is None:
+        return False
+    return target_dist <= closest + 1e-6
+
 
 def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
     """
@@ -237,7 +303,7 @@ def _parse_simple_plus_one_aura(ability) -> Optional[dict]:
     if not _is_aura_ability(ability):
         return None
 
-    desc = str(getattr(ability, "description", "") or "").strip()
+    desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
 
@@ -278,11 +344,11 @@ def _parse_reroll_ones_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
+    desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit(?: \((?P<exclude>[^)]+)\))? is within (?P<rng>\d+)" '
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude>[^)]+)\))? is within (?P<rng>\d+)" '
         r"of (?:this unit|this model|the bearer)",
         desc,
         flags=re.IGNORECASE,
@@ -318,11 +384,37 @@ def _parse_add_oc_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
+    desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
     m = re.search(
-        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of this (?:unit|model), add (?P<amt>\d+) to the Objective Control characteristic of models in that unit',
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:unit|model|the bearer), '
+        r'add (?P<amt>\d+) to the Objective Control characteristic of (?:(?:models? in that )?(?:unit|model))',
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+    }
+
+def _parse_leadership_oc_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X model/unit is within N\" of this model/unit, improve that X model's Leadership and
+       Objective Control characteristics by Y."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:unit|model|the bearer), '
+        r"improve that .*?Leadership and Objective Control characteristics by (?P<amt>\d+)",
         desc,
         flags=re.IGNORECASE,
     )
@@ -340,7 +432,7 @@ def _parse_advance_charge_roll_aura(ability) -> Optional[dict]:
     Strict parser for:
       "While a friendly X unit is within N\" of this model/unit, add Y to Advance and Charge rolls made for that unit."
     """
-    desc = str(getattr(ability, "description", "") or "").strip()
+    desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
     m = re.search(
@@ -370,17 +462,9 @@ def _parse_strength_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
-    if not desc:
+    text = _normalize_desc(getattr(ability, "description", ""))
+    if not text:
         return None
-    text = re.sub(r"<[^>]+>", " ", desc)
-    text = (
-        text.replace("\u2019", "'")
-        .replace("\u2018", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-    )
-    text = re.sub(r"\s+", " ", text).strip()
     m = re.search(
         r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
         r'add (?P<amt>\d+) to the Strength characteristic of (?:(?P<atype>melee|ranged) )?weapons equipped by models in that unit',
@@ -427,17 +511,9 @@ def _parse_melee_ap_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
-    if not desc:
+    text = _normalize_desc(getattr(ability, "description", ""))
+    if not text:
         return None
-    text = re.sub(r"<[^>]+>", " ", desc)
-    text = (
-        text.replace("\u2019", "'")
-        .replace("\u2018", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-    )
-    text = re.sub(r"\s+", " ", text).strip()
     m = re.search(
         r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
         r'(?:(?P<charged>if that unit made a Charge move this turn, )?)'
@@ -454,6 +530,38 @@ def _parse_melee_ap_aura(ability) -> Optional[dict]:
         "requires_charge": bool(m.group("charged")),
     }
 
+def _parse_closest_enemy_ap_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X model/unit is within N\" of this model/unit, each time that X model makes an attack
+       that targets the closest enemy unit, improve the Armour Penetration characteristic of that attack by Y."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
+        r"each time that .*?attack that targets the closest enemy unit, improve the Armou?r Penetration "
+        r"characteristic of that attack by (?P<amt>\d+)",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    attack_type = "any"
+    if re.search(r"melee attack", desc, flags=re.IGNORECASE):
+        attack_type = "melee"
+    elif re.search(r"ranged attack", desc, flags=re.IGNORECASE):
+        attack_type = "ranged"
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+        "attack_type": attack_type,
+    }
+
 
 def _parse_toughness_aura(ability) -> Optional[dict]:
     """
@@ -464,17 +572,9 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
-    if not desc:
+    text = _normalize_desc(getattr(ability, "description", ""))
+    if not text:
         return None
-    text = re.sub(r"<[^>]+>", " ", desc)
-    text = (
-        text.replace("\u2019", "'")
-        .replace("\u2018", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-    )
-    text = re.sub(r"\s+", " ", text).strip()
     m = re.search(
         r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
         r'add (?P<amt>\d+) to the Toughness characteristic of models in that unit',
@@ -509,16 +609,9 @@ def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
-    if not desc:
+    text = _normalize_desc(getattr(ability, "description", ""))
+    if not text:
         return None
-    text = re.sub(r"<[^>]+>", " ", desc)
-    text = (
-        text.replace("\u2019", "'")
-        .replace("\u2018", "'")
-        .replace("\u201c", '"')
-        .replace("\u201d", '"')
-    )
     text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
     if "enemy unit" not in text:
         return None
@@ -762,6 +855,8 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
         for ab in _iter_possible_abilities(source):
             spec = _parse_add_oc_aura(ab)
             if not spec:
+                spec = _parse_leadership_oc_aura(ab)
+            if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
             aura_key = _norm_name(ab_name)
@@ -775,6 +870,39 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
             if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
                 continue
             total += int(spec["amount"])
+    return int(total)
+
+def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
+    """
+    Return additive Leadership bonus (negative improves Ld) from friendly auras affecting this unit.
+    Only supports strict "improve Leadership and OC by N" patterns to avoid over-applying.
+    """
+    if unit is None:
+        return 0
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return 0
+    total = 0
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_leadership_oc_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            amt = int(spec["amount"])
+            if amt:
+                total -= abs(amt)
     return int(total)
 
 
@@ -871,7 +999,7 @@ def _parse_melee_attacks_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
+    desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
     m = re.search(
@@ -937,7 +1065,7 @@ def _parse_stealth_aura(ability) -> Optional[dict]:
     """
     if not _is_aura_ability(ability):
         return None
-    desc = str(getattr(ability, "description", "") or "").strip()
+    desc = _normalize_desc(getattr(ability, "description", ""))
     if not desc:
         return None
     m = re.search(
@@ -951,6 +1079,29 @@ def _parse_stealth_aura(ability) -> Optional[dict]:
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
         "exclude_keyword": str(m.group("exclude_kw") or "").strip(),
+        "range": float(m.group("rng")),
+    }
+
+def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X model/unit is within N\" of this model/unit, that X model has the Benefit of Cover."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
+        r"that .*? has the Benefit of Cover",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
         "range": float(m.group("rng")),
     }
 
@@ -993,6 +1144,41 @@ def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ..
             if not unit_within_range_of_unit(source, target_unit, float(spec["range"]), use_attached_aggregate=True):
                 continue
             reasons.append(f"Aura: Stealth from {ab_name}")
+            return True, tuple(reasons)
+
+    return False, ()
+
+def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ...]]:
+    """
+    Return (has_benefit_of_cover, reasons) from strict Benefit of Cover auras affecting target_unit.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if target_unit is None:
+        return False, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(target_unit)
+    if game_map is None or not hasattr(game_map, "get_friendly_units"):
+        return False, ()
+
+    applied_aura_names: set[str] = set()
+    reasons: list[str] = []
+
+    for source in list(game_map.get_friendly_units(target_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_benefit_of_cover_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not target_unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            if not unit_within_range_of_unit(source, target_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            reasons.append(f"Aura: Benefit of Cover from {ab_name}")
             return True, tuple(reasons)
 
     return False, ()
@@ -1119,6 +1305,80 @@ def get_aura_melee_ap_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
             total += amt
             suffix = " after charge" if spec.get("requires_charge") else ""
             reasons.append(f"Aura: +{amt} AP (melee) from {ab_name}{suffix}")
+
+    return int(total), tuple(reasons)
+
+def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=None) -> tuple[int, tuple[str, ...]]:
+    """
+    Return (ap_bonus, reasons) from strict "closest enemy" AP auras affecting attacker_model.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if attacker_model is None or weapon_profile is None or target_unit is None:
+        return 0, ()
+    try:
+        attacker_unit = getattr(attacker_model, "parent_unit", None)
+    except Exception:
+        attacker_unit = None
+    if attacker_unit is None:
+        return 0, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(attacker_unit)
+    if game_map is None or not hasattr(game_map, "get_friendly_units"):
+        return 0, ()
+
+    is_melee = False
+    is_ranged = False
+    try:
+        if weapon_profile.parent_wargear is not None:
+            is_melee = bool(weapon_profile.parent_wargear.is_melee())
+            is_ranged = bool(weapon_profile.parent_wargear.is_ranged())
+    except Exception:
+        is_melee = False
+        is_ranged = False
+    if not is_melee and not is_ranged:
+        try:
+            is_ranged = bool(getattr(weapon_profile, "range", None) and int(getattr(weapon_profile.range, "max", 0) or 0) > 0)
+        except Exception:
+            is_ranged = False
+
+    total = 0
+    reasons: list[str] = []
+    applied_aura_names: set[str] = set()
+
+    for source in list(game_map.get_friendly_units(attacker_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_closest_enemy_ap_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            atype = spec.get("attack_type") or "any"
+            if atype == "melee" and not is_melee:
+                continue
+            if atype == "ranged" and not is_ranged:
+                continue
+            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            target_is_closest = False
+            if is_ranged and hasattr(attacker_unit, "is_target_closest_eligible"):
+                try:
+                    target_is_closest = bool(attacker_unit.is_target_closest_eligible(attacker_model, weapon_profile, target_unit, game_map))
+                except Exception:
+                    target_is_closest = False
+            if not target_is_closest:
+                target_is_closest = _target_is_closest_enemy_unit(attacker_unit, target_unit, game_map)
+            if not target_is_closest:
+                continue
+            amt = int(spec["amount"])
+            if amt:
+                total += amt
+                reasons.append(f"Aura: +{amt} AP (closest enemy) from {ab_name}")
 
     return int(total), tuple(reasons)
 

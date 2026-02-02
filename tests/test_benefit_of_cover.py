@@ -1,5 +1,6 @@
 import pytest
 from typing import List
+from types import SimpleNamespace
 
 from warhammer40k_ai.battlefield.map import Map, TerrainFactory
 from warhammer40k_ai.units.unit import Unit
@@ -228,3 +229,50 @@ class TestBenefitOfCover:
 
         res_melee = melee_wp._save_with_tracking(bodyguard.models[0], {"mortal_wound": False}, ap=0)
         assert res_melee["saved"] is False
+
+    def test_aura_benefit_of_cover_applies_to_ranged_only(self, monkeypatch):
+        import warhammer40k_ai.units.wargear as wargear_mod
+        import warhammer40k_ai.utility.aura_effects as aura_mod
+
+        monkeypatch.setattr(wargear_mod, "get_roll", lambda _expr: 1)
+        monkeypatch.setattr(aura_mod, "unit_within_range_of_unit", lambda *_args, **_kwargs: True)
+
+        ability_text = (
+            "While a friendly War Dog model is within 6\" of this model, "
+            "that WAR DOG model has the Benefit of Cover."
+        )
+        aura_ability = [{
+            "name": "Infernal Aegis (Aura)",
+            "description": ability_text,
+            "type": "Ability",
+            "parameter": "",
+        }]
+
+        game_map = Map(width=48, height=72)
+        aura_source = create_unit("Source", 10.0, 10.0, faction="A", model_count=1, abilities=aura_ability)
+        target = create_unit("Target", 12.0, 10.0, faction="A", model_count=1)
+        attacker = create_unit("Attacker", 30.0, 10.0, faction="B", model_count=1)
+
+        army_a, army_b = attach_to_armies(game_map, [aura_source, target], [attacker])
+        game = SimpleNamespace(map=game_map)
+        army_a.player = SimpleNamespace(game=game, name="P1", id="P1")
+        army_b.player = SimpleNamespace(game=game, name="P2", id="P2")
+
+        target.has_any_keyword = lambda kw: str(kw).strip().lower() == "war dog"
+
+        ranged_wp = WargearProfile(
+            "ranged",
+            {"range": "24", "A": "1", "BS_WS": "3", "S": "4", "AP": "0", "D": "1", "description": ""},
+        )
+        attack_instance = {"mortal_wound": False}
+        ranged_wp._save_with_tracking(target.models[0], attack_instance, ap=0)
+        assert attack_instance.get("benefit_of_cover") is True
+        assert "Infernal Aegis" in str(attack_instance.get("benefit_of_cover_source", ""))
+
+        melee_wp = WargearProfile(
+            "melee",
+            {"range": "Melee", "A": "1", "BS_WS": "3", "S": "4", "AP": "0", "D": "1", "description": ""},
+        )
+        attack_instance_melee = {"mortal_wound": False}
+        melee_wp._save_with_tracking(target.models[0], attack_instance_melee, ap=0)
+        assert attack_instance_melee.get("benefit_of_cover") is None

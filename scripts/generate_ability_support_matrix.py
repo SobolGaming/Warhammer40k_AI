@@ -1574,6 +1574,11 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Null Rod"): ("Supported", "Feel No Pain 4+ against mortal wounds and Psychic attacks."),
         ("AS", "Rituale Nullificatus"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
+        ("QT", "Taskmaster (Aura)"): ("Supported", "WAR DOG models within 9\" re-roll Hit rolls of 1 for ranged attacks."),
+        ("QT", "Frenzied Rampage (Aura)"): ("Supported", "WAR DOG models within 9\" re-roll Hit rolls of 1 for melee attacks."),
+        ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
+        ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
+        ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),
         ("AC", "Daughter of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Daughters of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Captain-General"): (
