@@ -2228,6 +2228,7 @@ def _classify_ability_base(
     attack_roll_rule_support = _attack_roll_rule_support(description)
     objective_attack_keyword_support = _objective_attack_keyword_support(description)
     half_range_attack_keyword_support = _half_range_attack_keyword_support(description)
+    target_keyword_attack_keyword_support = _target_keyword_attack_keyword_support(description)
     weapon_keyword_grant_support = _weapon_keyword_grant_support(description)
     closest_enemy_hit_charge_support = _closest_enemy_hit_and_charge_reroll_support(description)
     orders_support = _orders_section_support(name, description)
@@ -2316,6 +2317,8 @@ def _classify_ability_base(
         return phase_terrain_support
     if half_range_attack_keyword_support:
         return half_range_attack_keyword_support
+    if target_keyword_attack_keyword_support:
+        return target_keyword_attack_keyword_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -3433,6 +3436,42 @@ def _objective_attack_keyword_support(description: str) -> Optional[Tuple[str, s
     elif scope == "ranged":
         scope_text = "Ranged attacks"
     note = f"{scope_text} vs targets within objective range gain {label}."
+    return ("Supported", note)
+
+
+def _target_keyword_attack_keyword_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:this (?:model|unit)|a model in this unit) makes a (?:(?P<scope>melee|ranged) )?attack "
+        r"that targets (?:an? )?(?:enemy )?(?P<target>[a-z0-9 ]+?) unit that attack has (?:the )?(?P<keyword>[a-z0-9 ]+) ability"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    label = _attack_keyword_label_from_text(m.group("keyword") or "")
+    if not label:
+        return None
+    target_raw = str(m.group("target") or "").strip()
+    if not target_raw:
+        return None
+    target_raw = re.sub(r"\bunits?\b", "", target_raw).strip()
+    target_raw = target_raw.replace("enemy ", "")
+    parts = [p.strip() for p in re.split(r"\s+(?:or|and)\s+", target_raw) if p.strip()]
+    if parts:
+        target_label = "/".join(p.upper() for p in parts)
+    else:
+        target_label = target_raw.upper()
+    scope = (m.group("scope") or "").strip().lower()
+    scope_text = "Attacks"
+    if scope == "melee":
+        scope_text = "Melee attacks"
+    elif scope == "ranged":
+        scope_text = "Ranged attacks"
+    note = f"{scope_text} vs {target_label} targets gain {label}."
     return ("Supported", note)
 
 
