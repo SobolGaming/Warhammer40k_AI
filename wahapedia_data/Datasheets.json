@@ -15302,7 +15302,7 @@
         "source_id": "000000029",
         "legend": "Technomancers possess the power to augment and swiftly repair Necron units in the field. Some Technomancers use Canoptek cloaks to flit swiftly to wherever they are needed most, while others employ the nanoscarab beams of their Canoptek control nodes to augment from afar.",
         "role": "Characters",
-        "loadout": "<b>This model is equipped with:</b> staff of light; Canoptek cloak.",
+        "loadout": "<b>This model is equipped with:</b> staff of light.",
         "transport": "",
         "virtual": "false",
         "leader_head": "",
