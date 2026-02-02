@@ -1842,6 +1842,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Daemon Prince of Slaanesh"): ("Supported", "If SLAANESH: model Move +2\"."),
         ("CD", "Daemonic Lord"): ("Supported", "Conditional Lone Operative within 3\" of friendly LEGIONES DAEMONICA INFANTRY units."),
         ("CD", "Daemon Lord of Khorne (Aura)"): ("Supported", "+1 to hit (melee) aura within 6\" for KHORNE LEGIONES DAEMONICA."),
+        ("CD", "Rage Embodied (Aura)"): ("Supported", "+1 Attacks for melee weapons within 6\" for KHORNE LEGIONES DAEMONICA."),
         ("CD", "Split"): (
             "Supported",
             "Queued after attack resolution: 4+ spawns 2 Blue for destroyed Pink, or 1 Brimstone for destroyed Blue; placement handled.",
