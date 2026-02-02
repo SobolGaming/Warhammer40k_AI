@@ -12339,6 +12339,75 @@ class Unit:
                     return False
             except Exception:
                 return False
+        if condition.target_isolated_within is not None:
+            try:
+                from ..utility.aura_utils import unit_within_range_of_unit
+                t_unit = target
+                if t_unit is not None and not hasattr(t_unit, "get_attached_unit_root"):
+                    t_unit = getattr(t_unit, "parent_unit", t_unit)
+                if t_unit is None:
+                    return False
+                game = None
+                try:
+                    game = getattr(getattr(unit.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game = None
+                if game is None:
+                    try:
+                        game = getattr(getattr(t_unit.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                game_map = getattr(game, "map", None) if game is not None else None
+                if game_map is None:
+                    return False
+                placed = list(getattr(game_map, "units", []) or [])
+                try:
+                    t_root = t_unit.get_attached_unit_root() if hasattr(t_unit, "get_attached_unit_root") else t_unit
+                except Exception:
+                    t_root = t_unit
+                if t_root not in placed:
+                    return False
+                try:
+                    enemies = list(game_map.get_enemy_units(unit) or [])
+                except Exception:
+                    return False
+                if not enemies:
+                    return False
+                try:
+                    from ..utility.entity_ids import get_entity_id
+                except Exception:
+                    get_entity_id = None
+                seen = set()
+                for enemy in enemies:
+                    try:
+                        root = enemy.get_attached_unit_root() if hasattr(enemy, "get_attached_unit_root") else enemy
+                    except Exception:
+                        root = enemy
+                    if root is None or root is t_root:
+                        continue
+                    if get_entity_id is not None:
+                        try:
+                            rid = get_entity_id(root)
+                        except Exception:
+                            rid = None
+                        if rid:
+                            if rid in seen:
+                                continue
+                            seen.add(rid)
+                    try:
+                        if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(root, "deployed") and not bool(getattr(root, "deployed", True)):
+                            continue
+                    except Exception:
+                        pass
+                    if unit_within_range_of_unit(root, t_root, float(condition.target_isolated_within), use_attached_aggregate=True):
+                        return False
+            except Exception:
+                return False
         if condition.target_can_fly is not None:
             try:
                 can_fly = bool(getattr(target, "is_flying", False))
@@ -12484,6 +12553,8 @@ class Unit:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_isolated_within is not None:
+                parts.append(f"vs isolated targets (no other enemy units within {cond.target_isolated_within}\")")
             if cond.target_can_fly is True:
                 parts.append("vs FLY targets")
             if cond.target_can_fly is False:
@@ -12670,6 +12741,8 @@ class Unit:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_isolated_within is not None:
+                parts.append(f"vs isolated targets (no other enemy units within {cond.target_isolated_within}\")")
             if cond.target_can_fly is True:
                 parts.append("vs FLY targets")
             if cond.target_can_fly is False:
@@ -12864,6 +12937,8 @@ class Unit:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_isolated_within is not None:
+                parts.append(f"vs isolated targets (no other enemy units within {cond.target_isolated_within}\")")
             if cond.target_can_fly is True:
                 parts.append("vs FLY targets")
             if cond.target_can_fly is False:
@@ -25750,6 +25825,8 @@ class Unit:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_isolated_within is not None:
+                parts.append(f"vs isolated targets (no other enemy units within {cond.target_isolated_within}\")")
             if cond.target_can_fly is True:
                 parts.append("vs FLY targets")
             if cond.target_can_fly is False:
@@ -26022,6 +26099,8 @@ class Unit:
                 parts.append("vs targets within objective range")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
+            if cond.target_isolated_within is not None:
+                parts.append(f"vs isolated targets (no other enemy units within {cond.target_isolated_within}\")")
             if cond.target_can_fly is True:
                 parts.append("vs FLY targets")
             if cond.target_can_fly is False:

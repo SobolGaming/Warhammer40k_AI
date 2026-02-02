@@ -76,6 +76,7 @@ Purpose: **implement faction/detachment/stratagem/enhancement abilities** and sh
 Typical responsibilities:
 - provide rule “providers” / registries that the engine consults at specific timings
 - translate datasheet/keyword concepts into concrete modifiers, triggers, or decisions
+- parse strict rules text patterns (e.g., attack roll modifiers including isolated-target checks: no other enemy units within X" of the target)
 
 ### Domain model
 

@@ -15,6 +15,7 @@ class AttackRollCondition:
     target_battleshocked: bool = False
     target_within_objective: bool = False
     target_within_range: Optional[float] = None
+    target_isolated_within: Optional[float] = None
     target_keywords_any: Tuple[str, ...] = ()
     target_keywords_all: Tuple[str, ...] = ()
     target_exclude_keywords_any: Tuple[str, ...] = ()
@@ -27,6 +28,11 @@ class AttackRollCondition:
         merged_range = self.target_within_range
         if other.target_within_range is not None:
             merged_range = other.target_within_range if merged_range is None else max(merged_range, other.target_within_range)
+        merged_isolated = self.target_isolated_within
+        if other.target_isolated_within is not None:
+            merged_isolated = (
+                other.target_isolated_within if merged_isolated is None else max(merged_isolated, other.target_isolated_within)
+            )
         return AttackRollCondition(
             attacker_below_starting_strength=bool(
                 self.attacker_below_starting_strength or other.attacker_below_starting_strength
@@ -46,6 +52,7 @@ class AttackRollCondition:
             target_battleshocked=bool(self.target_battleshocked or other.target_battleshocked),
             target_within_objective=bool(self.target_within_objective or other.target_within_objective),
             target_within_range=merged_range,
+            target_isolated_within=merged_isolated,
             target_keywords_any=tuple({*self.target_keywords_any, *other.target_keywords_any}),
             target_keywords_all=tuple({*self.target_keywords_all, *other.target_keywords_all}),
             target_exclude_keywords_any=tuple({*self.target_exclude_keywords_any, *other.target_exclude_keywords_any}),
@@ -244,6 +251,13 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
     if m:
         return AttackRollCondition(target_within_range=float(m.group("rng")))
 
+    m = re.fullmatch(
+        r"there are no other (?:enemy )?units?(?: from your opponent's army)?(?: are)? within (?P<rng>\d+)\" of (?:that|the) target",
+        t,
+    )
+    if m:
+        return AttackRollCondition(target_isolated_within=float(m.group("rng")))
+
     if re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit that can fly",
         t,
@@ -306,6 +320,9 @@ def _parse_target_clause(text: str) -> Optional[AttackRollCondition]:
         t = t[3:]
     if t.startswith("enemy "):
         t = t[6:]
+
+    if t in ("unit", "model"):
+        return AttackRollCondition()
 
     if re.fullmatch(r"unit that can fly", t):
         return AttackRollCondition(target_can_fly=True)
