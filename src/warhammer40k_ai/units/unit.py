@@ -23394,16 +23394,26 @@ class Unit:
             return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['stealth']
+            found = self._ability_cache['stealth']
+        else:
+            found, _ = self._find_ability_with_patterns(["stealth"])
+            # Cache the result
+            if not hasattr(self, '_ability_cache'):
+                self._ability_cache = {}
+            self._ability_cache['stealth'] = found
+
+        if found:
+            return True
+
+        try:
+            from ..utility.aura_effects import get_aura_stealth
+            aura_active, _reasons = get_aura_stealth(self)
+            if aura_active:
+                return True
+        except Exception:
+            pass
         
-        found, _ = self._find_ability_with_patterns(["stealth"])
-        
-        # Cache the result
-        if not hasattr(self, '_ability_cache'):
-            self._ability_cache = {}
-        self._ability_cache['stealth'] = found
-        
-        return found
+        return False
 
     def _get_attached_unit_scout_bonus_distance(self) -> float:
         """

@@ -929,6 +929,75 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
     return int(total), tuple(reasons)
 
 
+def _parse_stealth_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model, models in that unit have the Stealth ability."
+    Supports optional exclusion phrases like "(excluding Monsters)" and "this FORTIFICATION".
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = str(getattr(ability, "description", "") or "").strip()
+    if not desc:
+        return None
+    m = re.search(
+        r"While a friendly (?P<faction_kw>.+?) unit(?: \(excluding (?P<exclude_kw>.+?)\))? is within (?P<rng>\d+)\" "
+        r"of this (?:model|unit|fortification), models in that unit have the Stealth ability",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "exclude_keyword": str(m.group("exclude_kw") or "").strip(),
+        "range": float(m.group("rng")),
+    }
+
+
+def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ...]]:
+    """
+    Return (has_stealth, reasons) from strict Stealth auras affecting target_unit.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if target_unit is None:
+        return False, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(target_unit)
+    if game_map is None or not hasattr(game_map, "get_friendly_units"):
+        return False, ()
+
+    applied_aura_names: set[str] = set()
+    reasons: list[str] = []
+
+    for source in list(game_map.get_friendly_units(target_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_stealth_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not target_unit.has_any_keyword(spec["faction_keyword"]):
+                continue
+            exclude_kw = str(spec.get("exclude_keyword", "") or "").strip()
+            if exclude_kw:
+                exclude_low = exclude_kw.lower()
+                if target_unit.has_any_keyword(exclude_low):
+                    continue
+                if exclude_low.endswith("s") and target_unit.has_any_keyword(exclude_low[:-1]):
+                    continue
+            if not unit_within_range_of_unit(source, target_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            reasons.append(f"Aura: Stealth from {ab_name}")
+            return True, tuple(reasons)
+
+    return False, ()
+
+
 def get_aura_strength_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
     """
     Return (bonus_strength, reasons) from strict "Strength characteristic" auras affecting attacker_unit.
