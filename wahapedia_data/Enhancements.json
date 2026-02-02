@@ -4877,7 +4877,7 @@
         "detachment": "Cryptek Conclave",
         "detachment_id": "000001127",
         "legend": "Projected from the bearer\u2019s staff as a secondary energistic emission, these solid-state electroshackles bind and trammel their victims in crackling fetters.",
-        "description": "Cryptek model only. In your Shooting phase, after the bearer has shot, select one enemy unit hit by one or more of those attacks (excluding <span class=\"kwb\">TITANIC</span> units); until the start of your next turn, that enemy unit is pinned. While a unit is pinned, subtract 2 from that unit\u2019s Move characteristic and subtract 2 from Charge rolls 4 made for that unit."
+        "description": "Cryptek model only. In your Shooting phase, after the bearer has shot, select one enemy unit hit by one or more of those attacks (excluding <span class=\"kwb\">TITANIC</span> units); until the start of your next turn, that enemy unit is pinned. While a unit is pinned, subtract 2 from that unit\u2019s Move characteristic and subtract 2 from Charge rolls made for that unit."
     },
     {
         "faction_id": "NEC",

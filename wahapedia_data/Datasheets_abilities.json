@@ -43434,7 +43434,7 @@
         "line": "6",
         "ability_id": "",
         "model": "",
-        "name": "SERVANT OFTHE WHISPERING GOD",
+        "name": "SERVANT OF THE WHISPERING GOD",
         "description": "If your army includes <span class=\"kwb\">THE</span> <span class=\"kwb\">VISARCH</span>, it cannot include any Epic Hero units (excluding Ynnari units). If your army includes any <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span> units (excluding <span class=\"kwb\">YNNARI</span> units), it cannot include <span class=\"kwb\">THE</span> <span class=\"kwb\">VISARCH</span>.",
         "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
         "parameter": ""
@@ -43504,7 +43504,7 @@
         "line": "7",
         "ability_id": "",
         "model": "",
-        "name": "AVATAR OFTHE WHISPERING GOD",
+        "name": "AVATAR OF THE WHISPERING GOD",
         "description": "If your army includes <span class=\"kwb\">THE</span> <span class=\"kwb\">YNCARNE</span>, it cannot include any Epic Hero units (excluding Ynnari units). If your army includes any <span class=\"kwb\">EPIC</span> <span class=\"kwb\">HERO</span> units (excluding <span class=\"kwb\">YNNARI</span> units), it cannot include <span class=\"kwb\">THE</span> <span class=\"kwb\">YNCARNE</span>.",
         "type": "Fortification (\u043b\u0435\u0432\u0430\u044f \u043a\u043e\u043b\u043e\u043d\u043a\u0430)",
         "parameter": ""

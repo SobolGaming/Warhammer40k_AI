@@ -3225,20 +3225,7 @@
     },
     {
         "faction_id": "AM",
-        "name": "AGAINST THE ODDS",
-        "id": "000009390002",
-        "type": "Tempestus Boarding Regiment \u2013 Battle Tactic Stratagem",
-        "cp_cost": "1",
-        "legend": "Tempestus Scions are trained in a range of specialist hand-to-hand combat techniques. Coupled with combat stimms, these make them bruising foes.",
-        "turn": "Either player\u2019s turn",
-        "phase": "Fight phase",
-        "detachment": "Tempestus Boarding Regiment",
-        "detachment_id": "000000928",
-        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One MILITARUM TEMPESTUS unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, add 1 to the Attacks and Strength characteristics of melee weapons equipped by models in your unit."
-    },
-    {
-        "faction_id": "AM",
-        "name": "BRUTAL CHOKE POINT",
+        "name": "FIRE-PATTERN HURRICANUS",
         "id": "000009390005",
         "type": "Tempestus Boarding Regiment \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
@@ -3251,20 +3238,20 @@
     },
     {
         "faction_id": "AM",
-        "name": "DUCK AND COVER",
-        "id": "000009390003",
-        "type": "Tempestus Boarding Regiment \u2013 Strategic Ploy Stratagem",
+        "name": "BRUTAL TRAINING",
+        "id": "000009390002",
+        "type": "Tempestus Boarding Regiment \u2013 Battle Tactic Stratagem",
         "cp_cost": "1",
-        "legend": "Employing coordinated helm chronos, the Scions execute a pre-arranged simultaneous tactical manoeuvre.",
-        "turn": "Your turn",
-        "phase": "Command phase",
+        "legend": "Tempestus Scions are trained in a range of specialist hand-to-hand combat techniques. Coupled with combat stimms, these make them bruising foes.",
+        "turn": "Either player\u2019s turn",
+        "phase": "Fight phase",
         "detachment": "Tempestus Boarding Regiment",
         "detachment_id": "000000928",
-        "description": "<b>WHEN:</b> Start of your Command phase.<br><br><b>TARGET:</b> One OffIcER model from your army.<br><br><b>EFFECT:</b> Select one Order your model can issue. Every <span class=\"kwb\">ASTRA</span> <span class=\"kwb\">MILITARUM</span> unit from your army is issued that Order (regardless of any keywords those units are normally required to have).<br><br><b>RESTRICTIONS:</b> Until the end of the turn, <span class=\"kwb\">OFFICER</span> models from your army cannot issue Orders. You can only use this Stratagem once."
+        "description": "<b>WHEN:</b> Fight phase.<br><br><b>TARGET:</b> One MILITARUM TEMPESTUS unit from your army that has not been selected to fight this phase.<br><br><b>EFFECT:</b> Until the end of the phase, add 1 to the Attacks and Strength characteristics of melee weapons equipped by models in your unit."
     },
     {
         "faction_id": "AM",
-        "name": "IDLE HANDS",
+        "name": "LOCKDOWN",
         "id": "000009390004",
         "type": "Tempestus Boarding Regiment \u2013 Strategic Ploy Stratagem",
         "cp_cost": "1",
@@ -3274,6 +3261,19 @@
         "detachment": "Tempestus Boarding Regiment",
         "detachment_id": "000000928",
         "description": "<b>WHEN:</b> Your Movement phase.<br><br><b>TARGET:</b> One <span class=\"kwb\">ASTRA</span> <span class=\"kwb\">MILITARUM</span> unit from your army that has not been selected to move this phase.<br><br><b>EFFECT:</b> Until the end of the phase, after your unit ends a move, you can select one open Hatchway it moved through during that move; close that Hatchway."
+    },
+    {
+        "faction_id": "AM",
+        "name": "COORDINATED STRIKE",
+        "id": "000009390003",
+        "type": "Tempestus Boarding Regiment \u2013 Strategic Ploy Stratagem",
+        "cp_cost": "1",
+        "legend": "Employing coordinated helm chronos, the Scions execute a pre-arranged simultaneous tactical manoeuvre.",
+        "turn": "Your turn",
+        "phase": "Command phase",
+        "detachment": "Tempestus Boarding Regiment",
+        "detachment_id": "000000928",
+        "description": "<b>WHEN:</b> Start of your Command phase.<br><br><b>TARGET:</b> One OffIcER model from your army.<br><br><b>EFFECT:</b> Select one Order your model can issue. Every <span class=\"kwb\">ASTRA</span> <span class=\"kwb\">MILITARUM</span> unit from your army is issued that Order (regardless of any keywords those units are normally required to have).<br><br><b>RESTRICTIONS:</b> Until the end of the turn, <span class=\"kwb\">OFFICER</span> models from your army cannot issue Orders. You can only use this Stratagem once."
     },
     {
         "faction_id": "AoI",
