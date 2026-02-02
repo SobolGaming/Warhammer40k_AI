@@ -10498,6 +10498,74 @@ class Game:
     def _on_phase_end_leadership_cp_gain(self, player=None, phase=None, **_kwargs) -> None:
         """End of Shooting/Fight phase: Leadership test to gain CP after destroying enemy units."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname == "COMMAND_PHASE":
+            if player is None:
+                return
+            if player is not self.get_current_player():
+                return
+            army = self._get_player_army(player)
+            if army is None:
+                return
+
+            def _unit_sort_key(u):
+                try:
+                    return str(get_entity_id(u))
+                except Exception:
+                    return str(getattr(u, "name", "") or "")
+
+            processed_models: set[str] = set()
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+                try:
+                    models = list(getattr(unit, "models", []) or [])
+                except Exception:
+                    models = []
+                if not models:
+                    continue
+
+                def _model_sort_key(m):
+                    try:
+                        return str(get_entity_id(m))
+                    except Exception:
+                        return str(getattr(m, "name", "") or "")
+
+                spec_fn = getattr(unit, "model_command_phase_end_leadership_cp_gain_specs", None)
+                if not callable(spec_fn):
+                    continue
+                for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                    mid = str(get_entity_id(model) or "")
+                    if not mid or mid in processed_models:
+                        continue
+                    processed_models.add(mid)
+                    specs = spec_fn(model) or []
+                    for spec in specs:
+                        if spec.get("type") != "command_phase_end_leadership_cp_gain":
+                            continue
+                        cp = int(spec.get("cp", 1) or 1)
+                        if cp <= 0:
+                            continue
+                        if not bool(unit.pass_leadership_check_for_model(model)):
+                            continue
+                        gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+                        self.event_system.publish(
+                            "command_points_gained",
+                            player=player,
+                            amount=gained,
+                            reason=spec.get("source_ability", ""),
+                            unit=unit,
+                        )
+            return
         if pname not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
             return
         if player is None:

@@ -154,3 +154,96 @@ def test_phase_end_leadership_cp_gain_fight_fail(monkeypatch):
     assert target.is_alive() is False
     game.event_system.publish("phase_end", player=p1, phase=game.phase)
     assert p1.command_points == start_cp
+
+
+def test_command_phase_end_leadership_cp_gain_pass(monkeypatch):
+    _install_deterministic_rolls(monkeypatch, [4])
+
+    game, p1, _p2 = _make_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    unit = Unit(MockDatasheet("Kairos", model_count=1))
+    unit.deployed = True
+    unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    p1.army.add_unit(unit)
+    game.map.units = [unit]
+
+    unit.possible_abilities.append(
+        Ability(
+            name="One Head Looks Forward",
+            faction_id="",
+            description=(
+                "At the end of your Command phase, if this model is on the battlefield, "
+                "take a Leadership test for this model; if that test is passed, you gain 1CP."
+            ),
+            type="Datasheet",
+            parameter="",
+        )
+    )
+    unit._invalidate_ability_cache()
+
+    start_cp = p1.command_points
+    game.event_system.publish("phase_end", player=p1, phase=game.phase)
+    assert p1.command_points == start_cp + 1
+
+
+def test_command_phase_end_leadership_cp_gain_fail(monkeypatch):
+    _install_deterministic_rolls(monkeypatch, [12])
+
+    game, p1, _p2 = _make_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    unit = Unit(MockDatasheet("Kairos", model_count=1))
+    unit.deployed = True
+    unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    p1.army.add_unit(unit)
+    game.map.units = [unit]
+
+    unit.possible_abilities.append(
+        Ability(
+            name="One Head Looks Forward",
+            faction_id="",
+            description=(
+                "At the end of your Command phase, if this model is on the battlefield, "
+                "take a Leadership test for this model; if that test is passed, you gain 1CP."
+            ),
+            type="Datasheet",
+            parameter="",
+        )
+    )
+    unit._invalidate_ability_cache()
+
+    start_cp = p1.command_points
+    game.event_system.publish("phase_end", player=p1, phase=game.phase)
+    assert p1.command_points == start_cp
+
+
+def test_command_phase_end_leadership_cp_gain_not_on_battlefield(monkeypatch):
+    _install_deterministic_rolls(monkeypatch, [4])
+
+    game, p1, _p2 = _make_game()
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+
+    unit = Unit(MockDatasheet("Kairos", model_count=1))
+    unit.deployed = False
+    unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+    p1.army.add_unit(unit)
+    game.map.units = [unit]
+
+    unit.possible_abilities.append(
+        Ability(
+            name="One Head Looks Forward",
+            faction_id="",
+            description=(
+                "At the end of your Command phase, if this model is on the battlefield, "
+                "take a Leadership test for this model; if that test is passed, you gain 1CP."
+            ),
+            type="Datasheet",
+            parameter="",
+        )
+    )
+    unit._invalidate_ability_cache()
+
+    start_cp = p1.command_points
+    game.event_system.publish("phase_end", player=p1, phase=game.phase)
+    assert p1.command_points == start_cp

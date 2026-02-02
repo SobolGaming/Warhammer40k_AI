@@ -1831,6 +1831,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
         ("CD", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CD", "Brass Collar of Bloody Vengeance"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
+        ("CD", "One Head Looks Forward"): ("Supported", "End of Command phase: Leadership test for the model; gain 1CP on pass."),
         ("CD", "DAEMONIC ALLEGIANCE"): (
             "Supported",
             "Muster: select a god keyword; keyword-only selection supported and Soul Grinder wargear applied when present.",
@@ -1942,6 +1943,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TYR", "Foul Spores (Aura)"): ("Partial", "Stealth applied to bearer only; aura cover/stealth to nearby units not implemented."),
         ("TYR", "Unnatural Resilience"): ("Supported", "Feel No Pain 4+ against mortal wounds."),
         ("TS", "Bounding Leaps"): ("Supported", "Shoot after Falling Back."),
+        ("TS", "One Head Looks Forward"): ("Supported", "End of Command phase: Leadership test for the model; gain 1CP on pass."),
         ("TS", "Servile Pawns"): ("Supported", "Conditional Lone Operative within 3\" of friendly THOUSAND SONS INFANTRY units."),
         ("TS", "Split"): (
             "Supported",

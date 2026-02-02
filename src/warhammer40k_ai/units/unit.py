@@ -1912,6 +1912,13 @@ class Unit:
         r"if that test is passed you gain (?P<cp>\d+|one) ?(?:cp|command points?)",
         re.IGNORECASE,
     )
+    _COMMAND_PHASE_END_LEADERSHIP_CP_GAIN_RE = re.compile(
+        r"at the end of your command phase if "
+        r"(?:this model|the bearer|the bearer s model|the bearers model) is on the battlefield "
+        r"take a leadership test for (?:this model|the bearer|the bearer s model|the bearers model) "
+        r"if that test is passed you gain (?P<cp>\d+|one)\s*(?:cp|command points?)",
+        re.IGNORECASE,
+    )
     _RETURN_ON_DEATH_RE = re.compile(
         r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
         r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
@@ -28602,6 +28609,32 @@ class Unit:
             }
         ]
 
+    def _parse_command_phase_end_leadership_cp_gain_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """Parse end-of-Command-phase Leadership test CP gain abilities."""
+        normalized = self._normalize_rules_text(ability_desc)
+        if not normalized:
+            return []
+        norm = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+        norm = norm.lower()
+        norm = re.sub(r"'s\b", "s", norm)
+        norm = re.sub(r"[^a-z0-9]+", " ", norm)
+        norm = re.sub(r"\s+", " ", norm).strip()
+        m = self._COMMAND_PHASE_END_LEADERSHIP_CP_GAIN_RE.fullmatch(norm)
+        if not m:
+            return []
+        token = str(m.group("cp") or "").strip().lower()
+        try:
+            cp = int(token)
+        except Exception:
+            cp = 1 if token == "one" else 1
+        return [
+            {
+                "type": "command_phase_end_leadership_cp_gain",
+                "cp": int(cp),
+                "source_ability": ability_name or "",
+            }
+        ]
+
     def get_phase_end_leadership_cp_gain_specs(self) -> List[dict]:
         """Return end-of-phase Leadership test CP gain specs for this unit group."""
         try:
@@ -28635,6 +28668,34 @@ class Unit:
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_command_phase_end_leadership_cp_gain_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """Return model-specific end-of-Command-phase Leadership test CP gain specs."""
+        if model is None:
+            return []
+        cache_key = f"model_command_phase_end_leadership_cp_gain:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: List[dict] = []
+        seen = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            parsed = self._parse_command_phase_end_leadership_cp_gain_specs_from_text(name, text_src)
+            for spec in parsed:
+                key = (spec.get("source_ability", "").lower(), int(spec.get("cp", 1) or 1))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(spec)
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def _parse_cp_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
