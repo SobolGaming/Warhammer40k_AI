@@ -35,6 +35,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
+    DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
     DECISION_SELECT_UNLEASH_HELL_VEHICLE,
     DECISION_CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET,
@@ -2429,6 +2430,144 @@ def _apply_post_shoot_wracked_agonies_target(game: object, request: DecisionRequ
     return target_unit
 
 
+def _validate_post_shoot_aflame_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Post-shoot aflame requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Post-shoot aflame target not found.",)
+    return ()
+
+
+def _apply_post_shoot_aflame_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Post-shoot aflame target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Aflame").strip()
+    try:
+        move_penalty = int(ctx.get("move_penalty", -2) or -2)
+    except Exception:
+        move_penalty = -2
+    try:
+        advance_penalty = int(ctx.get("advance_penalty", -2) or -2)
+    except Exception:
+        advance_penalty = -2
+    try:
+        charge_penalty = int(ctx.get("charge_penalty", advance_penalty) or advance_penalty)
+    except Exception:
+        charge_penalty = int(advance_penalty)
+    try:
+        threshold = int(ctx.get("roll_threshold", 4) or 4)
+    except Exception:
+        threshold = 4
+
+    attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
+    model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
+    model_name = str(getattr(model, "name", "") or "") if model is not None else ""
+    if not model_name and attacker_unit is not None:
+        model_name = str(getattr(attacker_unit, "name", "") or "")
+    if not model_name:
+        model_name = "Model"
+
+    player = _resolve_player(game, request, payload)
+    if player is None and attacker_unit is not None:
+        try:
+            player = attacker_unit.get_parent_army().player
+        except Exception:
+            player = None
+    owner_id = str(getattr(player, "id", "") or "")
+    turn = int(getattr(game, "turn", 0) or 0)
+
+    from ...utility.dice import get_roll
+    roll = int(get_roll("D6") or 0)
+    success = bool(roll >= int(threshold))
+
+    try:
+        from ...utility.event_bus import append_action, append_dice
+        if player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: rolled {roll} (needs {int(threshold)}+).",
+            )
+    except Exception:
+        append_action = None
+
+    if not success:
+        if player is not None and append_action is not None:
+            append_action(player, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} is not aflame.")
+        return target_unit
+
+    root = target_unit
+    try:
+        root = target_unit.get_attached_unit_root()
+    except Exception:
+        root = target_unit
+
+    apply_fn = getattr(root, "apply_aflame", None)
+    if callable(apply_fn):
+        apply_fn(
+            owner_id=owner_id,
+            turn=turn,
+            source=ability_name,
+            move_penalty=move_penalty,
+            advance_penalty=advance_penalty,
+            charge_penalty=charge_penalty,
+        )
+    else:
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aflame_active"] = True
+        sr["aflame_owner"] = owner_id
+        sr["aflame_turn"] = int(turn or 0)
+        sr["aflame_source"] = ability_name
+        sr["aflame_move_penalty"] = int(move_penalty or 0)
+        sr["aflame_advance_penalty"] = int(advance_penalty or 0)
+        sr["aflame_charge_penalty"] = int(charge_penalty or 0)
+        if hasattr(root, "add_characteristic_modifier"):
+            from ...utility.modifiers import Modifier, ModifierOp
+            root.add_characteristic_modifier(
+                "movement",
+                Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:aflame"),
+            )
+        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+        adv_mods.append(
+            {
+                "value": int(advance_penalty or 0),
+                "source": ability_name,
+                "tag": "ability:aflame",
+            }
+        )
+        sr["advance_roll_modifiers"] = adv_mods
+        charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+        charge_mods.append(
+            {
+                "value": int(charge_penalty or 0),
+                "source": ability_name,
+                "tag": "ability:aflame",
+            }
+        )
+        sr["charge_roll_modifiers"] = charge_mods
+        root.special_rules = sr
+
+    if player is not None and append_action is not None:
+        append_action(
+            player,
+            f"{ability_name}: {getattr(root, 'name', 'Unit')} is aflame until end of your opponent's next turn.",
+        )
+    return target_unit
+
+
 def _validate_post_shoot_suppression_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -3540,6 +3679,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
     validate=_validate_post_shoot_wracked_agonies_target,
     apply=_apply_post_shoot_wracked_agonies_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
+    validate=_validate_post_shoot_aflame_target,
+    apply=_apply_post_shoot_aflame_target,
 )
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,

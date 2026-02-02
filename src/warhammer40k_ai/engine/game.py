@@ -1558,6 +1558,81 @@ class Game:
                             sr.pop(key, None)
                         unit.special_rules = sr
 
+    def _on_phase_end_aflame_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Aflame effects at the end of the opponent's next turn (end of Fight phase)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if player is None:
+            return
+        current_owner = str(getattr(player, "id", "") or "")
+        if not current_owner:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Aflame cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Aflame cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if not sr.get("aflame_active"):
+                    continue
+                owner_id = str(sr.get("aflame_owner", "") or "")
+                if not owner_id or owner_id == current_owner:
+                    continue
+                try:
+                    marked_turn = int(sr.get("aflame_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                if marked_turn and current_turn < marked_turn:
+                    continue
+                clear_fn = getattr(unit, "clear_aflame", None)
+                if callable(clear_fn):
+                    clear_fn()
+                    continue
+                try:
+                    unit.remove_characteristic_modifiers_by_source("ability:aflame")
+                except Exception:
+                    pass
+                adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+                kept_adv = []
+                for item in adv_mods:
+                    if isinstance(item, dict) and item.get("tag") == "ability:aflame":
+                        continue
+                    kept_adv.append(item)
+                if kept_adv:
+                    sr["advance_roll_modifiers"] = kept_adv
+                else:
+                    sr.pop("advance_roll_modifiers", None)
+                charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+                kept_charge = []
+                for item in charge_mods:
+                    if isinstance(item, dict) and item.get("tag") == "ability:aflame":
+                        continue
+                    kept_charge.append(item)
+                if kept_charge:
+                    sr["charge_roll_modifiers"] = kept_charge
+                else:
+                    sr.pop("charge_roll_modifiers", None)
+                for key in (
+                    "aflame_active",
+                    "aflame_owner",
+                    "aflame_turn",
+                    "aflame_source",
+                    "aflame_move_penalty",
+                    "aflame_advance_penalty",
+                    "aflame_charge_penalty",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
+
     def _on_phase_start_misfortune_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Misfortune effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -8159,6 +8234,117 @@ class Game:
                         _log_action_for_players(self, attacker_player, f"{source}: {tname} is pinned until your next turn.")
                     except Exception:
                         pass
+
+    def _on_unit_shooting_resolved_post_shoot_aflame(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot aflame requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            return model in hit_models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_aflame_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if exclude_mv and _is_monster_or_vehicle(target_unit):
+                        continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Aflame").strip() or "Aflame"
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
+                f"{ability_name}: select a unit to set aflame.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability_name": ability_name,
+                    "move_penalty": int(spec.get("move_penalty", -2) or -2),
+                    "advance_penalty": int(spec.get("advance_penalty", -2) or -2),
+                    "charge_penalty": int(spec.get("charge_penalty", -2) or -2),
+                    "roll_threshold": int(spec.get("roll_threshold", 4) or 4),
+                },
+            )
+            self.request_decision(request)
 
     def _on_unit_shooting_resolved_harvester_of_souls(
         self,

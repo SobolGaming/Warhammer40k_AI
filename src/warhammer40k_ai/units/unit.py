@@ -1668,6 +1668,15 @@ class Unit:
         r"from charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_AFLAME_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"(?:and )?roll (?:one|1) d6 on a (?P<threshold>\d)\+? "
+        r"until the end of your opponent s next turn that enemy unit is aflame "
+        r"while a unit is aflame subtract (?P<move>\d+) from its move characteristic and subtract "
+        r"(?P<advance>\d+) from advance and charge rolls made for it",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
         r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the end of the phase that enemy unit cannot have the benefit of cover",
@@ -8173,6 +8182,101 @@ class Unit:
             "pinned_source",
             "pinned_move_penalty",
             "pinned_charge_penalty",
+        ):
+            sr.pop(key, None)
+        self.special_rules = sr
+
+    def apply_aflame(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        move_penalty: int,
+        advance_penalty: int,
+        charge_penalty: int,
+    ) -> None:
+        """Apply aflame penalties (Move -X, Advance -Y, Charge -Z) until end of opponent's next turn."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        if sr.get("aflame_active"):
+            self.clear_aflame()
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+        sr["aflame_active"] = True
+        sr["aflame_owner"] = str(owner_id or "")
+        sr["aflame_turn"] = int(turn or 0)
+        sr["aflame_source"] = str(source or "Aflame").strip() or "Aflame"
+        sr["aflame_move_penalty"] = int(move_penalty or 0)
+        sr["aflame_advance_penalty"] = int(advance_penalty or 0)
+        sr["aflame_charge_penalty"] = int(charge_penalty or 0)
+
+        from ..utility.modifiers import Modifier, ModifierOp
+        self.add_characteristic_modifier(
+            "movement",
+            Modifier(ModifierOp.ADD, int(move_penalty or 0), source="ability:aflame"),
+        )
+
+        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+        adv_mods.append(
+            {
+                "value": int(advance_penalty or 0),
+                "source": sr["aflame_source"],
+                "tag": "ability:aflame",
+            }
+        )
+        sr["advance_roll_modifiers"] = adv_mods
+
+        charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+        charge_mods.append(
+            {
+                "value": int(charge_penalty or 0),
+                "source": sr["aflame_source"],
+                "tag": "ability:aflame",
+            }
+        )
+        sr["charge_roll_modifiers"] = charge_mods
+        self.special_rules = sr
+
+    def clear_aflame(self) -> None:
+        """Clear aflame penalties from this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        self.remove_characteristic_modifiers_by_source("ability:aflame")
+
+        adv_mods = list(sr.get("advance_roll_modifiers", []) or [])
+        kept_adv = []
+        for item in adv_mods:
+            if isinstance(item, dict) and item.get("tag") == "ability:aflame":
+                continue
+            kept_adv.append(item)
+        if kept_adv:
+            sr["advance_roll_modifiers"] = kept_adv
+        else:
+            sr.pop("advance_roll_modifiers", None)
+
+        charge_mods = list(sr.get("charge_roll_modifiers", []) or [])
+        kept_charge = []
+        for item in charge_mods:
+            if isinstance(item, dict) and item.get("tag") == "ability:aflame":
+                continue
+            kept_charge.append(item)
+        if kept_charge:
+            sr["charge_roll_modifiers"] = kept_charge
+        else:
+            sr.pop("charge_roll_modifiers", None)
+
+        for key in (
+            "aflame_active",
+            "aflame_owner",
+            "aflame_turn",
+            "aflame_source",
+            "aflame_move_penalty",
+            "aflame_advance_penalty",
+            "aflame_charge_penalty",
         ):
             sr.pop(key, None)
         self.special_rules = sr
@@ -26610,6 +26714,82 @@ class Unit:
                     "weapon_key": weapon_key,
                     "weapon_name": weapon_raw,
                     "move_penalty": int(move_penalty),
+                    "charge_penalty": int(charge_penalty),
+                    "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_aflame_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy unit, roll a D6; on success, that unit is aflame.
+
+        Returns a list of specs with keys:
+            - exclude_monster_vehicle: bool
+            - roll_threshold: int
+            - move_penalty: int
+            - advance_penalty: int
+            - charge_penalty: int
+            - source: ability name
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_aflame:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, bool, int, int, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_AFLAME_RE.fullmatch(normalized)
+            if not m:
+                continue
+            exclude_mv = bool(m.group("exclude")) or ("excluding monsters and vehicles" in normalized)
+            try:
+                threshold = int(m.group("threshold") or 4)
+            except Exception:
+                threshold = 4
+            try:
+                move_penalty = -int(m.group("move") or 0)
+            except Exception:
+                move_penalty = -2
+            try:
+                advance_penalty = -int(m.group("advance") or 0)
+            except Exception:
+                advance_penalty = -2
+            charge_penalty = int(advance_penalty)
+            source = str(name or "Aflame").strip() or "Aflame"
+            key = (
+                source.lower(),
+                bool(exclude_mv),
+                int(threshold),
+                int(move_penalty),
+                int(advance_penalty),
+                int(charge_penalty),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "exclude_monster_vehicle": bool(exclude_mv),
+                    "roll_threshold": int(threshold),
+                    "move_penalty": int(move_penalty),
+                    "advance_penalty": int(advance_penalty),
                     "charge_penalty": int(charge_penalty),
                     "source": source,
                 }

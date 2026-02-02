@@ -1626,6 +1626,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Leading: bearer unit gains +1 Move and can re-roll Advance rolls.",
         ),
         ("CD", "Blazing Warpfire (Psychic)"): ("Supported", "Leading: unit ranged weapons gain Assault."),
+        ("CD", "Flames of Change (Psychic)"): (
+            "Supported",
+            "Post-shoot: select a hit enemy non-MONSTER/VEHICLE unit, roll 1D6; on 4+, it is aflame until end of opponent's next turn (-2\" Move, -2 Advance, -2 Charge).",
+        ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
