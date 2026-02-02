@@ -1729,6 +1729,12 @@ class Unit:
         r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?",
         re.IGNORECASE,
     )
+    _FIGHT_SELECTED_ENEMY_MELEE_HIT_PENALTY_RE = re.compile(
+        r"each time an enemy unit(?: excluding (?P<exclude>titanic|titan) units?)? within engagement range of one or more units "
+        r"with this ability is selected to fight until the end of the phase each time a model in that enemy unit makes "
+        r"(?:a )?melee attack(?:s)? subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_END_ENGAGEMENT_MORTAL_EIGHT_D6_RE = re.compile(
         r"at the end of the fight phase you can select one enemy unit within engagement range of this model "
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
@@ -28196,6 +28202,66 @@ class Unit:
                     continue
                 seen.add(key)
                 specs.append({"source": source, "penalty": penalty})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_fight_selected_enemy_melee_hit_penalty_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: enemy units selected to fight while within Engagement Range suffer -1 to hit for melee attacks
+        until the end of the phase (may exclude TITANIC/TITAN units).
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - exclude_keyword: optional keyword to exclude (e.g., TITANIC/TITAN)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_fight_selected_enemy_melee_hit_penalty_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._FIGHT_SELECTED_ENEMY_MELEE_HIT_PENALTY_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                exclude = str(m.group("exclude") or "").strip().lower()
+                exclude_keyword = ""
+                if exclude == "titanic":
+                    exclude_keyword = "TITANIC"
+                elif exclude == "titan":
+                    exclude_keyword = "TITAN"
+                source = str(name or "Engagement melee hit penalty").strip() or "Engagement melee hit penalty"
+                key = (source.lower(), exclude_keyword)
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source, "exclude_keyword": exclude_keyword})
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

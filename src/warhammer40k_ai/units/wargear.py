@@ -3602,6 +3602,16 @@ class WargearProfile:
                     _add_hit_mod(-1, "-1 from Suppressed")
         except Exception:
             pass
+        # Fight selection engagement penalty: -1 to hit for melee attacks while active.
+        try:
+            if is_melee:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("fight_selected_enemy_melee_hit_penalty_active"):
+                    sources = [str(s) for s in (sr.get("fight_selected_enemy_melee_hit_penalty_sources", []) or []) if str(s or "").strip()]
+                    source_label = sources[0] if sources else "Engagement melee hit penalty"
+                    _add_hit_mod(-1, f"-1 from {source_label}")
+        except Exception:
+            pass
         try:
             unit = getattr(attacker, "parent_unit", None)
             target_army = target.get_parent_army() if target is not None else None

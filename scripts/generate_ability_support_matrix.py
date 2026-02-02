@@ -1630,6 +1630,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Post-shoot: select a hit enemy non-MONSTER/VEHICLE unit, roll 1D6; on 4+, it is aflame until end of opponent's next turn (-2\" Move, -2 Advance, -2 Charge).",
         ),
+        ("CD", "Mischief Makers"): (
+            "Supported",
+            "Enemy non-TITANIC units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
+        ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
@@ -2010,6 +2014,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ),
         ("SM", "Tempormortis"): ("Supported", "Fights First while leading a unit."),
         ("SM", "Pack Leader"): ("Supported", "Unit cannot be your Warlord or be given Enhancements."),
+        ("DG", "Mischief Makers"): (
+            "Supported",
+            "Enemy non-TITAN units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
+        ),
     }
     out: Dict[Tuple[str, str], Tuple[str, str]] = {}
     for (fid, name), val in raw.items():

@@ -3143,6 +3143,14 @@ class Game:
                         "maddened_ferocity_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("fight_selected_enemy_melee_hit_penalty_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "fight_selected_enemy_melee_hit_penalty_active",
+                        "fight_selected_enemy_melee_hit_penalty_expires_phase",
+                        "fight_selected_enemy_melee_hit_penalty_sources",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("dark_pacts_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_expires_phase"):
@@ -12439,6 +12447,99 @@ class Game:
             else:
                 sr.pop("maddened_ferocity_melee_attacks_bonus", None)
                 sr.pop("maddened_ferocity_expires_phase", None)
+            member.special_rules = sr
+
+    def _on_fight_unit_selected_enemy_melee_hit_penalty(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            enemy_units = list(game_map.get_enemy_units(root) or [])
+        except Exception:
+            enemy_units = []
+        if not enemy_units:
+            return
+
+        def _exclude_applies(spec: dict) -> bool:
+            exclude_kw = str(spec.get("exclude_keyword", "") or "").strip().upper()
+            if not exclude_kw:
+                return False
+            if exclude_kw == "TITANIC":
+                try:
+                    return bool(getattr(root, "is_titanic", False) or root.has_keyword("Titanic"))
+                except Exception:
+                    return False
+            if exclude_kw == "TITAN":
+                try:
+                    return bool(root.has_keyword("Titan"))
+                except Exception:
+                    return False
+            return False
+
+        sources: list[str] = []
+        seen_sources: set[str] = set()
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None:
+                continue
+            if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                continue
+            if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                continue
+            try:
+                if not game_map.is_within_engagement_range(enemy_root, root):
+                    continue
+            except Exception:
+                continue
+            specs = enemy_root.unit_fight_selected_enemy_melee_hit_penalty_specs() or []
+            if not specs:
+                continue
+            for spec in specs:
+                if _exclude_applies(spec or {}):
+                    continue
+                source = str(spec.get("source", "") or "Engagement melee hit penalty").strip()
+                if source and source.lower() not in seen_sources:
+                    seen_sources.add(source.lower())
+                    sources.append(source)
+
+        if not sources:
+            return
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        sources_sorted = sorted(sources)
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["fight_selected_enemy_melee_hit_penalty_active"] = True
+            sr["fight_selected_enemy_melee_hit_penalty_expires_phase"] = "FIGHT_PHASE"
+            sr["fight_selected_enemy_melee_hit_penalty_sources"] = list(sources_sorted)
             member.special_rules = sr
 
     def _alive_model_count(self, unit) -> int:

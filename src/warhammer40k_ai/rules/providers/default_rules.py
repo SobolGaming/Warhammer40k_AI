@@ -92,6 +92,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_frenzy"),
                 ("fight_attacks_resolved", "_on_fight_attacks_resolved_frenzy"),
                 ("fight_unit_selected", "_on_fight_unit_selected_daemonic_patrons"),
+                ("fight_unit_selected", "_on_fight_unit_selected_enemy_melee_hit_penalty"),
                 ("phase_start", "_on_phase_start_target_tracking"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_tracking"),
                 ("charge_declared", "_on_charge_declared_tracking"),
