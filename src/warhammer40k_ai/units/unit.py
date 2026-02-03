@@ -17988,6 +17988,7 @@ class Unit:
                     selected_models[get_entity_id(m)] = m
             if selected_models:
                 self.grant_selected_to_shoot_rerolls_for_models(list(selected_models.values()))
+                self.grant_selected_to_action_reroll_choice_for_models(list(selected_models.values()), action="shoot")
                 try:
                     from ..rules.psychic_communion import apply_psychic_communion_on_selected_to_shoot
                     phase_name = ""
@@ -18169,6 +18170,10 @@ class Unit:
         # Clear selected-to-shoot reroll allowances once this shooting sequence is resolved.
         try:
             self.clear_selected_to_shoot_rerolls()
+        except Exception:
+            pass
+        try:
+            self.clear_selected_to_action_reroll_choice(action="shoot")
         except Exception:
             pass
 
@@ -25721,6 +25726,57 @@ class Unit:
         self._ability_cache[cache_key] = rule
         return rule
 
+    def get_selected_to_shoot_or_fight_reroll_choice_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model is selected to shoot or fight, you can re-roll one Hit roll or you can re-roll one Wound roll
+        when resolving those attacks."
+        """
+        if model is None:
+            return None
+        cache_key = f"selected_to_shoot_or_fight_reroll_choice_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            import re
+
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if not (
+                    re.search(r"selected\s+to\s+(?:shoot|fire)\s+or\s+fight", low)
+                    or re.search(r"selected\s+to\s+fight\s+or\s+(?:shoot|fire)", low)
+                ):
+                    continue
+                if ("re-roll" not in low) and ("reroll" not in low):
+                    continue
+                allow_hit = bool(re.search(r"re-?roll\s+one\s+hit\s+roll", low))
+                allow_wound = bool(re.search(r"re-?roll\s+one\s+wound\s+roll", low))
+                if not (allow_hit and allow_wound):
+                    continue
+                if not re.search(r"hit\s+roll.*or.*wound\s+roll|wound\s+roll.*or.*hit\s+roll", low):
+                    continue
+                source = str(name or "Selected to shoot or fight").strip() or "Selected to shoot or fight"
+                rule = {
+                    "reroll_hit": True,
+                    "reroll_wound": True,
+                    "requires_shooting_phase": ("shooting phase" in low),
+                    "requires_fight_phase": ("fight phase" in low),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def grant_selected_to_shoot_rerolls_for_models(self, models: list['Model']) -> None:
         if not models:
             return
@@ -25756,6 +25812,57 @@ class Unit:
             except Exception:
                 continue
 
+    def grant_selected_to_action_reroll_choice_for_models(self, models: list['Model'], *, action: str) -> None:
+        if not models:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("shoot", "fight"):
+            return
+        for model in list(models or []):
+            try:
+                if not getattr(model, "is_alive", False):
+                    continue
+            except Exception:
+                continue
+            rule = self.get_selected_to_shoot_or_fight_reroll_choice_rule(model)
+            if not rule:
+                continue
+            if action_key == "shoot" and rule.get("requires_shooting_phase"):
+                game = None
+                try:
+                    game = self.get_parent_army().player.game
+                except Exception:
+                    game = None
+                if game is None or not bool(getattr(game, "is_shooting_phase", lambda: False)()):
+                    continue
+                try:
+                    if game.get_current_player() is not self.get_parent_army().player:
+                        continue
+                except Exception:
+                    continue
+            if action_key == "fight" and rule.get("requires_fight_phase"):
+                game = None
+                try:
+                    game = self.get_parent_army().player.game
+                except Exception:
+                    game = None
+                if game is None or not bool(getattr(game, "is_fight_phase", lambda: False)()):
+                    continue
+                try:
+                    if game.get_current_player() is not self.get_parent_army().player:
+                        continue
+                except Exception:
+                    continue
+            try:
+                model.grant_selected_to_action_reroll_choice(
+                    action=action_key,
+                    allow_hit=bool(rule.get("reroll_hit")),
+                    allow_wound=bool(rule.get("reroll_wound")),
+                    source=str(rule.get("source", "") or ""),
+                )
+            except Exception:
+                continue
+
     def clear_selected_to_shoot_rerolls(self) -> None:
         try:
             models = list(getattr(self, "models", []) or [])
@@ -25764,6 +25871,22 @@ class Unit:
         for model in models:
             try:
                 model.clear_selected_to_shoot_rerolls()
+            except Exception:
+                continue
+
+    def clear_selected_to_action_reroll_choice(self, action: str | None = None) -> None:
+        try:
+            models = list(self.get_attached_unit_models() or [])
+        except Exception:
+            models = []
+        if not models:
+            try:
+                models = list(getattr(self, "models", []) or [])
+            except Exception:
+                models = []
+        for model in models:
+            try:
+                model.clear_selected_to_action_reroll_choice(action=action)
             except Exception:
                 continue
 

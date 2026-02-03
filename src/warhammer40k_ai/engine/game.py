@@ -12806,6 +12806,34 @@ class Game:
             sr["fight_selected_enemy_melee_hit_penalty_sources"] = list(sources_sorted)
             member.special_rules = sr
 
+    def _on_fight_unit_selected_selected_to_fight_reroll_choice(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return
+        try:
+            if hasattr(root, "grant_selected_to_action_reroll_choice_for_models"):
+                root.grant_selected_to_action_reroll_choice_for_models(models, action="fight")
+        except Exception:
+            return
+
     def _alive_model_count(self, unit) -> int:
         if unit is None:
             return 0

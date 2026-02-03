@@ -4874,6 +4874,59 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Selected to shoot or fight: re-roll one Hit roll or one Wound roll (one per selection).
+        try:
+            if rerolls_allowed and "reroll" not in hit_result:
+                action = "shoot" if attack_is_ranged else "fight" if attack_is_melee else ""
+                if action and getattr(attacker, "can_use_selected_to_action_reroll", None) and attacker.can_use_selected_to_action_reroll("hit", action):
+                    try:
+                        success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                        unit = None
+                    reason = ""
+                    try:
+                        reason = str(getattr(attacker, "get_selected_to_action_reroll_source", lambda _a=None: "")(action) or "")
+                    except Exception:
+                        reason = ""
+                    default_label = "Selected to shoot" if action == "shoot" else "Selected to fight"
+                    label = reason or default_label
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="hit",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=label,
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll and attacker.consume_selected_to_action_reroll("hit", action):
+                        rr = _reroll_hit()
+                        hit_result.setdefault("special_effects", []).append(f"{label}: re-roll Hit roll")
+                        hit_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
         # Drukhari: Power from Pain (Hatred Eternal) re-roll Hit rolls (optional).
         try:
             if rerolls_allowed and "reroll" not in hit_result:
@@ -7587,6 +7640,83 @@ class WargearProfile:
                     else:
                         do_reroll = (not success)
                     if do_reroll and attacker.consume_selected_to_shoot_reroll("wound"):
+                        rr = _reroll_wound()
+                        wound_result.setdefault("special_effects", []).append(f"{label}: re-roll Wound roll")
+                        wound_result["reroll"] = rr
+                        dice_roll = rr
+                        reroll_used = True
+        except Exception:
+            pass
+
+        # Selected to shoot or fight: re-roll one Hit roll or one Wound roll (one per selection).
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                action = "shoot" if is_ranged else "fight" if is_melee else ""
+                if action and getattr(attacker, "can_use_selected_to_action_reroll", None) and attacker.can_use_selected_to_action_reroll("wound", action):
+                    needed = 0
+                    try:
+                        s_val = strength
+                        t_val = target_toughness
+                        if isinstance(s_val, int) and isinstance(t_val, int):
+                            if s_val >= 2 * t_val:
+                                needed = 2
+                            elif s_val > t_val:
+                                needed = 3
+                            elif s_val == t_val:
+                                needed = 4
+                            elif s_val * 2 <= t_val:
+                                needed = 6
+                            else:
+                                needed = 5
+                    except Exception:
+                        needed = 0
+                    final_needed = needed
+                    try:
+                        final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                    except Exception:
+                        pass
+                    try:
+                        success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                    except Exception:
+                        success = False
+                    do_reroll = False
+                    try:
+                        unit = attacker.parent_unit
+                        game = unit.get_parent_army().player.game
+                        player = unit.get_parent_army().player
+                        is_human = bool(getattr(player, "has_control", lambda: False)())
+                        provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                    except Exception:
+                        is_human = False
+                        provider = None
+                        player = None
+                        unit = None
+                    reason = ""
+                    try:
+                        reason = str(getattr(attacker, "get_selected_to_action_reroll_source", lambda _a=None: "")(action) or "")
+                    except Exception:
+                        reason = ""
+                    default_label = "Selected to shoot" if action == "shoot" else "Selected to fight"
+                    label = reason or default_label
+                    if is_human and callable(provider):
+                        try:
+                            do_reroll = bool(provider(
+                                player=player,
+                                unit=unit,
+                                roll_type="wound",
+                                value=dice_roll,
+                                dice=None,
+                                needed=final_needed,
+                                success=success,
+                                reason=label,
+                            ))
+                        except Exception:
+                            do_reroll = False
+                    else:
+                        do_reroll = (not success)
+                    if do_reroll and attacker.consume_selected_to_action_reroll("wound", action):
                         rr = _reroll_wound()
                         wound_result.setdefault("special_effects", []).append(f"{label}: re-roll Wound roll")
                         wound_result["reroll"] = rr

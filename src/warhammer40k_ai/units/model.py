@@ -1164,6 +1164,107 @@ class Model:
             return ""
         return str(data.get("source", "") or "")
 
+    # ---------------- Selected-to-shoot/fight reroll choice helpers ----------------
+
+    def grant_selected_to_action_reroll_choice(self, *, action: str, allow_hit: bool, allow_wound: bool, source: str = "") -> None:
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        data = self._temporary_effects.get("selected_to_action_reroll_choice", {})
+        if not isinstance(data, dict):
+            data = {}
+        action_key = str(action or "").strip().lower()
+        if not action_key:
+            return
+        entry = data.get(action_key, {})
+        if not isinstance(entry, dict):
+            entry = {}
+        entry["remaining"] = max(int(entry.get("remaining", 0) or 0), 1)
+        if allow_hit:
+            entry["allow_hit"] = True
+        if allow_wound:
+            entry["allow_wound"] = True
+        if source:
+            entry["source"] = str(source or "")
+        data[action_key] = entry
+        self._temporary_effects["selected_to_action_reroll_choice"] = data
+
+    def clear_selected_to_action_reroll_choice(self, action: str | None = None) -> None:
+        eff = getattr(self, "_temporary_effects", None)
+        if not isinstance(eff, dict):
+            return
+        if action is None:
+            eff.pop("selected_to_action_reroll_choice", None)
+            return
+        data = eff.get("selected_to_action_reroll_choice", {})
+        if not isinstance(data, dict):
+            return
+        action_key = str(action or "").strip().lower()
+        if not action_key:
+            return
+        data.pop(action_key, None)
+        if not data:
+            eff.pop("selected_to_action_reroll_choice", None)
+        else:
+            eff["selected_to_action_reroll_choice"] = data
+
+    def can_use_selected_to_action_reroll(self, kind: str, action: str) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("selected_to_action_reroll_choice", {})
+        if not isinstance(data, dict):
+            return False
+        action_key = str(action or "").strip().lower()
+        entry = data.get(action_key, {})
+        if not isinstance(entry, dict):
+            return False
+        try:
+            remaining = int(entry.get("remaining", 0) or 0)
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key == "hit":
+            return bool(entry.get("allow_hit"))
+        if kind_key == "wound":
+            return bool(entry.get("allow_wound"))
+        return False
+
+    def consume_selected_to_action_reroll(self, kind: str, action: str) -> bool:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("selected_to_action_reroll_choice", {})
+        if not isinstance(data, dict):
+            return False
+        action_key = str(action or "").strip().lower()
+        entry = data.get(action_key, {})
+        if not isinstance(entry, dict):
+            return False
+        try:
+            remaining = int(entry.get("remaining", 0) or 0)
+        except Exception:
+            remaining = 0
+        if remaining <= 0:
+            return False
+        kind_key = str(kind or "").strip().lower()
+        if kind_key == "hit" and not bool(entry.get("allow_hit")):
+            return False
+        if kind_key == "wound" and not bool(entry.get("allow_wound")):
+            return False
+        entry["remaining"] = remaining - 1
+        data[action_key] = entry
+        eff["selected_to_action_reroll_choice"] = data
+        return True
+
+    def get_selected_to_action_reroll_source(self, action: str) -> str:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        data = eff.get("selected_to_action_reroll_choice", {})
+        if not isinstance(data, dict):
+            return ""
+        action_key = str(action or "").strip().lower()
+        entry = data.get(action_key, {})
+        if not isinstance(entry, dict):
+            return ""
+        return str(entry.get("source", "") or "")
+
     def on_phase_end(self, phase) -> None:
         """Clear temporary effects that expire at end of the provided phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

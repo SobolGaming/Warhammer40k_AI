@@ -182,6 +182,11 @@ class AttackResolutionManager:
                 unit.clear_selected_to_shoot_rerolls()
         except Exception:
             pass
+        try:
+            if hasattr(unit, "clear_selected_to_action_reroll_choice"):
+                unit.clear_selected_to_action_reroll_choice(action="shoot")
+        except Exception:
+            pass
 
     def _mark_sequence_done(self, game: object, seq: AttackSequence) -> None:
         seq.step = "done"

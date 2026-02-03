@@ -296,6 +296,11 @@ class FightPhaseManager:
                 fighting_unit.clear_fight_within_3_active()
         except Exception:
             pass
+        try:
+            if hasattr(fighting_unit, "clear_selected_to_action_reroll_choice"):
+                fighting_unit.clear_selected_to_action_reroll_choice(action="fight")
+        except Exception:
+            pass
         # Publish event for reaction stratagems (e.g. Counter-Offensive)
         try:
             if hasattr(self.game, "event_system"):
@@ -339,6 +344,11 @@ class FightPhaseManager:
         
         if not eligible_targets:
             print(f"{selected_unit.name} has no eligible targets")
+            try:
+                if hasattr(selected_unit, "clear_selected_to_action_reroll_choice"):
+                    selected_unit.clear_selected_to_action_reroll_choice(action="fight")
+            except Exception:
+                pass
             return
         
         # Always show target selection dialog, even for single targets

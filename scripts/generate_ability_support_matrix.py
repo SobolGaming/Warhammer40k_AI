@@ -2237,6 +2237,7 @@ def _classify_ability_base(
     orders_support = _orders_section_support(name, description)
     attached_unit_support = _attached_unit_support(name, description)
     model_reroll_support = _model_reroll_wound_vs_character_support(description)
+    selected_to_shoot_or_fight_reroll_choice_support = _selected_to_shoot_or_fight_reroll_choice_support(description)
     selected_to_shoot_reroll_support = _selected_to_shoot_single_reroll_support(description)
     attack_roll_cp_support = _attack_roll_plus_cp_on_destroy_support(description)
     attack_roll_battleshock_support = _attack_roll_plus_on_kill_battleshock_support(description)
@@ -2469,6 +2470,8 @@ def _classify_ability_base(
         return attached_unit_support
     if model_reroll_support:
         return model_reroll_support
+    if selected_to_shoot_or_fight_reroll_choice_support:
+        return selected_to_shoot_or_fight_reroll_choice_support
     if selected_to_shoot_reroll_support:
         return selected_to_shoot_reroll_support
     if attack_roll_cp_support:
@@ -4056,6 +4059,31 @@ def _selected_to_shoot_single_reroll_support(description: str) -> Optional[Tuple
     if allow_damage:
         notes.append("Selected to shoot: can re-roll one Damage roll (optional).")
     return ("Supported", " ".join(notes))
+
+
+def _selected_to_shoot_or_fight_reroll_choice_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    if not (
+        re.search(r"selected\s+to\s+(?:shoot|fire)\s+or\s+fight", norm)
+        or re.search(r"selected\s+to\s+fight\s+or\s+(?:shoot|fire)", norm)
+    ):
+        return None
+    if "reroll" not in norm:
+        return None
+    allow_hit = bool(re.search(r"reroll\s+one\s+hit\s+roll", norm))
+    allow_wound = bool(re.search(r"reroll\s+one\s+wound\s+roll", norm))
+    if not (allow_hit and allow_wound):
+        return None
+    if not re.search(r"hit\s+roll.*or.*wound\s+roll|wound\s+roll.*or.*hit\s+roll", norm):
+        return None
+    return (
+        "Supported",
+        "Selected to shoot or fight: can re-roll one Hit roll or one Wound roll (optional).",
+    )
 
 
 def _fight_within_3_support(description: str) -> Optional[Tuple[str, str]]:
