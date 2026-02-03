@@ -560,6 +560,91 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self._resolve_yes(game, request, player)
         self.assertEqual(unit.special_rules.get("battle_focus_sudden_strike_expires_phase"), "FIGHT_PHASE")
 
+    def test_dark_ritual_queues_and_applies(self):
+        army = Army("Chaos Cult", detachment_type="Other")
+        army.faction_id = "CSM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Chaos", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, in your Command phase, if this unit contains a CULT DEMAGOGUE model, it can use this ability. "
+            "If it does, until the end of the turn, this unit can declare a charge in a turn in which it Advanced and each time "
+            "a model in this unit makes an attack, add 1 to the Hit roll and add 1 to the Wound roll."
+        )
+        ability = Ability("Dark Ritual", "CSM", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Dark Ritual Unit", army, abilities=[ability])
+        model = self._make_model("Cult Demagogue", unit)
+        model.keywords = ["CULT DEMAGOGUE"]
+        unit.models = [model]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_dark_ritual(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "dark_ritual")
+        self.assertEqual(ctx.get("unit_id"), get_entity_id(unit))
+
+        self._resolve_yes(game, request, player)
+
+        sr = unit.special_rules
+        self.assertTrue(bool(sr.get("dark_ritual_active", False)))
+        self.assertTrue(bool(sr.get("dark_ritual_charge_after_advance", False)))
+        self.assertTrue(unit.has_used_unit_once_per_battle("dark_ritual"))
+        self.assertTrue(unit.can_charge_after_advance())
+
+    def test_dark_ritual_rejects_if_demagogue_missing(self):
+        army = Army("Chaos Cult", detachment_type="Other")
+        army.faction_id = "CSM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Chaos", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, in your Command phase, if this unit contains a CULT DEMAGOGUE model, it can use this ability. "
+            "If it does, until the end of the turn, this unit can declare a charge in a turn in which it Advanced and each time "
+            "a model in this unit makes an attack, add 1 to the Hit roll and add 1 to the Wound roll."
+        )
+        ability = Ability("Dark Ritual", "CSM", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Dark Ritual Unit", army, abilities=[ability])
+        model = self._make_model("Cult Demagogue", unit)
+        model.keywords = ["CULT DEMAGOGUE"]
+        unit.models = [model]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_dark_ritual(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+
+        model.keywords = []
+
+        self._resolve_yes(game, request, player)
+
+        sr = unit.special_rules
+        self.assertFalse(bool(sr.get("dark_ritual_active", False)))
+        self.assertFalse(unit.has_used_unit_once_per_battle("dark_ritual"))
+
 
 if __name__ == "__main__":
     unittest.main()

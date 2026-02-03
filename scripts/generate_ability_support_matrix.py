@@ -2212,6 +2212,7 @@ def _classify_ability_base(
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
     start_any_phase_damage_set_one_support = _start_any_phase_damage_set_one_support(description)
     start_any_phase_unit_fnp_support = _start_any_phase_unit_fnp_support(description)
+    dark_ritual_support = _dark_ritual_support(description)
     movement_phase_normal_move_weapon_attacks_bonus_support = _movement_phase_once_normal_move_weapon_attacks_bonus_support(description)
     movement_phase_speed_mortal_support = _movement_phase_normal_move_speed_mortal_wounds_support(description)
     movement_phase_end_mortal_table_support = _movement_phase_end_enemy_within_range_mortal_table_support(description)
@@ -2435,6 +2436,8 @@ def _classify_ability_base(
         return start_any_phase_damage_set_one_support
     if start_any_phase_unit_fnp_support:
         return start_any_phase_unit_fnp_support
+    if dark_ritual_support:
+        return dark_ritual_support
     if movement_phase_normal_move_weapon_attacks_bonus_support:
         return movement_phase_normal_move_weapon_attacks_bonus_support
     if movement_phase_speed_mortal_support:
@@ -5388,6 +5391,25 @@ def _start_any_phase_unit_fnp_support(description: str) -> Optional[Tuple[str, s
     return (
         "Supported",
         f"Once per battle (start of any phase): unit gains Feel No Pain {m.group('val')}+ until end of phase.",
+    )
+
+
+def _dark_ritual_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle in your command phase if this unit contains a cult demagogue model it can use this ability "
+        r"if it does until the end of (?:the|that) turn this unit can declare a charge in a turn in which it advanced "
+        r"and each time a model in this unit makes an attack add 1 to the hit roll and add 1 to the wound roll"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Once per battle (Command phase): unit can charge after Advancing and gains +1 to hit and wound until end of turn.",
     )
 
 

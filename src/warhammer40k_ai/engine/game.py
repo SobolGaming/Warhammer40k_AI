@@ -1438,6 +1438,69 @@ class Game:
                 )
                 self.request_decision(req)
 
+    def _on_phase_start_dark_ritual(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        army = player.get_army()
+        if army is None:
+            return
+
+        seen = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                continue
+            rid = str(maybe_entity_id(root) or "")
+            if rid in seen:
+                continue
+            seen.add(rid)
+            if not self._unit_on_battlefield_for_reposition(root):
+                continue
+            try:
+                rule = root.get_dark_ritual_rule()
+            except Exception:
+                rule = None
+            if not rule:
+                continue
+            ability_key = str(rule.get("ability_key") or "dark_ritual").strip().lower() or "dark_ritual"
+            if root.has_used_unit_once_per_battle(ability_key):
+                continue
+            if not root._unit_contains_model_with_keyword("CULT DEMAGOGUE"):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("dark_ritual_active"):
+                continue
+            ability_name = str(rule.get("source", "") or "Dark Ritual").strip() or "Dark Ritual"
+            unit_id = maybe_entity_id(root)
+            ctx = {
+                "ability_name": ability_name,
+                "phase": "Command phase",
+                "unit": getattr(root, "name", ""),
+                "unit_id": unit_id,
+                "ability_key": ability_key,
+            }
+            message = (
+                f"Use {ability_name} for {getattr(root, 'name', 'Unit')}? (Once per battle)\n"
+                "Until end of turn: can charge after Advance; +1 to Hit and Wound."
+            )
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="dark_ritual",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "ability_key": ability_key},
+                instance_key=str(unit_id or ""),
+            )
+
     def _on_phase_start_post_shoot_leadership_debuff_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear post-shoot Leadership/Battle-shock debuffs at the start of the owner's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -3671,6 +3734,23 @@ class Game:
                             "grenade_pack_flyover_source",
                         ):
                             sr.pop(k, None)
+                    if str(sr.get("dark_ritual_turn_owner", "") or "") == owner_id:
+                        try:
+                            turn = int(sr.get("dark_ritual_turn", 0) or 0)
+                        except Exception:
+                            turn = 0
+                        if not turn or int(turn) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "dark_ritual_active",
+                                "dark_ritual_turn_owner",
+                                "dark_ritual_turn",
+                                "dark_ritual_expires_phase",
+                                "dark_ritual_hit_bonus",
+                                "dark_ritual_wound_bonus",
+                                "dark_ritual_charge_after_advance",
+                                "dark_ritual_source",
+                            ):
+                                sr.pop(k, None)
                     if str(sr.get("grenade_pack_flyover_no_grenade_turn_owner", "") or "") == owner_id:
                         for k in ("grenade_pack_flyover_no_grenade_turn_owner", "grenade_pack_flyover_no_grenade_turn"):
                             sr.pop(k, None)
@@ -6088,6 +6168,7 @@ class Game:
             "fight_phase_melee_ap_boost",
             "start_any_phase_damage_set_one",
             "start_any_phase_fnp",
+            "dark_ritual",
             "movement_phase_move_weapon_bonus",
             "hand_of_asuryan",
             "flickerjump",
@@ -6262,6 +6343,66 @@ class Game:
                         expires_phase=phase_name,
                     )
             root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
+            return
+
+        if ability_key == "dark_ritual":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            try:
+                if not getattr(root, "deployed", True):
+                    return
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            ability_name = str(ctx.get("ability_name", "") or "Dark Ritual").strip() or "Dark Ritual"
+            ability_key = str(payload.get("ability_key") or ctx.get("ability_key") or "dark_ritual").strip().lower()
+            if not ability_key:
+                ability_key = "dark_ritual"
+            if root.has_used_unit_once_per_battle(ability_key):
+                return
+            if not root._unit_contains_model_with_keyword("CULT DEMAGOGUE"):
+                return
+            try:
+                rule = root.get_dark_ritual_rule()
+            except Exception:
+                rule = None
+            if not rule:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if phase_name and phase_name != "COMMAND_PHASE":
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["dark_ritual_active"] = True
+            sr["dark_ritual_turn_owner"] = str(getattr(getattr(self, "get_current_player", lambda: None)(), "id", "") or "")
+            sr["dark_ritual_turn"] = int(getattr(self, "turn", 0) or 0)
+            sr["dark_ritual_expires_phase"] = "FIGHT_PHASE"
+            sr["dark_ritual_hit_bonus"] = int(sr.get("dark_ritual_hit_bonus", 1) or 1)
+            sr["dark_ritual_wound_bonus"] = int(sr.get("dark_ritual_wound_bonus", 1) or 1)
+            sr["dark_ritual_charge_after_advance"] = True
+            sr["dark_ritual_source"] = ability_name
+            root.special_rules = sr
+            root.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
+            try:
+                self._log_action(
+                    f"{getattr(root, 'name', 'Unit')} uses {ability_name} (charge after Advance; +1 Hit/Wound)."
+                )
+            except Exception:
+                pass
             return
 
         if ability_key == "sweeping_advance":

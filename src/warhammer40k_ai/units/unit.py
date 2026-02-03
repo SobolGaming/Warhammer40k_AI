@@ -4713,6 +4713,43 @@ class Unit:
                 return True
         return False
 
+    def _unit_contains_model_with_keyword(self, keyword: str) -> bool:
+        kw = str(keyword or "").strip().lower()
+        if not kw:
+            return False
+        try:
+            models = list(self.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(self, "models", []) or [])
+        for model in models:
+            if model is None:
+                continue
+            try:
+                alive = getattr(model, "is_alive", True)
+                if callable(alive):
+                    alive = alive()
+            except Exception:
+                alive = True
+            if not alive:
+                continue
+            try:
+                if hasattr(model, "has_any_keyword") and model.has_any_keyword(kw):
+                    return True
+            except Exception:
+                pass
+            try:
+                if hasattr(model, "has_keyword") and model.has_keyword(kw):
+                    return True
+            except Exception:
+                pass
+            try:
+                kws = [str(k or "").strip().lower() for k in (getattr(model, "keywords", []) or [])]
+                if kw in kws:
+                    return True
+            except Exception:
+                pass
+        return False
+
     def _transport_disembark_rules(self) -> dict:
         """
         Detect transport abilities that modify disembark behavior (Assault Ramp/Vehicle patterns).
@@ -17210,6 +17247,61 @@ class Unit:
             
         return False
 
+    def _dark_ritual_active(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("dark_ritual_active"):
+            return False
+        owner = str(sr.get("dark_ritual_turn_owner", "") or "")
+        try:
+            turn = int(sr.get("dark_ritual_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if owner or turn:
+            if game is None:
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+            if game is None:
+                return False
+            cur_turn = int(getattr(game, "turn", 0) or 0)
+            cur_player = getattr(game, "get_current_player", lambda: None)()
+            cur_owner = str(getattr(cur_player, "id", "") or "")
+            if owner and owner != cur_owner:
+                return False
+            if turn and turn != cur_turn:
+                return False
+        return True
+
+    def get_dark_ritual_bonuses(self, game=None) -> tuple[int, int, str]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if not root._dark_ritual_active(game=game):
+            return (0, 0, "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return (0, 0, "")
+        try:
+            hit_bonus = int(sr.get("dark_ritual_hit_bonus", 1) or 0)
+        except Exception:
+            hit_bonus = 0
+        try:
+            wound_bonus = int(sr.get("dark_ritual_wound_bonus", 1) or 0)
+        except Exception:
+            wound_bonus = 0
+        source = str(sr.get("dark_ritual_source", "") or "Dark Ritual").strip() or "Dark Ritual"
+        return (hit_bonus, wound_bonus, source)
+
     def _advance_and_charge_always_available(self) -> bool:
         """Return True if this unit can always charge after advancing (non-once-per-battle sources)."""
         try:
@@ -17229,6 +17321,11 @@ class Unit:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("pain_charge_after_advance"):
+                return True
+        except Exception:
+            pass
+        try:
+            if self._dark_ritual_active():
                 return True
         except Exception:
             pass
@@ -25016,6 +25113,71 @@ class Unit:
                     rng = 12
                 source = str(name or "Reactive Response").strip() or "Reactive Response"
                 rule = {"range": int(rng), "source": source}
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_dark_ritual_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per battle, in your Command phase, if this unit contains a CULT DEMAGOGUE model, it can use this ability.
+        If it does, until the end of the turn, this unit can declare a charge in a turn in which it Advanced and each
+        time a model in this unit makes an attack, add 1 to the Hit roll and add 1 to the Wound roll."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "dark_ritual_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                normalized = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "once per battle" not in normalized:
+                    continue
+                if "command phase" not in normalized:
+                    continue
+                if "cult demagogue" not in normalized:
+                    continue
+                if "declare a charge" not in normalized or "advance" not in normalized:
+                    continue
+                if "add 1 to the hit roll" not in normalized:
+                    continue
+                if "add 1 to the wound roll" not in normalized:
+                    continue
+                if "end of the turn" not in normalized:
+                    continue
+                source = str(name or "Dark Ritual").strip() or "Dark Ritual"
+                rule = {"source": source, "ability_key": "dark_ritual"}
                 break
             if rule is not None:
                 break

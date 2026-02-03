@@ -3868,6 +3868,17 @@ class WargearProfile:
                 _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Movement phase bonus")
         except Exception:
             pass
+        # Dark Ritual (once per battle): +1 to hit until end of turn.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            if attacker_unit is not None and hasattr(attacker_unit, "get_dark_ritual_bonuses"):
+                army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                hit_bonus, _wound_bonus, source = attacker_unit.get_dark_ritual_bonuses(game=game)
+                if hit_bonus:
+                    _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source}")
+        except Exception:
+            pass
         from ..utility.modifier_choice import (
             CHOICE_KEEP_ALL,
             CHOICE_IGNORE_NEGATIVE,
@@ -6268,6 +6279,18 @@ class WargearProfile:
             if bonus:
                 dice_modifier += int(bonus)
                 wound_result['modifiers'].append(reason or f"+{int(bonus)} to wound from Movement phase bonus")
+        except Exception:
+            pass
+        # Dark Ritual (once per battle): +1 to wound until end of turn.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            if attacker_unit is not None and hasattr(attacker_unit, "get_dark_ritual_bonuses"):
+                army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                _hit_bonus, wound_bonus, source = attacker_unit.get_dark_ritual_bonuses(game=game)
+                if wound_bonus:
+                    dice_modifier += int(wound_bonus)
+                    wound_result['modifiers'].append(f"+{int(wound_bonus)} to wound from {source}")
         except Exception:
             pass
         # Thousand Sons: Grand Coven (Psychic Maelstrom).

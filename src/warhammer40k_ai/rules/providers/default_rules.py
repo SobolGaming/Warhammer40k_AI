@@ -99,6 +99,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("fight_unit_selected", "_on_fight_unit_selected_enemy_melee_hit_penalty"),
                 ("fight_unit_selected", "_on_fight_unit_selected_selected_to_fight_reroll_choice"),
                 ("phase_start", "_on_phase_start_target_tracking"),
+                ("phase_start", "_on_phase_start_dark_ritual"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_tracking"),
                 ("charge_declared", "_on_charge_declared_tracking"),
                 ("phase_start", "_on_phase_start_post_shoot_leadership_debuff_cleanup"),
