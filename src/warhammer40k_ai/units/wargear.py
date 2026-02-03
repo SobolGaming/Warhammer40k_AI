@@ -5438,6 +5438,39 @@ class WargearProfile:
         dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
         dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
 
+        malefic_lethal = False
+        malefic_sustained_value = 0
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None else None
+        except Exception:
+            root = None
+        try:
+            sr = getattr(root or getattr(attacker, "parent_unit", None), "special_rules", None)
+            if isinstance(sr, dict) and sr.get("malefic_surge_diabolic_active"):
+                exp = str(sr.get("malefic_surge_diabolic_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        exp = ""
+                if exp != "":
+                    attack_type = str(sr.get("malefic_surge_diabolic_attack_type", "") or "").strip().lower()
+                    if not attack_type or (attack_type == "melee" and is_melee) or (attack_type == "ranged" and is_ranged):
+                        choice = str(sr.get("malefic_surge_diabolic_choice", "") or "").strip().upper()
+                        if choice == "LETHAL HITS":
+                            malefic_lethal = True
+                        elif "SUSTAINED" in choice:
+                            m = re.search(r"(\\d+)", choice)
+                            malefic_sustained_value = int(m.group(1)) if m else 1
+        except Exception:
+            malefic_lethal = False
+            malefic_sustained_value = 0
+        malefic_sustained = bool(malefic_sustained_value)
+
         bondsman_lethal = False
         bondsman_sustained = False
         bondsman_sustained_ranged = False
@@ -5610,6 +5643,7 @@ class WargearProfile:
             or bearer_unit_sustained
             or war_horde_sustained
             or bonus_sustained
+            or malefic_sustained
         )
 
         blitzing_grants_sustained = False
@@ -5665,11 +5699,11 @@ class WargearProfile:
                 attack_instance["bonus_precision"] = True
                 hit_result['special_effects'].append("Precision")
 
-            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal:
+            if self.is_lethal_hits() or blessings_lethal or dark_pacts_lethal or martial_katah_lethal or bondsman_lethal or pact_lethal or exquisite_lethal or pain_lethal or leading_lethal or bonus_lethal or malefic_lethal:
                 hit_result['special_effects'].append("Lethal Hits")
                 attack_instance['lethal_hit'] = True
             # For Sustained Hits, do not override an existing Sustained Hits X on the weapon.
-            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or bonus_sustained or blitzing_grants_sustained:
+            if self.is_sustained_hits() or blessings_sustained or dark_pacts_sustained or martial_katah_sustained or bondsman_sustained or bondsman_sustained_ranged or pact_sustained or exquisite_sustained or empowered_sustained or pain_sustained or bearer_unit_sustained or war_horde_sustained or bonus_sustained or malefic_sustained or blitzing_grants_sustained:
                 # Support Sustained Hits X / Sustained Hits D3 / etc. Roll per critical hit.
                 if self.is_sustained_hits():
                     try:
@@ -5700,6 +5734,9 @@ class WargearProfile:
                             label = f"Sustained Hits (+{sustained_val}) [{bonus_sustained_label}]"
                         else:
                             label = f"Sustained Hits (+{sustained_val})"
+                    elif malefic_sustained_value:
+                        sustained_val = max(int(sustained_val), int(malefic_sustained_value))
+                        label = f"Sustained Hits (+{sustained_val}) [Malefic Surge]"
                     elif blessings_sustained:
                         label += " [Blessings of Khorne]"
                     elif dark_pacts_sustained:

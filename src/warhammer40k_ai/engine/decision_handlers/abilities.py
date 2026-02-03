@@ -62,6 +62,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_CHARGE_MODIFIER_IGNORES,
     DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
     DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
+    DECISION_CHOOSE_MALEFIC_SURGE_UNIT,
+    DECISION_CHOOSE_MALEFIC_SURGE_ABILITY,
 )
 from ..decisions import DecisionRequest, DecisionResult
 from ...utility.entity_ids import get_entity_id
@@ -3385,6 +3387,110 @@ def _apply_choose_power_from_pain_option(game: object, request: DecisionRequest,
     return str(choice)
 
 
+def _validate_choose_malefic_surge_unit(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or request.context.get("unit_id")
+    if unit_val is None:
+        return ("Malefic Surge choice requires unit_id.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Malefic Surge unit not found.",)
+    army = getattr(unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+    if mgr is None or not getattr(mgr, "is_infernal_lance", lambda: False)():
+        return ("Malefic Surge requires Infernal Lance detachment.",)
+    if not getattr(mgr, "can_unit_malefic_surge", lambda *_a, **_k: False)(unit, game=game):
+        return ("Unit is not eligible to make a Malefic Surge.",)
+    return ()
+
+
+def _apply_choose_malefic_surge_unit(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    player = resolve_player(game, getattr(request, "player_id", None))
+    army = getattr(unit, "get_parent_army", lambda: None)() if unit is not None else None
+    mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+    if mgr is None:
+        raise RuntimeError("Malefic Surge manager not found.")
+    if is_skip_choice(request, result):
+        mgr.record_declined(player=player, game=game)
+        return None
+    if unit is None:
+        raise RuntimeError("Malefic Surge unit not found.")
+    mgr.apply_malefic_surge(unit, game=game)
+    if player is None:
+        player = getattr(army, "player", None)
+    try:
+        mgr.prompt_malefic_surge_selection(game=game, player=player)
+    except Exception:
+        pass
+    return get_entity_id(unit)
+
+
+def _validate_choose_malefic_surge_ability(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or request.context.get("unit_id")
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    trigger = request.context.get("trigger") or payload.get("trigger")
+    if unit_val is None or not choice or not trigger:
+        return ("Malefic Surge ability choice requires unit_id, choice, and trigger.",)
+    unit = resolve_unit(game, unit_val)
+    if unit is None:
+        return ("Malefic Surge unit not found.",)
+    army = getattr(unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+    if mgr is None or not getattr(mgr, "is_infernal_lance", lambda: False)():
+        return ("Malefic Surge requires Infernal Lance detachment.",)
+    if not getattr(mgr, "is_unit_empowered", lambda *_a, **_k: False)(unit, game=game):
+        return ("Unit is not Empowered for Malefic Surge.",)
+    trigger_key = str(trigger or "").strip().lower()
+    choice_key = str(choice or "").strip().upper()
+    if trigger_key == "movement" and choice_key != "UNHOLY_HUNGER":
+        return ("Movement trigger requires Unholy Hunger choice.",)
+    if trigger_key in ("shooting", "fight") and choice_key not in ("LETHAL_HITS", "SUSTAINED_HITS_1"):
+        return ("Diabolic Power choice must be Lethal Hits or Sustained Hits 1.",)
+    if trigger_key in ("targeted_shooting", "targeted_fight") and choice_key not in ("INVULN_5", "FNP_6"):
+        return ("Unnatural Fortitude choice must be invulnerable save or Feel No Pain.",)
+    return ()
+
+
+def _apply_choose_malefic_surge_ability(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or request.context.get("unit_id"))
+    if unit is None:
+        raise RuntimeError("Malefic Surge unit not found.")
+    army = getattr(unit, "get_parent_army", lambda: None)()
+    mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+    if mgr is None:
+        raise RuntimeError("Malefic Surge manager not found.")
+    if is_skip_choice(request, result):
+        try:
+            mgr.clear_pending_choice(unit)
+        except Exception:
+            pass
+        return None
+    choice = payload.get("choice") or payload.get("choice_key") or payload.get("key")
+    trigger = request.context.get("trigger") or payload.get("trigger")
+    if not getattr(mgr, "apply_malefic_surge_choice", None):
+        raise RuntimeError("Malefic Surge apply hook missing.")
+    applied = bool(mgr.apply_malefic_surge_choice(unit, trigger=str(trigger), choice=str(choice), game=game))
+    try:
+        mgr.clear_pending_choice(unit)
+    except Exception:
+        pass
+    return applied
+
+
 def _validate_select_setup_reactive_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -3904,6 +4010,16 @@ register_decision_handler(
     DECISION_CHOOSE_POWER_FROM_PAIN_OPTION,
     validate=_validate_choose_power_from_pain_option,
     apply=_apply_choose_power_from_pain_option,
+)
+register_decision_handler(
+    DECISION_CHOOSE_MALEFIC_SURGE_UNIT,
+    validate=_validate_choose_malefic_surge_unit,
+    apply=_apply_choose_malefic_surge_unit,
+)
+register_decision_handler(
+    DECISION_CHOOSE_MALEFIC_SURGE_ABILITY,
+    validate=_validate_choose_malefic_surge_ability,
+    apply=_apply_choose_malefic_surge_ability,
 )
 register_decision_handler(
     DECISION_SELECT_SETUP_REACTIVE_TARGET,

@@ -3111,6 +3111,8 @@ class GameView:
                 DECISION_CHOOSE_DANCE_OF_DEATH,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
+                DECISION_CHOOSE_MALEFIC_SURGE_UNIT,
+                DECISION_CHOOSE_MALEFIC_SURGE_ABILITY,
             )
         except Exception:
             return
@@ -3605,6 +3607,130 @@ class GameView:
                 on_confirm=_on_confirm,
                 decision_request=request,
                 show_cancel=False,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_MALEFIC_SURGE_UNIT:
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action, first_option_id
+
+            dlg = getattr(self, "malefic_surge_unit_dialog", None)
+            if dlg is None:
+                try:
+                    from .dialogs import QuarrySelectionDialog
+                    self.malefic_surge_unit_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    dlg = self.malefic_surge_unit_dialog
+                except Exception:
+                    dlg = None
+            if dlg is None:
+                return
+
+            skip_id = option_id_for_action(request, "skip") or first_option_id(request)
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if skip_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        skip_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True},
+                    )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                title="Malefic Surge",
+                header="Select a unit to make a Malefic Surge (or None).",
+                subtitle="",
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                decision_request=request,
+                show_cancel=True,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_MALEFIC_SURGE_ABILITY:
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import option_id_for_action, first_option_id
+
+            dlg = getattr(self, "malefic_surge_ability_dialog", None)
+            if dlg is None:
+                try:
+                    from .dialogs import MartialKatahDialog
+                    self.malefic_surge_ability_dialog = MartialKatahDialog(self.screen.get_width(), self.screen.get_height())
+                    dlg = self.malefic_surge_ability_dialog
+                except Exception:
+                    dlg = None
+            if dlg is None:
+                return
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            unit_name = ""
+            try:
+                unit = self._resolve_unit_by_id(ctx.get("unit_id"))
+                unit_name = getattr(unit, "name", "") if unit is not None else ""
+            except Exception:
+                unit_name = ""
+            trigger = str(ctx.get("trigger", "") or "")
+            subtitle = unit_name or "Select a Malefic Surge ability."
+            if trigger:
+                if "targeted" in trigger:
+                    subtitle = f"{unit_name} is targeted."
+                elif trigger == "shooting":
+                    subtitle = f"{unit_name} selected to shoot."
+                elif trigger == "fight":
+                    subtitle = f"{unit_name} selected to fight."
+                elif trigger == "movement":
+                    subtitle = f"{unit_name} selected to move."
+
+            skip_id = option_id_for_action(request, "skip") or first_option_id(request)
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                if skip_id:
+                    resolve_decision_command(
+                        self.game,
+                        request,
+                        skip_id,
+                        player_id=getattr(player, "id", None),
+                        result_payload={"skipped": True},
+                    )
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            title = str(getattr(request, "prompt", "") or "Malefic Surge")
+            dlg.show(
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                subtitle=subtitle,
+                title=title,
+                decision_request=request,
             )
             try:
                 self.dialog_manager.open(dlg, modal=True)

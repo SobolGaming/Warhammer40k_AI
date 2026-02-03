@@ -255,6 +255,21 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
             r"add \d+ to the strength characteristic of melee weapons equipped by wych cult models from your army",
             r"improve the leadership characteristic of wych cult models from your army by \d+ and improve the ballistic skill characteristic of ranged weapons equipped by wych cult models from your army by \d+",
         ),
+        "Malefic Surge": (
+            r"in your command phase one or more chaos knights units from your army can make a malefic surge",
+            r"each one that does must first take a leadership test",
+            r"if that test is failed that unit suffers d3 mortal wounds",
+            r"then until the start of your next command phase that unit is empowered",
+            r"while a unit is empowered it can use one of the malefic surge abilities below",
+            r"once that unit has used a malefic surge ability it is no longer empowered",
+            r"when a model in this unit makes a normal advance or fall back move until the end of the phase add 3 to its move characteristic",
+            r"when this unit is selected to shoot or fight select either the lethal hits or sustained hits 1 ability",
+            r"until the end of the phase weapons equipped by models in this unit have the selected ability",
+            r"when this unit is selected as the target of an attack until the end of the phase select one of the following",
+            r"models in this unit have a 5 invulnerable save",
+            r"models in this unit have the feel no pain 6 ability",
+            r"we recommend placing a token next to chaos knights models that are empowered removing it once they have used a malefic surge ability and removing all unused tokens at the start of your command phase",
+        ),
         "Quicksilver Grace": (
             r"you can reroll advance rolls made for emperors children units from your army",
         ),
@@ -1477,6 +1492,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
             "Supported",
             "Spectacle of Spite: select one Combat Drug (once per drug per battle) or roll 2D6 to apply two; "
             "Wych Cult models gain the corresponding bonuses until your next Command phase.",
+        ),
+        "Malefic Surge": (
+            "Supported",
+            "Infernal Lance: Command-phase unit selection with Leadership test + D3 mortals on failure; Empowered state grants Unholy Hunger (+3\" Move), Diabolic Power (Lethal or Sustained Hits 1), or Unnatural Fortitude (5+ invuln or FNP 6+), then consumes Empowered.",
         ),
         "Blood Tithe": (
             "Supported",

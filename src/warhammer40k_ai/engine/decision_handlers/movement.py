@@ -164,6 +164,13 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                 unit.prepare_advance()
             except Exception as exc:
                 raise RuntimeError(f"Advance roll request failed: {exc}") from exc
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+            if mgr is not None:
+                mgr.queue_malefic_surge_choice(unit, trigger="movement", game=game)
+        except Exception:
+            pass
     elif action in ("move", "fall_back"):
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
         if action == "move":
@@ -183,6 +190,13 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                     queue_fn(player=player, unit=unit)
             except Exception:
                 pass
+        try:
+            army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+            mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+            if mgr is not None:
+                mgr.queue_malefic_surge_choice(unit, trigger="movement", game=game)
+        except Exception:
+            pass
     return None
 
 

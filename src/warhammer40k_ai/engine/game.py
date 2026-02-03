@@ -3468,6 +3468,16 @@ class Game:
                         "daemonic_patrons_source",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("malefic_surge_diabolic_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "malefic_surge_diabolic_active",
+                        "malefic_surge_diabolic_choice",
+                        "malefic_surge_diabolic_attack_type",
+                        "malefic_surge_diabolic_expires_phase",
+                        "malefic_surge_diabolic_source",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("enhancement_fight_first_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -12353,6 +12363,40 @@ class Game:
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
 
+    def _on_shooting_targets_selected_malefic_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        # Attacker: Diabolic Power
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is not None:
+            try:
+                army = root.get_parent_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+            if mgr is not None:
+                mgr.queue_malefic_surge_choice(root, trigger="shooting", game=self)
+        # Defender: Unnatural Fortitude
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            if troot is None:
+                continue
+            try:
+                tarmy = troot.get_parent_army()
+            except Exception:
+                tarmy = None
+            tmgr = getattr(tarmy, "chaos_knights_detachments", None) if tarmy is not None else None
+            if tmgr is not None:
+                tmgr.queue_malefic_surge_choice(troot, trigger="targeted_shooting", game=self)
+
     def _on_shooting_targets_selected_path_of_warrior(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -12770,6 +12814,43 @@ class Game:
         trigger_fn = getattr(root, "maybe_trigger_dark_pacts", None)
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="fight")
+
+    def _on_fight_unit_selected_malefic_surge(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        if mgr is not None:
+            mgr.queue_malefic_surge_choice(root, trigger="fight", game=self)
+
+    def _on_fight_targets_selected_malefic_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                troot = target.get_attached_unit_root()
+            except Exception:
+                troot = target
+            if troot is None:
+                continue
+            try:
+                tarmy = troot.get_parent_army()
+            except Exception:
+                tarmy = None
+            tmgr = getattr(tarmy, "chaos_knights_detachments", None) if tarmy is not None else None
+            if tmgr is not None:
+                tmgr.queue_malefic_surge_choice(troot, trigger="targeted_fight", game=self)
 
     def _on_fight_unit_selected_path_of_warrior(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -15476,6 +15557,18 @@ class Game:
         mgr = getattr(army, "drukhari_detachments", None)
         if mgr is not None:
             self._maybe_prompt_combat_drugs()
+
+        # Chaos Knights: Malefic Surge selection (Infernal Lance).
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is not None:
+            try:
+                mgr.clear_empowered_at_command_phase_start(game=self, player=current_player)
+            except Exception:
+                pass
+            try:
+                mgr.prompt_malefic_surge_selection(game=self, player=current_player)
+            except Exception:
+                pass
 
         # Imperial Knights: Bondsman selection at the start of your Command phase.
         mgr = getattr(army, "bondsman", None)

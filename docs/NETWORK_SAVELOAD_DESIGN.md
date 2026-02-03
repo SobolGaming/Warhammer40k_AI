@@ -190,12 +190,14 @@ Command phase:
 - tears_of_isha_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="tears_of_isha_target"`, `source_unit_id`, `model_id`, `range`, `keyword`)
 - code_chivalric_dialog: CHOOSE_CHIVALRIC_OATH {choice_key} (context `oath_kind`, `army_id`)
 - code_chivalric_target_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="code_chivalric_target"`)
+- malefic_surge_unit_dialog: CHOOSE_MALEFIC_SURGE_UNIT {unit_id | skip} (context `ability="malefic_surge"`, `battle_round`)
 
 Movement:
 - movement_choice_dialog: SELECT_MOVEMENT_ACTION {unit_id, action_type}
 - pre_normal_move_bonus_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="movement_phase_move_weapon_bonus"`, `unit_id`, `model_id`, `move_bonus_dice`, `attacks_bonus`, `weapon_name`, `buff_key`)
 - pre_normal_move_flickerjump_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="flickerjump"`, `unit_id`, `move_value`)
 - cloudstrider_deep_strike_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="cloudstrider"`, `unit_id`, `ability_name`)
+- malefic_surge_movement_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="movement"`)
 - movement_phase_wound_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_wound_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
 - movement_phase_hit_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_hit_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
 - misfortune_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="misfortune"`, `source_unit_id`, `model_id`, `range`, `penalty`)
@@ -243,6 +245,8 @@ Shooting:
 - cruel_amusement_dialog: CHOOSE_CRUEL_AMUSEMENT {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - master_of_magicks_dialog: CHOOSE_MASTER_OF_MAGICKS {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - hand_of_asuryan_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="hand_of_asuryan"`, `unit_id`, `model_id`, `weapon_name`, `ability_name`)
+- malefic_surge_diabolic_power_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="shooting"`)
+- malefic_surge_unnatural_fortitude_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_shooting"`)
 - aeldari_guiding_presence_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_guiding_presence"`, `source_unit_id`, `model_id`, `range`, `bonus`)
 - unleash_hell_vehicle_dialog: SELECT_UNLEASH_HELL_VEHICLE {unit_id | skip} (context `ability="unleash_hell"`, `source_unit_id`, `bearer_model_id`, `range`, `allowed_unit_ids`, `exclude_monster_vehicle`)
 - post_shoot_battleshock_target_dialog: CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`)
@@ -283,6 +287,8 @@ Fight:
 - sweeping_advance_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sweeping_advance"`, `unit_id`, `model_id`, `ability_key`)
 - daemonic_patrons_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="daemonic_patrons"`, `unit_id`)
 - daemonic_patrons_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="daemonic_patrons_loss"`, `unit_id`, `ability_name`)
+- malefic_surge_diabolic_power_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="fight"`)
+- malefic_surge_unnatural_fortitude_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_fight"`)
 - melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
 - melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {bundle_id, target_unit_id}
 - melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}
