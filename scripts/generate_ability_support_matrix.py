@@ -2168,6 +2168,8 @@ def _classify_ability_base(
     bearer_save_support = _bearer_save_characteristic_support(description)
     model_fnp_support = _model_fnp_support(description)
     attached_character_fnp_support = _attached_character_fnp_support(description)
+    unit_contains_character_fnp_support = _unit_contains_character_fnp_support(description)
+    leading_unit_contains_invuln_support = _leading_unit_contains_invuln_support(description)
     bearer_smoke_support = _bearer_smoke_keyword_support(description)
     bearer_unit_keyword_support = _bearer_unit_keyword_support(description)
     unit_hit_reroll_support = _unit_hit_reroll_ones_support(description)
@@ -2325,6 +2327,10 @@ def _classify_ability_base(
         return half_range_attack_keyword_support
     if target_keyword_attack_keyword_support:
         return target_keyword_attack_keyword_support
+    if unit_contains_character_fnp_support:
+        return unit_contains_character_fnp_support
+    if leading_unit_contains_invuln_support:
+        return leading_unit_contains_invuln_support
     if common_support and leading_support:
         if common_support[0] == "Supported" and leading_support[0] == "Supported":
             notes = " ".join([common_support[1], leading_support[1]]).strip()
@@ -3249,6 +3255,42 @@ def _attached_character_fnp_support(description: str) -> Optional[Tuple[str, str
     if not m:
         return None
     return ("Supported", f"Leading: other attached Character models gain Feel No Pain {m.group(1)}+.")
+
+
+def _unit_contains_character_fnp_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this unit contains an? (?P<model>.+?) model character models in this unit have "
+        r"(?:a|the)? feel no pain (?P<val>[1-6])(?: ability)?"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    model = (m.group("model") or "specified model").strip()
+    val = m.group("val")
+    return ("Supported", f"Unit contains {model}: Character models gain Feel No Pain {val}+.")
+
+
+def _leading_unit_contains_invuln_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"while this unit is leading a unit and contains an? (?P<model>.+?) model models in "
+        r"(?:that unit|the bearers unit|this unit) have (?:a|the)? (?P<val>[1-6]) invulnerable save"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    model = (m.group("model") or "specified model").strip()
+    val = m.group("val")
+    return ("Supported", f"Leading while containing {model}: unit gains a {val}+ invulnerable save.")
 
 
 def _weapon_keyword_grant_support(description: str) -> Optional[Tuple[str, str]]:

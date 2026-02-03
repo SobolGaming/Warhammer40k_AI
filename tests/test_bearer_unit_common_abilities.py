@@ -278,6 +278,81 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
         inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
         self.assertEqual(inv_val, 4)
 
+    def test_unit_contains_character_fnp_applies(self):
+        ability = {
+            "name": "Mutated Bodyguard",
+            "description": (
+                "While this unit contains a Traitor Ogryn model, CHARACTER models in this unit have the "
+                "Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Traitor Enforcer", abilities=[ability])
+        unit.keywords = ["Character"]
+        unit.models[0].name = "Traitor Ogryn"
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((4, None), unit.has_feel_no_pain(target_model=unit.models[0]))
+
+    def test_unit_contains_character_fnp_requires_model(self):
+        ability = {
+            "name": "Mutated Bodyguard",
+            "description": (
+                "While this unit contains a Traitor Ogryn model, CHARACTER models in this unit have the "
+                "Feel No Pain 4+ ability."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        unit = _make_unit("Traitor Enforcer", abilities=[ability])
+        unit.keywords = ["Character"]
+        unit.models[0].name = "Traitor Enforcer"
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertNotIn((4, None), unit.has_feel_no_pain(target_model=unit.models[0]))
+
+    def test_leading_unit_contains_model_invulnerable_save_applies(self):
+        ability = {
+            "name": "Faithful Flock",
+            "description": (
+                "While this unit is leading a unit and contains a CULT DEMAGOGUE model, models in that unit "
+                "have a 5+ invulnerable save."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Dark Commune", abilities=[ability])
+        leader.models[0].name = "Cult Demagogue"
+        bodyguard = _make_unit("Cultist Mob")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Cultist Mob"]
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
+        self.assertEqual(inv_val, 5)
+
+    def test_leading_unit_contains_model_invulnerable_save_requires_leading(self):
+        ability = {
+            "name": "Faithful Flock",
+            "description": (
+                "While this unit is leading a unit and contains a CULT DEMAGOGUE model, models in that unit "
+                "have a 5+ invulnerable save."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Dark Commune", abilities=[ability])
+        leader.models[0].name = "Cult Demagogue"
+        bodyguard = _make_unit("Cultist Mob")
+
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        inv_val, _source = bodyguard.get_model_invulnerable_save_override(bodyguard.models[0])
+        self.assertIsNone(inv_val)
+
     def test_leading_unit_phase_move_and_deep_strike_applies(self):
         from warhammer40k_ai.utility.calcs import get_validation_rules, MovementType
 

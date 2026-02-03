@@ -1320,8 +1320,18 @@ class Unit:
         r"have\s+(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+",
         re.IGNORECASE,
     )
+    _UNIT_CONTAINS_CHARACTER_FNP_RE = re.compile(
+        r"while\s+this\s+unit\s+contains\s+an?\s+(?P<model>.+?)\s+model,\s*character\s+models\s+in\s+this\s+unit\s+"
+        r"have\s+(?:a|the)?\s*feel\s+no\s+pain\s*(?P<value>[1-6])\+?(?:\s+ability)?",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_INVULNERABLE_SAVE_RE = re.compile(
         r"(?:models\s+in\s+)?the\s+bearer'?s\s+unit\s+(?:have|has)\s+(?:a|the)?\s*([1-6])\+?\s*invulnerable\s+save",
+        re.IGNORECASE,
+    )
+    _UNIT_CONTAINS_INVULNERABLE_SAVE_RE = re.compile(
+        r"while\s+this\s+unit\s+(?:is\s+leading\s+a\s+unit\s+and\s+)?contains\s+an?\s+(?P<model>.+?)\s+model,\s*"
+        r"models\s+in\s+(?:the\s+bearer'?s|that|this)\s+unit\s+have\s+(?:a|the)?\s*(?P<value>[1-6])\+?\s*invulnerable\s+save",
         re.IGNORECASE,
     )
     _BEARER_WOUNDS_BONUS_RE = re.compile(
@@ -3388,6 +3398,7 @@ class Unit:
                 for key in (
                     "bearer_unit_fnp",
                     "attached_character_fnp_entries",
+                    "unit_contains_character_fnp_entries",
                     "bearer_unit_invulnerable_save",
                     "bearer_unit_agile_maneuver_reroll",
                     "bearer_unit_sustained_hits_value",
@@ -3433,6 +3444,7 @@ class Unit:
         contains_oc_mods: list[tuple[int, str]] = []
         fnp_entries: list[dict] = []
         attached_character_fnp_entries: list[dict] = []
+        unit_contains_character_fnp_entries: list[dict] = []
         invuln_entries: list[dict] = []
         sustained_hits_value = 0
         sustained_hits_value_melee = 0
@@ -3476,7 +3488,8 @@ class Unit:
                 text = text.replace("\u2019", "'").replace("\u0192?T", "'")
                 text_lower = text.lower()
                 requires_attached_leader = bool(
-                    re.search(r"\b(?:this model|the bearer|bearer)\s+is\s+leading\b", text_lower)
+                    re.search(r"\b(?:this model|the bearer|bearer|this unit)\s+is\s+leading\b", text_lower)
+                    or re.search(r"\bleading\s+a\s+unit\b", text_lower)
                 )
                 if requires_attached_leader and not getattr(u, "is_attached_leader", False):
                     continue
@@ -3626,15 +3639,45 @@ class Unit:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             fnp_entries.append({"value": int(val), "condition": cond, "source": source})
 
-                    m = self._BEARER_UNIT_INVULNERABLE_SAVE_RE.search(sentence)
+                    m = self._UNIT_CONTAINS_CHARACTER_FNP_RE.search(sentence)
                     if m:
                         try:
-                            val = int(m.group(1))
+                            val = int(m.group("value"))
                         except Exception:
                             val = None
-                        if val:
-                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                        target = m.group("model") if m else None
+                        if val and target and u._unit_contains_model_named(target):
+                            source = str(name or "Unit contains ability").strip() or "Unit contains ability"
+                            unit_contains_character_fnp_entries.append(
+                                {
+                                    "value": int(val),
+                                    "source": source,
+                                }
+                            )
+
+                    unit_contains_invuln_matched = False
+                    m = self._UNIT_CONTAINS_INVULNERABLE_SAVE_RE.search(sentence)
+                    if m:
+                        unit_contains_invuln_matched = True
+                        try:
+                            val = int(m.group("value"))
+                        except Exception:
+                            val = None
+                        target = m.group("model") if m else None
+                        if val and target and u._unit_contains_model_named(target):
+                            source = str(name or "Unit contains ability").strip() or "Unit contains ability"
                             invuln_entries.append({"value": int(val), "source": source})
+
+                    if not unit_contains_invuln_matched:
+                        m = self._BEARER_UNIT_INVULNERABLE_SAVE_RE.search(sentence)
+                        if m:
+                            try:
+                                val = int(m.group(1))
+                            except Exception:
+                                val = None
+                            if val:
+                                source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                                invuln_entries.append({"value": int(val), "source": source})
                     if self._BEARER_UNIT_AGILE_MANEUVER_REROLL_RE.search(sentence):
                         agile_maneuver_reroll = True
 
@@ -3831,6 +3874,13 @@ class Unit:
                 if not isinstance(sr, dict):
                     sr = {}
                 sr["attached_character_fnp_entries"] = list(attached_character_fnp_entries)
+                u.special_rules = sr
+        if unit_contains_character_fnp_entries:
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["unit_contains_character_fnp_entries"] = list(unit_contains_character_fnp_entries)
                 u.special_rules = sr
 
         if invuln_entries:
@@ -30352,6 +30402,26 @@ class Unit:
                             continue
                         exclude_id = entry.get("exclude_unit_id")
                         if exclude_id and str(exclude_id) == str(t_unit_id):
+                            continue
+                        try:
+                            val = int(entry.get("value"))
+                        except Exception:
+                            continue
+                        key = (int(val), "")
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        result.append((int(val), None))
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            entries = sr.get("unit_contains_character_fnp_entries") if isinstance(sr, dict) else None
+            if isinstance(entries, list) and target_model is not None:
+                if bool(getattr(target_model, "is_character", False)):
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for entry in entries:
+                        if not isinstance(entry, dict):
                             continue
                         try:
                             val = int(entry.get("value"))
