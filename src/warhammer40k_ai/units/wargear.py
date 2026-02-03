@@ -3062,6 +3062,15 @@ class WargearProfile:
                         _add_skill_mod(1, "Combat Drugs: Splintermind +1 BS")
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self, "parent_wargear", None) and self.parent_wargear.is_melee())
+            if is_melee and isinstance(sr, dict) and sr.get("enhancement_knight_diabolus"):
+                if self._attacker_is_enhancement_bearer(attacker, sr):
+                    _add_skill_mod(1, "Knight Diabolus: +1 WS")
+        except Exception:
+            pass
 
         # Drukhari: ignore cover from Deadly Retinue or Nowhere to Hide (Pain).
         try:
@@ -5440,6 +5449,7 @@ class WargearProfile:
 
         malefic_lethal = False
         malefic_sustained_value = 0
+        malefic_diabolic_active = False
         try:
             unit = getattr(attacker, "parent_unit", None)
             root = unit.get_attached_unit_root() if unit is not None else None
@@ -5460,6 +5470,7 @@ class WargearProfile:
                 if exp != "":
                     attack_type = str(sr.get("malefic_surge_diabolic_attack_type", "") or "").strip().lower()
                     if not attack_type or (attack_type == "melee" and is_melee) or (attack_type == "ranged" and is_ranged):
+                        malefic_diabolic_active = True
                         choice = str(sr.get("malefic_surge_diabolic_choice", "") or "").strip().upper()
                         if choice == "LETHAL HITS":
                             malefic_lethal = True
@@ -5469,7 +5480,18 @@ class WargearProfile:
         except Exception:
             malefic_lethal = False
             malefic_sustained_value = 0
+            malefic_diabolic_active = False
         malefic_sustained = bool(malefic_sustained_value)
+        try:
+            if malefic_diabolic_active and is_melee:
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None) if unit is not None else None
+                if isinstance(sr, dict) and sr.get("enhancement_knight_diabolus"):
+                    if self._attacker_is_enhancement_bearer(attacker, sr):
+                        attack_instance["bonus_lance"] = True
+                        attack_instance.setdefault("bonus_lance_source", "Knight Diabolus (Diabolic Power)")
+        except Exception:
+            pass
 
         bondsman_lethal = False
         bondsman_sustained = False

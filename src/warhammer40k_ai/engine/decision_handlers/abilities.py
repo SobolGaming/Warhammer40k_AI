@@ -3777,6 +3777,12 @@ def _apply_choose_advance_modifier_ignores(game: object, request: DecisionReques
             mods = filt(mods, kind="advance")
     except Exception:
         pass
+    try:
+        filt = getattr(unit, "_filter_bestial_aspect_roll_modifiers", None)
+        if callable(filt):
+            mods = filt(mods, kind="advance")
+    except Exception:
+        pass
     kept_mods, _ignored = filter_signed_modifiers(mods, str(choice or "keep_all"))
     total = int(base_roll or 0)
     for val, _source in kept_mods:

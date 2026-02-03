@@ -67,9 +67,20 @@ def _maybe_request_move_modifier_choice(game: object, unit: object, *, action_ty
             mgr = getattr(army, "emperors_children_detachments", None)
     internal_rivalries = bool(mgr and getattr(mgr, "internal_rivalries_applies", lambda _u: False)(unit))
     driven_by_rage = bool(driven_by_ultimate_rage_applies(unit, game_map=getattr(game, "map", None)))
-    if not internal_rivalries and not driven_by_rage:
+    bestial_aspect = False
+    try:
+        if hasattr(unit, "_bestial_aspect_unholy_hunger_active"):
+            bestial_aspect = bool(unit._bestial_aspect_unholy_hunger_active(game_map=getattr(game, "map", None)))
+    except Exception:
+        bestial_aspect = False
+    if not internal_rivalries and not driven_by_rage and not bestial_aspect:
         return
-    ability_name = INTERNAL_RIVALRIES_NAME if internal_rivalries else DRIVEN_BY_ULTIMATE_RAGE_NAME
+    if internal_rivalries:
+        ability_name = INTERNAL_RIVALRIES_NAME
+    elif driven_by_rage:
+        ability_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
+    else:
+        ability_name = "Bestial Aspect"
     try:
         if getattr(unit.round_state, "move_modifier_choice", None):
             return
@@ -159,11 +170,6 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
             raise RuntimeError(f"Stationary action failed: {exc}") from exc
     elif action == "advance":
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
-        if bool(getattr(game, "is_authoritative", True)):
-            try:
-                unit.prepare_advance()
-            except Exception as exc:
-                raise RuntimeError(f"Advance roll request failed: {exc}") from exc
         try:
             army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
             mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
@@ -171,6 +177,11 @@ def _apply_select_movement_action(game: object, request: DecisionRequest, result
                 mgr.queue_malefic_surge_choice(unit, trigger="movement", game=game)
         except Exception:
             pass
+        if bool(getattr(game, "is_authoritative", True)):
+            try:
+                unit.prepare_advance()
+            except Exception as exc:
+                raise RuntimeError(f"Advance roll request failed: {exc}") from exc
     elif action in ("move", "fall_back"):
         _maybe_request_move_modifier_choice(game, unit, action_type=action)
         if action == "move":

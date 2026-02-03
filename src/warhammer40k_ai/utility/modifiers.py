@@ -244,8 +244,26 @@ def compute_save_roll_modifier(
                     dice_modifier += bonus_val
                     effects.append(f"+{bonus_val} armor save vs Damage {int(dmg_char)}")
 
-        # Thousand Sons: Rubricae Phalanx detachment ("All is Dust").
+        # Chaos Knights: Fleshmetal Fusion (while Unnatural Fortitude active).
         unmod_dmg_char = _resolve_unmodified_damage_characteristic()
+        if isinstance(sr, dict) and sr.get("fleshmetal_fusion_fortitude_active") and unmod_dmg_char == 1:
+            bearer_id = (
+                sr.get("enhancement_fleshmetal_fusion_bearer_id")
+                or sr.get("enhancement_bearer_model_id")
+                or ""
+            )
+            if bearer_id:
+                target_id = str(getattr(target_model, "id", getattr(target_model, "_id", "")) or "")
+                if target_id and str(bearer_id) != target_id:
+                    pass
+                else:
+                    dice_modifier += 1
+                    effects.append("+1 armor save vs Damage 1 (Fleshmetal Fusion)")
+            else:
+                dice_modifier += 1
+                effects.append("+1 armor save vs Damage 1 (Fleshmetal Fusion)")
+
+        # Thousand Sons: Rubricae Phalanx detachment ("All is Dust").
         if unmod_dmg_char == 1:
             try:
                 army = t_unit.get_parent_army() if t_unit is not None else None

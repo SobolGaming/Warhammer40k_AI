@@ -750,6 +750,57 @@ class Unit:
         except Exception:
             pass
 
+        # Chaos Knights: Bestial Aspect (while Unholy Hunger) - optional ignore Move modifiers.
+        try:
+            if ckey == "movement" and self._bestial_aspect_unholy_hunger_active(game_map=game_map):
+                from ..utility.modifier_choice import (
+                    CHOICE_KEEP_ALL,
+                    CHOICE_IGNORE_NEGATIVE,
+                    CHOICE_IGNORE_POSITIVE,
+                    CHOICE_IGNORE_ALL,
+                    filter_numeric_modifiers,
+                )
+                try:
+                    choice = str(getattr(self.round_state, "move_modifier_choice", "") or "").strip()
+                except Exception:
+                    choice = ""
+                if not choice:
+                    choice = CHOICE_KEEP_ALL
+                if choice != CHOICE_KEEP_ALL:
+                    kept, ignored = filter_numeric_modifiers(mods, choice, base_val=base_val)
+                    if ignored:
+                        mods = kept
+                        try:
+                            sr = getattr(self, "special_rules", None)
+                            if not isinstance(sr, dict):
+                                sr = {}
+                            ignored_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in ignored))
+                            kept_sources = tuple(sorted(str(getattr(m, "source", "") or "") for m in kept))
+                            sig = (ignored_sources, kept_sources, choice)
+                            if sr.get("bestial_aspect_move_mod_signature") != sig:
+                                sr["bestial_aspect_move_mod_signature"] = sig
+                                self.special_rules = sr
+                                from ..utility.event_bus import append_action
+                                pn = self.get_parent_army().player
+                                ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                                tag = (
+                                    "negative"
+                                    if choice == CHOICE_IGNORE_NEGATIVE
+                                    else "positive"
+                                    if choice == CHOICE_IGNORE_POSITIVE
+                                    else "all"
+                                )
+                                msg = f"Bestial Aspect: ignored {tag} Move modifiers ({ignored_text})."
+                                append_action(pn, msg)
+                                if kept_sources:
+                                    kept_text = ", ".join(s for s in kept_sources if s)
+                                    if kept_text:
+                                        append_action(pn, f"Bestial Aspect: applied Move modifiers ({kept_text}).")
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
 
@@ -3951,6 +4002,16 @@ class Unit:
                     sr = {}
                 sr["bearer_unit_ignores_cover"] = True
                 u.special_rules = sr
+
+        try:
+            if not assault_ranged:
+                for u in members:
+                    sr = getattr(u, "special_rules", None)
+                    if isinstance(sr, dict) and sr.get("enhancement_bestial_aspect"):
+                        assault_ranged = True
+                        break
+        except Exception:
+            pass
 
         if assault_ranged:
             for u in members:
@@ -13803,6 +13864,28 @@ class Unit:
             pass
         return False
 
+    def _bestial_aspect_unholy_hunger_active(self, *, game_map=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_bestial_aspect"):
+            return False
+        if not sr.get("malefic_surge_unholy_hunger_active"):
+            return False
+        exp = str(sr.get("malefic_surge_unholy_hunger_expires_phase", "") or "").strip().upper()
+        if exp:
+            try:
+                game = self.get_parent_army().player.game
+            except Exception:
+                game = None
+            if game is None and game_map is not None:
+                try:
+                    game = getattr(game_map, "game", None)
+                except Exception:
+                    game = None
+            current = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if current and exp != current:
+                return False
+        return True
+
     def _filter_internal_rivalries_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
         if not modifiers:
             return list(modifiers or [])
@@ -13849,7 +13932,7 @@ class Unit:
                     from ..utility.event_bus import append_action
 
                     pn = self.get_parent_army().player
-                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
+                    label = "Advance roll" if kind_key == "advance" else "Move roll"
                     ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
                     tag = (
                         "negative"
@@ -13923,6 +14006,65 @@ class Unit:
                         kept_text = ", ".join(s for s in kept_sources if s)
                         if kept_text:
                             append_action(pn, f"Driven by Ultimate Rage: applied {label} modifiers ({kept_text}).")
+            except Exception:
+                pass
+
+        return kept
+
+    def _filter_bestial_aspect_roll_modifiers(self, modifiers, *, kind: str) -> list[tuple[int, str]]:
+        if not modifiers:
+            return list(modifiers or [])
+        try:
+            if not self._bestial_aspect_unholy_hunger_active():
+                return list(modifiers or [])
+        except Exception:
+            return list(modifiers or [])
+        from ..utility.modifier_choice import (
+            CHOICE_KEEP_ALL,
+            CHOICE_IGNORE_NEGATIVE,
+            CHOICE_IGNORE_POSITIVE,
+            CHOICE_IGNORE_ALL,
+            filter_signed_modifiers,
+        )
+        kind_key = str(kind or "").strip().lower()
+        try:
+            choice = getattr(self.round_state, f"{kind_key}_modifier_choice", None)
+        except Exception:
+            choice = None
+        if not choice:
+            choice = CHOICE_KEEP_ALL
+        if choice == CHOICE_KEEP_ALL:
+            return list(modifiers or [])
+
+        kept, ignored = filter_signed_modifiers(modifiers, str(choice))
+        if ignored:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                ignored_sources = tuple(sorted(str(s or "") for _v, s in ignored if str(s or "").strip()))
+                kept_sources = tuple(sorted(str(s or "") for _v, s in kept if str(s or "").strip()))
+                sig = (ignored_sources, kept_sources, str(choice))
+                key = f"bestial_aspect_{kind_key}_mod_signature"
+                if sr.get(key) != sig:
+                    sr[key] = sig
+                    self.special_rules = sr
+                    from ..utility.event_bus import append_action
+                    pn = self.get_parent_army().player
+                    label = "Advance roll" if kind_key == "advance" else "Charge roll"
+                    ignored_text = ", ".join(s for s in ignored_sources if s) or "unnamed sources"
+                    tag = (
+                        "negative"
+                        if choice == CHOICE_IGNORE_NEGATIVE
+                        else "positive"
+                        if choice == CHOICE_IGNORE_POSITIVE
+                        else "all"
+                    )
+                    append_action(pn, f"Bestial Aspect: ignored {tag} {label} modifiers ({ignored_text}).")
+                    if kept_sources:
+                        kept_text = ", ".join(s for s in kept_sources if s)
+                        if kept_text:
+                            append_action(pn, f"Bestial Aspect: applied {label} modifiers ({kept_text}).")
             except Exception:
                 pass
 
@@ -14010,6 +14152,7 @@ class Unit:
         mods = self._collect_advance_roll_modifiers()
         mods = self._filter_internal_rivalries_roll_modifiers(mods, kind="advance")
         mods = self._filter_driven_by_ultimate_rage_roll_modifiers(mods, kind="advance")
+        mods = self._filter_bestial_aspect_roll_modifiers(mods, kind="advance")
         for val, source in mods:
             if not val:
                 continue

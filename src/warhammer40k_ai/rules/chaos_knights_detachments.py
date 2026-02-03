@@ -292,7 +292,19 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             root = unit
         if root is None:
             return {"ok": False, "reason": "unit missing"}
-        passed = bool(getattr(root, "pass_leadership_check", lambda **_k: True)())
+        extra_rerolls = []
+        try:
+            sr = self._unit_sr(root)
+            if sr.get("enhancement_blasphemous_engine"):
+                extra_rerolls.append("Blasphemous Engine")
+        except Exception:
+            extra_rerolls = []
+        passed = bool(
+            getattr(root, "pass_leadership_check", lambda **_k: True)(
+                extra_reroll_sources=extra_rerolls,
+                reroll_reason="Malefic Surge",
+            )
+        )
         if not passed:
             try:
                 mortal = int(get_roll("D3") or 0)
@@ -427,6 +439,12 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             phase_name = "SHOOTING_PHASE"
         if trigger_key == "movement" and choice_key == "UNHOLY_HUNGER":
             self._apply_unholy_hunger(root, phase_name=phase_name)
+            try:
+                if bool(getattr(game, "is_authoritative", True)):
+                    from ..engine.decision_handlers.movement import _maybe_request_move_modifier_choice
+                    _maybe_request_move_modifier_choice(game, root, action_type="move")
+            except Exception:
+                pass
         elif trigger_key in ("shooting", "fight") and choice_key in ("LETHAL_HITS", "SUSTAINED_HITS_1"):
             attack_type = "ranged" if trigger_key == "shooting" else "melee"
             self._apply_diabolic_power(root, choice_key, attack_type=attack_type, phase_name=phase_name)
@@ -463,6 +481,11 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                 "movement_bonus": 3,
                 "movement_bonus_source": "Unholy Hunger",
             }
+        sr = self._unit_sr(unit)
+        sr["malefic_surge_unholy_hunger_active"] = True
+        sr["malefic_surge_unholy_hunger_expires_phase"] = str(phase_name or "").strip().upper()
+        sr["malefic_surge_unholy_hunger_source"] = self.MALEFIC_SURGE_NAME
+        unit.special_rules = sr
 
     def _apply_diabolic_power(self, unit, choice: str, *, attack_type: str, phase_name: str) -> None:
         sr = self._unit_sr(unit)
@@ -499,3 +522,12 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
                         source="Unnatural Fortitude",
                         expires_phase=str(phase_name or "").strip().upper(),
                     )
+        sr = self._unit_sr(unit)
+        sr["malefic_surge_unnatural_fortitude_active"] = True
+        sr["malefic_surge_unnatural_fortitude_expires_phase"] = str(phase_name or "").strip().upper()
+        sr["malefic_surge_unnatural_fortitude_source"] = self.MALEFIC_SURGE_NAME
+        if sr.get("enhancement_fleshmetal_fusion"):
+            sr["fleshmetal_fusion_fortitude_active"] = True
+            sr["fleshmetal_fusion_fortitude_expires_phase"] = str(phase_name or "").strip().upper()
+            sr["fleshmetal_fusion_fortitude_source"] = "Fleshmetal Fusion"
+        unit.special_rules = sr

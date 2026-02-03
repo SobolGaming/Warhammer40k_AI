@@ -6433,6 +6433,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000008367003": "Headwoppa's Killchoppa: bearer melee weapons (excluding Extra Attacks) gain Devastating Wounds.",
         "000008367004": "Kunnin' But Brutal: while leading, bearer unit can shoot and charge after Falling Back.",
         "000008367005": "Supa-Cybork Body: bearer gains Feel No Pain 4+.",
+        "000010304002": "Knight Diabolus: bearer melee weapons improve WS by 1; while using Diabolic Power, bearer melee weapons gain [LANCE].",
+        "000010304003": "Blasphemous Engine: +2 Wounds; Malefic Surge Leadership test can be re-rolled.",
+        "000010304004": "Fleshmetal Fusion: +1 Toughness; while using Unnatural Fortitude, bearer gains +1 armor save vs Damage 1.",
+        "000010304005": "Bestial Aspect: bearer ranged weapons gain [Assault]; while using Unholy Hunger, may ignore Move/Advance modifiers.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])

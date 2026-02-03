@@ -3478,6 +3478,30 @@ class Game:
                         "malefic_surge_diabolic_source",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("malefic_surge_unholy_hunger_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "malefic_surge_unholy_hunger_active",
+                        "malefic_surge_unholy_hunger_expires_phase",
+                        "malefic_surge_unholy_hunger_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("malefic_surge_unnatural_fortitude_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "malefic_surge_unnatural_fortitude_active",
+                        "malefic_surge_unnatural_fortitude_expires_phase",
+                        "malefic_surge_unnatural_fortitude_source",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("fleshmetal_fusion_fortitude_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "fleshmetal_fusion_fortitude_active",
+                        "fleshmetal_fusion_fortitude_expires_phase",
+                        "fleshmetal_fusion_fortitude_source",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("enhancement_fight_first_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (

@@ -226,7 +226,13 @@ class Enhancement:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
             is_war_horde = False
+        ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
+        try:
+            is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
+        except Exception:
+            is_infernal_lance = False
 
+        bearer = None
         bearer_id = ""
         get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
         if callable(get_bearer):
@@ -516,6 +522,42 @@ class Enhancement:
                 source="Supa-Cybork Body",
                 tag="supa_cybork_body",
             )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "knight diabolus" or enh_id == "000010304002":
+            if not is_infernal_lance:
+                return
+            unit.special_rules["enhancement_knight_diabolus"] = True
+            unit.special_rules["enhancement_knight_diabolus_ws_bonus"] = 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "blasphemous engine" or enh_id == "000010304003":
+            if not is_infernal_lance:
+                return
+            unit.special_rules["enhancement_blasphemous_engine"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "fleshmetal fusion" or enh_id == "000010304004":
+            if not is_infernal_lance:
+                return
+            unit.special_rules["enhancement_fleshmetal_fusion"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            if bearer is not None:
+                try:
+                    bearer._base_toughness = int(getattr(bearer, "_base_toughness", 0)) + 1
+                    bearer._toughness = int(getattr(bearer, "_toughness", 0)) + 1
+                except Exception:
+                    pass
+
+        if name == "bestial aspect" or enh_id == "000010304005":
+            if not is_infernal_lance:
+                return
+            unit.special_rules["enhancement_bestial_aspect"] = True
+            unit.special_rules["bearer_unit_assault_ranged"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
