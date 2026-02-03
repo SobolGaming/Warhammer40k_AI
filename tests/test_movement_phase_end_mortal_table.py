@@ -179,3 +179,59 @@ def test_movement_phase_end_mortal_table_battleshock(monkeypatch):
     game._on_phase_end_movement_phase_mortal_table(player=player, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
 
     assert {c[0] for c in calls} == {"E1", "E2"}
+
+
+def test_movement_phase_end_mortal_threshold_on_3plus(monkeypatch):
+    from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+
+    ability = (
+        "At the end of your Movement phase, roll one D6 for each enemy unit within 9\" of one or more models with this ability: "
+        "on a 3+, that enemy unit suffers D3 mortal wounds."
+    )
+    unit = _make_unit("Storm Caller", ability_desc=ability, model_count=2)
+    enemy1 = _make_unit("Enemy One")
+    enemy2 = _make_unit("Enemy Two")
+    unit.deployed = True
+    enemy1.deployed = True
+    enemy2.deployed = True
+    unit.reserve_status = "deployed"
+    enemy1.reserve_status = "deployed"
+    enemy2.reserve_status = "deployed"
+
+    _set_ids(unit, "U1", "U1M1")
+    if len(unit.models) > 1:
+        unit.models[1]._id = "U1M2"
+    _set_ids(enemy1, "E1", "E1M1")
+    _set_ids(enemy2, "E2", "E2M1")
+
+    unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    if len(unit.models) > 1:
+        unit.models[1].set_location(1.0, 0.0, 0.0, 0.0)
+    enemy1.models[0].set_location(8.0, 0.0, 0.0, 0.0)
+    enemy2.models[0].set_location(12.0, 0.0, 0.0, 0.0)
+
+    player, enemy_player = _setup_players(unit, [enemy1, enemy2])
+
+    game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE))
+    game.players = [player, enemy_player]
+
+    applied = {}
+
+    def _apply(self, target_unit, amount, game_map=None):
+        applied[target_unit._id] = applied.get(target_unit._id, 0) + int(amount or 0)
+        return 0
+
+    unit._apply_mortal_wounds_to_unit = types.MethodType(_apply, unit)
+
+    rolls = {"D6": [3], "D3": [2]}
+
+    def _fake_get_roll(die):
+        assert rolls[die], f"Unexpected extra roll for {die}"
+        return rolls[die].pop(0)
+
+    monkeypatch.setattr("warhammer40k_ai.utility.dice.get_roll", _fake_get_roll)
+
+    game._on_phase_end_movement_phase_mortal_table(player=player, phase=SimpleNamespace(name="MOVEMENT_PHASE"))
+
+    assert applied["E1"] == 2
+    assert "E2" not in applied

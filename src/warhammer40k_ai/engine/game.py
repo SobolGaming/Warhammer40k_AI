@@ -10295,7 +10295,72 @@ class Game:
             except Exception:
                 return str(getattr(u, "name", "") or "")
 
+        def _resolve_mortal_roll(spec: dict, roll: int) -> tuple[int, str]:
+            d3_roll = None
+            d6_roll = None
+            total_mw = 0
+            threshold = spec.get("threshold")
+            if threshold is not None:
+                try:
+                    threshold = int(threshold or 0)
+                except Exception:
+                    threshold = 0
+                if roll >= int(threshold or 0):
+                    mw = spec.get("mortal_wounds")
+                    mw_norm = str(mw).strip().lower()
+                    if mw_norm == "d3":
+                        d3_roll = int(get_roll("D3") or 0)
+                        total_mw = int(d3_roll or 0)
+                    elif mw_norm == "d6":
+                        d6_roll = int(get_roll("D6") or 0)
+                        total_mw = int(d6_roll or 0)
+                    else:
+                        try:
+                            total_mw = int(mw or 0)
+                        except Exception:
+                            total_mw = 0
+            else:
+                if 2 <= roll <= 3:
+                    total_mw = 1
+                elif 4 <= roll <= 5:
+                    d3_roll = int(get_roll("D3") or 0)
+                    total_mw = int(d3_roll or 0)
+                elif roll >= 6:
+                    d6_roll = int(get_roll("D6") or 0)
+                    total_mw = int(d6_roll or 0)
+            roll_note = f"roll={int(roll)}"
+            if d3_roll is not None:
+                roll_note += f", d3={int(d3_roll)}"
+            if d6_roll is not None:
+                roll_note += f", d6={int(d6_roll)}"
+            return int(total_mw), roll_note
+
+        def _apply_mortal_rolls(source_unit, targets: list, spec: dict, ability_name: str) -> None:
+            if not targets:
+                return
+            for target_unit in targets:
+                roll = int(get_roll("D6") or 0)
+                total_mw, roll_note = _resolve_mortal_roll(spec, roll)
+                if total_mw > 0 and hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
+                    source_unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
+                append_dice(
+                    player,
+                    f"{ability_name}: {getattr(target_unit, 'name', 'Target')} ({roll_note}) => {int(total_mw)} mortal wounds.",
+                )
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(target_unit, 'name', 'Target')} suffered {int(total_mw)} mortal wounds.",
+                )
+
+            if bool(spec.get("battle_shock")):
+                for target_unit in targets:
+                    try:
+                        target_unit.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
+                    except Exception:
+                        continue
+
         enemy_roots.sort(key=_unit_sort_key)
+        processed_unit_roots: set[str] = set()
 
         for unit in sorted(list(army.units or []), key=_unit_sort_key):
             if unit is None:
@@ -10317,7 +10382,8 @@ class Game:
                 models = list(root.get_attached_unit_models() or [])
             except Exception:
                 models = list(getattr(root, "models", []) or [])
-            if not models:
+            alive_models = [m for m in models if getattr(m, "is_alive", True)]
+            if not alive_models:
                 continue
 
             def _model_sort_key(m):
@@ -10326,7 +10392,46 @@ class Game:
                 except Exception:
                     return str(getattr(m, "name", "") or "")
 
-            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+            root_id = str(get_entity_id(root) or "")
+            if root_id and root_id not in processed_unit_roots:
+                processed_unit_roots.add(root_id)
+                unit_specs = []
+                try:
+                    unit_specs = list(root.unit_movement_phase_end_enemy_within_range_mortal_threshold_specs() or [])
+                except Exception:
+                    unit_specs = []
+                if unit_specs:
+                    for spec in unit_specs:
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        if range_value <= 0:
+                            continue
+                        candidates = []
+                        seen_enemy = set()
+                        for enemy_root in enemy_roots:
+                            if enemy_root is None:
+                                continue
+                            eid = str(get_entity_id(enemy_root) or "")
+                            if not eid or eid in seen_enemy:
+                                continue
+                            seen_enemy.add(eid)
+                            in_range = False
+                            for model in alive_models:
+                                if self._unit_within_range_of_model(model, enemy_root, range_value=float(range_value)):
+                                    in_range = True
+                                    break
+                            if not in_range:
+                                continue
+                            candidates.append(enemy_root)
+                        if not candidates:
+                            continue
+                        candidates.sort(key=_unit_sort_key)
+                        ability_name = str(spec.get("source", "") or "Movement phase mortals").strip() or "Movement phase mortals"
+                        _apply_mortal_rolls(root, candidates, spec, ability_name)
+
+            for model in sorted(alive_models, key=_model_sort_key):
                 spec_fn = getattr(root, "model_movement_phase_end_enemy_within_range_mortal_table_specs", None)
                 if not callable(spec_fn):
                     continue
@@ -10352,41 +10457,7 @@ class Game:
                         continue
                     candidates.sort(key=_unit_sort_key)
                     ability_name = str(spec.get("source", "") or "Movement phase mortals").strip() or "Movement phase mortals"
-                    for target_unit in candidates:
-                        roll = int(get_roll("D6") or 0)
-                        total_mw = 0
-                        d3_roll = None
-                        d6_roll = None
-                        if 2 <= roll <= 3:
-                            total_mw = 1
-                        elif 4 <= roll <= 5:
-                            d3_roll = int(get_roll("D3") or 0)
-                            total_mw = int(d3_roll or 0)
-                        elif roll >= 6:
-                            d6_roll = int(get_roll("D6") or 0)
-                            total_mw = int(d6_roll or 0)
-                        roll_note = f"roll={roll}"
-                        if d3_roll is not None:
-                            roll_note += f", d3={int(d3_roll)}"
-                        if d6_roll is not None:
-                            roll_note += f", d6={int(d6_roll)}"
-                        if total_mw > 0 and hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
-                            source_unit._apply_mortal_wounds_to_unit(target_unit, int(total_mw), game_map=game_map)
-                        append_dice(
-                            player,
-                            f"{ability_name}: {getattr(target_unit, 'name', 'Target')} ({roll_note}) => {int(total_mw)} mortal wounds.",
-                        )
-                        append_action(
-                            player,
-                            f"{ability_name}: {getattr(target_unit, 'name', 'Target')} suffered {int(total_mw)} mortal wounds.",
-                        )
-
-                    if bool(spec.get("battle_shock")):
-                        for target_unit in candidates:
-                            try:
-                                target_unit.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
-                            except Exception:
-                                continue
+                    _apply_mortal_rolls(source_unit, candidates, spec, ability_name)
 
     def _on_phase_end_transport_end_of_fight_embark(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase end: optional embark for empty transports with datasheet abilities."""

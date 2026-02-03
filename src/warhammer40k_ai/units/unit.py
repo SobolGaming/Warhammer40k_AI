@@ -1627,6 +1627,11 @@ class Unit:
         r"(?: each enemy unit within range of this ability must then take a battle shock test)?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_THRESHOLD_RE = re.compile(
+        r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of one or more models "
+        r"with this ability on a (?P<threshold>\d)\+? that enemy unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
     _POINT_BLANK_DEVASTATION_RE = re.compile(
         r"each time this model s (?P<weapon1>[a-z0-9 ]+?) or (?P<weapon2>[a-z0-9 ]+?) targets a unit within half range "
         r"you can re ?roll the dice to determine the number of attacks made",
@@ -28976,6 +28981,93 @@ class Unit:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_movement_phase_end_enemy_within_range_mortal_threshold_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: end of Movement phase, roll D6 for each enemy unit within range of one or more models;
+        on a threshold, apply mortal wounds.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (aura range)
+            - threshold: int (D6 threshold to apply mortals)
+            - mortal_wounds: str | int (e.g., "d3", "d6", or flat number)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_movement_phase_end_enemy_within_range_mortal_threshold_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_THRESHOLD_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    threshold = int(m.group("threshold") or 0)
+                except Exception:
+                    threshold = 0
+                if threshold <= 0:
+                    continue
+                mw_raw = str(m.group("mw") or "").strip().lower()
+                if not mw_raw:
+                    continue
+                mw_value: str | int
+                if mw_raw in ("d3", "d6"):
+                    mw_value = mw_raw
+                else:
+                    try:
+                        mw_value = int(mw_raw)
+                    except Exception:
+                        continue
+                    if int(mw_value) <= 0:
+                        continue
+                source = str(name or "Movement phase mortals").strip() or "Movement phase mortals"
+                key = (source.lower(), int(range_value), int(threshold), str(mw_value))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "threshold": int(threshold),
+                        "mortal_wounds": mw_value,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_start_fight_phase_engagement_battleshock_specs(self) -> List[dict]:
