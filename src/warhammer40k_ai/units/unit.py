@@ -24756,6 +24756,79 @@ class Unit:
         self._ability_cache['brazen_fury'] = applies
         return applies
 
+    def get_victim_selection_rule(self) -> Optional[dict]:
+        """
+        Detect abilities with text like:
+        "At the start of the first battle round, select one unit from your opponent's army to be this model's victim.
+        Each time this model makes an attack that targets its victim, you can re-roll the Wound roll.
+        Each time this model's victim is destroyed, select one new enemy unit to be this model's victim."
+
+        Returns a rule dict with:
+            - source: ability name
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "victim_selection_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        def _matches(text: str) -> bool:
+            if not text:
+                return False
+            if "start of the first battle round" not in text:
+                return False
+            if "be this model s victim" not in text:
+                return False
+            if "victim is destroyed" not in text:
+                return False
+            if "select one new enemy unit" not in text:
+                return False
+            if "targets its victim" not in text and "targets that victim" not in text:
+                return False
+            if "re roll the wound roll" not in text and "reroll the wound roll" not in text:
+                return False
+            return True
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not _matches(normalized):
+                    continue
+                source = str(name or "Victim selection").strip() or "Victim selection"
+                rule = {"source": source}
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_loping_speed_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

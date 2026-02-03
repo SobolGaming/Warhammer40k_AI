@@ -5552,12 +5552,13 @@ class GameView:
 
         if decision_type == DECISION_CHOOSE_QUARRY:
             ctx = dict(getattr(request, "context", {}) or {})
-            if str(ctx.get("ability", "")) != "monarch_of_the_hunt":
+            ability_key = str(ctx.get("ability", "") or "")
+            if ability_key not in ("monarch_of_the_hunt", "methodical_destruction"):
                 return
             unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
             if unit is None:
                 return
-            self._pending_quarry_queue.append((player, unit))
+            self._pending_quarry_queue.append((player, unit, ability_key))
             self._open_next_quarry_prompt()
 
     def set_game(self, game, game_map, player1, player2) -> None:
@@ -5762,6 +5763,7 @@ class GameView:
         # SHALAXI: Monarch of the Hunt triggers at the start of the first battle round.
         if br == 1:
             self._queue_monarch_of_the_hunt_prompts(game)
+            self._queue_methodical_destruction_prompts(game)
 
     # ---------------- Optional ability prompt windows (UI-driven) ----------------
 
@@ -13353,12 +13355,9 @@ class GameView:
 
         return choice_holder["choice"]
 
-    # ---------------- Monarch of the Hunt (Shalaxi) ----------------
+    # ---------------- Quarry/Victim selection prompts ----------------
 
-    def _queue_monarch_of_the_hunt_prompts(self, game):
-        """
-        At BR1 start: prompt each human player who has a unit with 'Monarch of the Hunt' to pick a quarry.
-        """
+    def _queue_quarry_selection_prompts(self, game, *, ability_key: str) -> None:
         if game is None:
             return
         try:
@@ -13374,7 +13373,7 @@ class GameView:
             if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
                 continue
             ctx = getattr(req, "context", {}) or {}
-            if str(ctx.get("ability", "")) != "monarch_of_the_hunt":
+            if str(ctx.get("ability", "")) != ability_key:
                 continue
             pending_reqs.append((req, ctx))
 
@@ -13391,7 +13390,7 @@ class GameView:
         pending_unit_ids = set()
         for existing in list(getattr(self, "_pending_quarry_queue", []) or []):
             try:
-                pending_unit_ids.add(str(get_entity_id(existing[1])))
+                pending_unit_ids.add((str(existing[2]), str(get_entity_id(existing[1]))))
             except Exception:
                 continue
 
@@ -13411,20 +13410,33 @@ class GameView:
                 uid = str(get_entity_id(unit))
             except Exception:
                 uid = None
-            if uid and uid in pending_unit_ids:
+            key = (str(ability_key), str(uid or ""))
+            if uid and key in pending_unit_ids:
                 continue
-            self._pending_quarry_queue.append((player, unit))
+            self._pending_quarry_queue.append((player, unit, str(ability_key)))
             if uid:
-                pending_unit_ids.add(uid)
+                pending_unit_ids.add(key)
 
         if self._pending_quarry_queue:
             self._open_next_quarry_prompt()
 
+    def _queue_monarch_of_the_hunt_prompts(self, game):
+        """
+        At BR1 start: prompt each human player who has a unit with 'Monarch of the Hunt' to pick a quarry.
+        """
+        self._queue_quarry_selection_prompts(game, ability_key="monarch_of_the_hunt")
+
+    def _queue_methodical_destruction_prompts(self, game):
+        """
+        At BR1 start (and on victim destruction): prompt each human player who has a unit with victim selection to pick a victim.
+        """
+        self._queue_quarry_selection_prompts(game, ability_key="methodical_destruction")
+
     def _open_next_quarry_prompt(self):
         if not self._pending_quarry_queue:
             return
-        p, shalaxi_unit = self._pending_quarry_queue.pop(0)
-        if p is None or shalaxi_unit is None:
+        p, source_unit, ability_key = self._pending_quarry_queue.pop(0)
+        if p is None or source_unit is None:
             self._open_next_quarry_prompt()
             return
 
@@ -13437,7 +13449,7 @@ class GameView:
             self._open_next_quarry_prompt()
             return
 
-        unit_id = get_entity_id(shalaxi_unit)
+        unit_id = get_entity_id(source_unit)
         req = None
         queue = getattr(self.game, "decision_queue", None) if self.game is not None else None
         if queue is not None and hasattr(queue, "list"):
@@ -13445,7 +13457,7 @@ class GameView:
                 if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
                     continue
                 ctx = getattr(pending, "context", {}) or {}
-                if str(ctx.get("ability", "")) == "monarch_of_the_hunt" and str(ctx.get("source_unit_id", "")) == str(unit_id):
+                if str(ctx.get("ability", "")) == str(ability_key) and str(ctx.get("source_unit_id", "")) == str(unit_id):
                     req = pending
                     break
         if req is None:
@@ -13457,7 +13469,7 @@ class GameView:
 
         try:
             if not getattr(p, "has_control", lambda: False)():
-                self._pending_quarry_queue.insert(0, (p, shalaxi_unit))
+                self._pending_quarry_queue.insert(0, (p, source_unit, ability_key))
                 return
         except Exception:
             pass
@@ -13482,10 +13494,22 @@ class GameView:
                 resolve_decision_value(self.game, req, default_id)
             self._open_next_quarry_prompt()
 
-        subtitle = "Embarked units cannot be selected. Units in Reserves may be selected."
-        header = f"{getattr(shalaxi_unit, 'name', 'Model')} selects a quarry."
+        ctx = dict(getattr(req, "context", {}) or {})
+        ability_name = str(ctx.get("ability_name", "") or "").strip()
+        if str(ability_key) == "monarch_of_the_hunt":
+            title = "Monarch of the Hunt"
+            subtitle = "Embarked units cannot be selected. Units in Reserves may be selected."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a quarry."
+        elif str(ability_key) == "methodical_destruction":
+            title = ability_name or "Methodical Destruction"
+            subtitle = "Select an enemy unit to be this model's victim."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a victim."
+        else:
+            title = ability_name or "Select Quarry"
+            subtitle = ""
+            header = f"{getattr(source_unit, 'name', 'Model')} selects a target."
         dlg.show(
-            title="Monarch of the Hunt",
+            title=title,
             header=header,
             subtitle=subtitle,
             on_confirm=_on_confirm,
@@ -13520,7 +13544,7 @@ class GameView:
 
     def _on_unit_destroyed_for_monarch_of_the_hunt(self, unit=None, **_kwargs):
         """
-        When a quarry is destroyed, immediately prompt Shalaxi to select a new quarry.
+        When a quarry/victim is destroyed, immediately prompt a new selection for relevant abilities.
 
         Persisting effects:
         - If quarry was an attached unit that later splits, the designation persists on the survivor.
@@ -13534,6 +13558,7 @@ class GameView:
         if not bool(getattr(game, "is_authoritative", True)):
             return
         self._queue_monarch_of_the_hunt_prompts(game)
+        self._queue_methodical_destruction_prompts(game)
 
     def _open_next_blessings_prompt(self, battle_round: int) -> None:
         if not self._pending_blessings_queue:

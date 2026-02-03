@@ -1579,6 +1579,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
         ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
         ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),
+        ("QT", "Methodical Destruction"): ("Supported", "Select a victim at BR1; reroll Wound rolls vs victim; re-pick on victim destroyed."),
         ("AC", "Daughter of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Daughters of the Abyss"): ("Supported", "Feel No Pain 3+ against Psychic attacks and mortal wounds."),
         ("AC", "Captain-General"): (

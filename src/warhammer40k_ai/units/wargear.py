@@ -7374,6 +7374,85 @@ class WargearProfile:
         except Exception:
             pass
 
+        # Methodical Destruction: re-roll Wound roll vs this model's victim (optional).
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                victim_ids = getattr(unit, "_methodical_destruction_victim_ids", None)
+                if victim_ids:
+                    try:
+                        tid = getattr(target, "_id", None)
+                        rid = getattr(target.get_attached_unit_root(), "_id", None)
+                    except Exception:
+                        tid = getattr(target, "_id", None)
+                        rid = None
+                    is_victim = (tid in victim_ids) or (rid in victim_ids)
+                    if is_victim:
+                        needed = 0
+                        try:
+                            s_val = strength
+                            t_val = target_toughness
+                            if isinstance(s_val, int) and isinstance(t_val, int):
+                                if s_val >= 2 * t_val:
+                                    needed = 2
+                                elif s_val > t_val:
+                                    needed = 3
+                                elif s_val == t_val:
+                                    needed = 4
+                                elif s_val * 2 <= t_val:
+                                    needed = 6
+                                else:
+                                    needed = 5
+                        except Exception:
+                            needed = 0
+                        final_needed = needed
+                        try:
+                            final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                        except Exception:
+                            pass
+                        try:
+                            success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                        except Exception:
+                            success = False
+                        do_reroll = False
+                        try:
+                            army = unit.get_parent_army()
+                            game = army.player.game
+                            player = army.player
+                            is_human = bool(getattr(player, "has_control", lambda: False)())
+                            provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                        except Exception:
+                            is_human = False
+                            provider = None
+                            player = None
+                        reason = "Methodical Destruction"
+                        if is_human and callable(provider):
+                            try:
+                                do_reroll = bool(provider(
+                                    player=player,
+                                    unit=unit,
+                                    roll_type="wound",
+                                    value=dice_roll,
+                                    dice=None,
+                                    needed=final_needed,
+                                    success=success,
+                                    reason=reason,
+                                ))
+                            except Exception:
+                                do_reroll = False
+                        else:
+                            do_reroll = (not success)
+                        if do_reroll:
+                            rr = _reroll_wound()
+                            wound_result.setdefault("special_effects", []).append(
+                                "Methodical Destruction: re-roll Wound roll (victim)"
+                            )
+                            wound_result["reroll"] = rr
+                            dice_roll = rr
+                            reroll_used = True
+        except Exception:
+            pass
+
         # Code Chivalric: Martial Valour re-roll Wound roll (one per selection).
         try:
             if rerolls_allowed and "reroll" not in wound_result:

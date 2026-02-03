@@ -244,59 +244,108 @@ class Game:
         except Exception:
             destroyed_owner = None
 
-        for player in list(getattr(self, "players", []) or []):
+        def _handle_quarry_repick(rule_getter, attr_name: str, request_builder) -> None:
+            for player in list(getattr(self, "players", []) or []):
+                try:
+                    army = player.get_army()
+                except Exception:
+                    army = None
+                if army is None:
+                    continue
+                for source_unit in list(getattr(army, "units", []) or []):
+                    try:
+                        rule = rule_getter(source_unit)
+                    except Exception:
+                        rule = None
+                    if not rule:
+                        continue
+                    quarry_ids = getattr(source_unit, attr_name, None)
+                    if not quarry_ids:
+                        continue
+                    try:
+                        if getattr(unit, "_id", None) not in quarry_ids:
+                            continue
+                    except Exception:
+                        continue
+
+                    alive_ids = set()
+                    enemy_army = None
+                    try:
+                        enemy_army = destroyed_owner.get_army() if destroyed_owner is not None else None
+                    except Exception:
+                        enemy_army = None
+                    if enemy_army is not None:
+                        by_id = {getattr(u2, "_id", None): u2 for u2 in list(getattr(enemy_army, "units", []) or [])}
+                        for qid in list(quarry_ids):
+                            u2 = by_id.get(qid)
+                            if u2 is None:
+                                continue
+                            try:
+                                if u2.is_alive():
+                                    alive_ids.add(qid)
+                            except Exception:
+                                continue
+                    setattr(source_unit, attr_name, alive_ids)
+
+                    if not alive_ids:
+                        try:
+                            req = request_builder(
+                                game=self,
+                                source_unit=source_unit,
+                                enemy_units=list(self.get_enemy_units(player)),
+                                ability_name=str(rule.get("source", "") or "") or None,
+                            )
+                        except Exception:
+                            req = None
+                        if req is not None and hasattr(self, "request_decision"):
+                            self.request_decision(req)
+
+        def _monarch_rule(u):
             try:
-                army = player.get_army()
+                found, _ = u._find_ability_with_patterns(["monarch of the hunt"])
+            except Exception:
+                found = False
+            if not found:
+                return None
+            return {"source": "Monarch of the Hunt"}
+
+        def _monarch_request_builder(game, source_unit, enemy_units, ability_name=None):
+            try:
+                army = source_unit.get_parent_army()
             except Exception:
                 army = None
             if army is None:
-                continue
-            for shalaxi_unit in list(getattr(army, "units", []) or []):
-                try:
-                    found, _ = shalaxi_unit._find_ability_with_patterns(["monarch of the hunt"])
-                except Exception:
-                    found = False
-                if not found:
-                    continue
-                quarry_ids = getattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", None)
-                if not quarry_ids:
-                    continue
-                try:
-                    if getattr(unit, "_id", None) not in quarry_ids:
-                        continue
-                except Exception:
-                    continue
+                return None
+            return army._build_monarch_of_the_hunt_request(
+                game=game,
+                source_unit=source_unit,
+                enemy_units=enemy_units,
+                ability_name=ability_name,
+            )
 
-                alive_ids = set()
-                enemy_army = None
-                try:
-                    enemy_army = destroyed_owner.get_army() if destroyed_owner is not None else None
-                except Exception:
-                    enemy_army = None
-                if enemy_army is not None:
-                    by_id = {getattr(u2, "_id", None): u2 for u2 in list(getattr(enemy_army, "units", []) or [])}
-                    for qid in list(quarry_ids):
-                        u2 = by_id.get(qid)
-                        if u2 is None:
-                            continue
-                        try:
-                            if u2.is_alive():
-                                alive_ids.add(qid)
-                        except Exception:
-                            continue
-                setattr(shalaxi_unit, "_monarch_of_the_hunt_quarry_ids", alive_ids)
+        _handle_quarry_repick(_monarch_rule, "_monarch_of_the_hunt_quarry_ids", _monarch_request_builder)
 
-                if not alive_ids:
-                    try:
-                        req = army._build_monarch_of_the_hunt_request(
-                            game=self,
-                            source_unit=shalaxi_unit,
-                            enemy_units=list(self.get_enemy_units(player)),
-                        )
-                    except Exception:
-                        req = None
-                    if req is not None and hasattr(self, "request_decision"):
-                        self.request_decision(req)
+        def _methodical_rule(u):
+            try:
+                return u.get_victim_selection_rule()
+            except Exception:
+                return None
+
+        def _methodical_request_builder(game, source_unit, enemy_units, ability_name=None):
+            try:
+                army = source_unit.get_parent_army()
+            except Exception:
+                army = None
+            if army is None:
+                return None
+            return army._build_methodical_destruction_request(
+                game=game,
+                source_unit=source_unit,
+                enemy_units=enemy_units,
+                ability_name=ability_name,
+            )
+
+        _handle_quarry_repick(_methodical_rule, "_methodical_destruction_victim_ids", _methodical_request_builder)
 
     def rebuild_entity_registry(self) -> None:
         rebuild_registry_from_game(self.entity_registry, self)

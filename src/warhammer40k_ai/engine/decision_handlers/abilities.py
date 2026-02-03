@@ -1517,6 +1517,37 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"Monarch of the Hunt: {sname} selected {tname} as quarry.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "methodical_destruction":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            ids = set()
+            try:
+                members = list(chosen.get_attached_unit_members() or [])
+            except Exception:
+                members = [chosen]
+            for m in members:
+                try:
+                    mid = getattr(m, "_id", None)
+                    if mid:
+                        ids.add(mid)
+                except Exception:
+                    continue
+            setattr(source_unit, "_methodical_destruction_victim_ids", ids)
+            try:
+                setattr(source_unit, "_methodical_destruction_victim_name", str(getattr(chosen, "name", "")))
+            except Exception:
+                pass
+            ability_name = str(ctx.get("ability_name", "") or "Methodical Destruction").strip() or "Methodical Destruction"
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} as victim.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "movement_phase_visible_wound_bonus":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:

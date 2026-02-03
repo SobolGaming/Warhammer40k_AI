@@ -2107,7 +2107,114 @@ class Army:
                 mgr._order_issued_state(unit, int(battle_round))
         self._queue_monarch_of_the_hunt(game=game, battle_round=int(battle_round))
         self._queue_piratical_raiders(game=game, battle_round=int(battle_round))
+        self._queue_methodical_destruction(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
+
+    def _eligible_quarry_units(self, enemy_units: list, *, exclude_embarked: bool = False) -> list:
+        eligible = []
+        seen = set()
+        for enemy in list(enemy_units or []):
+            if enemy is None:
+                continue
+            try:
+                if bool(getattr(enemy, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                pass
+            try:
+                root = enemy.get_attached_unit_root()
+            except Exception:
+                root = enemy
+            try:
+                rid = getattr(root, "_id", None)
+                if not rid or rid in seen:
+                    continue
+                seen.add(rid)
+            except Exception:
+                continue
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            if exclude_embarked:
+                try:
+                    if bool(getattr(root, "is_embarked", False)):
+                        continue
+                    if getattr(root, "embarked_in", None) is not None:
+                        continue
+                except Exception:
+                    pass
+            eligible.append(root)
+        if not eligible:
+            return []
+        try:
+            eligible.sort(key=lambda u: str(getattr(u, "name", "")))
+        except Exception:
+            pass
+        return eligible
+
+    def _build_quarry_selection_request(
+        self,
+        *,
+        game,
+        source_unit,
+        enemy_units: list,
+        ability_key: str,
+        prompt: str,
+        ability_name: Optional[str] = None,
+        exclude_embarked: bool = False,
+        context_extra: Optional[dict] = None,
+    ) -> Optional[object]:
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            return None
+
+        player = getattr(self, "player", None)
+        if player is None or source_unit is None:
+            return None
+        queue = getattr(game, "decision_queue", None)
+        source_id = None
+        try:
+            source_id = get_entity_id(source_unit)
+        except Exception:
+            source_id = None
+        if queue is not None and hasattr(queue, "list") and source_id:
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = getattr(req, "context", {}) or {}
+                if str(ctx.get("ability", "")) == str(ability_key) and str(ctx.get("source_unit_id", "")) == str(source_id):
+                    return None
+
+        eligible = self._eligible_quarry_units(enemy_units, exclude_embarked=exclude_embarked)
+        if not eligible:
+            return None
+
+        options = [
+            DecisionOption.create(
+                str(getattr(u, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(u)},
+            )
+            for u in eligible
+        ]
+        if not options:
+            return None
+        context = {"ability": ability_key, "source_unit_id": source_id}
+        if ability_name:
+            context["ability_name"] = str(ability_name)
+        if isinstance(context_extra, dict):
+            context.update(context_extra)
+        return DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            prompt,
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=context,
+        )
 
     def _queue_monarch_of_the_hunt(self, *, game, battle_round: int) -> None:
         if game is None or not bool(getattr(game, "is_authoritative", True)):
@@ -2143,88 +2250,22 @@ class Army:
             if req is not None and hasattr(game, "request_decision"):
                 game.request_decision(req)
 
-    def _build_monarch_of_the_hunt_request(self, *, game, source_unit, enemy_units: list) -> Optional[object]:
-        try:
-            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
-            from ..engine.decisions import DecisionOption, DecisionRequest
-            from ..utility.entity_ids import get_entity_id
-        except Exception:
-            return None
-
-        player = getattr(self, "player", None)
-        if player is None or source_unit is None:
-            return None
-        queue = getattr(game, "decision_queue", None)
-        source_id = None
-        try:
-            source_id = get_entity_id(source_unit)
-        except Exception:
-            source_id = None
-        if queue is not None and hasattr(queue, "list") and source_id:
-            for req in list(queue.list() or []):
-                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
-                    continue
-                ctx = getattr(req, "context", {}) or {}
-                if str(ctx.get("ability", "")) == "monarch_of_the_hunt" and str(ctx.get("source_unit_id", "")) == str(source_id):
-                    return None
-
-        eligible = []
-        seen = set()
-        for enemy in list(enemy_units or []):
-            if enemy is None:
-                continue
-            try:
-                if bool(getattr(enemy, "is_attached_leader", False)):
-                    continue
-            except Exception:
-                pass
-            try:
-                root = enemy.get_attached_unit_root()
-            except Exception:
-                root = enemy
-            try:
-                rid = getattr(root, "_id", None)
-                if not rid or rid in seen:
-                    continue
-                seen.add(rid)
-            except Exception:
-                continue
-            try:
-                if not root.is_alive():
-                    continue
-            except Exception:
-                continue
-            try:
-                if bool(getattr(root, "is_embarked", False)):
-                    continue
-                if getattr(root, "embarked_in", None) is not None:
-                    continue
-            except Exception:
-                pass
-            eligible.append(root)
-
-        if not eligible:
-            return None
-        try:
-            eligible.sort(key=lambda u: str(getattr(u, "name", "")))
-        except Exception:
-            pass
-
-        options = [
-            DecisionOption.create(
-                str(getattr(u, "name", "Unit") or "Unit"),
-                payload={"target_unit_id": get_entity_id(u)},
-            )
-            for u in eligible
-        ]
-        if not options:
-            return None
-        return DecisionRequest.create(
-            DECISION_CHOOSE_QUARRY,
-            "Select quarry (Monarch of the Hunt).",
-            player_id=getattr(player, "id", None),
-            options=options,
-            context={"ability": "monarch_of_the_hunt", "source_unit_id": source_id},
+    def _build_monarch_of_the_hunt_request(
+        self,
+        *,
+        game,
+        source_unit,
+        enemy_units: list,
+        ability_name: Optional[str] = None,
+    ) -> Optional[object]:
+        return self._build_quarry_selection_request(
+            game=game,
+            source_unit=source_unit,
+            enemy_units=enemy_units,
+            ability_key="monarch_of_the_hunt",
+            prompt="Select quarry (Monarch of the Hunt).",
+            ability_name=ability_name or "Monarch of the Hunt",
+            exclude_embarked=True,
         )
 
     def _queue_piratical_raiders(self, *, game, battle_round: int) -> None:
@@ -2262,85 +2303,82 @@ class Army:
             if req is not None and hasattr(game, "request_decision"):
                 game.request_decision(req)
 
-    def _build_piratical_raiders_request(self, *, game, source_unit, enemy_units: list) -> Optional[object]:
-        try:
-            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
-            from ..engine.decisions import DecisionOption, DecisionRequest
-            from ..utility.entity_ids import get_entity_id
-        except Exception:
-            return None
+    def _build_piratical_raiders_request(
+        self,
+        *,
+        game,
+        source_unit,
+        enemy_units: list,
+        ability_name: Optional[str] = None,
+    ) -> Optional[object]:
+        return self._build_quarry_selection_request(
+            game=game,
+            source_unit=source_unit,
+            enemy_units=enemy_units,
+            ability_key="piratical_raiders",
+            prompt="Select quarry (Piratical Raiders).",
+            ability_name=ability_name or "Piratical Raiders",
+            exclude_embarked=False,
+        )
 
+    def _queue_methodical_destruction(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
         player = getattr(self, "player", None)
-        if player is None or source_unit is None:
-            return None
-        queue = getattr(game, "decision_queue", None)
-        source_id = None
+        if player is None:
+            return
         try:
-            source_id = get_entity_id(source_unit)
+            enemy_units = list(game.get_enemy_units(player))
         except Exception:
-            source_id = None
-        if queue is not None and hasattr(queue, "list") and source_id:
-            for req in list(queue.list() or []):
-                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
-                    continue
-                ctx = getattr(req, "context", {}) or {}
-                if str(ctx.get("ability", "")) == "piratical_raiders" and str(ctx.get("source_unit_id", "")) == str(source_id):
-                    return None
-
-        eligible = []
-        seen = set()
-        for enemy in list(enemy_units or []):
-            if enemy is None:
+            enemy_units = []
+        if not enemy_units:
+            return
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
                 continue
             try:
-                if bool(getattr(enemy, "is_attached_leader", False)):
+                if not unit.is_alive():
                     continue
-            except Exception:
-                pass
-            try:
-                root = enemy.get_attached_unit_root()
-            except Exception:
-                root = enemy
-            try:
-                rid = getattr(root, "_id", None)
-                if not rid or rid in seen:
-                    continue
-                seen.add(rid)
             except Exception:
                 continue
             try:
-                if not root.is_alive():
-                    continue
+                rule = unit.get_victim_selection_rule()
             except Exception:
+                rule = None
+            if not rule:
                 continue
-            eligible.append(root)
-
-        if not eligible:
-            return None
-        try:
-            eligible.sort(key=lambda u: str(getattr(u, "name", "")))
-        except Exception:
-            pass
-
-        options = [
-            DecisionOption.create(
-                str(getattr(u, "name", "Unit") or "Unit"),
-                payload={"target_unit_id": get_entity_id(u)},
+            if getattr(unit, "_methodical_destruction_victim_ids", None):
+                continue
+            ability_name = str(rule.get("source", "") or "Methodical Destruction").strip() or "Methodical Destruction"
+            req = self._build_methodical_destruction_request(
+                game=game,
+                source_unit=unit,
+                enemy_units=enemy_units,
+                ability_name=ability_name,
             )
-            for u in eligible
-        ]
-        if not options:
-            return None
-        return DecisionRequest.create(
-            DECISION_CHOOSE_QUARRY,
-            "Select quarry (Piratical Raiders).",
-            player_id=getattr(player, "id", None),
-            options=options,
-            context={
-                "ability": "piratical_raiders",
-                "source_unit_id": source_id,
-                "ability_name": "Piratical Raiders",
-            },
+            if req is not None and hasattr(game, "request_decision"):
+                game.request_decision(req)
+
+    def _build_methodical_destruction_request(
+        self,
+        *,
+        game,
+        source_unit,
+        enemy_units: list,
+        ability_name: Optional[str] = None,
+    ) -> Optional[object]:
+        label = str(ability_name or "Methodical Destruction").strip() or "Methodical Destruction"
+        prompt = f"Select victim ({label})."
+        return self._build_quarry_selection_request(
+            game=game,
+            source_unit=source_unit,
+            enemy_units=enemy_units,
+            ability_key="methodical_destruction",
+            prompt=prompt,
+            ability_name=label,
+            exclude_embarked=False,
         )
 
     def schedule_reborn_in_blood(self, *, game) -> bool:
