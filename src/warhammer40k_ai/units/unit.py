@@ -25187,6 +25187,89 @@ class Unit:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_traitor_enforcer_overwatch_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per turn, while this unit is leading a unit and contains a TRAITOR ENFORCER model, you can target that unit
+        with the Fire Overwatch Stratagem for 0CP, and can do so even if you have already targeted a different unit from
+        your army with that Stratagem this turn. Each time you use this ability, one Bodyguard model in that unit is destroyed."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "traitor_enforcer_overwatch_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+
+        for leader in leaders:
+            if leader is None:
+                continue
+            try:
+                if not bool(getattr(leader, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                alive = getattr(leader, "is_alive", None)
+                if callable(alive) and not alive():
+                    continue
+            except Exception:
+                pass
+            try:
+                has_traitor = leader._unit_contains_model_named("Traitor Enforcer")
+            except Exception:
+                has_traitor = False
+            for name, desc in leader._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text = leader._normalize_rules_text(leader._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = norm.lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "fire overwatch" not in norm or "stratagem" not in norm:
+                    continue
+                if "0cp" not in norm:
+                    continue
+                if "once per turn" not in norm:
+                    continue
+                if "bodyguard" not in norm or "destroyed" not in norm:
+                    continue
+                if "leading" not in norm:
+                    continue
+                if "traitor enforcer" not in norm and not has_traitor:
+                    continue
+                source = str(name or "Brutal Example").strip() or "Brutal Example"
+                rule = {
+                    "source": source,
+                    "ability_key": "brutal_example_overwatch",
+                }
+                try:
+                    leader_id = get_entity_id(leader)
+                except Exception:
+                    leader_id = None
+                if leader_id:
+                    rule["leader_id"] = str(leader_id)
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:
@@ -25312,6 +25395,82 @@ class Unit:
             current_player = None
         owner = str(getattr(current_player, "name", "") or "")
         return f"{br}:{owner}"
+
+    def _traitor_enforcer_overwatch_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "id", "") or "") or str(getattr(current_player, "name", "") or "")
+        return f"{br}:{owner}"
+
+    def traitor_enforcer_overwatch_used_this_turn(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._traitor_enforcer_overwatch_turn_key(game)
+        return str(sr.get("traitor_enforcer_overwatch_used_turn_key", "")) == key
+
+    def mark_traitor_enforcer_overwatch_used(self, game=None, *, source: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["traitor_enforcer_overwatch_used_turn_key"] = self._traitor_enforcer_overwatch_turn_key(game)
+        if source:
+            sr["traitor_enforcer_overwatch_used_source"] = str(source or "").strip()
+        root.special_rules = sr
+
+    def can_use_traitor_enforcer_overwatch(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_traitor_enforcer_overwatch_rule()
+        if not rule:
+            return False
+        if root.traitor_enforcer_overwatch_used_this_turn(game):
+            return False
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        if not any(bool(getattr(l, "is_attached_leader", False)) for l in leaders if l is not None):
+            return False
+        return True
 
     def _setup_reactive_shoot_or_charge_turn_key(self, game=None) -> str:
         if game is None:

@@ -2255,6 +2255,7 @@ def _classify_ability_base(
     model_attack_roll_bonus_support = _model_attack_roll_bonus_support(description)
     targeted_stratagem_discount_support = _targeted_stratagem_cp_discount_support(description)
     targeted_stratagem_increase_support = _targeted_stratagem_cp_increase_support(description)
+    brutal_example_overwatch_support = _brutal_example_overwatch_support(description)
     charge_end_mortal_support = _charge_end_mortal_wounds_support(description)
     fight_within_3_support = _fight_within_3_support(description)
     allocated_damage_reduction_support = _allocated_damage_reduction_support(description)
@@ -2513,6 +2514,8 @@ def _classify_ability_base(
         return targeted_stratagem_discount_support
     if targeted_stratagem_increase_support:
         return targeted_stratagem_increase_support
+    if brutal_example_overwatch_support:
+        return brutal_example_overwatch_support
     if charge_end_mortal_support:
         return charge_end_mortal_support
     if fight_within_3_support:
@@ -4262,6 +4265,30 @@ def _targeted_stratagem_cp_increase_support(description: str) -> Optional[Tuple[
     return (
         "Supported",
         f"Opponent stratagems targeting units within {rng}\" have +1CP (non-cumulative; unaffordable stratagems still count as used).",
+    )
+
+
+def _brutal_example_overwatch_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    required = (
+        "fire overwatch",
+        "stratagem",
+        "0cp",
+        "once per turn",
+        "bodyguard",
+        "destroyed",
+        "leading",
+        "traitor enforcer",
+    )
+    if not all(token in norm for token in required):
+        return None
+    return (
+        "Supported",
+        "Once per turn while leading and containing a Traitor Enforcer: Fire Overwatch for 0CP even if already used this turn; destroy 1 Bodyguard model.",
     )
 
 

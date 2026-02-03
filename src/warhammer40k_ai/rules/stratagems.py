@@ -1604,6 +1604,25 @@ class StratagemManager:
             return True
         return False
 
+    def _unit_can_use_traitor_enforcer_overwatch(self, unit) -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_traitor_enforcer_overwatch", None)
+        if callable(fn):
+            try:
+                return bool(fn(self.game))
+            except Exception:
+                return False
+        return False
+
+    def _overwatch_brutal_example_available(self, *, target_unit=None, candidates=None) -> bool:
+        if target_unit is not None:
+            return self._unit_can_use_traitor_enforcer_overwatch(target_unit)
+        for cand in list(candidates or []):
+            if self._unit_can_use_traitor_enforcer_overwatch(cand):
+                return True
+        return False
+
     def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
             if not self._unit_has_faultless_opportunist(target_unit):
@@ -1652,8 +1671,12 @@ class StratagemManager:
             return result
         if name_u == "OVERWATCH" or name_u == "FIRE OVERWATCH":
             if self._used_this_turn.get("OVERWATCH", False):
-                result["reason"] = "Already used this turn"
-                return result
+                if not self._overwatch_brutal_example_available(
+                    target_unit=context.get("shooter_unit") or context.get("target_unit") or context.get("unit"),
+                    candidates=context.get("candidates"),
+                ):
+                    result["reason"] = "Already used this turn"
+                    return result
             enemy_unit = context.get("enemy_unit")
             try:
                 if enemy_unit is not None and hasattr(enemy_unit, "has_first_prince_slaanesh_no_overwatch") and enemy_unit.has_first_prince_slaanesh_no_overwatch():
@@ -1669,8 +1692,14 @@ class StratagemManager:
             return result
 
         if int(getattr(self.player, "command_points", 0) or 0) < int(result["cp_cost"] or 0):
-            result["reason"] = "Not enough CP"
-            return result
+            if name_u in ("OVERWATCH", "FIRE OVERWATCH") and self._overwatch_brutal_example_available(
+                target_unit=context.get("shooter_unit") or context.get("target_unit") or context.get("unit"),
+                candidates=context.get("candidates"),
+            ):
+                result["cp_cost"] = 0
+            else:
+                result["reason"] = "Not enough CP"
+                return result
 
         # Targeting restrictions for provided context
         target = _extract_friendly_target_unit_from_kwargs(context)
@@ -5767,8 +5796,9 @@ class StratagemManager:
         s = self.get_by_name('FIRE OVERWATCH') or self.get_by_name('Overwatch')
         if not s:
             return
-        # Enforce once per turn limit
-        if self._used_this_turn.get('OVERWATCH', False):
+        overwatch_used = bool(self._used_this_turn.get('OVERWATCH', False))
+        used_this_phase = getattr(self, "_used_stratagems_this_phase", set()) or set()
+        if (s.name or "").strip().upper() in used_this_phase:
             return
         # Phase check: Movement or Charge phase per data
         phase_name = self._current_phase_name
@@ -5780,9 +5810,6 @@ class StratagemManager:
         if not s.is_turn_allowed(is_active_turn):
             # For Overwatch, it should be opponent's turn
             pass
-        # CP check
-        if self.player.command_points < s.cp_cost:
-            return
         # QUICK ELIGIBILITY PRECHECKS per Stratagem text:
         # - Your unit must be within 24" of the enemy unit
         # - Cannot target a TITANIC friendly unit to fire Overwatch
@@ -5813,6 +5840,13 @@ class StratagemManager:
                 return
         except Exception:
             raise
+        if overwatch_used:
+            candidates = [u for u in candidates if self._unit_can_use_traitor_enforcer_overwatch(u)]
+            if not candidates:
+                return
+        can_free = any(self._unit_can_use_traitor_enforcer_overwatch(u) for u in candidates)
+        if self.player.command_points < s.cp_cost and not can_free:
+            return
         # Queue opportunity with minimal context; UI will choose shooter before resolving
         # Deduplicate if same enemy move reaction is already queued
         already = False
@@ -7411,11 +7445,20 @@ class StratagemManager:
                 print("ERROR: Overwatch: cannot target a Battle-shocked unit")
                 return False
             eff_cost = s.cp_cost
+            apply_info = {}
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=shooter).get("cost", s.cp_cost))
+                    apply_info = self.player.apply_stratagem_cp_cost(s, target_unit=shooter) or {}
+                    eff_cost = int(apply_info.get("cost", s.cp_cost))
             except Exception:
                 raise
+            if apply_info.get("denied"):
+                print(f"ERROR: Overwatch: {apply_info.get('reason', 'not allowed')}")
+                return False
+            traitor_overwatch = bool(apply_info.get("traitor_enforcer_overwatch_use", False))
+            if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch:
+                print("ERROR: Overwatch already used this turn")
+                return False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
                     return False
@@ -7473,6 +7516,25 @@ class StratagemManager:
                     self._used_stratagems_this_phase.add((s.name or "").strip().upper())
                 except Exception:
                     raise
+                if traitor_overwatch:
+                    try:
+                        shooter.mark_traitor_enforcer_overwatch_used(
+                            self.game,
+                            source=str(apply_info.get("traitor_enforcer_overwatch_source", "") or ""),
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        ability_name = str(apply_info.get("traitor_enforcer_overwatch_source", "") or "Brutal Example").strip()
+                        self.game.queue_bodyguard_loss(
+                            leader_unit=None,
+                            bodyguard_unit=shooter.get_attached_unit_root(),
+                            ability_name=ability_name or "Brutal Example",
+                            player=self.player,
+                            leader_unit_id=str((shooter.get_traitor_enforcer_overwatch_rule() or {}).get("leader_id", "") or ""),
+                        )
+                    except Exception:
+                        pass
                 return True
             else:
                 print("ERROR: Overwatch: shooting failed or invalid")

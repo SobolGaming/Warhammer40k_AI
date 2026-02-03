@@ -16256,43 +16256,168 @@ class GameView:
             if phase_name:
                 ctx["phase_name"] = phase_name
         enemy = ctx.get("enemy_unit")
-        if callable(getattr(self, "_request_overwatch_shooting", None)):
-            try:
-                setattr(shooter_unit, "_overwatch_sixes_only", True)
-            except Exception:
-                pass
-            self._overwatch_flow_active = True
-
-            def _done_callback(executed: bool):
-                try:
-                    delattr(shooter_unit, "_overwatch_sixes_only")
-                except Exception:
-                    pass
-                self._overwatch_flow_active = False
-                if executed:
-                    s = manager.get_by_name(str(name)) if manager else None
-                    if s and player.spend_command_points(
-                        s.cp_cost,
-                        reason=f"Stratagem: {s.name}",
-                        source="stratagem",
-                    ):
-                        manager._used_this_turn["OVERWATCH"] = True
-                        if ctx.get("dequeue") is True and hasattr(manager, "_dequeue_reaction_by_name"):
-                            manager._dequeue_reaction_by_name(s.name)
-                        print(f"Used stratagem: {name}")
-                    else:
-                        print("Overwatch: failed to spend CP")
-                else:
-                    print("Overwatch cancelled or failed")
-
-            self._request_overwatch_shooting(shooter_unit, enemy, _done_callback)
+        overwatch_used = bool(getattr(manager, "_used_this_turn", {}).get("OVERWATCH", False))
+        can_traitor = False
+        try:
+            can_traitor = bool(getattr(shooter_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game))
+        except Exception:
+            can_traitor = False
+        if overwatch_used and not can_traitor:
+            print("Overwatch: already used this turn")
             return
 
-        ok = manager.use(name, **ctx)
-        if ok:
-            print(f"Used stratagem: {name}")
-        else:
-            print(f"Could not use stratagem: {name}")
+        def _continue_overwatch(use_traitor: bool):
+            try:
+                player.set_next_optional_decision("BRUTAL_EXAMPLE_OVERWATCH", bool(use_traitor))
+            except Exception:
+                pass
+            if overwatch_used and not use_traitor:
+                print("Overwatch: Brutal Example declined; cannot use Overwatch again this turn")
+                return
+            if callable(getattr(self, "_request_overwatch_shooting", None)):
+                try:
+                    setattr(shooter_unit, "_overwatch_sixes_only", True)
+                except Exception:
+                    pass
+                self._overwatch_flow_active = True
+
+                def _done_callback(executed: bool):
+                    try:
+                        delattr(shooter_unit, "_overwatch_sixes_only")
+                    except Exception:
+                        pass
+                    self._overwatch_flow_active = False
+                    if executed:
+                        s = manager.get_by_name(str(name)) if manager else None
+                        if s is None:
+                            print("Overwatch: stratagem not found")
+                            return
+                        apply_info = {}
+                        eff_cost = s.cp_cost
+                        if hasattr(player, "apply_stratagem_cp_cost"):
+                            apply_info = player.apply_stratagem_cp_cost(s, target_unit=shooter_unit) or {}
+                            if apply_info.get("denied"):
+                                print(f"Overwatch: {apply_info.get('reason', 'not allowed')}")
+                                return
+                            eff_cost = int(apply_info.get("cost", s.cp_cost))
+                        if overwatch_used and not apply_info.get("traitor_enforcer_overwatch_use", False):
+                            print("Overwatch: already used this turn")
+                            return
+                        if player.spend_command_points(
+                            eff_cost,
+                            reason=f"Stratagem: {s.name}",
+                            source="stratagem",
+                        ):
+                            manager._used_this_turn["OVERWATCH"] = True
+                            try:
+                                manager._used_stratagems_this_phase.add((s.name or "").strip().upper())
+                            except Exception:
+                                pass
+                            if ctx.get("dequeue") is True and hasattr(manager, "_dequeue_reaction_by_name"):
+                                manager._dequeue_reaction_by_name(s.name)
+                            if apply_info.get("traitor_enforcer_overwatch_use", False):
+                                try:
+                                    shooter_unit.mark_traitor_enforcer_overwatch_used(
+                                        self.game,
+                                        source=str(apply_info.get("traitor_enforcer_overwatch_source", "") or ""),
+                                    )
+                                except Exception:
+                                    pass
+                                try:
+                                    ability_name = str(
+                                        apply_info.get("traitor_enforcer_overwatch_source", "") or "Brutal Example"
+                                    ).strip()
+                                    leader_id = ""
+                                    try:
+                                        rule = shooter_unit.get_traitor_enforcer_overwatch_rule() or {}
+                                        leader_id = str(rule.get("leader_id", "") or "")
+                                    except Exception:
+                                        leader_id = ""
+                                    if self.game is not None:
+                                        self.game.queue_bodyguard_loss(
+                                            leader_unit=None,
+                                            bodyguard_unit=shooter_unit.get_attached_unit_root(),
+                                            ability_name=ability_name or "Brutal Example",
+                                            player=player,
+                                            leader_unit_id=leader_id,
+                                        )
+                                except Exception:
+                                    pass
+                            print(f"Used stratagem: {name}")
+                        else:
+                            print("Overwatch: failed to spend CP")
+                    else:
+                        print("Overwatch cancelled or failed")
+
+                self._request_overwatch_shooting(shooter_unit, enemy, _done_callback)
+                return
+
+            ok = manager.use(name, **ctx)
+            if ok:
+                print(f"Used stratagem: {name}")
+            else:
+                print(f"Could not use stratagem: {name}")
+
+        if can_traitor:
+            if self._optional_flow_active:
+                return
+            self._optional_flow_active = True
+            from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            ability_name = "Brutal Example"
+            try:
+                rule = shooter_unit.get_traitor_enforcer_overwatch_rule() or {}
+                ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                ability_name = "Brutal Example"
+            unit_id = get_entity_id(shooter_unit.get_attached_unit_root())
+            message = (
+                f"Use {ability_name} to target this unit with Fire Overwatch for 0CP?\n"
+                "Each use destroys 1 Bodyguard model."
+            )
+            ctx_decision = {
+                "ability": "brutal_example_overwatch",
+                "ability_name": ability_name,
+                "message": message,
+                "stratagem": str(name),
+                "target_unit_id": unit_id,
+            }
+            options = [
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ]
+            req = DecisionRequest.create(
+                DECISION_CONFIRM_YES_NO,
+                ability_name or "Brutal Example",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx_decision,
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            def _on_resolved(_req, _result):
+                chosen = False
+                selected = None
+                for opt in list(getattr(_req, "options", []) or []):
+                    if getattr(opt, "option_id", None) == getattr(_result, "option_id", None):
+                        selected = opt
+                        break
+                payload = dict(getattr(selected, "payload", {}) or {}) if selected is not None else {}
+                if "choice" in payload:
+                    chosen = bool(payload.get("choice"))
+                elif "choice" in getattr(_result, "payload", {}):
+                    chosen = bool(_result.payload.get("choice"))
+                self._optional_flow_active = False
+                _continue_overwatch(chosen)
+
+            if getattr(self, "phase_manager", None) is not None:
+                self.phase_manager._register_decision_callback(req, _on_resolved)
+            else:
+                self._optional_flow_active = False
+            return
+
+        _continue_overwatch(False)
 
     def _finalize_heroic_intervention(self, player, name: str, context: Dict[str, Any], unit) -> None:
         if self._heroic_flow_active:

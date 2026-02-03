@@ -10830,6 +10830,81 @@ class Game:
                 f"{ability_name}: {getattr(model, 'name', 'Bodyguard model')} destroyed in {getattr(bodyguard, 'name', 'Unit')}.",
             )
 
+    def queue_bodyguard_loss(
+        self,
+        *,
+        leader_unit=None,
+        bodyguard_unit=None,
+        ability_name: str = "",
+        player=None,
+        leader_unit_id: str | None = None,
+    ) -> None:
+        if bodyguard_unit is None:
+            return
+        try:
+            bodyguard = bodyguard_unit.get_attached_unit_root()
+        except Exception:
+            bodyguard = bodyguard_unit
+        if bodyguard is None:
+            return
+        if leader_unit is None and leader_unit_id:
+            leader_unit = self._resolve_unit_by_id(str(leader_unit_id))
+        if leader_unit is None:
+            try:
+                leaders = list(getattr(bodyguard, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            leader_unit = next((l for l in leaders if l is not None), None)
+        if leader_unit is None:
+            leader_unit = bodyguard
+        if player is None:
+            try:
+                player = getattr(leader_unit.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+        ability_label = str(ability_name or "Bodyguard Loss").strip() or "Bodyguard Loss"
+        candidates = [m for m in (bodyguard.models or []) if getattr(m, "is_alive", True)]
+        if not candidates:
+            return
+        if len(candidates) == 1:
+            self._resolve_charge_phase_bodyguard_loss(leader_unit, bodyguard, candidates[0], {"name": ability_label})
+            return
+        options = []
+        sorted_candidates = [m for m in list(candidates) if m is not None]
+        sorted_candidates.sort(key=lambda m: str(maybe_entity_id(m) or ""))
+        for model in sorted_candidates:
+            model_id = maybe_entity_id(model)
+            if not model_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    getattr(model, "name", "Model"),
+                    payload={"model_id": model_id},
+                )
+            )
+        if not options:
+            return
+        leader_id = maybe_entity_id(leader_unit)
+        bodyguard_id = maybe_entity_id(bodyguard)
+        if not leader_id or not bodyguard_id:
+            return
+        ctx = {
+            "engine_flow": True,
+            "selection_kind": "bodyguard_loss",
+            "leader_unit_id": leader_id,
+            "bodyguard_unit_id": bodyguard_id,
+            "unit_id": bodyguard_id,
+            "ability_name": ability_label,
+        }
+        request = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            "Select Bodyguard model to destroy.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+
     def _on_phase_end_charge_phase_bodyguard_loss(self, player=None, phase=None, **_kwargs) -> None:
         """Charge phase end: failed Leadership test can destroy a Bodyguard model while leading."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -10904,45 +10979,13 @@ class Game:
             if not candidates:
                 continue
 
-            if len(candidates) == 1:
-                self._resolve_charge_phase_bodyguard_loss(unit, bodyguard, candidates[0], ability)
-                continue
             ability_name = str((ability or {}).get("name", "") or "Leadership Test").strip() or "Leadership Test"
-            options = []
-            sorted_candidates = [m for m in list(candidates) if m is not None]
-            sorted_candidates.sort(key=lambda m: str(maybe_entity_id(m) or ""))
-            for model in sorted_candidates:
-                model_id = maybe_entity_id(model)
-                if not model_id:
-                    continue
-                options.append(
-                    DecisionOption.create(
-                        getattr(model, "name", "Model"),
-                        payload={"model_id": model_id},
-                    )
-                )
-            if not options:
-                continue
-            leader_id = maybe_entity_id(unit)
-            bodyguard_id = maybe_entity_id(bodyguard)
-            if not leader_id or not bodyguard_id:
-                continue
-            ctx = {
-                "engine_flow": True,
-                "selection_kind": "bodyguard_loss",
-                "leader_unit_id": leader_id,
-                "bodyguard_unit_id": bodyguard_id,
-                "unit_id": bodyguard_id,
-                "ability_name": ability_name,
-            }
-            request = DecisionRequest.create(
-                DECISION_ALLOCATE_DAMAGE,
-                "Select Bodyguard model to destroy.",
-                player_id=getattr(player, "id", None),
-                options=options,
-                context=ctx,
+            self.queue_bodyguard_loss(
+                leader_unit=unit,
+                bodyguard_unit=bodyguard,
+                ability_name=ability_name,
+                player=player,
             )
-            self.request_decision(request)
 
     def resolve_fight_phase_end_mortal_wounds(self, unit, model, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):

@@ -869,12 +869,31 @@ class Player:
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         discount = 0
         reasons: list[str] = []
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
 
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
         if faultless:
             discount = base
             reasons.append("Faultless Opportunist: Heroic Intervention for 0CP.")
             return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
+            rule = None
+            try:
+                rule = target_unit.get_traitor_enforcer_overwatch_rule()
+            except Exception:
+                rule = None
+            if rule and bool(getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)):
+                ctx = {
+                    "ability_name": str(rule.get("source", "") or "Brutal Example"),
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                if self._should_preview_optional_ability("BRUTAL_EXAMPLE_OVERWATCH", ctx, assume=assume_optional_discounts):
+                    discount = base
+                    reasons.append(f"{ctx['ability_name']}: Fire Overwatch for 0CP (destroy 1 Bodyguard model).")
+                    return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         dts = self._preview_direct_the_slaughter_discount(target_unit=target_unit)
         if dts:
@@ -919,6 +938,7 @@ class Player:
         Compute effective CP cost and CONSUME any once-per-battle-round discounts that are applied.
         """
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
         if faultless:
             cost = 0
@@ -948,6 +968,66 @@ class Player:
                 "increase": increase,
                 "increase_reasons": increase_reasons,
             }
+        if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
+            rule = None
+            try:
+                rule = target_unit.get_traitor_enforcer_overwatch_rule()
+            except Exception:
+                rule = None
+            can_traitor = bool(rule) and bool(
+                getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)
+            )
+            overwatch_used = False
+            try:
+                mgr = getattr(self, "stratagems", None)
+                overwatch_used = bool(getattr(mgr, "_used_this_turn", {}).get("OVERWATCH", False))
+            except Exception:
+                overwatch_used = False
+            if overwatch_used and not can_traitor:
+                return {"denied": True, "reason": "Overwatch already used this turn"}
+            if can_traitor:
+                ability_name = str(rule.get("source", "") or "Brutal Example").strip() or "Brutal Example"
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                use_traitor = self._should_use_optional_ability("BRUTAL_EXAMPLE_OVERWATCH", ctx)
+                if overwatch_used and not use_traitor:
+                    return {"denied": True, "reason": "Overwatch already used this turn"}
+                if use_traitor:
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
+                        "traitor_enforcer_overwatch_use": True,
+                        "traitor_enforcer_overwatch_source": ability_name,
+                    }
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
         preview = self.preview_stratagem_cp_cost(stratagem, target_unit=target_unit, assume_optional_discounts=True)
         available_discount = int(preview.get("discount", 0) or 0)
