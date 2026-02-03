@@ -34,6 +34,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_PLEDGE,
     DECISION_CHOOSE_QUARRY,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
     DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
@@ -2369,6 +2370,54 @@ def _apply_post_shoot_battleshock_target(game: object, request: DecisionRequest,
     return target_unit
 
 
+def _validate_start_shooting_battleshock_target(
+    game: object, request: DecisionRequest, result: DecisionResult
+) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Start of Shooting phase Battle-shock requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Start of Shooting phase Battle-shock target not found.",)
+    return ()
+
+
+def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Start of Shooting phase Battle-shock target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    ability_name = str(
+        ctx.get("ability_name", "") or payload.get("ability_name", "") or "Start of Shooting phase Battle-shock"
+    ).strip()
+    turn = int(getattr(game, "turn", 0) or 0)
+    try:
+        target_unit.take_battle_shock_test(turn)
+    except Exception:
+        pass
+    model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
+    model_name = str(getattr(model, "name", "") or "") if model is not None else ""
+    if not model_name:
+        model_name = "Model"
+    player = _resolve_player(game, request, payload)
+    try:
+        from ...utility.event_bus import append_action
+
+        if player is not None:
+            append_action(player, f"{model_name} used {ability_name} on {target_unit.name}")
+    except Exception:
+        pass
+    return target_unit
+
+
 def _validate_post_shoot_mortal_wounds_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -3780,6 +3829,11 @@ register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     validate=_validate_post_shoot_battleshock_target,
     apply=_apply_post_shoot_battleshock_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
+    validate=_validate_start_shooting_battleshock_target,
+    apply=_apply_start_shooting_battleshock_target,
 )
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,

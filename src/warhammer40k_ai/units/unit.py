@@ -1616,6 +1616,11 @@ class Unit:
         r"from the wound roll(?: each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,
     )
+    _START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE = re.compile(
+        r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
+        r"that enemy unit must take a battle shock test",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
         r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
         r"on a 2 3 that unit suffers 1 mortal wounds? on a 4 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d6 mortal wounds?"
@@ -28863,6 +28868,54 @@ class Unit:
                     "limit_once_per_turn": bool(limit_once),
                 }
             )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_shooting_phase_visible_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select a visible enemy within range; that unit takes Battle-shock.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_visible_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Start of Shooting phase Battle-shock").strip() or "Start of Shooting phase Battle-shock"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "range": int(range_value)})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

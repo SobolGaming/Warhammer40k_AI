@@ -2195,6 +2195,7 @@ def _classify_ability_base(
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
     phase_end_leadership_cp_gain_support = _phase_end_leadership_cp_gain_support(description)
     command_phase_regain_wound_support = _command_phase_regain_wound_support(description)
+    start_shooting_phase_visible_battleshock_support = _start_shooting_phase_visible_battleshock_support(description)
     post_shoot_battleshock_support = _post_shoot_battleshock_support(description)
     post_shoot_shoot_again_support = _post_shoot_shoot_again_support(description)
     post_shoot_infantry_mortal_support = _post_shoot_infantry_mortal_wounds_battleshock_support(description)
@@ -2400,6 +2401,8 @@ def _classify_ability_base(
         return phase_end_leadership_cp_gain_support
     if command_phase_regain_wound_support:
         return command_phase_regain_wound_support
+    if start_shooting_phase_visible_battleshock_support:
+        return start_shooting_phase_visible_battleshock_support
     if post_shoot_battleshock_support:
         return post_shoot_battleshock_support
     if post_shoot_shoot_again_support:
@@ -5029,6 +5032,25 @@ def _command_phase_regain_wound_support(description: str) -> Optional[Tuple[str,
     if not m:
         return None
     return ("Supported", f"Start of Command phase: this model regains {m.group('amt')} lost wound(s).")
+
+
+def _start_shooting_phase_visible_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
+        r"that enemy unit must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    return (
+        "Supported",
+        f"Start of Shooting phase: select a visible enemy unit within {m.group('range')}\" to take a Battle-shock test.",
+    )
 
 
 def _post_shoot_battleshock_support(description: str) -> Optional[Tuple[str, str]]:

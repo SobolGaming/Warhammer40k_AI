@@ -2204,6 +2204,97 @@ class Game:
         if subs.get("for_the_greater_good_prompt"):
             es.publish("for_the_greater_good_prompt", player=player, game=self)
 
+    def _on_phase_start_shooting_phase_visible_battleshock(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: select a visible enemy within range to take a Battle-shock test."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_start_shooting_phase_visible_battleshock_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    self._queue_start_shooting_phase_visible_battleshock(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
     def _on_phase_start_aeldari_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Aeldari enhancements that trigger at the start of Command or Shooting phases."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -4744,6 +4835,85 @@ class Game:
         request = DecisionRequest.create(
             DECISION_CHOOSE_QUARRY,
             f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_start_shooting_phase_visible_battleshock(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Start of Shooting phase Battle-shock").strip() or "Start of Shooting phase Battle-shock"
+        ability_key = str(ability_name).strip().lower() or "start_shooting_phase_battleshock"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("model_id", "")) != str(model_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "") != ability_key:
+                    continue
+                return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+        ]
+        if not options:
+            return None
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        ctx = {
+            "ability": "start_shooting_phase_visible_battleshock",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase": "Shooting phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
+            f"{ability_name}: select a unit to take a Battle-shock test.",
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
