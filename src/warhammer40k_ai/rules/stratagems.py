@@ -5,6 +5,7 @@ import re
 from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
 from ..utility.entity_ids import get_entity_id
+from .stratagem_descriptors import get_stratagem_tool_descriptor
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
@@ -69,6 +70,10 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "PROFANE SYMBIOSIS",
+    "CORRUPTING TAINT",
+    "UNLEASH BALEFIRE",
+    "WARP VISION",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -116,6 +121,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CAREEN!",
     "'ARD AS NAILS",
     "\u2019ARD AS NAILS",
+    "PROFANE SYMBIOSIS",
+    "CORRUPTING TAINT",
 }
 
 
@@ -586,6 +593,7 @@ class Stratagem:
         self.faction_id = faction_id or ""
         self.effect = effect
         self.conditions = conditions
+        self.tool_descriptor = get_stratagem_tool_descriptor(stratagem_id=self.id, name=self.name)
 
     @staticmethod
     def from_json(data: Dict[str, Any]) -> "Stratagem":
@@ -870,6 +878,9 @@ class StratagemManager:
             add("battle_shock_test_started", self._on_battle_shock_test_started)
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
 
+        if "CORRUPTING TAINT" in names:
+            add("malefic_surge_applied", self._on_malefic_surge_applied)
+
         if "BERZERKER'S WRATH" in names:
             add("blood_surge_triggered", self._on_blood_surge_triggered)
 
@@ -900,6 +911,11 @@ class StratagemManager:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_reactive_reposition)
         if "SWIFT AS THE EAGLE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
+        if "UNLEASH BALEFIRE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
+
+        if "UNLEASH BALEFIRE" in names and "INSANE BRAVERY" not in names:
+            add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
 
         has_consolidate_spec = False
         has_charge_melee_ap_spec = False
@@ -994,6 +1010,7 @@ class StratagemManager:
             "SKYBORNE SANCTUARY",
             "WEBWAY TUNNEL",
             "ENDLESS SERVITUDE",
+            "PROFANE SYMBIOSIS",
         }
         phase_end_cleanup_names = {
             "GO TO GROUND",
@@ -1009,6 +1026,8 @@ class StratagemManager:
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
             "CHRONOSHIFT",
+            "WARP VISION",
+            "UNLEASH BALEFIRE",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -1805,6 +1824,10 @@ class StratagemManager:
             "CAREEN!": "Target: destroyed ORKS VEHICLE (Deadly Demise 6)",
             "'ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
             "\u2019ARD AS NAILS": "Target: ORKS unit (non-Grots/Monster/Vehicle)",
+            "PROFANE SYMBIOSIS": "Target: CHAOS KNIGHTS unit (not Empowered)",
+            "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
+            "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
+            "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
         }
         return hints.get(name_u, "")
 
@@ -1869,6 +1892,193 @@ class StratagemManager:
         except Exception:
             return False
         return False
+
+    def _chaos_knights_detachment_manager(self):
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return None
+        mgr = getattr(army, "chaos_knights_detachments", None)
+        if mgr is None or not hasattr(mgr, "is_infernal_lance"):
+            return None
+        try:
+            if not mgr.is_infernal_lance():
+                return None
+        except Exception:
+            return None
+        return mgr
+
+    def _is_chaos_knights_unit(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return False
+        try:
+            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
+                return False
+        except Exception:
+            return False
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        if callable(has_any_kw) and has_any_kw("CHAOS KNIGHTS"):
+            return True
+        root_faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
+        if root_faction_id == "QT":
+            return True
+        return False
+
+    def _is_chaos_knights_character_unit(self, unit: Any) -> bool:
+        if not self._is_chaos_knights_unit(unit):
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        try:
+            has_any_kw = getattr(root, "has_any_keyword", None)
+            if callable(has_any_kw) and has_any_kw("CHARACTER"):
+                return True
+        except Exception:
+            pass
+        try:
+            for model in list(getattr(root, "get_attached_unit_models", lambda: [])() or []):
+                if bool(getattr(model, "is_character", False)):
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def _profane_symbiosis_used_this_round(self, unit: Any) -> bool:
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        try:
+            last_turn = int(sr.get("profane_symbiosis_last_turn", -1) or -1)
+        except Exception:
+            last_turn = -1
+        owner = str(sr.get("profane_symbiosis_last_owner", "") or "")
+        current_owner = str(getattr(self.player, "id", "") or "")
+        if owner and current_owner and owner != current_owner:
+            return False
+        try:
+            current_turn = int(getattr(self.game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        return last_turn >= 0 and current_turn >= 0 and last_turn == current_turn
+
+    def _infernal_lance_unit_candidates(
+        self,
+        *,
+        require_not_shot: bool = False,
+        require_not_empowered: bool = False,
+        require_character: bool = False,
+    ) -> List[Any]:
+        mgr = self._chaos_knights_detachment_manager()
+        if mgr is None:
+            return []
+        army = getattr(self.player, "army", None)
+        units = list(getattr(army, "units", []) or []) if army is not None else []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in units:
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                uid = get_entity_id(root)
+            except Exception:
+                uid = None
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                continue
+            if not self._is_chaos_knights_unit(root):
+                continue
+            if require_character and not self._is_chaos_knights_character_unit(root):
+                continue
+            if require_not_shot:
+                try:
+                    if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                        continue
+                except Exception:
+                    continue
+            if require_not_empowered:
+                try:
+                    if mgr.is_unit_empowered(root, game=self.game):
+                        continue
+                except Exception:
+                    continue
+                if self._profane_symbiosis_used_this_round(root):
+                    continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
+
+    def _infernal_lance_shooting_candidates(self) -> List[Any]:
+        return self._infernal_lance_unit_candidates(require_not_shot=True)
+
+    def _profane_symbiosis_candidates(self) -> List[Any]:
+        return self._infernal_lance_unit_candidates(require_not_empowered=True)
+
+    def _corrupting_taint_objective_candidates(self, unit) -> List[Any]:
+        if unit is None or self.game is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return []
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return []
+        candidates: List[Any] = []
+        for obj in list(getattr(game_map, "objectives", []) or []):
+            try:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                if getattr(loc, "controlling_player", None) is not self.player:
+                    continue
+                if hasattr(root, "is_within_objective_range") and root.is_within_objective_range(loc):
+                    candidates.append(obj)
+            except Exception:
+                continue
+        return candidates
 
     def _get_necrons_mgr(self):
         try:
@@ -3072,6 +3282,38 @@ class StratagemManager:
                             }, use_timer=False)
         except Exception:
             raise
+        # Chaos Knights: PROFANE SYMBIOSIS (end of any phase)
+        try:
+            s = self.get_by_name("PROFANE SYMBIOSIS")
+            if s and self._chaos_knights_detachment_manager() is not None:
+                phase_label = self._current_phase_name or str(getattr(phase, "name", "") or "")
+                if self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                    if s.can_use(self.player, self.game, phase_name=phase_label):
+                        candidates = self._profane_symbiosis_candidates()
+                        if candidates:
+                            already = False
+                            for r in self._pending_reactions:
+                                try:
+                                    if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == phase_label:
+                                        already = True
+                                        break
+                                except Exception:
+                                    raise
+                            if not already:
+                                payload = {
+                                    "event": "phase_end",
+                                    "phase": phase_label,
+                                    "phase_name": phase_label,
+                                    "stratagem": s.name,
+                                    "cp_cost": s.cp_cost,
+                                    "candidates": candidates,
+                                }
+                                if len(candidates) == 1:
+                                    payload["unit"] = candidates[0]
+                                    payload["target_unit"] = candidates[0]
+                                self._queue_reaction(payload, use_timer=False)
+        except Exception:
+            raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
         try:
             phase_name = getattr(phase, "name", None)
@@ -3112,6 +3354,19 @@ class StratagemManager:
                         if isinstance(sr, dict) and sr.get("lightning_fast_reactions_active") is True:
                             sr.pop("lightning_fast_reactions_active", None)
                             sr.pop("lightning_fast_reactions_expires_phase", None)
+                            u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("warp_vision_ignores_cover_active") is True:
+                            sr.pop("warp_vision_ignores_cover_active", None)
+                            sr.pop("warp_vision_expires_phase", None)
+                            sr.pop("warp_vision_owner", None)
+                            sr.pop("warp_vision_turn", None)
+                            sr.pop("warp_vision_source", None)
+                            u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("unleash_balefire_active") is True:
+                            sr.pop("unleash_balefire_active", None)
+                            sr.pop("unleash_balefire_owner", None)
+                            sr.pop("unleash_balefire_turn", None)
+                            sr.pop("unleash_balefire_source", None)
                             u.special_rules = sr
                     except Exception:
                         raise
@@ -3810,6 +4065,127 @@ class StratagemManager:
                         'cp_cost': s.cp_cost,
                     })
 
+        # Unleash Balefire: apply aflame on failed Battle-shock.
+        try:
+            if unit is None:
+                return
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("aflame_on_battleshock_pending"):
+                return
+            owner_id = str(sr.get("aflame_on_battleshock_owner", "") or "")
+            current_owner = str(getattr(self.player, "id", "") or "")
+            if owner_id and current_owner and owner_id != current_owner:
+                return
+            try:
+                move_penalty = int(sr.get("aflame_on_battleshock_move_penalty", -2) or -2)
+            except Exception:
+                move_penalty = -2
+            try:
+                advance_penalty = int(sr.get("aflame_on_battleshock_advance_penalty", 0) or 0)
+            except Exception:
+                advance_penalty = 0
+            try:
+                charge_penalty = int(sr.get("aflame_on_battleshock_charge_penalty", advance_penalty) or advance_penalty)
+            except Exception:
+                charge_penalty = int(advance_penalty)
+            source = str(sr.get("aflame_on_battleshock_source", "") or "Unleash Balefire").strip()
+            # Clear pending flags before applying.
+            for key in (
+                "aflame_on_battleshock_pending",
+                "aflame_on_battleshock_owner",
+                "aflame_on_battleshock_turn",
+                "aflame_on_battleshock_source",
+                "aflame_on_battleshock_move_penalty",
+                "aflame_on_battleshock_advance_penalty",
+                "aflame_on_battleshock_charge_penalty",
+            ):
+                sr.pop(key, None)
+            unit.special_rules = sr
+            if passed:
+                return
+            try:
+                turn = int(getattr(self.game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            if not owner_id:
+                owner_id = current_owner
+            apply_fn = getattr(unit, "apply_aflame", None)
+            if callable(apply_fn):
+                apply_fn(
+                    owner_id=owner_id,
+                    turn=turn,
+                    source=source,
+                    move_penalty=move_penalty,
+                    advance_penalty=advance_penalty,
+                    charge_penalty=charge_penalty,
+                )
+            else:
+                try:
+                    sr = getattr(unit, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["aflame_active"] = True
+                    sr["aflame_owner"] = owner_id
+                    sr["aflame_turn"] = int(turn or 0)
+                    sr["aflame_source"] = source
+                    sr["aflame_move_penalty"] = int(move_penalty or 0)
+                    sr["aflame_advance_penalty"] = int(advance_penalty or 0)
+                    sr["aflame_charge_penalty"] = int(charge_penalty or 0)
+                    unit.special_rules = sr
+                except Exception:
+                    pass
+        except Exception:
+            raise
+
+    def _on_malefic_surge_applied(self, unit=None, player=None, game=None, **_kwargs):
+        if unit is None or self.game is None:
+            return
+        if player is not None and player is not self.player:
+            return
+        if self._chaos_knights_detachment_manager() is None:
+            return
+        phase_name = str(self._current_phase_name or "").strip().lower()
+        if phase_name != "command phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not self._is_chaos_knights_character_unit(root):
+            return
+        s = self.get_by_name("CORRUPTING TAINT")
+        if not s:
+            return
+        if self.player.command_points < s.cp_cost:
+            return
+        if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if not s.can_use(self.player, self.game, phase_name="Command phase", unit=root, target_unit=root):
+            return
+        candidates = self._corrupting_taint_objective_candidates(root)
+        if not candidates:
+            return
+        for r in self._pending_reactions:
+            try:
+                if r.get("event") == "malefic_surge_applied" and r.get("stratagem") == s.name and r.get("unit") is root:
+                    return
+            except Exception:
+                raise
+        self._queue_reaction({
+            "event": "malefic_surge_applied",
+            "phase_name": "Command phase",
+            "stratagem": s.name,
+            "cp_cost": s.cp_cost,
+            "unit": root,
+            "target_unit": root,
+            "objective_candidates": candidates,
+        })
+
     # Overwatch triggers: on enemy movement start/end (enqueue for non-active player)
     def _on_unit_move_started(self, unit, action: str, **kwargs):
         self._maybe_queue_overwatch(unit, action, when='start')
@@ -4083,6 +4459,113 @@ class StratagemManager:
             self._queue_reaction(payload)
         except Exception:
             raise
+
+    def _on_unit_shooting_resolved_unleash_balefire(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        if attacker_unit is None or self.game is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        active_player = getattr(self.game, "get_current_player", lambda: None)()
+        if active_player is not self.player:
+            return
+        if self._chaos_knights_detachment_manager() is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        if not self._is_chaos_knights_unit(root):
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("unleash_balefire_active"):
+            return
+        owner = str(sr.get("unleash_balefire_owner", "") or "")
+        current_owner = str(getattr(self.player, "id", "") or "")
+        if owner and current_owner and owner != current_owner:
+            return
+        for key in (
+            "unleash_balefire_active",
+            "unleash_balefire_owner",
+            "unleash_balefire_turn",
+            "unleash_balefire_source",
+        ):
+            sr.pop(key, None)
+        root.special_rules = sr
+        candidates = []
+        seen = set()
+        if isinstance(hits_by_target, dict):
+            for target_unit, hits in hits_by_target.items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                try:
+                    if target_unit.get_parent_army().player is self.player:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not target_unit.is_alive():
+                        continue
+                except Exception:
+                    pass
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                if target_root is None:
+                    continue
+                try:
+                    uid = get_entity_id(target_root)
+                except Exception:
+                    uid = None
+                if uid and uid in seen:
+                    continue
+                if uid:
+                    seen.add(uid)
+                candidates.append(target_root)
+        if not candidates:
+            return
+        try:
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        from ..engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        options = []
+        for cand in list(candidates):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
+            "Unleash Balefire: select a unit to take a Battle-shock test.",
+            player_id=getattr(self.player, "id", None),
+            options=options,
+            context={
+                "attacker_unit_id": get_entity_id(root),
+                "ability_name": "Unleash Balefire",
+                "move_penalty": -2,
+                "advance_penalty": 0,
+                "charge_penalty": -2,
+                "battleshock_on_fail": True,
+            },
+        )
+        try:
+            self.game.request_decision(req)
+        except Exception:
+            queue = getattr(self.game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "add"):
+                queue.add(req)
+
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
             return
@@ -11086,6 +11569,252 @@ class StratagemManager:
             except Exception:
                 raise
             print("INFO: BLOOD OFFERING: objective remains under your control until broken.")
+            return True
+
+        # Chaos Knights: PROFANE SYMBIOSIS (make a Malefic Surge at end of any phase)
+        if s.name.upper() == "PROFANE SYMBIOSIS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "PROFANE SYMBIOSIS":
+                        unit = r.get("unit") or r.get("target_unit")
+                        break
+            if unit is None:
+                print("ERROR: Profane Symbiosis: no target unit provided")
+                return False
+            mgr = self._chaos_knights_detachment_manager()
+            if mgr is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_chaos_knights_unit(root):
+                return False
+            if mgr.is_unit_empowered(root, game=self.game):
+                print("ERROR: Profane Symbiosis: unit is already Empowered")
+                return False
+            if self._profane_symbiosis_used_this_round(root):
+                print("ERROR: Profane Symbiosis: unit already targeted this battle round")
+                return False
+            candidates = self._profane_symbiosis_candidates()
+            if candidates and root not in list(candidates or []):
+                print("ERROR: Profane Symbiosis: unit not eligible")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            result = mgr.apply_malefic_surge(root, game=self.game, ignore_used=True)
+            if not result.get("ok"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["profane_symbiosis_last_turn"] = int(getattr(self.game, "turn", 0) or 0)
+                sr["profane_symbiosis_last_owner"] = str(getattr(self.player, "id", "") or "")
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: PROFANE SYMBIOSIS: {getattr(root, 'name', 'Unit')} makes a Malefic Surge.")
+            return True
+
+        # Chaos Knights: CORRUPTING TAINT (sticky objective after Malefic Surge)
+        if s.name.upper() == "CORRUPTING TAINT":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            objective = kwargs.get("objective") or kwargs.get("objective_marker")
+            candidates = kwargs.get("objective_candidates") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "CORRUPTING TAINT":
+                        unit = r.get("unit") or r.get("target_unit")
+                        candidates = candidates or (r.get("objective_candidates") or [])
+                        break
+            if unit is None:
+                print("ERROR: Corrupting Taint: no target unit provided")
+                return False
+            mgr = self._chaos_knights_detachment_manager()
+            if mgr is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_chaos_knights_character_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                print("ERROR: Corrupting Taint: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Corrupting Taint: not your Command phase")
+                return False
+            if objective is None:
+                objective = candidates[0] if candidates else None
+            if objective is None:
+                print("ERROR: Corrupting Taint: no objective marker available")
+                return False
+            if candidates:
+                try:
+                    if objective not in list(candidates or []):
+                        print("ERROR: Corrupting Taint: objective not in candidates")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                loc = getattr(objective, "location", None)
+                if loc is not None and hasattr(loc, "set_sticky_control"):
+                    loc.set_sticky_control(self.player, source="corrupting_taint")
+                elif loc is not None:
+                    loc.sticky_controller = self.player
+                    loc.sticky_source = "corrupting_taint"
+                    loc.controlling_player = self.player
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print("INFO: CORRUPTING TAINT: objective remains under your control until broken.")
+            return True
+
+        # Chaos Knights: UNLEASH BALEFIRE (mark unit; resolve after shooting)
+        if s.name.upper() == "UNLEASH BALEFIRE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: Unleash Balefire: no target unit provided")
+                return False
+            if self._chaos_knights_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_chaos_knights_unit(root):
+                return False
+            candidates = self._infernal_lance_shooting_candidates()
+            if candidates and root not in list(candidates or []):
+                print("ERROR: Unleash Balefire: unit already shot or not eligible")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: Unleash Balefire: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Unleash Balefire: not your Shooting phase")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["unleash_balefire_active"] = True
+                sr["unleash_balefire_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["unleash_balefire_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["unleash_balefire_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: UNLEASH BALEFIRE: {getattr(root, 'name', 'Unit')} will trigger after shooting.")
+            return True
+
+        # Chaos Knights: WARP VISION (ignore cover until end of phase)
+        if s.name.upper() == "WARP VISION":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            if unit is None:
+                print("ERROR: Warp Vision: no target unit provided")
+                return False
+            if self._chaos_knights_detachment_manager() is None:
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_chaos_knights_unit(root):
+                return False
+            candidates = self._infernal_lance_shooting_candidates()
+            if candidates and root not in list(candidates or []):
+                print("ERROR: Warp Vision: unit already shot or not eligible")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: Warp Vision: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Warp Vision: not your Shooting phase")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["warp_vision_ignores_cover_active"] = True
+                sr["warp_vision_expires_phase"] = "SHOOTING_PHASE"
+                sr["warp_vision_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["warp_vision_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["warp_vision_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: WARP VISION: {getattr(root, 'name', 'Unit')} ignores cover until end of phase.")
             return True
 
         # Khorne Daemonkin: MURDER-CALL (return unit to Strategic Reserves)

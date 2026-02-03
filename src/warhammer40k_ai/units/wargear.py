@@ -3091,6 +3091,12 @@ class WargearProfile:
             except Exception:
                 pass
             try:
+                sr = getattr(attacker.parent_unit, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("warp_vision_ignores_cover_active"):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
+            try:
                 tsr = getattr(target, "special_rules", None)
                 if isinstance(tsr, dict) and tsr.get("pain_no_cover_active"):
                     attack_instance["ignores_cover"] = True

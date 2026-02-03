@@ -352,3 +352,44 @@ class TestPostShootDecisions(unittest.TestCase):
             self.assertEqual(target.aflame_applied, [])
         finally:
             dice_mod.get_roll = orig_roll
+
+    def test_post_shoot_aflame_battleshock_pending(self):
+        from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET
+        from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
+
+        player = SimpleNamespace(id="P1")
+        army = SimpleNamespace(player=player)
+        attacker = _UnitStub("ATK", "Attacker", army=army)
+        target = _UnitStub("TGT", "Target", army=SimpleNamespace(player=SimpleNamespace(id="P2")))
+        model = _ModelStub("M1", "Balefire")
+        game = _GameStub(units=[attacker, target], models=[model], turn=2)
+
+        option = DecisionOption.create("Target", payload={"unit_id": target._id})
+        req = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
+            "Select aflame target.",
+            player_id=player.id,
+            options=[option],
+            context={
+                "attacker_unit_id": attacker._id,
+                "model_id": model._id,
+                "ability_name": "Unleash Balefire",
+                "move_penalty": -2,
+                "advance_penalty": 0,
+                "charge_penalty": -2,
+                "battleshock_on_fail": True,
+            },
+        )
+        result = DecisionResult(decision_id=req.decision_id, player_id=player.id, option_id=option.option_id, payload={})
+        apply_result = dispatch_decision(game, req, result)
+
+        self.assertTrue(apply_result.ok)
+        self.assertTrue(target.special_rules.get("aflame_on_battleshock_pending"))
+        self.assertEqual(target.special_rules.get("aflame_on_battleshock_owner"), player.id)
+        self.assertEqual(target.special_rules.get("aflame_on_battleshock_turn"), 2)
+        self.assertEqual(target.special_rules.get("aflame_on_battleshock_move_penalty"), -2)
+        self.assertEqual(target.special_rules.get("aflame_on_battleshock_advance_penalty"), 0)
+        self.assertEqual(target.special_rules.get("aflame_on_battleshock_charge_penalty"), -2)
+        self.assertEqual(target.battleshock_turns, [2])
+        self.assertFalse(target.special_rules.get("aflame_active"))

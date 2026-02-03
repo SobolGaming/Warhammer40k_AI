@@ -119,7 +119,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         except Exception:
             return False
 
-    def can_unit_malefic_surge(self, unit, *, game=None) -> bool:
+    def can_unit_malefic_surge(self, unit, *, game=None, ignore_used: bool = False) -> bool:
         if unit is None:
             return False
         if not self.is_infernal_lance():
@@ -128,7 +128,7 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             return False
         if not self._unit_on_battlefield(unit):
             return False
-        if self.unit_used_malefic_surge_this_turn(unit, game=game):
+        if not ignore_used and self.unit_used_malefic_surge_this_turn(unit, game=game):
             return False
         return True
 
@@ -281,10 +281,10 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
         )
         game.request_decision(req)
 
-    def apply_malefic_surge(self, unit, *, game=None) -> dict:
+    def apply_malefic_surge(self, unit, *, game=None, ignore_used: bool = False) -> dict:
         if unit is None:
             return {"ok": False, "reason": "unit missing"}
-        if not self.can_unit_malefic_surge(unit, game=game):
+        if not self.can_unit_malefic_surge(unit, game=game, ignore_used=ignore_used):
             return {"ok": False, "reason": "unit not eligible"}
         try:
             root = unit.get_attached_unit_root()
@@ -317,6 +317,18 @@ class ChaosKnightsDetachmentManager(DetachmentManagerBase):
             except Exception:
                 pass
         self._mark_empowered(root, game=game, source=self.MALEFIC_SURGE_NAME)
+        try:
+            if game is not None and hasattr(game, "event_system"):
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                player = getattr(army, "player", None) if army is not None else None
+                game.event_system.publish(
+                    "malefic_surge_applied",
+                    unit=root,
+                    player=player,
+                    game=game,
+                )
+        except Exception:
+            pass
         return {"ok": True, "passed": passed}
 
     def queue_malefic_surge_choice(self, unit, *, trigger: str, game=None) -> None:

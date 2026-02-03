@@ -1212,6 +1212,102 @@ class GameView:
             )
         self._request_cut_down_the_weak_unit = _request_cut_down_the_weak_unit
 
+        def _request_profane_symbiosis_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Profane Symbiosis unit.",
+                title="Profane Symbiosis",
+                subtitle="Select a CHAOS KNIGHTS unit that is not Empowered.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_profane_symbiosis_unit = _request_profane_symbiosis_unit
+
+        def _request_unleash_balefire_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Unleash Balefire unit.",
+                title="Unleash Balefire",
+                subtitle="Select a CHAOS KNIGHTS unit that has not shot this phase.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_unleash_balefire_unit = _request_unleash_balefire_unit
+
+        def _request_warp_vision_unit(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                on_chosen(None)
+                return
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Warp Vision unit.",
+                title="Warp Vision",
+                subtitle="Select a CHAOS KNIGHTS unit that has not shot this phase.",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_warp_vision_unit = _request_warp_vision_unit
+
+        def _request_corrupting_taint_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker your unit controls.",
+                title="Corrupting Taint",
+                header="Select an objective marker to taint.",
+                subtitle="Objective remains under your control until opponent has greater control.",
+                context={"ability": "corrupting_taint"},
+                allow_skip=True,
+            )
+        self._request_corrupting_taint_objective = _request_corrupting_taint_objective
+
         def _request_murder_call_unit(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
 
@@ -15716,6 +15812,65 @@ class GameView:
                 )
             return
 
+        if name_u == "CORRUPTING TAINT" and "objective" not in context and "objective_marker" not in context:
+            if callable(getattr(self, "_request_corrupting_taint_objective", None)):
+                candidates = context.get("objective_candidates") or []
+                self._request_corrupting_taint_objective(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda obj: self._finalize_corrupting_taint(player, name, context, obj),
+                )
+            return
+
+        if name_u == "PROFANE SYMBIOSIS" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_request_profane_symbiosis_unit", None)):
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_profane_symbiosis_candidates"):
+                    try:
+                        candidates = manager._profane_symbiosis_candidates()
+                    except Exception:
+                        candidates = []
+                self._request_profane_symbiosis_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "UNLEASH BALEFIRE" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_request_unleash_balefire_unit", None)):
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_infernal_lance_shooting_candidates"):
+                    try:
+                        candidates = manager._infernal_lance_shooting_candidates()
+                    except Exception:
+                        candidates = []
+                self._request_unleash_balefire_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "WARP VISION" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_request_warp_vision_unit", None)):
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_infernal_lance_shooting_candidates"):
+                    try:
+                        candidates = manager._infernal_lance_shooting_candidates()
+                    except Exception:
+                        candidates = []
+                self._request_warp_vision_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
         if name_u == "HEROIC INTERVENTION" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_request_heroic_intervention_unit", None)):
                 enemy = context.get("enemy_unit")
@@ -16317,6 +16472,21 @@ class GameView:
             return
         if objective is None:
             print("A Grim Warning: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_corrupting_taint(self, player, name: str, context: Dict[str, Any], objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if objective is None:
+            print("Corrupting Taint: no objective selected")
             return
         ctx = dict(context)
         ctx["objective"] = objective

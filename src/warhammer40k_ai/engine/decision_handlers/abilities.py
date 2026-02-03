@@ -2615,22 +2615,18 @@ def _apply_post_shoot_aflame_target(game: object, request: DecisionRequest, resu
         raise RuntimeError("Post-shoot aflame target not found.")
     ctx = dict(getattr(request, "context", {}) or {})
     ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Aflame").strip()
-    try:
-        move_penalty = int(ctx.get("move_penalty", -2) or -2)
-    except Exception:
-        move_penalty = -2
-    try:
-        advance_penalty = int(ctx.get("advance_penalty", -2) or -2)
-    except Exception:
-        advance_penalty = -2
-    try:
-        charge_penalty = int(ctx.get("charge_penalty", advance_penalty) or advance_penalty)
-    except Exception:
-        charge_penalty = int(advance_penalty)
-    try:
-        threshold = int(ctx.get("roll_threshold", 4) or 4)
-    except Exception:
-        threshold = 4
+    def _int_or(value, default: int) -> int:
+        if value is None:
+            return int(default)
+        try:
+            return int(value)
+        except Exception:
+            return int(default)
+
+    move_penalty = _int_or(ctx.get("move_penalty", -2), -2)
+    advance_penalty = _int_or(ctx.get("advance_penalty", -2), -2)
+    charge_penalty = _int_or(ctx.get("charge_penalty", advance_penalty), int(advance_penalty))
+    threshold = _int_or(ctx.get("roll_threshold", 4), 4)
 
     attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or payload.get("attacker_unit_id"))
     model = resolve_model(game, ctx.get("model_id") or payload.get("model_id"))
@@ -2648,6 +2644,41 @@ def _apply_post_shoot_aflame_target(game: object, request: DecisionRequest, resu
             player = None
     owner_id = str(getattr(player, "id", "") or "")
     turn = int(getattr(game, "turn", 0) or 0)
+
+    battleshock_on_fail = bool(
+        ctx.get("battleshock_on_fail")
+        or ctx.get("battle_shock_on_fail")
+        or payload.get("battleshock_on_fail")
+        or payload.get("battle_shock_on_fail")
+    )
+    if battleshock_on_fail:
+        root = target_unit
+        try:
+            root = target_unit.get_attached_unit_root()
+        except Exception:
+            root = target_unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["aflame_on_battleshock_pending"] = True
+        sr["aflame_on_battleshock_owner"] = owner_id
+        sr["aflame_on_battleshock_turn"] = int(turn or 0)
+        sr["aflame_on_battleshock_source"] = ability_name
+        sr["aflame_on_battleshock_move_penalty"] = int(move_penalty or 0)
+        sr["aflame_on_battleshock_advance_penalty"] = int(advance_penalty or 0)
+        sr["aflame_on_battleshock_charge_penalty"] = int(charge_penalty or 0)
+        root.special_rules = sr
+        try:
+            target_unit.take_battle_shock_test(turn)
+        except Exception:
+            pass
+        try:
+            from ...utility.event_bus import append_action
+            if player is not None:
+                append_action(player, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} takes a Battle-shock test.")
+        except Exception:
+            pass
+        return target_unit
 
     from ...utility.dice import get_roll
     roll = int(get_roll("D6") or 0)
