@@ -7,6 +7,7 @@ from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.model import Model
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import Wargear
+from warhammer40k_ai.waha_helper.waha_helper import WahaHelper
 from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp, compute_save_roll_modifier
 from warhammer40k_ai.utility.model_base import Base, BaseType
 
@@ -88,6 +89,21 @@ class TestChaosKnightsEnhancements(unittest.TestCase):
         mgr = army.chaos_knights_detachments
         mgr.apply_malefic_surge(unit, game=game)
         self.assertIn("Blasphemous Engine", captured.get("extra_reroll_sources", []))
+
+    def test_blasphemous_engine_adds_wounds(self):
+        army, _player, _game = self._setup_game()
+        unit = self._make_unit("Knight", army)
+        model = self._make_model("Knight", unit)
+        unit.models = [model]
+        army.units = [unit]
+        unit._get_enhancement_bearer_model = lambda: model
+        base_wounds = int(getattr(model, "_base_wounds", getattr(model, "_wounds", 0)) or 0)
+
+        waha = WahaHelper()
+        enh = waha.get_enhancement_by_name("Blasphemous Engine")
+        self.assertIsNotNone(enh)
+        enh.apply_to_unit(unit)
+        self.assertEqual(int(getattr(model, "_base_wounds", 0) or 0), base_wounds + 2)
 
     def test_knight_diabolus_ws_and_lance(self):
         army, _player, game = self._setup_game(phase_name="FIGHT_PHASE")
