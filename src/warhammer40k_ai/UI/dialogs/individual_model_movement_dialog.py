@@ -130,7 +130,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move started (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'brazen_fury', 'loping_speed', 'careen'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'brazen_fury', 'horde_move', 'loping_speed', 'careen'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None
@@ -1331,6 +1331,7 @@ class IndividualModelMovementDialog(BaseDialog):
             'charge': MovementType.CHARGE,
             'blood_surge': MovementType.BLOOD_SURGE,
             'brazen_fury': MovementType.BRAZEN_FURY,
+            'horde_move': MovementType.HORDE_MOVE,
             'scout': MovementType.SCOUT,
             'pile_in': MovementType.PILE_IN,
             'consolidate': MovementType.CONSOLIDATE,
@@ -1595,7 +1596,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Publish unit move ended (for Stratagem reactions like Overwatch)
         # NOTE: Do NOT publish for deployment placement.
-        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'brazen_fury', 'loping_speed', 'careen'):
+        if self.movement_type not in ('deploy', 'reactive', 'blood_surge', 'brazen_fury', 'horde_move', 'loping_speed', 'careen'):
             try:
                 _player = getattr(self.unit.get_parent_army(), 'player', None)
                 _game = getattr(_player, 'game', None) if _player else None

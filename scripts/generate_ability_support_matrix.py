@@ -2185,6 +2185,7 @@ def _classify_ability_base(
     transport_reactive_disembark_support = _transport_reactive_disembark_support(description)
     end_of_fight_embark_support = _end_of_fight_embark_support(description)
     enemy_move_reactive_d6_support = _enemy_move_reactive_d6_support(description)
+    horde_move_support = _horde_move_support(description)
     setup_reactive_shoot_charge_support = _setup_reactive_shoot_or_charge_support(description)
     sticky_support = _sticky_objective_support(description)
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
@@ -2382,6 +2383,8 @@ def _classify_ability_base(
         return transport_reactive_disembark_support
     if enemy_move_reactive_d6_support:
         return enemy_move_reactive_d6_support
+    if horde_move_support:
+        return horde_move_support
     if setup_reactive_shoot_charge_support:
         return setup_reactive_shoot_charge_support
     if sticky_support:
@@ -4800,6 +4803,36 @@ def _enemy_move_reactive_d6_support(description: str) -> Optional[Tuple[str, str
         note += " if not in Engagement Range."
     else:
         note += "."
+    return ("Supported", note)
+
+
+def _horde_move_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm or "horde move" not in norm:
+        return None
+    if not re.search(r"each time an enemy unit has shot", norm):
+        return None
+    if not re.search(
+        r"if (?:one or more|any) models from this unit were destroyed as a result of those attacks",
+        norm,
+    ):
+        return None
+    if not re.search(r"roll (?:one|a|1)? d6", norm):
+        return None
+    if "as close as possible to the closest enemy unit" not in norm:
+        return None
+    if "excluding aircraft" not in norm:
+        return None
+    if "within engagement range" not in norm:
+        return None
+    if "battle shocked" not in norm:
+        return None
+    note = (
+        "Reactive Horde Move after enemy shooting casualties: D6\" move must end closest enemy unit "
+        "(excluding AIRCRAFT) and can enter Engagement Range; blocked while Battle-shocked."
+    )
     return ("Supported", note)
 
 

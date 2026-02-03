@@ -221,6 +221,7 @@ Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use
 (rolled or fixed).
 Blood Surge uses the same pattern with `reactive_move_kind="blood_surge"` and `movement_type="blood_surge"`.
 Brazen Fury uses the same pattern with `reactive_move_kind="brazen_fury"` and `movement_type="brazen_fury"`.
+Horde Move uses the same pattern with `reactive_move_kind="horde_move"` and `movement_type="horde_move"`.
 Battle Focus reactive maneuvers first use `SELECT_OVERWATCH_SHOOTER` (context `ability="battle_focus"`),
 then queue `MOVE_UNIT` with `movement_type="reactive"` and `max_distance`.
 Fire and Fade and Reactive Reposition queue `MOVE_UNIT` with `movement_type="reactive"` and

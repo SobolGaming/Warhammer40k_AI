@@ -124,6 +124,7 @@ def test_snapshot_roundtrip_core_state():
     game.phase_charge_targets = {"charge": {unit_two.id}}
     game._phoenix_gem_pending = [{"unit": unit_one}]
     game._blood_surge_shooting_snapshot = {unit_one: {unit_two: 3}}
+    game._horde_move_shooting_snapshot = {unit_one: {unit_two: 1}}
     game._frenzy_shooting_targets = {unit_one: [unit_two]}
     game._frenzy_fight_targets = {unit_one: [unit_two]}
     game._pain_parasite_shooting_snapshot = {unit_one: {unit_two: 1}}
@@ -222,6 +223,7 @@ def test_snapshot_roundtrip_core_state():
     assert loaded_cmd.metadata["model"].id == loaded_unit_one.models[0].id
 
     assert loaded.random_source.random() == pytest.approx(expected_random)
+    assert loaded._horde_move_shooting_snapshot[loaded_unit_one][loaded_unit_two] == 1
 
 
 def test_snapshot_fixed_point_coordinates():

@@ -24821,6 +24821,17 @@ class Unit:
         self._ability_cache['brazen_fury'] = applies
         return applies
 
+    def has_horde_move(self) -> bool:
+        """Check if the unit has a Horde Move ability."""
+        if 'horde_move' in getattr(self, '_ability_cache', {}):
+            return self._ability_cache['horde_move']
+
+        found, _ = self._find_ability_with_patterns(["horde move"])
+        if not hasattr(self, '_ability_cache'):
+            self._ability_cache = {}
+        self._ability_cache['horde_move'] = found
+        return found
+
     def get_victim_selection_rule(self) -> Optional[dict]:
         """
         Detect abilities with text like:
@@ -26151,6 +26162,25 @@ class Unit:
                         return False
             except Exception:
                 pass
+        return True
+
+    def can_horde_move(self, game=None, game_map=None) -> bool:
+        if not self.has_horde_move():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.is_battle_shocked():
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
         return True
 
     def has_reanimation_protocols(self) -> bool:

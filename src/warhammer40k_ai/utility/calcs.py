@@ -805,6 +805,7 @@ class MovementType(Enum):
     CHARGE = "charge"
     BLOOD_SURGE = "blood_surge"
     BRAZEN_FURY = "brazen_fury"
+    HORDE_MOVE = "horde_move"
     CAREEN = "careen"
     PILE_IN = "pile_in"
     CONSOLIDATE = "consolidate"
@@ -895,7 +896,7 @@ def unified_pathfinding(model: 'Model', target: Tuple[float, float, float], move
 
     # Get validation rules for this movement type
     validation_rules = get_validation_rules(movement_type, target_unit, moving_unit=moving_unit, target_units=target_units)
-    if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY):
+    if movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
         try:
             validation_rules["blood_surge_max_distance"] = float(max_distance)
         except Exception:
@@ -999,6 +1000,7 @@ def build_collision_trees(moving_unit: 'Unit', movement_type: MovementType, game
         MovementType.CHARGE,
         MovementType.BLOOD_SURGE,
         MovementType.BRAZEN_FURY,
+        MovementType.HORDE_MOVE,
     ]:
         # Calculate the actual maximum possible movement distance for this movement type
         actual_max_movement = max_distance
@@ -1356,8 +1358,13 @@ def get_validation_rules(
         except Exception:
             pass
 
-    elif movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY):
-        reason = "Blood Surge" if movement_type == MovementType.BLOOD_SURGE else "Brazen Fury"
+    elif movement_type in (MovementType.BLOOD_SURGE, MovementType.BRAZEN_FURY, MovementType.HORDE_MOVE):
+        if movement_type == MovementType.BLOOD_SURGE:
+            reason = "Blood Surge"
+        elif movement_type == MovementType.BRAZEN_FURY:
+            reason = "Brazen Fury"
+        else:
+            reason = "Horde Move"
         base_rules.update({
             'allow_engagement_range_movement': True,
             'must_end_as_close_as_possible_to_closest_enemy_unit': True,

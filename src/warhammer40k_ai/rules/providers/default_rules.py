@@ -89,6 +89,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_blood_surge"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_brazen_fury"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_brazen_fury"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_horde_move"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_horde_move"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_frenzy"),
                 ("fight_targets_selected", "_on_fight_targets_selected_frenzy"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_frenzy"),
