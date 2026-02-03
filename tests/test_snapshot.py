@@ -223,7 +223,7 @@ def test_snapshot_roundtrip_core_state():
     assert loaded_cmd.metadata["model"].id == loaded_unit_one.models[0].id
 
     assert loaded.random_source.random() == pytest.approx(expected_random)
-    assert loaded._horde_move_shooting_snapshot[loaded_unit_one][loaded_unit_two] == 1
+    assert loaded._horde_move_shooting_snapshot[str(loaded_unit_one.id)][str(loaded_unit_two.id)] == 1
 
 
 def test_snapshot_fixed_point_coordinates():
