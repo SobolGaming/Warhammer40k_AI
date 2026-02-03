@@ -17930,6 +17930,13 @@ class Game:
         strategic_used_edge_touch = False
         if unit.is_in_strategic_reserves():
             strategic_ok = False
+            try:
+                if hasattr(unit, "get_strategic_reserves_setup_turn"):
+                    effective_turn = int(unit.get_strategic_reserves_setup_turn(game=self, current_turn=self.turn))
+                else:
+                    effective_turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                effective_turn = int(getattr(self, "turn", 0) or 0)
             # Determine which edge(s) to validate
             if battlefield_edge:
                 candidate_edges = [battlefield_edge]
@@ -17984,11 +17991,11 @@ class Game:
             player_id = parent_army.player.id if parent_army and parent_army.player else None
 
             for edge in candidate_edges:
-                if not self.is_valid_strategic_reserves_edge(edge):
+                if not self.is_valid_strategic_reserves_edge(edge, turn=effective_turn):
                     continue
 
                 # Turn-based enemy deployment zone restriction (turn 2 only)
-                if self.turn == 2 and player_id:
+                if effective_turn == 2 and player_id:
                     any_in_enemy_dz = False
                     for (mx, my, _mz, _f) in prospective:
                         if self.is_position_in_enemy_deployment_zone(float(mx), float(my), player_id):
@@ -18092,7 +18099,7 @@ class Game:
         setattr(unit, "_pending_reserves_deep_strike", True)
         return True
 
-    def is_valid_strategic_reserves_edge(self, battlefield_edge: str) -> bool:
+    def is_valid_strategic_reserves_edge(self, battlefield_edge: str, *, turn: Optional[int] = None) -> bool:
         """Check if the specified battlefield edge is valid for strategic reserves arrival.
         
         Args:
@@ -18102,7 +18109,13 @@ class Game:
             bool: True if the edge is valid for the current turn
         """
         # Chapter Approved: Strategic Reserves can arrive from ANY battlefield edge starting in battle round 2.
-        if self.turn < 2:
+        use_turn = self.turn
+        if turn is not None:
+            try:
+                use_turn = int(turn)
+            except Exception:
+                use_turn = self.turn
+        if use_turn < 2:
             return False
         return battlefield_edge in ['own', 'left', 'right', 'enemy']
     

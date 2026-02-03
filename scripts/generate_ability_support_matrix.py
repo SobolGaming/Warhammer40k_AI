@@ -2191,6 +2191,7 @@ def _classify_ability_base(
     bodyguard_return_support = _command_phase_bodyguard_return_support(description)
     charge_phase_bodyguard_loss_support = _charge_phase_bodyguard_loss_support(description)
     opponent_turn_reserves_support = _opponent_turn_strategic_reserves_support(description)
+    strategic_reserves_early_arrival_support = _strategic_reserves_early_arrival_support(description)
     opponent_turn_destroyed_reposition_support = _opponent_turn_destroyed_reposition_support(description)
     enemy_fall_back_desperate_escape_support = _enemy_fall_back_desperate_escape_support(description)
     command_phase_bonus_cp_support = _command_phase_bonus_cp_support(description)
@@ -2396,6 +2397,8 @@ def _classify_ability_base(
         return charge_phase_bodyguard_loss_support
     if opponent_turn_reserves_support:
         return opponent_turn_reserves_support
+    if strategic_reserves_early_arrival_support:
+        return strategic_reserves_early_arrival_support
     if opponent_turn_destroyed_reposition_support:
         return opponent_turn_destroyed_reposition_support
     if enemy_fall_back_desperate_escape_support:
@@ -4964,6 +4967,26 @@ def _opponent_turn_strategic_reserves_support(description: str) -> Optional[Tupl
     if "once per battle" in norm:
         note = f"{note} Once per battle."
     return ("Supported", note)
+
+
+def _strategic_reserves_early_arrival_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"if this unit starts the game in strategic reserves it can be set up in the reinforcements step of your first "
+        r"second or third movement phase(?: regardless of any mission rules)? if this unit is in strategic reserves "
+        r"for the purposes of setting up this unit on the battlefield treat the (?:current )?battle round number "
+        r"as being one higher than it actually is"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return (
+        "Supported",
+        "Strategic Reserves: may arrive in battle rounds 1-3; treat battle round as +1 when setting up.",
+    )
 
 
 def _opponent_turn_destroyed_reposition_support(description: str) -> Optional[Tuple[str, str]]:

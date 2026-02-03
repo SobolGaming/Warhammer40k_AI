@@ -503,6 +503,22 @@ def _evaluate_reserves_arrival_positions(
     if width is None or height is None:
         return {"errors": errors}
 
+    try:
+        effective_turn = int(getattr(game, "turn", 0) or 0)
+    except Exception:
+        effective_turn = 0
+    try:
+        if hasattr(unit, "get_strategic_reserves_setup_turn"):
+            effective_turn = int(unit.get_strategic_reserves_setup_turn(game=game, current_turn=effective_turn))
+    except Exception:
+        pass
+    player_id = None
+    try:
+        army = unit.get_parent_army()
+        player_id = getattr(getattr(army, "player", None), "id", None)
+    except Exception:
+        player_id = None
+
     def _model_radius(model) -> float:
         mb = getattr(model, "model_base", None)
         if mb is None:
@@ -533,6 +549,23 @@ def _evaluate_reserves_arrival_positions(
 
     if bool(getattr(unit, "is_in_strategic_reserves", lambda: False)()):
         for edge in ("own", "left", "right", "enemy"):
+            if hasattr(game, "is_valid_strategic_reserves_edge"):
+                try:
+                    if not bool(game.is_valid_strategic_reserves_edge(edge, turn=effective_turn)):
+                        continue
+                except Exception:
+                    pass
+            if effective_turn == 2 and player_id and hasattr(game, "is_position_in_enemy_deployment_zone"):
+                any_in_enemy_dz = False
+                for (_mx, _my, _mz, _f) in prospective:
+                    try:
+                        if game.is_position_in_enemy_deployment_zone(float(_mx), float(_my), player_id):
+                            any_in_enemy_dz = True
+                            break
+                    except Exception:
+                        continue
+                if any_in_enemy_dz:
+                    continue
             ok_all = True
             used_touch = False
             for model, (x, y, _z, _facing) in zip(list(getattr(unit, "models", []) or []), prospective):

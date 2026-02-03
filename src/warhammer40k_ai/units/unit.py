@@ -25187,6 +25187,115 @@ class Unit:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "If this unit starts the game in Strategic Reserves, it can be set up in the Reinforcements step of your first,
+        second or third Movement phase, regardless of any mission rules. If this unit is in Strategic Reserves, for the
+        purposes of setting up this unit on the battlefield, treat the current battle round number as being one higher
+        than it actually is."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "strategic_reserves_round_bonus_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                normalized = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "starts the game in strategic reserves" not in normalized:
+                    continue
+                if "reinforcements step" not in normalized:
+                    continue
+                if "first second or third" not in normalized or "movement phase" not in normalized:
+                    continue
+                if "battle round number as being one higher" not in normalized and "battle round as being one higher" not in normalized:
+                    continue
+                source = str(name or "Strategic Reserves").strip() or "Strategic Reserves"
+                rule = {"source": source, "round_bonus": 1, "ability_key": "strategic_reserves_round_bonus"}
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _strategic_reserves_round_bonus(self) -> int:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            rule = root.get_strategic_reserves_round_bonus_rule()
+        except Exception:
+            rule = None
+        if not rule:
+            return 0
+        try:
+            started = bool(getattr(root, "_started_in_reserves", False))
+        except Exception:
+            started = False
+        if not started:
+            return 0
+        try:
+            if not bool(getattr(root, "is_in_strategic_reserves", lambda: False)()):
+                return 0
+        except Exception:
+            return 0
+        try:
+            bonus = int(rule.get("round_bonus", 1) or 0)
+        except Exception:
+            bonus = 0
+        return max(0, bonus)
+
+    def get_strategic_reserves_setup_turn(self, *, game=None, current_turn: Optional[int] = None) -> int:
+        if current_turn is None:
+            if game is None:
+                try:
+                    army = self.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+        try:
+            bonus = int(self._strategic_reserves_round_bonus() or 0)
+        except Exception:
+            bonus = 0
+        return int(current_turn) + max(0, int(bonus))
+
     def _loping_speed_turn_key(self, game=None) -> str:
         if game is None:
             try:
@@ -30999,8 +31108,14 @@ class Unit:
         except Exception:
             pass
         
-        # Units cannot arrive from reserves on Turn 1
-        if current_turn < 2:
+        allow_turn1 = False
+        try:
+            allow_turn1 = bool(self._strategic_reserves_round_bonus())
+        except Exception:
+            allow_turn1 = False
+
+        # Units cannot arrive from reserves on Turn 1 unless a rule permits it.
+        if current_turn < 2 and not allow_turn1:
             return False
 
         # AIRCRAFT placed into Strategic Reserves mid-game return next turn.
