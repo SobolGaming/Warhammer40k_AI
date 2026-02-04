@@ -14574,11 +14574,64 @@ class Game:
             self._maybe_apply_daemonic_patrons_loss_followup(request, result)
             self._maybe_apply_cult_ambush_followup(request, result)
             self._maybe_queue_code_chivalric_followup(request, result)
+        else:
+            try:
+                dtype = getattr(request, "decision_type", "")
+                pid = getattr(request, "player_id", None)
+                err_list = list(getattr(apply_result, "errors", ()) or ())
+                print(f"ERROR: Decision rejected ({dtype}) for player {pid}: {err_list}")
+            except Exception:
+                print(f"ERROR: Unexpected Decision Failure for {request} with {apply_result}")
+ 
         return apply_result
 
     def get_current_player(self) -> Player:
         """Get the current player."""
         return self.players[self.current_player_index]
+
+    def get_waiting_player_id(self) -> str | None:
+        """Return the single player id the game is currently waiting on for input."""
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None:
+            req = queue.peek()
+            pid = getattr(req, "player_id", None) if req is not None else None
+            if pid:
+                try:
+                    if self.is_in_setup_phase():
+                        phase = self.get_current_setup_phase()
+                        if getattr(phase, "name", None) == "DEPLOY_ARMIES":
+                            from .decision_kinds import DECISION_MOVE_UNIT
+                            if getattr(req, "decision_type", None) != DECISION_MOVE_UNIT:
+                                pid = None
+                            else:
+                                ctx = dict(getattr(req, "context", {}) or {})
+                                placement_kind = str(ctx.get("placement_kind", "") or "")
+                                if placement_kind not in ("deployment", "reserves_arrival"):
+                                    pid = None
+                except Exception:
+                    pass
+            if pid:
+                return str(pid)
+
+        try:
+            if self.is_in_setup_phase():
+                phase = self.get_current_setup_phase()
+                if getattr(phase, "name", None) == "DEPLOY_ARMIES":
+                    player = self.get_current_deployment_player()
+                else:
+                    player = self.get_current_player()
+            elif self.is_deployment_phase():
+                player = self.get_current_deployment_player()
+            else:
+                player = self.get_current_player()
+            return str(player.id) if player is not None else None
+        except Exception:
+            return None
+
+    def get_waiting_player_ids(self) -> set[str]:
+        """Return player ids the game is currently waiting on for input."""
+        pid = self.get_waiting_player_id()
+        return {pid} if pid else set()
 
     def get_opponent(self) -> Player:
         """Get the opponent of the current player."""

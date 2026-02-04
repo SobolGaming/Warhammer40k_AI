@@ -1,3 +1,4 @@
+import inspect
 import pygame
 import re
 import math
@@ -6,10 +7,9 @@ from .base_dialog import BaseDialog, TEXT_SUCCESS, TEXT_WARNING, BUTTON_SELECTED
 from ...utility.constants import RUINS_FLOOR_HEIGHT
 from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
-
+from ...utility.debug import describe_callable, describe_self_stack
 # Additional colors specific to this dialog
 HIGHLIGHT_COLOR = (255, 255, 0)  # Yellow for model highlighting
-
 
 class IndividualModelMovementDialog(BaseDialog):
     """Dialog for moving individual models within a unit during movement phases"""
@@ -443,7 +443,36 @@ class IndividualModelMovementDialog(BaseDialog):
         elif self.movement_type == 'move' and bool(getattr(self.unit, "is_aircraft", False)):
             self._aircraft_pivot_degrees = 0.0
         
-        print(f"INFO: Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
+        actor_label = None
+        try:
+            player = self.unit.get_parent_army().player
+        except Exception:
+            player = None
+        try:
+            game = player.game if player is not None else None
+        except Exception:
+            game = None
+        if player is not None:
+            role = None
+            try:
+                idx_att = getattr(game, "attacker_index", None)
+                idx_def = getattr(game, "defender_index", None)
+                if idx_att is not None and 0 <= int(idx_att) < len(getattr(game, "players", []) or []):
+                    if game.players[int(idx_att)] is player:
+                        role = "Attacker"
+                if role is None and idx_def is not None and 0 <= int(idx_def) < len(getattr(game, "players", []) or []):
+                    if game.players[int(idx_def)] is player:
+                        role = "Defender"
+            except Exception:
+                role = None
+            actor_label = f"{player.name} ({role})" if role else f"{player.name}"
+        if actor_label:
+            print(
+                f"INFO: {actor_label} Selected {model.name} (Model #{model_index + 1}) "
+                f"for {self.movement_type} movement"
+            )
+        else:
+            print(f"INFO: Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
         print(f"INFO: Click on the battlefield to move this model")
 
     def _infer_default_deploy_facing_radians(self, model) -> Optional[float]:
@@ -857,6 +886,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # If we're in deployment mode, run deployment validation and place the model directly
         if self.movement_type == 'deploy':
+            print(f"DEBUG: handling validation in deployment Mode")
             model = self.unit.models[self.selected_model_index]
             # Validate single model deployment
             try:
@@ -1048,6 +1078,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
     def _validate_deploy_like_placement(self, game, model, x: float, y: float, z: float, player_id: str) -> dict:
         """Validate deployment or custom placement for a single model."""
+        print(f"DEBUG: Validating deploy-like placement for {model.name} at ({x:.1f}, {y:.1f}, {z:.1f})")
         if self.placement_kind:
             if callable(self.placement_validator):
                 try:
@@ -1570,6 +1601,7 @@ class IndividualModelMovementDialog(BaseDialog):
     def _finalize_movement_completion(self):
         """Finalize the movement completion"""
         print(f"INFO: {self.unit.name} {self.movement_type.upper()} movement completed")
+        print(f"DEBUG: current stack: {describe_self_stack()}")
 
         # Set unit round state based on movement type
         # NOTE: Scout movement happens before battle rounds, so it should NOT set round state flags
@@ -1610,12 +1642,14 @@ class IndividualModelMovementDialog(BaseDialog):
                         action = 'charge'
                     _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
             except Exception:
+                print(f"ERROR: Unexpected error publishing unit move ended event")
                 pass
         if self.movement_type == 'reactive':
             self._clear_battle_focus_reactive_flags()
 
         # Call callback with completion status
         if self.callback:
+            print(f"DEBUG: Calling callback after finalize movement completion {describe_callable(self.callback)} with argument True")
             self.callback(True)  # Movement completed
 
         self.hide()
