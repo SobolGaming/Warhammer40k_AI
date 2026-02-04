@@ -4776,12 +4776,17 @@ def _target_hit_roll_penalty_support(description: str) -> Optional[Tuple[str, st
     if not sentences:
         return None
 
+    prefix = r"(?:while this (?:model|unit) is leading (?:a|this) unit, )?"
     unit_re = re.compile(
-        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this unit, subtract 1 from the hit roll(?P<tail>.*)$",
+        prefix
+        + r"each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack "
+        r"(?:targets|is made against) (?:this unit|that unit|the bearer'?s unit), subtract 1 from the hit roll(?P<tail>.*)$",
         re.IGNORECASE,
     )
     model_re = re.compile(
-        r"^each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack targets this model, subtract 1 from the hit roll(?P<tail>.*)$",
+        prefix
+        + r"each time (?:a|an) (?:(?P<atype>melee|ranged) )?attack "
+        r"(?:targets|is made against) this model, subtract 1 from the hit roll(?P<tail>.*)$",
         re.IGNORECASE,
     )
 

@@ -1413,7 +1413,9 @@ class Unit:
         re.IGNORECASE,
     )
     _BEARER_UNIT_TARGET_HIT_PENALTY_RE = re.compile(
-        r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+targets\s+the\s+bearer'?s\s+unit,\s+subtract\s+1\s+from\s+the\s+hit\s+roll",
+        r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack(?:s)?\s+"
+        r"(?:targets|is\s+made\s+against)\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),\s+"
+        r"subtract\s+1\s+from\s+the\s+hit\s+roll",
         re.IGNORECASE,
     )
     _OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE = re.compile(
@@ -2203,11 +2205,13 @@ class Unit:
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(
-        r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? targets this unit, subtract 1 from the hit roll",
+        r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? "
+        r"(?:targets|is made against) this unit, subtract 1 from the hit roll",
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_MODEL_RE = re.compile(
-        r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? targets this model, subtract 1 from the hit roll",
+        r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? "
+        r"(?:targets|is made against) this model, subtract 1 from the hit roll",
         re.IGNORECASE,
     )
     _ENEMY_MELEE_HAZARDOUS_WHILE_TARGETING_RE = re.compile(
