@@ -39,6 +39,7 @@ Full unit selection, wargear, enhancements, and roster validation are not implem
   - Uses defaults if no files are provided:
     - player1: `army_lists/warhammer_app_dump.txt`
     - player2: `army_lists/chaos_daemons_GT2023.txt`
+  - Rebuilds the entity registry after mustering so decisions can resolve unit/model IDs.
   - After army load, resolves Daemonic Allegiance choices:
     - If a player has local control and the event system is configured,
       publishes `daemonic_allegiance_prompt`.

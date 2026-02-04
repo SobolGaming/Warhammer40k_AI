@@ -18735,6 +18735,9 @@ class Game:
                 army.resolve_daemonic_allegiances(player=player, game=self)
         else:
             print("Not enough players loaded")
+
+        # Armies and units are now populated; rebuild the entity registry for decision resolution.
+        self.rebuild_entity_registry()
     
     def execute_select_mission_objectives_phase(self) -> None:
         """Phase 2: Select Mission Objectives - Choose mission and objectives."""

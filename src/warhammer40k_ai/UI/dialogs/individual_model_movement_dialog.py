@@ -1649,10 +1649,16 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Call callback with completion status
         if self.callback:
-            print(f"DEBUG: Calling callback after finalize movement completion {describe_callable(self.callback)} with argument True")
-            self.callback(True)  # Movement completed
-
-        self.hide()
+            try:
+                print(f"DEBUG: Calling callback after finalize movement completion {describe_callable(self.callback)} with argument True")
+                self.callback(True)  # Movement completed
+            except Exception as exc:
+                print(f"ERROR: Movement completion callback failed: {exc}")
+                import traceback; traceback.print_exc()
+            finally:
+                self.hide()
+        else:
+            self.hide()
         
     def _skip_movement(self):
         """Skip movement for this unit"""

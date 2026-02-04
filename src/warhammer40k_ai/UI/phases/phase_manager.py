@@ -3191,11 +3191,23 @@ class BattlePhaseHandler(BasePhaseHandler):
         def _on_move_complete(completed: bool):
             if completed:
                 payload = {"model_positions": self._serialize_unit_positions(unit, allowed_model_ids=allowed_set)}
-                resolve_decision_command(self.game, req, confirm_id, result_payload=payload)
+                cmd_result = resolve_decision_command(self.game, req, confirm_id, result_payload=payload)
+                if not getattr(cmd_result, "ok", False):
+                    try:
+                        err_list = list(getattr(cmd_result, "errors", ()) or ())
+                    except Exception:
+                        err_list = []
+                    print(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
             else:
-                resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
+                cmd_result = resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
+                if not getattr(cmd_result, "ok", False):
+                    try:
+                        err_list = list(getattr(cmd_result, "errors", ()) or ())
+                    except Exception:
+                        err_list = []
+                    print(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
             if callable(callback):
-                print(f"DEBUG: Calling callback from _on_move_complete {describe_callable(self.callback)} with argument {completed}")
+                print(f"DEBUG: Calling callback from _on_move_complete {describe_callable(callback)} with argument {completed}")
                 callback(completed)
 
         self.game_view.individual_model_movement_dialog.show(
