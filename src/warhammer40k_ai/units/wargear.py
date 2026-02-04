@@ -350,6 +350,26 @@ class WargearProfile:
         attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
         return attacker_id == str(bearer_id)
 
+    def _attacker_in_shadow_of_chaos(self, attacker: 'Model') -> bool:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return False
+        try:
+            army = unit.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "shadow_of_chaos", None) if army is not None else None
+        if mgr is None or not hasattr(mgr, "is_unit_within_shadow"):
+            return False
+        try:
+            game = getattr(getattr(army, "player", None), "game", None)
+        except Exception:
+            game = None
+        try:
+            return bool(mgr.is_unit_within_shadow(unit, game=game))
+        except Exception:
+            return False
+
     def _effective_range_max(self, attacker: Optional['Model'] = None) -> int:
         """Return range max after applying model/unit effects (e.g., leading Melta range bonus)."""
         try:
@@ -375,6 +395,19 @@ class WargearProfile:
             if mgr is not None and callable(getattr(mgr, "grand_coven_psychic_range_bonus", None)):
                 game = getattr(getattr(army, "player", None), "game", None)
                 bonus += int(mgr.grand_coven_psychic_range_bonus(attacker, self, game=game) or 0)
+        except Exception:
+            pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                sr = getattr(unit, "special_rules", None)
+                if isinstance(sr, dict) and self._attacker_is_enhancement_bearer(attacker, sr):
+                    base_bonus = int(sr.get("enhancement_bearer_ranged_range_bonus", 0) or 0)
+                    if base_bonus:
+                        bonus += base_bonus
+                    shadow_extra = int(sr.get("enhancement_bearer_ranged_range_bonus_shadow_extra", 0) or 0)
+                    if shadow_extra and self._attacker_in_shadow_of_chaos(attacker):
+                        bonus += shadow_extra
         except Exception:
             pass
         if bonus:
@@ -1139,6 +1172,15 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(bearer_bonus), source="enhancement:bearer_melee_attacks_add")
                     )
                     attack_result.attacks_special_modifiers.append(f"Enhancement bearer +{bearer_bonus}A (melee)")
+            shadow_extra = int(sr.get("enhancement_bearer_melee_attacks_bonus_shadow_extra", 0) or 0)
+            if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._attacker_in_shadow_of_chaos(attacker):
+                    atk_mods.append(
+                        Modifier(ModifierOp.ADD, int(shadow_extra), source="enhancement:bearer_melee_attacks_shadow")
+                    )
+                    attack_result.attacks_special_modifiers.append(
+                        f"Enhancement bearer +{shadow_extra}A (Shadow of Chaos)"
+                    )
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():
                 bonus = int(
@@ -6160,6 +6202,28 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(
                     f"+{bearer_s_bonus}S from Enhancement bearer (melee)"
                 )
+            shadow_extra = int(sr.get("enhancement_bearer_melee_strength_bonus_shadow_extra", 0) or 0)
+            if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._attacker_in_shadow_of_chaos(attacker):
+                    strength = strength + shadow_extra
+                    wound_result.setdefault("modifiers", []).append(
+                        f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
+                    )
+        if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+            sr = self._unit_special_rules(attacker)
+            r_bonus = int(sr.get("enhancement_bearer_ranged_strength_bonus", 0) or 0)
+            if r_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                strength = strength + r_bonus
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{r_bonus}S from Enhancement bearer (ranged)"
+                )
+            shadow_extra = int(sr.get("enhancement_bearer_ranged_strength_bonus_shadow_extra", 0) or 0)
+            if shadow_extra and self._attacker_is_enhancement_bearer(attacker, sr):
+                if self._attacker_in_shadow_of_chaos(attacker):
+                    strength = strength + shadow_extra
+                    wound_result.setdefault("modifiers", []).append(
+                        f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
+                    )
         # Aura: add Strength to weapons for nearby friendly units.
         try:
             from ..utility.aura_effects import get_aura_strength_bonus

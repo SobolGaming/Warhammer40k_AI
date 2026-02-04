@@ -24,6 +24,37 @@ class TestEnhancementEffects(unittest.TestCase):
         self.assertEqual(status, "Supported")
         self.assertIn("Improve melee weapons' A/S/D by 1", notes)
 
+    def test_classify_daemonic_incursion_enhancements_supported(self):
+        from warhammer40k_ai.rules.enhancement_effects import classify_enhancement_support
+
+        status, notes = classify_enhancement_support(
+            "Khorne Legiones Daemonica model only. Add 1 to the Attacks and Strength characteristics of the bearer's melee weapons. "
+            "While the bearer is within your army's Shadow of Chaos, add 2 to the Attacks and Strength characteristics of the bearer's melee weapons instead."
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("Bearer melee weapons", notes)
+
+        status, notes = classify_enhancement_support(
+            "Slaanesh Legiones Daemonica model only. Each time the bearer destroys an enemy model with a melee attack, roll one D6, "
+            "adding 1 to the result if the bearer is within your army's Shadow of Chaos. On a 4+, the bearer regains 1 lost wound."
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("melee kill", notes)
+
+        status, notes = classify_enhancement_support(
+            "Nurgle Legiones Daemonica model only. The bearer has the Feel No Pain 5+ ability."
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("Feel No Pain 5+", notes)
+
+        status, notes = classify_enhancement_support(
+            "Tzeentch Legiones Daemonica model only. Add 1 to the Strength characteristic of the bearer's ranged weapons and increase "
+            "the Range characteristic of such weapons by 3\". While the bearer is within your army's Shadow of Chaos, add 2 to the Strength "
+            "characteristic of the bearer's ranged weapons and increase the Range characteristic of such weapons by 6\" instead."
+        )
+        self.assertEqual(status, "Supported")
+        self.assertIn("Bearer ranged weapons", notes)
+
     def test_move_add_uses_modifier_pipeline(self):
         from warhammer40k_ai.units.model import Model
         from warhammer40k_ai.utility.model_base import Base, BaseType

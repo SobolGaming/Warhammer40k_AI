@@ -11968,6 +11968,44 @@ class Game:
                         reason=spec.get("source_ability", ""),
                     )
 
+        try:
+            sr = getattr(attacker_unit, "special_rules", None)
+        except Exception:
+            sr = None
+        if isinstance(sr, dict) and sr.get("enhancement_soulstealer"):
+            if attacker_model is not None:
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                attacker_id = str(getattr(attacker_model, "id", getattr(attacker_model, "_id", "")) or "")
+                if not bearer_id or attacker_id == bearer_id:
+                    wp = _kwargs.get("weapon_profile", None)
+                    pw = getattr(wp, "parent_wargear", None)
+                    if wp is not None and pw is not None and pw.is_melee():
+                        from warhammer40k_ai.utility.dice import get_roll
+                        roll = int(get_roll("D6") or 0)
+                        bonus = 0
+                        try:
+                            army = attacker_unit.get_parent_army()
+                        except Exception:
+                            army = None
+                        try:
+                            mgr = getattr(army, "shadow_of_chaos", None) if army is not None else None
+                            if mgr is not None and hasattr(mgr, "is_unit_within_shadow"):
+                                game = getattr(getattr(army, "player", None), "game", None)
+                                if mgr.is_unit_within_shadow(attacker_unit, game=game):
+                                    bonus = 1
+                        except Exception:
+                            bonus = 0
+                        total = int(roll) + int(bonus)
+                        if total >= 4:
+                            attacker_model.heal(1)
+                            self.event_system.publish(
+                                "model_healed",
+                                model=attacker_model,
+                                unit=attacker_unit,
+                                amount=1,
+                                reason="Soulstealer",
+                            )
+
         from ..rules.reverberating_summons import (
             ABILITY_NAME,
             get_reverberating_summons_candidates,

@@ -278,6 +278,21 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    # The bearer has the Feel No Pain X+ ability.
+    m = re.search(
+        r"(?:the\s+)?bearer\s+has\s+the\s+feel\s+no\s+pain\s+(\d+)\+\s+ability\.",
+        r,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        out.append(
+            EnhancementEffectSpec(
+                kind="bearer_fnp",
+                value=int(m.group(1)),
+                notes=f"Bearer gains Feel No Pain {m.group(1)}+.",
+            )
+        )
+
     # Each time an attack is allocated to the bearer, subtract X from the Damage characteristic of that attack.
     # IMPORTANT: only supported when it is unconditional (no trailing 'If ...' clause).
     m = re.search(
@@ -390,6 +405,55 @@ def parse_enhancement_effects(description: str) -> List[EnhancementEffectSpec]:
             )
         )
 
+    # A'rgath, the King of Blades (Shadow of Chaos conditional melee A/S).
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+attacks\s+and\s+strength\s+characteristics\s+of\s+the\s+bearer'?s\s+melee\s+weapons\.\s*"
+        r"while\s+the\s+bearer\s+is\s+within\s+your\s+army'?s\s+shadow\s+of\s+chaos,\s+add\s+(\d+)\s+to\s+the\s+attacks\s+and\s+strength\s+characteristics\s+of\s+the\s+bearer'?s\s+melee\s+weapons\s+instead\.",
+        r,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        out.append(
+            EnhancementEffectSpec(
+                kind="bearer_melee_attacks_strength_shadow_bonus",
+                value=int(m.group(1)),
+                notes=f"Bearer melee weapons: +{m.group(1)} A/S (Shadow of Chaos: +{m.group(2)} A/S instead).",
+            )
+        )
+
+    # The Everstave (Shadow of Chaos conditional ranged Strength/Range).
+    m = re.search(
+        r"add\s+(\d+)\s+to\s+the\s+strength\s+characteristic\s+of\s+the\s+bearer'?s\s+ranged\s+weapons\s+and\s+increase\s+the\s+range\s+characteristic\s+of\s+such\s+weapons\s+by\s+(\d+)\s*\"\.\s*"
+        r"while\s+the\s+bearer\s+is\s+within\s+your\s+army'?s\s+shadow\s+of\s+chaos,\s+add\s+(\d+)\s+to\s+the\s+strength\s+characteristic\s+of\s+the\s+bearer'?s\s+ranged\s+weapons\s+and\s+increase\s+the\s+range\s+characteristic\s+of\s+such\s+weapons\s+by\s+(\d+)\s*\"\s+instead\.",
+        r,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        out.append(
+            EnhancementEffectSpec(
+                kind="bearer_ranged_strength_range_shadow_bonus",
+                value=int(m.group(1)),
+                notes=(
+                    f"Bearer ranged weapons: +{m.group(1)}S and +{m.group(2)}\" range "
+                    f"(Shadow of Chaos: +{m.group(3)}S and +{m.group(4)}\" range instead)."
+                ),
+            )
+        )
+
+    # Soulstealer (heal on melee kill with Shadow of Chaos bonus).
+    if re.search(
+        r"each\s+time\s+the\s+bearer\s+destroys\s+an\s+enemy\s+model\s+with\s+a\s+melee\s+attack,\s+roll\s+one\s+d6,\s+adding\s+1\s+to\s+the\s+result\s+if\s+the\s+bearer\s+is\s+within\s+your\s+army'?s\s+shadow\s+of\s+chaos\.\s+on\s+a\s+4\+,\s+the\s+bearer\s+regains\s+1\s+lost\s+wound\.",
+        r,
+        flags=re.IGNORECASE,
+    ):
+        out.append(
+            EnhancementEffectSpec(
+                kind="bearer_heal_on_melee_kill_shadow",
+                value=1,
+                notes="On melee kill: D6 (+1 in Shadow of Chaos) on 4+ bearer regains 1 lost wound.",
+            )
+        )
+
     return out
 
 
@@ -426,6 +490,14 @@ def _enhancement_rules_fully_consumed(description: str) -> bool:
         r"each time the bearers unit declares a charge if one or more targets of that charge are within range of an objective marker you can reroll the charge roll",
         # Once per battle: Fights First in Fight phase.
         r"once per battle at the start of the fight phase the bearer can use this enhancement if it does until the end of the phase models in the bearers unit have the fights first ability",
+        # Feel No Pain X+.
+        r"the bearer has the feel no pain \d+ ability",
+        # A'rgath, the King of Blades.
+        r"add \d+ to the attacks and strength characteristics of the bearers melee weapons while the bearer is within your armys shadow of chaos add \d+ to the attacks and strength characteristics of the bearers melee weapons instead",
+        # Soulstealer.
+        r"each time the bearer destroys an enemy model with a melee attack roll one d6 adding 1 to the result if the bearer is within your armys shadow of chaos on a 4 the bearer regains 1 lost wound",
+        # The Everstave.
+        r"add \d+ to the strength characteristic of the bearers ranged weapons and increase the range characteristic of such weapons by \d+ while the bearer is within your armys shadow of chaos add \d+ to the strength characteristic of the bearers ranged weapons and increase the range characteristic of such weapons by \d+ instead",
     )
     return any(re.fullmatch(pat, tokens) for pat in fullmatch_patterns)
 

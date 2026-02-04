@@ -179,6 +179,19 @@ class Enhancement:
             enh_id = ""
 
         try:
+            for eff in self.get_effects():
+                if eff.kind == "bearer_fnp" and eff.supported:
+                    tag = f"enhancement_fnp_{enh_id or name}"
+                    _ensure_enhancement_fnp_entry(
+                        unit,
+                        int(eff.value),
+                        source=str(getattr(self, "name", "") or "Enhancement"),
+                        tag=tag,
+                    )
+        except Exception:
+            pass
+
+        try:
             if hasattr(unit, "_refresh_targeted_stratagem_cp_increase_flags"):
                 unit._refresh_targeted_stratagem_cp_increase_flags()
         except Exception:
@@ -193,6 +206,7 @@ class Enhancement:
         dg_mgr = getattr(army, "death_guard_detachments", None) if army is not None else None
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
+        cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
         try:
             is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
         except Exception:
@@ -226,6 +240,10 @@ class Enhancement:
             is_war_horde = bool(orks_mgr and orks_mgr.is_war_horde())
         except Exception:
             is_war_horde = False
+        try:
+            is_daemonic_incursion = bool(cd_mgr and cd_mgr.is_daemonic_incursion_detachment())
+        except Exception:
+            is_daemonic_incursion = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -416,6 +434,56 @@ class Enhancement:
                 source="Adaptive Biology",
                 tag="adaptive_biology_base",
             )
+
+        if name == "a'rgath, the king of blades" or enh_id == "000008438002":
+            if not is_daemonic_incursion:
+                return
+            unit.special_rules["enhancement_argath_king_of_blades"] = True
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus_shadow_extra"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus_shadow_extra", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_melee_strength_bonus_shadow_extra"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus_shadow_extra", 0) or 0
+            ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "soulstealer" or enh_id == "000008438003":
+            if not is_daemonic_incursion:
+                return
+            unit.special_rules["enhancement_soulstealer"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "the endless gift" or enh_id == "000008438004":
+            if not is_daemonic_incursion:
+                return
+            unit.special_rules["enhancement_endless_gift"] = True
+
+        if name == "the everstave" or enh_id == "000008438005":
+            if not is_daemonic_incursion:
+                return
+            unit.special_rules["enhancement_everstave"] = True
+            unit.special_rules["enhancement_bearer_ranged_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_strength_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_ranged_range_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_range_bonus", 0) or 0
+            ) + 3
+            unit.special_rules["enhancement_bearer_ranged_strength_bonus_shadow_extra"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_strength_bonus_shadow_extra", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_ranged_range_bonus_shadow_extra"] = int(
+                unit.special_rules.get("enhancement_bearer_ranged_range_bonus_shadow_extra", 0) or 0
+            ) + 3
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "daemon weapon of nurgle" or enh_id == "000010123002":
             if not is_virulent_vectorium:

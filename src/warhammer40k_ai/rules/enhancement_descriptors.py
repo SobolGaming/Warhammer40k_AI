@@ -70,14 +70,59 @@ _GORETRACK_ONSLAUGHT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_DESCRIPTORS.values()
 }
 
+_DAEMONIC_INCURSION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000008438002": EnhancementToolDescriptor(
+        enhancement_id="000008438002",
+        name="A'rgath, the King of Blades",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_melee_attacks_strength_bonus_shadow",
+        effect_params={"base_attacks_bonus": 1, "base_strength_bonus": 1, "shadow_multiplier": 2},
+    ),
+    "000008438003": EnhancementToolDescriptor(
+        enhancement_id="000008438003",
+        name="Soulstealer",
+        timing="on_melee_model_destroyed",
+        target="bearer",
+        duration="instant",
+        effect="heal_on_kill_test",
+        effect_params={"roll": "D6", "shadow_bonus": 1, "threshold": 4, "heal": 1},
+    ),
+    "000008438004": EnhancementToolDescriptor(
+        enhancement_id="000008438004",
+        name="The Endless Gift",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_fnp",
+        effect_params={"fnp": 5},
+    ),
+    "000008438005": EnhancementToolDescriptor(
+        enhancement_id="000008438005",
+        name="The Everstave",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_ranged_strength_range_bonus_shadow",
+        effect_params={"base_strength_bonus": 1, "base_range_bonus": 3, "shadow_multiplier": 2},
+    ),
+}
+
+_DAEMONIC_INCURSION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DAEMONIC_INCURSION_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
         desc = _GORETRACK_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _DAEMONIC_INCURSION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
-    return _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
-
+    return _GORETRACK_ONSLAUGHT_BY_NAME.get(key) or _DAEMONIC_INCURSION_BY_NAME.get(key)
