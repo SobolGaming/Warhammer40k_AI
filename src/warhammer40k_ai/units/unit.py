@@ -1707,6 +1707,12 @@ class Unit:
         r"that also targeted that enemy unit this phase",
         re.IGNORECASE,
     )
+    _MELEE_CHARGE_STRENGTH_DAMAGE_RE = re.compile(
+        r"each time a model in (?:this|that) unit makes (?:a|an)? melee attack(?:s)? "
+        r"if (?:this|that) unit made a charge move this turn "
+        r"improve the strength and damage characteristic(?:s)? of that attack by (?P<val>\d+)",
+        re.IGNORECASE,
+    )
     _SPIRIT_MARK_RE = re.compile(
         r"once per turn in your movement phase when this model starts or ends a move select one friendly (?P<keyword>[a-z0-9 ]+) unit within "
         r"(?P<range>\d+)\s*\"?\s*of this model(?: excluding titanic units)? and one enemy unit visible to this model "
@@ -13614,6 +13620,62 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = int(bonus or 0)
         return int(bonus or 0)
+
+    def get_melee_charge_strength_damage_entries(self) -> list[dict]:
+        """
+        Return Strength/Damage bonuses for melee attacks after making a Charge move this turn.
+
+        Supported pattern:
+        "Each time a model in this unit makes a melee attack, if this unit made a Charge move this turn,
+         improve the Strength and Damage characteristics of that attack by X."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "melee_charge_strength_damage_entries"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key] or [])
+
+        entries: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+
+        for member in members:
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = member._strip_eligibility_prefix(text_src)
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._MELEE_CHARGE_STRENGTH_DAMAGE_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    val = int(m.group("val") or 0)
+                except Exception:
+                    val = 0
+                if val <= 0:
+                    continue
+                source = str(name or "Charge melee strength/damage").strip() or "Charge melee strength/damage"
+                key = (source.lower(), int(val))
+                if key in seen:
+                    continue
+                seen.add(key)
+                entries.append({"strength_bonus": int(val), "damage_bonus": int(val), "source": source})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(entries)
+        return list(entries)
 
     def _was_set_up_this_turn(self, *, game=None) -> bool:
         try:

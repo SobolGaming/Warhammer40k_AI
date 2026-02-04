@@ -284,6 +284,59 @@ class WargearProfile:
         sr = getattr(unit, "special_rules", None) if unit is not None else None
         return sr if isinstance(sr, dict) else {}
 
+    def _get_charge_melee_strength_damage_bonus(
+        self,
+        attacker: 'Model',
+        attack_instance: Dict,
+    ) -> tuple[int, int, tuple[str, ...], tuple[str, ...]]:
+        if not (self.parent_wargear and self.parent_wargear.is_melee()):
+            return 0, 0, (), ()
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return 0, 0, (), ()
+        round_state = getattr(unit, "round_state", None)
+        if not (round_state and bool(getattr(round_state, "charged_this_round", False))):
+            return 0, 0, (), ()
+
+        if isinstance(attack_instance, dict) and attack_instance.get("_charge_melee_strength_damage_cached"):
+            return (
+                int(attack_instance.get("charge_melee_strength_bonus", 0) or 0),
+                int(attack_instance.get("charge_melee_damage_bonus", 0) or 0),
+                tuple(attack_instance.get("charge_melee_strength_reasons", ()) or ()),
+                tuple(attack_instance.get("charge_melee_damage_reasons", ()) or ()),
+            )
+
+        entries = []
+        if hasattr(unit, "get_melee_charge_strength_damage_entries"):
+            entries = list(unit.get_melee_charge_strength_damage_entries() or [])
+
+        strength_bonus = 0
+        damage_bonus = 0
+        strength_reasons: list[str] = []
+        damage_reasons: list[str] = []
+
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            s_bonus = int(entry.get("strength_bonus", 0) or 0)
+            d_bonus = int(entry.get("damage_bonus", 0) or 0)
+            source = str(entry.get("source") or "Charge melee bonus").strip() or "Charge melee bonus"
+            if s_bonus:
+                strength_bonus += s_bonus
+                strength_reasons.append(f"+{s_bonus}S from {source} (charged)")
+            if d_bonus:
+                damage_bonus += d_bonus
+                damage_reasons.append(f"+{d_bonus}D from {source} (charged)")
+
+        if isinstance(attack_instance, dict):
+            attack_instance["charge_melee_strength_bonus"] = strength_bonus
+            attack_instance["charge_melee_damage_bonus"] = damage_bonus
+            attack_instance["charge_melee_strength_reasons"] = tuple(strength_reasons)
+            attack_instance["charge_melee_damage_reasons"] = tuple(damage_reasons)
+            attack_instance["_charge_melee_strength_damage_cached"] = True
+
+        return strength_bonus, damage_bonus, tuple(strength_reasons), tuple(damage_reasons)
+
     def _current_phase_name(self, attacker: 'Model') -> str:
         unit = getattr(attacker, "parent_unit", None)
         army = unit.get_parent_army() if unit is not None else None
@@ -6217,6 +6270,13 @@ class WargearProfile:
                             wound_result.setdefault("modifiers", []).append(f"+{s_bonus}S from Sensational Performance")
         except Exception:
             pass
+        # Charge bonus: improve Strength/Damage for melee attacks after a Charge move.
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            s_bonus, _d_bonus, s_reasons, _d_reasons = self._get_charge_melee_strength_damage_bonus(attacker, attack_instance)
+            if s_bonus and isinstance(strength, int):
+                strength = strength + int(s_bonus)
+                if s_reasons:
+                    wound_result.setdefault("modifiers", []).extend(list(s_reasons))
         # Bondsman: Magaera's Duty (+1S vs closest target for ranged attacks).
         try:
             if self._bondsman_magaera_bonus_applies(attacker, target):
@@ -9301,6 +9361,14 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            _s_bonus, d_bonus, _s_reasons, d_reasons = self._get_charge_melee_strength_damage_bonus(attacker, attack_instance)
+            if d_bonus:
+                damage_mods.append(
+                    Modifier(ModifierOp.ADD, int(d_bonus), source="ability:charge_melee_damage_add")
+                )
+                if d_reasons:
+                    damage_result['special_effects'].extend(list(d_reasons))
         # Berzerker Glaive: +1 Damage to melee weapons (excluding Extra Attacks).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():

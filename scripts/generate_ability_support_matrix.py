@@ -2249,6 +2249,7 @@ def _classify_ability_base(
     defensive_wound_penalty_support = _defensive_wound_penalty_support(description)
     strength_gt_toughness_wound_penalty_support = _defensive_strength_gt_toughness_wound_penalty_support(description)
     melee_damage_support = _melee_damage_bonus_support(description)
+    melee_charge_strength_damage_support = _melee_charge_strength_damage_support(description)
     two_melee_weapons_support = _two_melee_weapons_bonus_support(description)
     attached_possessed_support = _attached_possessed_formation_bonus_support(description)
     attached_battleline_infiltrators_support = _attached_battleline_infiltrators_scouts_support(description)
@@ -2446,6 +2447,8 @@ def _classify_ability_base(
         return strength_gt_toughness_wound_penalty_support
     if melee_damage_support:
         return melee_damage_support
+    if melee_charge_strength_damage_support:
+        return melee_charge_strength_damage_support
     if two_melee_weapons_support:
         return two_melee_weapons_support
     if attached_possessed_support:
@@ -4838,6 +4841,24 @@ def _melee_damage_bonus_support(description: str) -> Optional[Tuple[str, str]]:
         return None
     val = m.group("val") or m.group("val2")
     return ("Supported", f"Melee attacks vs MONSTER/VEHICLE get +{val} Damage.")
+
+
+def _melee_charge_strength_damage_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time a model in (?:this|that) unit makes (?:a|an)? melee attack(?:s)? "
+        r"if (?:this|that) unit made a charge move this turn "
+        r"improve the strength and damage characteristic(?:s)? of that attack by (?P<val>\d+)"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    val = m.group("val")
+    return ("Supported", f"Melee attacks after charging: +{val} Strength and +{val} Damage.")
 
 
 def _end_of_fight_embark_support(description: str) -> Optional[Tuple[str, str]]:
