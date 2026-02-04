@@ -2521,6 +2521,29 @@ class BattlePhaseHandler(BasePhaseHandler):
                     payload = {"target_unit_ids": list(selected_ids or [])}
                     value, apply_result = resolve_decision_value(self.game, req, option_id, result_payload=payload)
                     if value is None or apply_result is None or not getattr(apply_result, "ok", False):
+                        errors = list(getattr(apply_result, "errors", ()) or [])
+                        if any("Formless Horror" in str(err or "") for err in errors):
+                            # Re-open target selection; Formless Horror gate requires a new choice.
+                            refreshed = []
+                            for t in list(eligible_targets or []):
+                                if t is None:
+                                    continue
+                                try:
+                                    if hasattr(fighting_unit, "_formless_horror_target_blocked"):
+                                        if fighting_unit._formless_horror_target_blocked(t, game=self.game):
+                                            continue
+                                except Exception:
+                                    pass
+                                refreshed.append(t)
+                            if refreshed:
+                                self.game_view.fight_target_selection_dialog.show(
+                                    fighting_unit,
+                                    refreshed,
+                                    on_target_selected,
+                                    on_cancel,
+                                    decision_request=req,
+                                )
+                            return
                         value = [t for t in list(eligible_targets or []) if t is not None]
                     if not value:
                         value = [t for t in list(eligible_targets or []) if t is not None]

@@ -38,6 +38,7 @@ class ShadowOfChaosManager:
         "greater daemon of slaanesh": "SLAANESH",
         "greater daemon of tzeentch": "TZEENTCH",
     }
+    SHADOW_OF_KHORNE_ABILITY = "SHADOW OF KHORNE (AURA)"
 
     def __init__(self, army=None):
         self.army = army
@@ -125,6 +126,19 @@ class ShadowOfChaosManager:
         return False
 
     @classmethod
+    def _unit_has_shadow_of_khorne(cls, unit) -> bool:
+        if unit is None:
+            return False
+        abilities = cls._iter_unit_abilities(unit)
+        if abilities:
+            target = cls._norm_text(cls.SHADOW_OF_KHORNE_ABILITY)
+            for ab in abilities:
+                name = cls._norm_text(getattr(ab, "name", "") or "")
+                if name == target or "shadow of khorne" in name:
+                    return True
+        return False
+
+    @classmethod
     def _unit_god_keywords(cls, unit) -> set[str]:
         if unit is None:
             return set()
@@ -190,6 +204,23 @@ class ShadowOfChaosManager:
         return out
 
     @classmethod
+    def _army_shadow_of_khorne_units(cls, army) -> list:
+        if army is None:
+            return []
+        out = []
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+            except Exception:
+                pass
+            if cls._unit_has_shadow_of_khorne(unit):
+                out.append(unit)
+        return out
+
+    @classmethod
     def unit_within_dark_master_aura(cls, unit, army, *, game=None) -> bool:
         if unit is None or army is None:
             return False
@@ -206,6 +237,30 @@ class ShadowOfChaosManager:
         except Exception:
             return False
         for source in cls._army_dark_master_units(army):
+            try:
+                if unit_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    @classmethod
+    def unit_within_shadow_of_khorne_aura(cls, unit, army, *, game=None) -> bool:
+        if unit is None or army is None:
+            return False
+        try:
+            if game is None:
+                player = getattr(army, "player", None)
+                game = getattr(player, "game", None) if player is not None else None
+        except Exception:
+            game = None
+        if game is None:
+            return False
+        try:
+            from ..utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return False
+        for source in cls._army_shadow_of_khorne_units(army):
             try:
                 if unit_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
                     return True
@@ -291,6 +346,8 @@ class ShadowOfChaosManager:
         except Exception:
             player_army = None
         if self.unit_within_dark_master_aura(unit, player_army, game=game):
+            return True
+        if self.unit_within_shadow_of_khorne_aura(unit, player_army, game=game):
             return True
         try:
             unit_army = unit.get_parent_army()

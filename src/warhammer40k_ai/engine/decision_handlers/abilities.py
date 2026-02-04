@@ -36,6 +36,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_QUARRY,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
+    DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
     DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
@@ -2512,6 +2513,57 @@ def _apply_start_shooting_battleshock_target(game: object, request: DecisionRequ
     return target_unit
 
 
+def _validate_battleshock_clear_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    target_val = payload.get("unit_id") or payload.get("target_unit_id")
+    if not target_val:
+        return ("Battle-shock clear requires target unit.",)
+    if resolve_unit(game, target_val) is None:
+        return ("Battle-shock clear target not found.",)
+    return ()
+
+
+def _apply_battleshock_clear_target(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    target_unit = resolve_unit(game, payload.get("unit_id") or payload.get("target_unit_id"))
+    if target_unit is None:
+        raise RuntimeError("Battle-shock clear target not found.")
+    ctx = dict(getattr(request, "context", {}) or {})
+    source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+    ability_name = str(ctx.get("ability_name", "") or payload.get("ability_name", "") or "Battle-shock clear").strip()
+    ability_key = str(ctx.get("ability_key", "") or "start_any_phase_clear_battleshock").strip().lower()
+    cleared = False
+    try:
+        if target_unit.is_battle_shocked():
+            target_unit.clear_battle_shock()
+            cleared = True
+    except Exception:
+        cleared = False
+    if cleared and source_unit is not None:
+        try:
+            source_unit.mark_unit_once_per_battle_used(ability_key, ability_name=ability_name)
+        except Exception:
+            pass
+    try:
+        from ...utility.event_bus import append_action
+        player = _resolve_player(game, request, payload)
+        if player is None and source_unit is not None:
+            player = getattr(source_unit.get_parent_army(), "player", None)
+        if player is not None:
+            label = "cleared Battle-shock" if cleared else "could not clear Battle-shock"
+            append_action(player, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} {label}.")
+    except Exception:
+        pass
+    return target_unit
+
+
 def _validate_post_shoot_mortal_wounds_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     errors = list(validate_option_choice(request, result))
     if errors:
@@ -4074,6 +4126,11 @@ register_decision_handler(
     DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
     validate=_validate_start_shooting_battleshock_target,
     apply=_apply_start_shooting_battleshock_target,
+)
+register_decision_handler(
+    DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
+    validate=_validate_battleshock_clear_target,
+    apply=_apply_battleshock_clear_target,
 )
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,

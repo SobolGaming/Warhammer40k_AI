@@ -70,6 +70,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `SELECT_EXPLODING_HORRORS_TARGET` — Choose Exploding Horrors target.
 - `SELECT_EXPLODING_HORRORS_MODELS` — Choose models for Exploding Horrors.
 - `CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET` — Choose post-shoot Battle-shock target.
+- `CHOOSE_BATTLESHOCK_CLEAR_TARGET` — Choose a Battle-shocked unit to rally.
 - `CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET` — Choose post-shoot mortal wounds target.
 - `CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET` — Choose post-shoot Wracked Agonies target.
 - `CHOOSE_POST_SHOOT_SUPPRESSION_TARGET` — Choose post-shoot suppression target.

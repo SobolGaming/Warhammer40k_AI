@@ -1635,6 +1635,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("AS", "Spiritual Fortitude"): ("Supported", "Feel No Pain 4+ against Psychic attacks and mortal wounds."),
         ("QT", "Taskmaster (Aura)"): ("Supported", "WAR DOG models within 9\" re-roll Hit rolls of 1 for ranged attacks."),
         ("QT", "Frenzied Rampage (Aura)"): ("Supported", "WAR DOG models within 9\" re-roll Hit rolls of 1 for melee attacks."),
+        ("CD", "Shadow of Khorne (Aura)"): (
+            "Supported",
+            "Shadow of Chaos extends within 6\" of the fortification; friendly KHORNE LEGIONES DAEMONICA units within 6\" can re-roll Battle-shock tests.",
+        ),
         ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
         ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
         ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),
@@ -1702,6 +1706,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITANIC units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
+        ),
+        ("CD", "Formless Horror"): (
+            "Supported",
+            "Each time an enemy unit wishes to target The Changeling, it must take a Battle-shock test; on failure it cannot target The Changeling for the rest of the phase.",
         ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
@@ -2280,6 +2288,9 @@ def _classify_ability_base(
     post_shoot_leadership_debuff_support = _post_shoot_leadership_debuff_support(description)
     aura_battleshock_leadership_penalty_support = _aura_battleshock_leadership_penalty_support(description)
     fight_phase_engagement_battleshock_support = _fight_phase_engagement_battleshock_support(description)
+    fight_phase_aura_battleshock_support = _fight_phase_aura_battleshock_support(description)
+    charge_end_engagement_battleshock_support = _charge_end_engagement_battleshock_support(description)
+    start_any_phase_battleshock_clear_support = _start_any_phase_battleshock_clear_support(description)
     fight_phase_below_starting_strength_fight_first_support = _fight_phase_below_starting_strength_fight_first_support(description)
     fight_phase_end_mortal_support = _fight_phase_end_mortal_wounds_support(description)
     fight_phase_melee_ap_boost_support = _fight_phase_once_melee_attacks_ap_support(description)
@@ -2509,6 +2520,12 @@ def _classify_ability_base(
         return aura_battleshock_leadership_penalty_support
     if fight_phase_engagement_battleshock_support:
         return fight_phase_engagement_battleshock_support
+    if fight_phase_aura_battleshock_support:
+        return fight_phase_aura_battleshock_support
+    if charge_end_engagement_battleshock_support:
+        return charge_end_engagement_battleshock_support
+    if start_any_phase_battleshock_clear_support:
+        return start_any_phase_battleshock_clear_support
     if fight_phase_end_mortal_support:
         return fight_phase_end_mortal_support
     if fight_phase_melee_ap_boost_support:
@@ -5465,7 +5482,7 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
         r"(?: subtracting (?P<penalty>\d+) from (?:that test|the result) if that enemy unit is below half strength)?"
     )
     pattern_unit = (
-        r"(?:at the )?start of the fight phase each enemy unit within engagement range of one or more units from your army "
+        r"(?:at the )?start of the fight phase each enemy unit within engagement range of one or more units (?:from your army )?"
         r"with this ability must take a battle shock test"
         r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?"
     )
@@ -5480,6 +5497,77 @@ def _fight_phase_engagement_battleshock_support(description: str) -> Optional[Tu
             f"Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test; Below Half-strength suffers -{m.group('penalty')}.",
         )
     return ("Supported", "Start of Fight phase: each enemy unit in Engagement Range takes a Battle-shock test.")
+
+
+def _fight_phase_aura_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"at the start of the fight phase (?:each|every) enemy unit"
+        r"(?: excluding (?P<exclude>[a-z0-9 ]+?))? within (?P<range>\d+) of this model must take a battle shock test"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except Exception:
+        rng = 0
+    if rng <= 0:
+        return None
+    note = f"Start of Fight phase: enemy units within {rng}\" take a Battle-shock test."
+    exclude_raw = str(m.group("exclude") or "").strip()
+    if exclude_raw:
+        tokens = []
+        for token in re.split(r"\band\b|,", exclude_raw):
+            t = str(token or "").strip().upper()
+            if t:
+                tokens.append(t)
+        if tokens:
+            note = f"Start of Fight phase: enemy units within {rng}\" (excluding {', '.join(tokens)}) take a Battle-shock test."
+    return ("Supported", note)
+
+
+def _charge_end_engagement_battleshock_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time this model s unit ends a charge move each enemy unit within engagement range of that unit must take a battle shock test"
+    )
+    if not re.fullmatch(pattern, norm):
+        return None
+    return ("Supported", "After this unit ends a Charge move, engaged enemy units take Battle-shock tests.")
+
+
+def _start_any_phase_battleshock_clear_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"once per battle at the start of any phase you can select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is battle shocked "
+        r"and within (?P<range>\d+) of (?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) that unit is no longer battle shocked"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        rng = int(m.group("range") or 0)
+    except Exception:
+        rng = 0
+    if rng <= 0:
+        return None
+    keyword = str(m.group("keyword") or "").strip()
+    keyword_label = keyword.upper() if keyword else "friendly"
+    note = f"Once per battle, start of any phase: clear Battle-shock on a {keyword_label} unit within {rng}\"."
+    return ("Supported", note)
 
 
 def _fight_phase_below_starting_strength_fight_first_support(description: str) -> Optional[Tuple[str, str]]:

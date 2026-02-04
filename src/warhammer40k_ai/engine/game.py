@@ -1107,6 +1107,95 @@ class Game:
                             payload={"unit_id": unit_id, "ability_key": ability_key},
                             instance_key=f"{unit_id}:{ability_key}",
                         )
+
+                    # Unit-level: start-of-any-phase Battle-shock clear (once per battle).
+                    try:
+                        specs = list(root.unit_start_any_phase_clear_battleshock_specs() or [])
+                    except Exception:
+                        specs = []
+                    for spec in specs:
+                        ability_key = str(spec.get("ability_key") or "start_any_phase_clear_battleshock").strip().lower()
+                        if not ability_key:
+                            ability_key = "start_any_phase_clear_battleshock"
+                        if root.has_used_unit_once_per_battle(ability_key):
+                            continue
+                        model_name = str(spec.get("model_name", "") or "").strip()
+                        anchor_model = None
+                        if model_name:
+                            try:
+                                anchor_model = root._find_model_named(model_name)
+                            except Exception:
+                                anchor_model = None
+                        if anchor_model is None:
+                            try:
+                                anchor_model = next(
+                                    (m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", False)),
+                                    None,
+                                )
+                            except Exception:
+                                anchor_model = None
+                        if anchor_model is None:
+                            continue
+
+                        keyword = str(spec.get("keyword", "") or "").strip()
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        if range_value <= 0 or not keyword:
+                            continue
+                        candidates = []
+                        seen_candidates: set[str] = set()
+                        for other in list(getattr(army, "units", []) or []):
+                            if other is None:
+                                continue
+                            try:
+                                other_root = other.get_attached_unit_root()
+                            except Exception:
+                                other_root = other
+                            if other_root is None:
+                                continue
+                            oid = str(get_entity_id(other_root))
+                            if not oid or oid in seen_candidates:
+                                continue
+                            seen_candidates.add(oid)
+                            try:
+                                if not other_root.is_alive() or not getattr(other_root, "deployed", True):
+                                    continue
+                            except Exception:
+                                continue
+                            try:
+                                if other_root.is_in_reserves() or other_root.is_embarked:
+                                    continue
+                            except Exception:
+                                pass
+                            try:
+                                if not other_root.is_battle_shocked():
+                                    continue
+                            except Exception:
+                                continue
+                            try:
+                                if not root._unit_matches_keyword_phrase(other_root, keyword):
+                                    continue
+                            except Exception:
+                                continue
+                            try:
+                                if not root._model_within_range_of_unit(anchor_model, other_root, float(range_value)):
+                                    continue
+                            except Exception:
+                                continue
+                            candidates.append(other_root)
+
+                        if not candidates:
+                            continue
+                        self._queue_start_any_phase_battleshock_clear(
+                            player=p,
+                            source_unit=root,
+                            model=anchor_model,
+                            candidates=candidates,
+                            spec=spec,
+                            phase_label=pname.replace("_", " ").title(),
+                        )
         if pname == "FIGHT_PHASE":
             if player is None:
                 return
@@ -2031,24 +2120,58 @@ class Game:
                     if not getattr(model, "is_alive", False):
                         continue
                     specs = unit.model_start_fight_phase_engagement_battleshock_specs(model)
-                    if not specs:
-                        continue
-                    for spec in specs:
-                        source = str(spec.get("source", "") or "Fight phase Battle-shock").strip()
-                        penalty = 0
-                        try:
-                            penalty = int(spec.get("penalty", 0) or 0)
-                        except Exception:
+                    if specs:
+                        for spec in specs:
+                            source = str(spec.get("source", "") or "Fight phase Battle-shock").strip()
                             penalty = 0
+                            try:
+                                penalty = int(spec.get("penalty", 0) or 0)
+                            except Exception:
+                                penalty = 0
+                            for enemy_root in enemy_roots:
+                                if not model_within_engagement_range_of_unit(model, enemy_root):
+                                    continue
+                                mod = 0
+                                reason = ""
+                                if penalty and enemy_root.is_below_half_strength():
+                                    mod = -penalty
+                                    reason = "Below Half-strength"
+                                _apply_battleshock(enemy_root, modifier=mod, reason=reason)
+                                from ..utility.event_bus import append_action
+                                if p is not None:
+                                    label = f"{getattr(model, 'name', 'Model')} {source}".strip()
+                                    append_action(
+                                        p,
+                                        f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
+                                    )
+
+                    aura_specs = []
+                    try:
+                        aura_specs = unit.model_start_fight_phase_aura_battleshock_specs(model) or []
+                    except Exception:
+                        aura_specs = []
+                    for spec in aura_specs:
+                        source = str(spec.get("source", "") or "Fight phase Battle-shock").strip()
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        if range_value <= 0:
+                            continue
+                        exclude_keywords = list(spec.get("exclude_keywords", []) or [])
                         for enemy_root in enemy_roots:
-                            if not model_within_engagement_range_of_unit(model, enemy_root):
+                            try:
+                                excluded = any(enemy_root.has_any_keyword(kw) for kw in exclude_keywords)
+                            except Exception:
+                                excluded = False
+                            if excluded:
                                 continue
-                            mod = 0
-                            reason = ""
-                            if penalty and enemy_root.is_below_half_strength():
-                                mod = -penalty
-                                reason = "Below Half-strength"
-                            _apply_battleshock(enemy_root, modifier=mod, reason=reason)
+                            try:
+                                if not unit._model_within_range_of_unit(model, enemy_root, float(range_value)):
+                                    continue
+                            except Exception:
+                                continue
+                            _apply_battleshock(enemy_root)
                             from ..utility.event_bus import append_action
                             if p is not None:
                                 label = f"{getattr(model, 'name', 'Model')} {source}".strip()
@@ -5063,6 +5186,91 @@ class Game:
         request = DecisionRequest.create(
             DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
             f"{ability_name}: select a unit to take a Battle-shock test.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_start_any_phase_battleshock_clear(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+        phase_label: str,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Start of phase Battle-shock clear").strip() or "Start of phase Battle-shock clear"
+        ability_key = str(spec.get("ability_key", "") or ability_name).strip().lower()
+        if not ability_key:
+            ability_key = "start_any_phase_clear_battleshock"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("unit_id", "")) != str(unit_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "") != ability_key:
+                    continue
+                return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        options.extend(
+            [
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"unit_id": get_entity_id(cand)},
+                )
+                for cand in sorted(list(candidates), key=_cand_sort_key)
+            ]
+        )
+        if len(options) <= 1:
+            return None
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        ctx = {
+            "ability": "start_any_phase_clear_battleshock",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase": str(phase_label or "").strip() or "Phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
+            f"{ability_name}: select a Battle-shocked unit to rally (or None).",
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
@@ -9708,6 +9916,76 @@ class Game:
                 allow_skip=False,
                 phase="Charge phase",
             )
+
+    def _on_unit_move_ended_charge_battleshock(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if (action or "").strip().lower() != "charge":
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive():
+            return
+
+        specs = []
+        try:
+            specs = list(root.unit_charge_end_engagement_battleshock_specs() or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return
+
+        enemies = list(game_map.get_enemy_units(root) or [])
+        engaged = []
+        for enemy in enemies:
+            if enemy is None:
+                continue
+            try:
+                if not getattr(enemy, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            if not enemy.is_alive():
+                continue
+            if enemy.is_in_reserves() or enemy.is_embarked:
+                continue
+            if not game_map.is_within_engagement_range(root, enemy):
+                continue
+            try:
+                enemy_root = enemy.get_attached_unit_root()
+            except Exception:
+                enemy_root = enemy
+            if enemy_root is None or not enemy_root.is_alive():
+                continue
+            engaged.append(enemy_root)
+
+        if not engaged:
+            return
+
+        tested: set[tuple[str, str]] = set()
+        for spec in specs:
+            source = str(spec.get("source", "") or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
+            for enemy_root in engaged:
+                key = (str(get_entity_id(enemy_root)), source.lower())
+                if key in tested:
+                    continue
+                tested.add(key)
+                try:
+                    enemy_root.take_battle_shock_test(int(getattr(self, "turn", 0) or 1))
+                except Exception:
+                    pass
+                from ..utility.event_bus import append_action
+                player = root.get_parent_army().player if root.get_parent_army() is not None else None
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{source}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
+                    )
 
     def resolve_move_over_mortal_wounds(self, unit, model, target_unit, spec) -> None:
         if unit is None or target_unit is None or not isinstance(spec, dict):

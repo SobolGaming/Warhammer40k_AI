@@ -51,6 +51,13 @@ def _validate_select_targets(game: object, request: DecisionRequest, result: Dec
     unit_val = payload.get("unit_id", request.context.get("unit_id"))
     if unit_val is not None and resolve_unit(game, unit_val) is None:
         return ("Fighting unit not found for target selection.",)
+    attacker = resolve_unit(game, unit_val) if unit_val is not None else None
+    if attacker is not None:
+        try:
+            if hasattr(attacker, "_formless_horror_has_pending_gate") and attacker._formless_horror_has_pending_gate():
+                return ("Formless Horror: Battle-shock test pending.",)
+        except Exception:
+            pass
     target_ids = result.payload.get("target_unit_ids")
     if target_ids is None:
         target_single = result.payload.get("target_unit_id")
@@ -60,8 +67,20 @@ def _validate_select_targets(game: object, request: DecisionRequest, result: Dec
     if not isinstance(target_ids, list) or not target_ids:
         return ("Target selection requires a non-empty target_unit_ids list.",)
     for target_val in target_ids:
-        if resolve_unit(game, target_val) is None:
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
             return ("Target unit not found.",)
+        if attacker is not None:
+            try:
+                allowed, reason = attacker._formless_horror_gate(
+                    target_unit,
+                    game=game,
+                    allow_trigger=True,
+                )
+            except Exception:
+                allowed, reason = True, None
+            if not allowed:
+                return (str(reason or "Formless Horror: target not allowed."),)
     return ()
 
 

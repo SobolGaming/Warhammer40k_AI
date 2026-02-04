@@ -351,7 +351,27 @@ class ShootingDeclarationDialog(BaseDialog):
         
         # Filter out dead units
         enemy_units = [unit for unit in enemy_units if unit.is_alive()]
-        
+
+        # Formless Horror: remove targets this unit is blocked from targeting this phase.
+        try:
+            game = None
+            if self.game_view is not None:
+                game = getattr(self.game_view, "game", None)
+            if game is None and self.unit is not None:
+                try:
+                    game = self.unit.get_parent_army().player.game
+                except Exception:
+                    game = None
+            filtered = []
+            for target in list(enemy_units or []):
+                if hasattr(self.unit, "_formless_horror_target_blocked"):
+                    if self.unit._formless_horror_target_blocked(target, game=game):
+                        continue
+                filtered.append(target)
+            enemy_units = filtered
+        except Exception:
+            pass
+
         return enemy_units
     
     def _can_use_weapon(self, weapon_profile):
@@ -991,11 +1011,19 @@ class ShootingDeclarationDialog(BaseDialog):
             print("ERROR: Missing decision option for shooting execute")
             return
         payload = {"declarations": self._build_declarations_payload()}
-        success = self._resolve_decision(option_id, payload)
+        success, apply_result = self._resolve_decision(option_id, payload)
         self.last_execution_success = bool(success)
         if success:
             print(f"INFO: {self.unit.name} completed shooting phase")
         else:
+            errors = list(getattr(apply_result, "errors", ()) or [])
+            if any("Formless Horror" in str(err or "") for err in errors):
+                print(f"INFO: {self.unit.name} Formless Horror gating prevents current declaration; adjust targets.")
+                try:
+                    self.available_targets = self._get_available_targets()
+                except Exception:
+                    pass
+                return
             print(f"ERROR: {self.unit.name} failed to execute shooting")
         if self.callback:
             self.callback(bool(success))
@@ -1010,9 +1038,9 @@ class ShootingDeclarationDialog(BaseDialog):
             self.callback(False)
         self.hide()
 
-    def _resolve_decision(self, option_id: str, payload: dict) -> bool:
+    def _resolve_decision(self, option_id: str, payload: dict):
         if not option_id or self.decision_request is None:
-            return False
+            return False, None
         game = None
         if self.game_view is not None:
             game = getattr(self.game_view, "game", None)
@@ -1022,18 +1050,18 @@ class ShootingDeclarationDialog(BaseDialog):
             except Exception:
                 game = None
         if game is None:
-            return False
+            return False, None
         try:
             from ...utility.decision_utils import resolve_decision_value
         except Exception:
-            return False
-        value, _apply = resolve_decision_value(
+            return False, None
+        value, apply_result = resolve_decision_value(
             game,
             self.decision_request,
             option_id,
             result_payload=payload,
         )
-        return bool(value)
+        return bool(value), apply_result
 
     def _option_id_for_action(self, action: str) -> str:
         from ..decision_ui_utils import option_id_for_action

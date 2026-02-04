@@ -995,6 +995,46 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
     return modifiers
 
 
+def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str]:
+    """
+    Return reroll sources from friendly auras that allow re-rolling Battle-shock tests.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if unit is None:
+        return []
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return []
+
+    sources: list[str] = []
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_friendly_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            if not _is_aura_ability(ab):
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+
+            # Shadow of Khorne (Aura): friendly KHORNE LEGIONES DAEMONICA within 6" can re-roll Battle-shock tests.
+            if _norm_name(ab_name) == _norm_name("Shadow of Khorne (Aura)"):
+                try:
+                    if not (unit.has_any_keyword("LEGIONES DAEMONICA") and unit.has_any_keyword("KHORNE")):
+                        continue
+                except Exception:
+                    continue
+                if not unit_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
+                    continue
+                sources.append(str(ab_name or "Shadow of Khorne (Aura)"))
+                continue
+
+    return list(sources)
+
+
 def _parse_melee_attacks_aura(ability) -> Optional[dict]:
     """
     Strict parser for:

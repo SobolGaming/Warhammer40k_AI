@@ -82,6 +82,11 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
     unit = get_unit(game, unit_id)
     if unit is None:
         return ("Shooting unit not found.",)
+    try:
+        if hasattr(unit, "_formless_horror_has_pending_gate") and unit._formless_horror_has_pending_gate():
+            return ("Formless Horror: Battle-shock test pending.",)
+    except Exception:
+        pass
     if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
         return ()
     declarations = result.payload.get("declarations")
@@ -111,8 +116,20 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 return ("Declaration missing target_unit_id.",)
             if force_target_id and target_id != force_target_id:
                 return ("Declaration target must match forced target unit.",)
-            if get_unit(game, target_id) is None:
+            target_unit = get_unit(game, target_id)
+            if target_unit is None:
                 return ("Declaration target unit not found.",)
+            if unit is not None:
+                try:
+                    allowed, reason = unit._formless_horror_gate(
+                        target_unit,
+                        game=game,
+                        allow_trigger=True,
+                    )
+                except Exception:
+                    allowed, reason = True, None
+                if not allowed:
+                    return (str(reason or "Formless Horror: target not allowed."),)
         else:
             if force_target_id:
                 return ("Plasma Warhead cannot be used with a forced target unit.",)
@@ -237,7 +254,13 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         declarations.append(entry)
     if not declarations:
         return False
-    return bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
+    success = bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
+    try:
+        if hasattr(unit, "_clear_formless_horror_allowed"):
+            unit._clear_formless_horror_allowed()
+    except Exception:
+        pass
+    return bool(success)
 
 
 def _validate_firing_deck(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

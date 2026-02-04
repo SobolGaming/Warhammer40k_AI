@@ -383,6 +383,11 @@ class FightPhaseManager:
         # Execute the complete fight sequence
         ui_callback = getattr(self, 'on_movement_required', None)
         self._execute_fight_sequence_with_declarations(fighting_unit, target_declarations, current_player, opponent_player, ui_callback)
+        try:
+            if hasattr(fighting_unit, "_clear_formless_horror_allowed"):
+                fighting_unit._clear_formless_horror_allowed()
+        except Exception:
+            pass
     
     def _get_eligible_targets(self, fighting_unit: Unit) -> List[Unit]:
         """Get all eligible targets for a fighting unit."""
@@ -410,6 +415,12 @@ class FightPhaseManager:
                             continue
                         if bool(getattr(fighting_unit, "is_aircraft", False)) and not bool(getattr(enemy_root, "is_flying", False)):
                             continue
+                    except Exception:
+                        pass
+                    try:
+                        if hasattr(fighting_unit, "_formless_horror_target_blocked"):
+                            if fighting_unit._formless_horror_target_blocked(enemy_root, game=self.game):
+                                continue
                     except Exception:
                         pass
                     reason = None

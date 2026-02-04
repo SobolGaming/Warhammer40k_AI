@@ -3301,6 +3301,7 @@ class GameView:
                 DECISION_CHOOSE_BATTLE_FOCUS_MANEUVER,
                 DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
                 DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
+                DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
                 DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
@@ -4422,6 +4423,7 @@ class GameView:
         if decision_type in (
             DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
             DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
+            DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
             DECISION_CHOOSE_POST_SHOOT_MORTAL_WOUNDS_TARGET,
             DECISION_CHOOSE_POST_SHOOT_WRACKED_AGONIES_TARGET,
             DECISION_CHOOSE_POST_SHOOT_AFLAME_TARGET,
@@ -4467,6 +4469,15 @@ class GameView:
             elif decision_type == DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET:
                 title = ability_name or "Start of Shooting phase Battle-shock"
                 subtitle = f"{model_name or 'Model'}: select a unit to take a Battle-shock test."
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+            elif decision_type == DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET:
+                title = ability_name or "Battle-shock Clear"
+                subtitle = f"{model_name or 'Model'}: select a Battle-shocked unit to rally (or None)."
                 try:
                     range_value = int(ctx.get("range", 0) or 0)
                 except Exception:

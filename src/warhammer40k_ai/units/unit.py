@@ -1825,9 +1825,23 @@ class Unit:
         re.IGNORECASE,
     )
     _FIGHT_PHASE_ENGAGEMENT_BATTLESHOCK_UNIT_RE = re.compile(
-        r"at the start of the fight phase each enemy unit within engagement range of one or more units from your army with "
-        r"this ability must take a battle shock test"
+        r"at the start of the fight phase each enemy unit within engagement range of one or more units "
+        r"(?:from your army )?with this ability must take a battle shock test"
         r"(?: subtracting (?P<penalty>\d+) from the result if that enemy unit is below half strength)?",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_RANGE_BATTLESHOCK_RE = re.compile(
+        r"at the start of the fight phase (?:each|every) enemy unit(?: excluding (?P<exclude>[a-z0-9 ]+?))? within "
+        r"(?P<range>\d+)\s*\"?\s*of this model must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
+        r"each time this model s unit ends a charge move each enemy unit within engagement range of that unit must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _START_ANY_PHASE_CLEAR_BATTLESHOCK_RE = re.compile(
+        r"once per battle at the start of any phase you can select one friendly (?P<keyword>[a-z0-9 ]+?) unit that is battle shocked "
+        r"and within (?P<range>\d+)\s*\"?\s*of (?:this model|the bearer|this unit s (?P<model>[a-z0-9 ]+?) model) that unit is no longer battle shocked",
         re.IGNORECASE,
     )
     _FIGHT_SELECTED_ENEMY_MELEE_HIT_PENALTY_RE = re.compile(
@@ -4764,25 +4778,232 @@ class Unit:
             sr["titanic_agility_source"] = agility_source
         self.special_rules = sr
 
-    def _unit_contains_model_named(self, target: str) -> bool:
+    def _find_model_named(self, target: str):
         norm_target = self._normalize_attached_unit_name(target)
         if not norm_target:
-            return False
+            return None
         for article in ("an ", "a "):
             if norm_target.startswith(article):
                 norm_target = norm_target[len(article):].strip()
         if not norm_target:
-            return False
+            return None
         target_tokens = set(norm_target.split())
         for model in list(getattr(self, "models", []) or []):
+            try:
+                if not getattr(model, "is_alive", True):
+                    continue
+            except Exception:
+                pass
             name = self._normalize_attached_unit_name(getattr(model, "name", ""))
             if not name:
                 continue
             if norm_target in name:
-                return True
+                return model
             if target_tokens and target_tokens.issubset(set(name.split())):
-                return True
-        return False
+                return model
+        return None
+
+    def _unit_contains_model_named(self, target: str) -> bool:
+        return self._find_model_named(target) is not None
+
+    def has_formless_horror(self) -> bool:
+        """Return True if this unit has the Formless Horror ability."""
+        cache_key = "formless_horror"
+        cache = getattr(self, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return bool(cache.get(cache_key))
+
+        found = False
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            name_norm = self._normalize_keyword_phrase(str(name or ""))
+            if name_norm == "formless horror":
+                found = True
+                break
+            text_src = self._normalize_rules_text(desc or name or "")
+            if "formless horror" in str(text_src or "").lower():
+                found = True
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = bool(found)
+        self._ability_cache = cache
+        return bool(found)
+
+    def _formless_horror_target_blocked(self, target_unit, *, game=None) -> bool:
+        """Return True if this unit is blocked from targeting target_unit due to Formless Horror this phase."""
+        if target_unit is None:
+            return False
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return False
+        try:
+            if not bool(target_root.has_formless_horror()):
+                return False
+        except Exception:
+            return False
+
+        phase_name = ""
+        if game is None:
+            try:
+                game = getattr(self.get_parent_army().player, "game", None)
+            except Exception:
+                game = None
+        try:
+            phase = getattr(game, "phase", None) if game is not None else None
+            phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
+        except Exception:
+            phase_name = ""
+
+        try:
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+        target_id = str(get_entity_id(target_root)) if callable(get_entity_id) else str(getattr(target_root, "_id", "") or "")
+
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        blocked = sr.get("formless_horror_blocked")
+        if not isinstance(blocked, dict):
+            return False
+        # Clean up stale phases (best-effort).
+        if phase_name:
+            changed = False
+            for key in list(blocked.keys()):
+                if key != phase_name:
+                    blocked.pop(key, None)
+                    changed = True
+            if changed:
+                sr["formless_horror_blocked"] = blocked
+                self.special_rules = sr
+        if not phase_name:
+            # If phase is unknown, be permissive.
+            return False
+        blocked_ids = {str(v) for v in list(blocked.get(phase_name, []) or []) if v is not None}
+        return bool(target_id and target_id in blocked_ids)
+
+    def _formless_horror_gate(
+        self,
+        target_unit,
+        *,
+        game=None,
+        allow_trigger: bool = True,
+    ) -> tuple[bool, str | None]:
+        """
+        Gate targeting a Formless Horror unit. Returns (allowed, reason).
+
+        If allow_trigger is True and the gate has not been resolved for this decision,
+        a Battle-shock test is queued and the gate returns False with a reason.
+        """
+        if target_unit is None:
+            return True, None
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return True, None
+        try:
+            if not bool(target_root.has_formless_horror()):
+                return True, None
+        except Exception:
+            return True, None
+
+        if game is None:
+            try:
+                game = getattr(self.get_parent_army().player, "game", None)
+            except Exception:
+                game = None
+        phase_name = ""
+        try:
+            phase = getattr(game, "phase", None) if game is not None else None
+            phase_name = str(getattr(phase, "name", phase) or "").strip().upper()
+        except Exception:
+            phase_name = ""
+
+        try:
+            from ..utility.entity_ids import get_entity_id
+        except Exception:
+            get_entity_id = None
+        target_id = str(get_entity_id(target_root)) if callable(get_entity_id) else str(getattr(target_root, "_id", "") or "")
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+
+        # Clean up stale phase blocks (best-effort).
+        blocked = sr.get("formless_horror_blocked")
+        if not isinstance(blocked, dict):
+            blocked = {}
+        if phase_name:
+            for key in list(blocked.keys()):
+                if key != phase_name:
+                    blocked.pop(key, None)
+        sr["formless_horror_blocked"] = blocked
+
+        if phase_name and target_id:
+            blocked_ids = {str(v) for v in list(blocked.get(phase_name, []) or []) if v is not None}
+            if target_id in blocked_ids:
+                self.special_rules = sr
+                return False, "Formless Horror: cannot target this unit this phase."
+
+        allowed = sr.get("formless_horror_allowed")
+        if isinstance(allowed, dict):
+            if str(allowed.get("target_id", "") or "") == target_id:
+                entry_phase = str(allowed.get("phase", "") or "").strip().upper()
+                if not entry_phase or not phase_name or entry_phase == phase_name:
+                    self.special_rules = sr
+                    return True, None
+
+        pending = sr.get("formless_horror_pending")
+        if isinstance(pending, dict):
+            pending_target = str(pending.get("target_id", "") or "")
+            # If any pending gate exists, do not queue another.
+            if pending_target:
+                self.special_rules = sr
+                return False, "Formless Horror: Battle-shock test pending."
+
+        if not allow_trigger:
+            self.special_rules = sr
+            return False, "Formless Horror: Battle-shock test required."
+
+        # Queue the Battle-shock test and record pending gate.
+        pending = {
+            "target_id": target_id,
+            "phase": phase_name,
+        }
+        try:
+            if game is not None:
+                pending["turn"] = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            pass
+        sr["formless_horror_pending"] = pending
+        # Ensure the test fires even if other suppressions are active.
+        sr["battle_shock_allow_suppressed_test"] = True
+        self.special_rules = sr
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            self.take_battle_shock_test(current_turn)
+        except Exception:
+            pass
+        return False, "Formless Horror: Battle-shock test required."
+
+    def _clear_formless_horror_allowed(self) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        if "formless_horror_allowed" in sr:
+            sr.pop("formless_horror_allowed", None)
+            self.special_rules = sr
+
+    def _formless_horror_has_pending_gate(self) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        return isinstance(sr.get("formless_horror_pending"), dict)
 
     def _unit_contains_model_with_keyword(self, keyword: str) -> bool:
         kw = str(keyword or "").strip().lower()
@@ -18787,6 +19008,18 @@ class Unit:
             except Exception:
                 pass
 
+        # Formless Horror: if this unit is blocked from targeting this unit this phase, disallow.
+        try:
+            game = None
+            try:
+                game = getattr(self.get_parent_army().player, "game", None)
+            except Exception:
+                game = None
+            if self._formless_horror_target_blocked(target_unit, game=game):
+                return False
+        except Exception:
+            pass
+
         # TARGET LEGALITY: Locked in Combat targeting restrictions (10e).
         # - Units that are Locked in Combat normally cannot be selected as targets of ranged attacks.
         # - Exception: in the controlling player's Shooting phase, VEHICLE/MONSTER units can be targeted even while Locked.
@@ -19632,6 +19865,20 @@ class Unit:
                 leadership_reroll_sources = list(self.leading_leadership_reroll_sources() or [])
             except Exception:
                 leadership_reroll_sources = []
+        if not auto_passed:
+            try:
+                from ..utility.aura_effects import get_aura_battleshock_test_reroll_sources
+                aura_sources = list(get_aura_battleshock_test_reroll_sources(self, game_map=getattr(game, "map", None)) or [])
+            except Exception:
+                aura_sources = []
+            if aura_sources:
+                seen = {str(s or "") for s in list(leadership_reroll_sources or [])}
+                for src in aura_sources:
+                    src_name = str(src or "")
+                    if not src_name or src_name in seen:
+                        continue
+                    seen.add(src_name)
+                    leadership_reroll_sources.append(src_name)
         leadership_reroll_available = bool(leadership_reroll_sources)
 
         if not auto_passed:
@@ -19894,6 +20141,34 @@ class Unit:
                 event_system.publish("battle_shock_test_resolved", unit=self, passed=passed)
             except Exception:
                 pass
+
+        # Resolve Formless Horror gating if this Battle-shock test was triggered for targeting.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and isinstance(sr.get("formless_horror_pending"), dict):
+                pending = dict(sr.get("formless_horror_pending") or {})
+                target_id = str(pending.get("target_id", "") or "")
+                phase_name = str(pending.get("phase", "") or "").strip().upper()
+                sr.pop("formless_horror_pending", None)
+                if passed:
+                    sr["formless_horror_allowed"] = {
+                        "target_id": target_id,
+                        "phase": phase_name,
+                        "turn": int(current_turn),
+                    }
+                else:
+                    blocked = sr.get("formless_horror_blocked")
+                    if not isinstance(blocked, dict):
+                        blocked = {}
+                    if phase_name:
+                        ids = list(blocked.get(phase_name, []) or [])
+                        if target_id and target_id not in ids:
+                            ids.append(target_id)
+                        blocked[phase_name] = ids
+                        sr["formless_horror_blocked"] = blocked
+                self.special_rules = sr
+        except Exception:
+            pass
 
     def clear_battle_shock(self) -> bool:
         """Remove Battle-shock from this unit (used at the start of its owner's next Command phase)."""
@@ -27918,6 +28193,55 @@ class Unit:
         root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def unit_charge_end_engagement_battleshock_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit ends a Charge move, engaged enemies take Battle-shock tests.
+
+        Returns a list of specs with keys:
+            - source: ability name
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_charge_end_engagement_battleshock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                normalized = u._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not self._CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Charge end Battle-shock").strip() or "Charge end Battle-shock"
+                key = source.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append({"source": source})
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def unit_post_shoot_shoot_again_specs(self) -> List[dict]:
         """
         Unit-specific rule: once per battle, after this unit has shot, it can shoot again.
@@ -29021,6 +29345,75 @@ class Unit:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_aura_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, enemies within range test Battle-shock.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - exclude_keywords: list[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_range_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, tuple[str, ...]]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_RANGE_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            exclude_raw = str(m.group("exclude") or "").strip()
+            exclude_keywords: list[str] = []
+            if exclude_raw:
+                tokens = re.split(r"\band\b|,", exclude_raw)
+                for token in tokens:
+                    t = str(token or "").strip().lower()
+                    if not t:
+                        continue
+                    if t == "monsters":
+                        exclude_keywords.append("MONSTER")
+                    elif t == "vehicles":
+                        exclude_keywords.append("VEHICLE")
+                    else:
+                        exclude_keywords.append(str(t).upper())
+            source = str(name or "Fight phase Battle-shock").strip() or "Fight phase Battle-shock"
+            key = (source.lower(), int(range_value), tuple(exclude_keywords))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "exclude_keywords": list(exclude_keywords),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_fight_phase_engagement_wound_reroll_ones_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: at the start of the Fight phase, select an engaged enemy unit;
@@ -29160,6 +29553,80 @@ class Unit:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_start_any_phase_clear_battleshock_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: once per battle, at the start of any phase, clear Battle-shock on a friendly unit in range.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - keyword: str (raw keyword phrase)
+            - model_name: Optional[str]
+            - ability_key: str (once-per-battle tracking key)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_start_any_phase_clear_battleshock_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, str, str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = u._strip_eligibility_prefix(text_src)
+                normalized = u._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._START_ANY_PHASE_CLEAR_BATTLESHOCK_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                if not keyword_raw:
+                    continue
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                model_name = str(m.group("model") or "").strip()
+                source = str(name or "Start of phase Battle-shock clear").strip() or "Start of phase Battle-shock clear"
+                key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_clear_battleshock"
+                ability_key = f"start_any_phase_clear_battleshock:{key_seed}"
+                key = (source.lower(), int(range_value), keyword_raw.lower(), model_name.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "keyword": keyword_raw,
+                        "model_name": model_name,
+                        "ability_key": ability_key,
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def unit_start_any_phase_fnp_specs(self) -> List[dict]:
