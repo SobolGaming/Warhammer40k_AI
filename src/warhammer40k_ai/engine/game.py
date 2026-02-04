@@ -19502,9 +19502,12 @@ class Game:
         elif self.setup_phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
             self.execute_declare_battle_formations_phase()
         elif self.setup_phase == SetupPhase.DEPLOY_ARMIES:
+            decision_makers = kwargs.get('decision_makers')
+            if decision_makers is None:
+                decision_makers = getattr(self, "_pending_setup_decision_makers", None)
             self.execute_deploy_armies_phase(
                 manual_phases=kwargs.get('manual_phases', False),
-                decision_makers=kwargs.get('decision_makers')
+                decision_makers=decision_makers
             )
         elif self.setup_phase == SetupPhase.REDEPLOY_UNITS:
             self.execute_redeploy_units_phase()
@@ -19518,8 +19521,10 @@ class Game:
         if self.in_command_context():
             self._execute_current_setup_phase_impl(**kwargs)
             return
-        if kwargs.get("decision_makers") is not None:
-            raise ValueError("decision_makers cannot be serialized in command dispatch.")
+        decision_makers = kwargs.get("decision_makers")
+        if decision_makers is not None:
+            # Store temporarily so command dispatch can stay serializable.
+            self._pending_setup_decision_makers = decision_makers
         payload = {
             "player1_army_file": kwargs.get("player1_army_file"),
             "player2_army_file": kwargs.get("player2_army_file"),
@@ -19531,7 +19536,11 @@ class Game:
         except Exception:
             player_id = None
         cmd = GameCommand.create(CMD_EXECUTE_SETUP_PHASE, player_id=player_id, payload=payload)
-        self.apply_command(cmd)
+        try:
+            self.apply_command(cmd)
+        finally:
+            if decision_makers is not None:
+                self._pending_setup_decision_makers = None
 
     def _apply_selected_mission(self, combination: dict, layout: object) -> None:
         self.selected_mission_info = {

@@ -36,6 +36,8 @@ This mode provides step-by-step control over game progression:
 - Each unit deployment requires a separate SPACE key press
 - Shows deployment action tracking: "Unit deployed at (x, y)" or "Unit placed in Reserves"
 - Displays whose turn it is during alternating deployment
+- Local-only deployment helpers (e.g., `HumanDeploymentDecisionMaker`) are injected at runtime
+  when setup phases are executed; they are not serialized into command payloads.
 
 ### Battle Rounds
 - SPACE key required to advance between each phase
