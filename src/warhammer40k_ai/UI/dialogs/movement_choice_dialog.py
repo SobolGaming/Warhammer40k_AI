@@ -119,6 +119,10 @@ class MovementChoiceDialog(BaseDialog):
                 self.hide(); return True
         return False
 
+    def update_hover(self, mouse_pos):
+        """Update hover state for dialog buttons."""
+        self._update_hover(mouse_pos)
+
     def _compute_embark_candidates(self) -> List:
         """Return friendly units on the map that are currently valid to embark into this transport."""
         from ...utility.movement_utils import compute_embark_candidates
