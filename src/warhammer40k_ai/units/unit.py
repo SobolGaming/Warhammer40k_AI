@@ -22738,6 +22738,24 @@ class Unit:
                         ]
         except Exception:
             pass
+        try:
+            if target is not None:
+                root = self.get_attached_unit_root()
+                prey_ids = getattr(root, "_prey_selection_prey_ids", None)
+                keyword = str(getattr(root, "_prey_selection_keyword", "") or "").strip().upper()
+                if prey_ids and keyword:
+                    try:
+                        target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                        tid = getattr(target_root, "_id", None)
+                        rid = getattr(target, "_id", None)
+                    except Exception:
+                        tid = getattr(target, "_id", None)
+                        rid = None
+                    if (tid in prey_ids) or (rid in prey_ids):
+                        source = str(getattr(root, "_prey_selection_source", "") or "Prey selection").strip() or "Prey selection"
+                        rules = list(rules or []) + [{"attack_type": "any", "keyword": keyword, "source": source}]
+        except Exception:
+            pass
         if not rules:
             return {}
         return self._resolve_attack_keyword_bonuses_from_rules(rules, attack_type=attack_type)
@@ -25137,6 +25155,140 @@ class Unit:
                 source = str(name or "Victim selection").strip() or "Victim selection"
                 rule = {"source": source}
                 break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_prey_selection_rule(self) -> Optional[dict]:
+        """
+        Detect abilities with text like:
+        "At the start of the first battle round, select one enemy unit to be this model's prey.
+        Each time a model in this model's unit makes a melee attack that targets its prey, you can re-roll the Wound roll.
+        Each time this model's prey is destroyed, select one new enemy unit to be this model's prey."
+
+        Also supports variants:
+        - Hit + Wound re-rolls vs prey (no melee restriction).
+        - Lethal Hits vs prey.
+
+        Returns a rule dict with:
+            - source: ability name
+            - reroll_hit: bool
+            - reroll_wound: bool
+            - melee_only: bool
+            - keyword: optional keyword bonus (e.g., "LETHAL HITS")
+            - repick_on_destroyed: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "prey_selection_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        def _norm(text: str) -> str:
+            if not text:
+                return ""
+            text = self._normalize_rules_text(text)
+            text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+            text = text.lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            return text
+
+        def _has_phrase(text: str, *phrases: str) -> bool:
+            for phrase in phrases:
+                if phrase and phrase in text:
+                    return True
+            return False
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = _norm(text_src)
+                if not normalized:
+                    continue
+                key = (str(name or "").strip().lower(), normalized)
+                if key in seen:
+                    continue
+                seen.add(key)
+
+                if "start of the first battle round" not in normalized:
+                    continue
+                if "select one enemy unit to be this model s prey" not in normalized:
+                    continue
+
+                repick_on_destroyed = (
+                    "prey is destroyed" in normalized
+                    and "select one new enemy unit" in normalized
+                )
+
+                # Pattern: melee wound re-roll vs prey (unit-wide).
+                if (
+                    _has_phrase(normalized, "melee attack")
+                    and _has_phrase(normalized, "targets its prey", "targets that prey")
+                    and _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll")
+                ):
+                    source = str(name or "Prey selection").strip() or "Prey selection"
+                    rule = {
+                        "source": source,
+                        "reroll_hit": False,
+                        "reroll_wound": True,
+                        "melee_only": True,
+                        "repick_on_destroyed": bool(repick_on_destroyed),
+                    }
+                    break
+
+                # Pattern: hit + wound re-roll vs prey (no melee restriction).
+                if (
+                    _has_phrase(normalized, "makes an attack")
+                    and _has_phrase(normalized, "targets its prey", "targets that prey")
+                    and _has_phrase(normalized, "re roll the hit roll", "reroll the hit roll")
+                    and _has_phrase(normalized, "re roll the wound roll", "reroll the wound roll")
+                ):
+                    source = str(name or "Prey selection").strip() or "Prey selection"
+                    rule = {
+                        "source": source,
+                        "reroll_hit": True,
+                        "reroll_wound": True,
+                        "melee_only": False,
+                        "repick_on_destroyed": bool(repick_on_destroyed),
+                    }
+                    break
+
+                # Pattern: Lethal Hits vs prey (unit-wide).
+                if (
+                    "lethal hits" in normalized
+                    and _has_phrase(normalized, "weapons equipped by models in this model s unit")
+                    and _has_phrase(normalized, "targeting this model s prey", "targets its prey", "targets that prey")
+                ):
+                    source = str(name or "Prey selection").strip() or "Prey selection"
+                    rule = {
+                        "source": source,
+                        "reroll_hit": False,
+                        "reroll_wound": False,
+                        "melee_only": False,
+                        "keyword": "LETHAL HITS",
+                        "repick_on_destroyed": bool(repick_on_destroyed),
+                    }
+                    break
             if rule is not None:
                 break
 

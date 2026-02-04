@@ -197,6 +197,46 @@ def _extract_points_cap_clauses(text: str) -> list[str]:
     return caps
 
 
+def _prey_selection_support(description: str) -> Optional[Tuple[str, str]]:
+    """
+    Detect BR1 prey-selection abilities (e.g., Prey of the Blood God, Psychic Spoor)
+    and classify supported variants.
+    """
+    tokens = _norm_rules_text(description or "")
+    if not tokens:
+        return None
+    if "start of the first battle round" not in tokens:
+        return None
+    if "select one enemy unit to be this models prey" not in tokens:
+        return None
+
+    repick = "prey is destroyed" in tokens and "select one new enemy unit" in tokens
+
+    if ("melee attack" in tokens) and ("targets its prey" in tokens or "targets that prey" in tokens) and ("reroll the wound roll" in tokens):
+        note = "BR1 prey selection; melee attacks vs prey can re-roll Wound rolls."
+        if repick:
+            note += " Re-pick when prey is destroyed."
+        return ("Supported", note)
+
+    if ("reroll the hit roll" in tokens) and ("reroll the wound roll" in tokens) and ("targets its prey" in tokens or "targets that prey" in tokens):
+        note = "BR1 prey selection; attacks vs prey can re-roll Hit and Wound rolls."
+        if repick:
+            note += " Re-pick when prey is destroyed."
+        else:
+            note += " No re-pick on destruction."
+        return ("Supported", note)
+
+    if ("lethal hits" in tokens) and ("weapons equipped by models in this models unit" in tokens) and (
+        "targeting this models prey" in tokens or "targets its prey" in tokens or "targets that prey" in tokens
+    ):
+        note = "BR1 prey selection; weapons gain [LETHAL HITS] vs prey."
+        if repick:
+            note += " Re-pick when prey is destroyed."
+        return ("Supported", note)
+
+    return None
+
+
 def _detachment_rule_clauses(description: str) -> list[str]:
     text = _rules_text_for_clauses(description)
     if not text:
@@ -2060,6 +2100,18 @@ def _datasheet_ability_support_by_name_faction_datasheet() -> Dict[Tuple[str, st
     raw = {
         ("WE", "Frenzy", "000002632"): ("Supported", "After being targeted, Helbrute can shoot or fight vs the attacker (eligible target check)."),
         ("WE", "Furious Onslaught", "000002638"): ("Supported", "Ranged attacks vs closest eligible target within 18\" allow an optional Hit re-roll."),
+        ("CD", "Prey of the Blood God", "000001104"): (
+            "Supported",
+            "BR1 prey selection; melee attacks vs prey can re-roll the Wound roll; re-pick when prey is destroyed.",
+        ),
+        ("CD", "Prey of the Blood God", "000004102"): (
+            "Supported",
+            "BR1 prey selection; weapons gain [LETHAL HITS] vs prey; re-pick when prey is destroyed.",
+        ),
+        ("GC", "Psychic Spoor", "000001569"): (
+            "Supported",
+            "BR1 prey selection; attacks vs prey can re-roll Hit and Wound rolls (no re-pick on destruction).",
+        ),
     }
     out: Dict[Tuple[str, str, str], Tuple[str, str]] = {}
     for (fid, name, dsid), val in raw.items():
@@ -2299,6 +2351,9 @@ def _classify_ability_base(
         return ranged_targeting_restriction_support
     if fight_phase_below_starting_strength_fight_first_support:
         return fight_phase_below_starting_strength_fight_first_support
+    prey_selection_support = _prey_selection_support(description)
+    if prey_selection_support:
+        return prey_selection_support
 
     fid = str(faction_id or "").strip().upper()
     name_norm = _norm(name)

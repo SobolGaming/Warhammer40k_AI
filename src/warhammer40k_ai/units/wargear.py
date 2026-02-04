@@ -5249,6 +5249,64 @@ class WargearProfile:
                                 reroll_used = True
         except Exception:
             pass
+
+        # PREY SELECTION: optional re-roll of the Hit roll vs prey (if enabled).
+        try:
+            if rerolls_allowed and "reroll" not in hit_result:
+                unit = attacker.parent_unit
+                prey_ids = getattr(unit, "_prey_selection_prey_ids", None)
+                if prey_ids and bool(getattr(unit, "_prey_selection_reroll_hit", False)):
+                    melee_only = bool(getattr(unit, "_prey_selection_melee_only", False))
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                    if (not melee_only) or is_melee:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_prey = (tid in prey_ids) or (rid in prey_ids)
+                        if is_prey:
+                            try:
+                                game = unit.get_parent_army().player.game
+                                player = unit.get_parent_army().player
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                provider = None
+                                player = None
+                                game = None
+
+                            try:
+                                success = (dice_roll != 1) and (base_skill > 0) and (dice_roll >= final_needed)
+                            except Exception:
+                                success = False
+
+                            do_reroll = False
+                            if callable(provider):
+                                try:
+                                    reason = str(getattr(unit, "_prey_selection_source", "") or "Prey selection")
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="hit",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                        reason=reason,
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+
+                            if do_reroll:
+                                rr = _reroll_hit()
+                                label = str(getattr(unit, "_prey_selection_source", "") or "Prey selection")
+                                hit_result.setdefault("special_effects", []).append(f"{label}: re-roll Hit roll (prey)")
+                                hit_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
+        except Exception:
+            pass
         hit_result['roll'] = dice_roll
         if miracle_used:
             hit_result['special_effects'].append("Miracle die")
@@ -7591,6 +7649,88 @@ class WargearProfile:
                             wound_result["reroll"] = rr
                             dice_roll = rr
                             reroll_used = True
+        except Exception:
+            pass
+
+        # PREY SELECTION: re-roll Wound roll vs prey (optional).
+        try:
+            if rerolls_allowed and "reroll" not in wound_result:
+                unit = attacker.parent_unit
+                prey_ids = getattr(unit, "_prey_selection_prey_ids", None)
+                if prey_ids and bool(getattr(unit, "_prey_selection_reroll_wound", False)):
+                    melee_only = bool(getattr(unit, "_prey_selection_melee_only", False))
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                    if (not melee_only) or is_melee:
+                        try:
+                            tid = getattr(target, "_id", None)
+                            rid = getattr(target.get_attached_unit_root(), "_id", None)
+                        except Exception:
+                            tid = getattr(target, "_id", None)
+                            rid = None
+                        is_prey = (tid in prey_ids) or (rid in prey_ids)
+                        if is_prey:
+                            needed = 0
+                            try:
+                                s_val = strength
+                                t_val = target_toughness
+                                if isinstance(s_val, int) and isinstance(t_val, int):
+                                    if s_val >= 2 * t_val:
+                                        needed = 2
+                                    elif s_val > t_val:
+                                        needed = 3
+                                    elif s_val == t_val:
+                                        needed = 4
+                                    elif s_val * 2 <= t_val:
+                                        needed = 6
+                                    else:
+                                        needed = 5
+                            except Exception:
+                                needed = 0
+                            final_needed = needed
+                            try:
+                                final_needed = int(min(max(int(final_needed) - int(dice_modifier), 2), 6))
+                            except Exception:
+                                pass
+                            try:
+                                success = (dice_roll != 1) and (bool(final_needed) and dice_roll >= int(final_needed))
+                            except Exception:
+                                success = False
+                            do_reroll = False
+                            try:
+                                army = unit.get_parent_army()
+                                game = army.player.game
+                                player = army.player
+                                is_human = bool(getattr(player, "has_control", lambda: False)())
+                                provider = getattr(getattr(game, "map", None), "roll_reroll_provider", None)
+                            except Exception:
+                                is_human = False
+                                provider = None
+                                player = None
+                            reason = str(getattr(unit, "_prey_selection_source", "") or "Prey selection")
+                            if is_human and callable(provider):
+                                try:
+                                    do_reroll = bool(provider(
+                                        player=player,
+                                        unit=unit,
+                                        roll_type="wound",
+                                        value=dice_roll,
+                                        dice=None,
+                                        needed=final_needed,
+                                        success=success,
+                                        reason=reason,
+                                    ))
+                                except Exception:
+                                    do_reroll = False
+                            else:
+                                do_reroll = (not success)
+                            if do_reroll:
+                                rr = _reroll_wound()
+                                wound_result.setdefault("special_effects", []).append(
+                                    f"{reason}: re-roll Wound roll (prey)"
+                                )
+                                wound_result["reroll"] = rr
+                                dice_roll = rr
+                                reroll_used = True
         except Exception:
             pass
 

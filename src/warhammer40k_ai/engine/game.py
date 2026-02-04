@@ -349,6 +349,37 @@ class Game:
 
         _handle_quarry_repick(_methodical_rule, "_methodical_destruction_victim_ids", _methodical_request_builder)
 
+        def _prey_rule(u):
+            try:
+                rule = u.get_prey_selection_rule()
+            except Exception:
+                rule = None
+            if not rule:
+                return None
+            if not bool(rule.get("repick_on_destroyed", False)):
+                return None
+            return rule
+
+        def _prey_request_builder(game, source_unit, enemy_units, ability_name=None):
+            try:
+                army = source_unit.get_parent_army()
+            except Exception:
+                army = None
+            if army is None:
+                return None
+            try:
+                rule = source_unit.get_prey_selection_rule()
+            except Exception:
+                rule = None
+            return army._build_prey_selection_request(
+                game=game,
+                source_unit=source_unit,
+                enemy_units=enemy_units,
+                rule=rule,
+            )
+
+        _handle_quarry_repick(_prey_rule, "_prey_selection_prey_ids", _prey_request_builder)
+
     def rebuild_entity_registry(self) -> None:
         rebuild_registry_from_game(self.entity_registry, self)
 

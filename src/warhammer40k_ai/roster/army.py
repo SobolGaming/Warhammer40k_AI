@@ -2108,6 +2108,7 @@ class Army:
         self._queue_monarch_of_the_hunt(game=game, battle_round=int(battle_round))
         self._queue_piratical_raiders(game=game, battle_round=int(battle_round))
         self._queue_methodical_destruction(game=game, battle_round=int(battle_round))
+        self._queue_prey_selection(game=game, battle_round=int(battle_round))
         self._assigned_agents_destroy_empty_transports(int(battle_round), game=game)
 
     def _eligible_quarry_units(self, enemy_units: list, *, exclude_embarked: bool = False) -> list:
@@ -2379,6 +2380,76 @@ class Army:
             prompt=prompt,
             ability_name=label,
             exclude_embarked=False,
+        )
+
+    def _queue_prey_selection(self, *, game, battle_round: int) -> None:
+        if game is None or not bool(getattr(game, "is_authoritative", True)):
+            return
+        if int(battle_round or 0) != 1:
+            return
+        player = getattr(self, "player", None)
+        if player is None:
+            return
+        try:
+            enemy_units = list(game.get_enemy_units(player))
+        except Exception:
+            enemy_units = []
+        if not enemy_units:
+            return
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                if not unit.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                rule = unit.get_prey_selection_rule()
+            except Exception:
+                rule = None
+            if not rule:
+                continue
+            if getattr(unit, "_prey_selection_prey_ids", None):
+                continue
+            req = self._build_prey_selection_request(
+                game=game,
+                source_unit=unit,
+                enemy_units=enemy_units,
+                rule=rule,
+            )
+            if req is not None and hasattr(game, "request_decision"):
+                game.request_decision(req)
+
+    def _build_prey_selection_request(
+        self,
+        *,
+        game,
+        source_unit,
+        enemy_units: list,
+        rule: Optional[dict] = None,
+    ) -> Optional[object]:
+        ability_name = str(rule.get("source", "") or "Prey selection").strip() if isinstance(rule, dict) else "Prey selection"
+        label = ability_name or "Prey selection"
+        prompt = f"Select prey ({label})."
+        context_extra = {}
+        if isinstance(rule, dict):
+            context_extra = {
+                "prey_reroll_hit": bool(rule.get("reroll_hit", False)),
+                "prey_reroll_wound": bool(rule.get("reroll_wound", False)),
+                "prey_melee_only": bool(rule.get("melee_only", False)),
+                "prey_keyword": str(rule.get("keyword", "") or ""),
+                "prey_repick_on_destroyed": bool(rule.get("repick_on_destroyed", False)),
+            }
+        return self._build_quarry_selection_request(
+            game=game,
+            source_unit=source_unit,
+            enemy_units=enemy_units,
+            ability_key="prey_selection",
+            prompt=prompt,
+            ability_name=label,
+            exclude_embarked=False,
+            context_extra=context_extra,
         )
 
     def schedule_reborn_in_blood(self, *, game) -> bool:

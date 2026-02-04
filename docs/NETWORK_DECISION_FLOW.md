@@ -148,6 +148,7 @@ Battle-round-specific:
 - Hyper-adaptations (Tyranids Invasion Fleet — BR1 only)
 - Monarch of the Hunt quarry selection (Shalaxi Helbane — BR1 only; re‑pick triggered later if the quarry is destroyed)
 - Methodical Destruction victim selection (Chaos Knights — BR1 only; re‑pick triggered later if the victim is destroyed)
+- Prey selection (e.g., Prey of the Blood God / Psychic Spoor — BR1 only; re‑pick only when the ability text specifies it)
 
 1. COMMAND_PHASE
    - Active player resolves start-of-turn decisions (if any).

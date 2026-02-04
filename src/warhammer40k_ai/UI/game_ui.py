@@ -6002,6 +6002,7 @@ class GameView:
         if br == 1:
             self._queue_monarch_of_the_hunt_prompts(game)
             self._queue_methodical_destruction_prompts(game)
+            self._queue_prey_selection_prompts(game)
 
     # ---------------- Optional ability prompt windows (UI-driven) ----------------
 
@@ -13755,6 +13756,12 @@ class GameView:
         """
         self._queue_quarry_selection_prompts(game, ability_key="methodical_destruction")
 
+    def _queue_prey_selection_prompts(self, game):
+        """
+        At BR1 start (and on prey destruction when applicable): prompt each human player who has a unit with prey selection to pick a prey.
+        """
+        self._queue_quarry_selection_prompts(game, ability_key="prey_selection")
+
     def _open_next_quarry_prompt(self):
         if not self._pending_quarry_queue:
             return
@@ -13827,6 +13834,10 @@ class GameView:
             title = ability_name or "Methodical Destruction"
             subtitle = "Select an enemy unit to be this model's victim."
             header = f"{getattr(source_unit, 'name', 'Model')} selects a victim."
+        elif str(ability_key) == "prey_selection":
+            title = ability_name or "Prey selection"
+            subtitle = "Select an enemy unit to be this model's prey."
+            header = f"{getattr(source_unit, 'name', 'Model')} selects prey."
         else:
             title = ability_name or "Select Quarry"
             subtitle = ""
@@ -13882,6 +13893,7 @@ class GameView:
             return
         self._queue_monarch_of_the_hunt_prompts(game)
         self._queue_methodical_destruction_prompts(game)
+        self._queue_prey_selection_prompts(game)
 
     def _open_next_blessings_prompt(self, battle_round: int) -> None:
         if not self._pending_blessings_queue:

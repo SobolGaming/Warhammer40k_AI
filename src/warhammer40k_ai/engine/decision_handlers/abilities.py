@@ -1551,6 +1551,50 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} as victim.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "prey_selection":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            ids = set()
+            try:
+                members = list(chosen.get_attached_unit_members() or [])
+            except Exception:
+                members = [chosen]
+            for m in members:
+                try:
+                    mid = getattr(m, "_id", None)
+                    if mid:
+                        ids.add(mid)
+                except Exception:
+                    continue
+            setattr(source_unit, "_prey_selection_prey_ids", ids)
+            try:
+                setattr(source_unit, "_prey_selection_prey_name", str(getattr(chosen, "name", "")))
+            except Exception:
+                pass
+            try:
+                setattr(source_unit, "_prey_selection_reroll_hit", bool(ctx.get("prey_reroll_hit", False)))
+                setattr(source_unit, "_prey_selection_reroll_wound", bool(ctx.get("prey_reroll_wound", False)))
+                setattr(source_unit, "_prey_selection_melee_only", bool(ctx.get("prey_melee_only", False)))
+                keyword = str(ctx.get("prey_keyword", "") or "").strip().upper()
+                if keyword:
+                    setattr(source_unit, "_prey_selection_keyword", keyword)
+            except Exception:
+                pass
+            ability_name = str(ctx.get("ability_name", "") or "Prey selection").strip() or "Prey selection"
+            try:
+                setattr(source_unit, "_prey_selection_source", ability_name)
+            except Exception:
+                pass
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} as prey.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "movement_phase_visible_wound_bonus":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if source_unit is not None and chosen is not None:
