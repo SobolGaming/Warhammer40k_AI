@@ -2689,38 +2689,58 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     low = text.lower()
     notes: List[str] = []
     leading_prefix = ""
-    if "while this model is leading a unit" in low:
+    if re.search(r"while (?:this model|the bearer) is leading a unit", low, flags=re.IGNORECASE):
         leading_prefix = "Leading: "
+        if "bearer's unit" not in low:
+            low = re.sub(r"\bthat unit\b", "the bearer's unit", low)
+
+    target_pattern = r"(the\s+bearer'?s\s+unit|this\s+unit|this\s+model'?s\s+unit)"
+
+    def _target_label(target: str) -> str:
+        target_lower = str(target or "").lower()
+        if "bearer" in target_lower:
+            return "bearer's unit"
+        if "this model" in target_lower:
+            return "this model's unit"
+        if "this unit" in target_lower:
+            return "this unit"
+        return "the unit"
 
     m = re.search(
-        r"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        rf"add\s+(\d+)\s+to\s+charge\s+rolls?\s+made\s+for\s+{target_pattern}",
         low,
         flags=re.IGNORECASE,
     )
     if m:
-        notes.append(f"Charge rolls for bearer's unit get +{m.group(1)}.")
+        label = _target_label(m.group(2))
+        if leading_prefix:
+            notes.append(f"{leading_prefix}Charge rolls for the unit get +{m.group(1)}.")
+        else:
+            notes.append(f"Charge rolls for {label} get +{m.group(1)}.")
 
     m = re.search(
-        r"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        rf"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+{target_pattern}",
         low,
         flags=re.IGNORECASE,
     )
     if m:
+        label = _target_label(m.group(2))
         if leading_prefix:
             notes.append(f"{leading_prefix}Advance and Charge rolls for the unit +{m.group(1)}.")
         else:
-            notes.append(f"Advance and Charge rolls for bearer's unit +{m.group(1)}.")
+            notes.append(f"Advance and Charge rolls for {label} +{m.group(1)}.")
     else:
         m = re.search(
-            r"add\s+(\d+)\s+to\s+advance\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+            rf"add\s+(\d+)\s+to\s+advance\s+rolls?\s+made\s+for\s+{target_pattern}",
             low,
             flags=re.IGNORECASE,
         )
         if m:
+            label = _target_label(m.group(2))
             if leading_prefix:
                 notes.append(f"{leading_prefix}Advance rolls for the unit +{m.group(1)}.")
             else:
-                notes.append(f"Advance rolls for bearer's unit +{m.group(1)}.")
+                notes.append(f"Advance rolls for {label} +{m.group(1)}.")
 
     advance_charge_re = re.search(r"re-?roll\s+advance\s+and\s+charge\s+rolls?", low, flags=re.IGNORECASE)
     if advance_charge_re:

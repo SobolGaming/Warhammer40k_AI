@@ -1299,11 +1299,11 @@ class Unit:
         re.IGNORECASE,
     )
     _BEARER_UNIT_ADVANCE_BONUS_RE = re.compile(
-        r"add\s+(\d+)\s+to\s+advance\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        r"add\s+(\d+)\s+to\s+advance\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|this\s+unit|this\s+model'?s\s+unit)",
         re.IGNORECASE,
     )
     _BEARER_UNIT_ADVANCE_AND_CHARGE_BONUS_RE = re.compile(
-        r"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+the\s+bearer'?s\s+unit",
+        r"add\s+(\d+)\s+to\s+advance\s+and\s+charge\s+rolls?\s+made\s+for\s+(?:the\s+bearer'?s\s+unit|this\s+unit|this\s+model'?s\s+unit)",
         re.IGNORECASE,
     )
     _ADVANCE_NO_ROLL_MOVE_RE = re.compile(
