@@ -605,6 +605,7 @@ def _parse_toughness_aura(ability) -> Optional[dict]:
 def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
     """
     Strict parser for enemy-test auras like:
+      "While an enemy unit is within N\" of this model, subtract X from Battle-shock tests taken for that unit."
       "While an enemy unit is within N\" of this model, subtract X from Battle-shock and Leadership tests taken for that unit."
     """
     if not _is_aura_ability(ability):
@@ -615,7 +616,9 @@ def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
     text = re.sub(r"[^a-zA-Z0-9]+", " ", text).strip().lower()
     if "enemy unit" not in text:
         return None
-    if "battle shock" not in text or "leadership" not in text:
+    if "battle shock" not in text:
+        return None
+    if "test" not in text:
         return None
     m_range = re.search(r"within\s+(?P<rng>\d+)", text)
     m_val = re.search(r"subtract\s+(?P<val>\d+)\s+from", text)

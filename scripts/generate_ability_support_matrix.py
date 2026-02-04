@@ -5388,7 +5388,7 @@ def _aura_battleshock_leadership_penalty_support(description: str) -> Optional[T
     norm = _norm_rules_text(description)
     if not norm:
         return None
-    if "enemy unit" not in norm or "battle shock" not in norm or "leadership" not in norm:
+    if "enemy unit" not in norm or "battle shock" not in norm or "test" not in norm:
         return None
     m_range = re.search(r"within (?P<range>\d+)", norm)
     m_val = re.search(r"subtract (?P<val>\d+) from", norm)
@@ -5401,7 +5401,11 @@ def _aura_battleshock_leadership_penalty_support(description: str) -> Optional[T
         return None
     if rng <= 0 or val <= 0:
         return None
-    return ("Supported", f"Aura: enemy units within {rng}\" suffer -{val} to Battle-shock/Leadership tests.")
+    if "leadership" in norm:
+        note = f"Aura: enemy units within {rng}\" suffer -{val} to Battle-shock/Leadership tests."
+    else:
+        note = f"Aura: enemy units within {rng}\" suffer -{val} to Battle-shock tests."
+    return ("Supported", note)
 
 
 def _crewed_platform_support(description: str) -> Optional[Tuple[str, str]]:

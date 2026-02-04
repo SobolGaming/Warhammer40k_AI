@@ -203,6 +203,39 @@ class TestAuraExtendedShapes(unittest.TestCase):
             oc = Unit.objective_control.fget(receiver)
         self.assertEqual(int(oc), 3)
 
+    def test_battleshock_aura_penalty_applies(self):
+        from warhammer40k_ai.units.ability import Ability
+        from warhammer40k_ai.utility.aura_effects import get_aura_battleshock_test_modifiers
+
+        aura = Ability(
+            name="Dread Aura (Aura)",
+            faction_id="",
+            description='While an enemy unit is within 6" of this model, each time that unit takes a Battle-shock test, subtract 1 from that test.',
+            type="Datasheet",
+            parameter="",
+            legend=None,
+        )
+
+        class _Unit:
+            def __init__(self, *, abilities=None):
+                self.possible_abilities = list(abilities or [])
+
+        class _Map:
+            def __init__(self, enemies):
+                self._enemies = list(enemies)
+
+            def get_enemy_units(self, _unit):
+                return list(self._enemies)
+
+        receiver = _Unit()
+        source = _Unit(abilities=[aura])
+        game_map = _Map([source])
+
+        with patch("warhammer40k_ai.utility.aura_effects.unit_within_range_of_unit", return_value=True):
+            mods = get_aura_battleshock_test_modifiers(receiver, game_map=game_map)
+
+        self.assertEqual(mods, [(-1, "Aura: Dread Aura (Aura)")])
+
     def test_same_oc_aura_name_does_not_double_apply_from_two_sources(self):
         from warhammer40k_ai.units.unit import Unit
         from warhammer40k_ai.units.ability import Ability
@@ -381,4 +414,3 @@ class TestAuraExtendedShapes(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
