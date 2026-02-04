@@ -103,6 +103,30 @@ class TestLeadingAttackRollBonuses(unittest.TestCase):
         self.assertEqual(int(mods.get("hit", 0)), 1)
         self.assertEqual(int(mods.get("wound", 0)), 1)
 
+    def test_leading_contains_model_condition(self):
+        ability = {
+            "name": "Dark Sermon",
+            "description": (
+                "While this unit is leading a unit and contains a DARK APOSTLE model, "
+                "each time a model in that unit makes a melee attack, add 1 to the Wound roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Leader", abilities=[ability], keywords=["DARK APOSTLE"])
+        bodyguard = _make_unit("Bodyguard")
+        self._attach(leader, bodyguard)
+
+        mods = bodyguard.get_leading_attack_roll_modifiers("melee")
+        self.assertEqual(int(mods.get("wound", 0)), 1)
+
+        leader_no = _make_unit("Leader No Apostle", abilities=[ability])
+        bodyguard_no = _make_unit("Bodyguard No Apostle")
+        self._attach(leader_no, bodyguard_no)
+
+        mods = bodyguard_no.get_leading_attack_roll_modifiers("melee")
+        self.assertEqual(int(mods.get("wound", 0)), 0)
+
     def test_leading_below_strength_bonus(self):
         ability = {
             "name": "Blooded Veterans",

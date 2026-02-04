@@ -10,6 +10,7 @@ class AttackRollCondition:
     attacker_below_starting_strength: bool = False
     attacker_below_half_strength: bool = False
     attacker_charged_this_turn: bool = False
+    attacker_contains_model_keywords_any: Tuple[str, ...] = ()
     attacker_within_objective_controlled: bool = False
     target_below_starting_strength: bool = False
     target_battleshocked: bool = False
@@ -42,6 +43,9 @@ class AttackRollCondition:
             ),
             attacker_charged_this_turn=bool(
                 self.attacker_charged_this_turn or other.attacker_charged_this_turn
+            ),
+            attacker_contains_model_keywords_any=tuple(
+                {*(self.attacker_contains_model_keywords_any or ()), *(other.attacker_contains_model_keywords_any or ())}
             ),
             attacker_within_objective_controlled=bool(
                 self.attacker_within_objective_controlled or other.attacker_within_objective_controlled
@@ -195,6 +199,15 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
 
     if re.fullmatch(r"(?:this model|this unit|it|that unit) made a charge move this turn", t):
         return AttackRollCondition(attacker_charged_this_turn=True)
+
+    m = re.fullmatch(
+        r"(?:this unit|that unit|it) contains (?:an?|one or more)?\s*(?P<model>[a-z0-9 \\-]+?) models?",
+        t,
+    )
+    if m:
+        model_kw = str(m.group("model") or "").strip()
+        if model_kw:
+            return AttackRollCondition(attacker_contains_model_keywords_any=(model_kw,))
 
     if re.fullmatch(
         r"(?:this model|this unit|it|that unit) is within range of (?:an|one or more) objective marker(?:s)? you control",
@@ -525,6 +538,8 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
         return None
 
     scope = "unit"
+    prefix_condition = None
+    leading_contains_condition = None
     aura_range = None
     aura_faction = None
     aura_friendly = None
@@ -540,8 +555,19 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
         if m:
             scope = "leading"
             norm = norm[m.end():].strip()
+            m_contains = re.match(
+                r"^and contains (?:an?|one or more) (?P<model>.+?) models?(?:,|;|:)?\s*(?P<rest>.+)$",
+                norm,
+            )
+            if m_contains:
+                model_kw = str(m_contains.group("model") or "").strip()
+                rest = str(m_contains.group("rest") or "").strip()
+                cond = _parse_condition(f"this unit contains {model_kw} model")
+                if cond is None:
+                    return None
+                leading_contains_condition = cond
+                norm = rest
 
-    prefix_condition = None
     m = re.match(r"^(?:while|if)\s+([^,]+),\s*(.+)$", norm, flags=re.IGNORECASE)
     if m:
         cond = _parse_condition(m.group(1).strip())
@@ -617,6 +643,8 @@ def parse_attack_roll_text(text: str) -> Optional[AttackRollRule]:
         return a.merge(b)
 
     base_condition = _merge_conditions(prefix_condition, trigger_condition)
+    if leading_contains_condition is not None:
+        base_condition = _merge_conditions(base_condition, leading_contains_condition)
 
     if subject.startswith("a_model_in_"):
         subject = subject.replace("a_model_in_", "model_in_")

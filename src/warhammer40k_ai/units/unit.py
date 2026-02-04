@@ -11141,16 +11141,16 @@ class Unit:
 
     # ---------------- Ability helpers (best-effort parsing) ----------------
     _LEADING_ABILITY_PREFIX_RE = re.compile(
-        r"^\W*while this model is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        r"^\W*while this (?:model|unit) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
         re.IGNORECASE,
     )
     _LEADING_ABILITY_RE = re.compile(
-        r"\bwhile this model is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        r"\bwhile this (?:model|unit) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
         re.IGNORECASE,
     )
-    _NOT_LEADING_ABILITY_RE = re.compile(r"\bif this model is not leading a unit\b", re.IGNORECASE)
+    _NOT_LEADING_ABILITY_RE = re.compile(r"\bif this (?:model|unit) is not leading a unit\b", re.IGNORECASE)
     _LEADING_SPECIFIC_UNIT_RE = re.compile(
-        r"\b(?:while|if)\s+(?:this model|the bearer)\s+is\s+leading(?:s)?\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
+        r"\b(?:while|if)\s+(?:this model|this unit|the bearer)\s+is\s+leading(?:s)?\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
         re.IGNORECASE,
     )
 
@@ -12674,6 +12674,25 @@ class Unit:
                     return False
             except Exception:
                 return False
+        if condition.attacker_contains_model_keywords_any:
+            matched = False
+            for kw in condition.attacker_contains_model_keywords_any:
+                if not kw:
+                    continue
+                try:
+                    if hasattr(unit, "_unit_contains_model_with_keyword") and unit._unit_contains_model_with_keyword(kw):
+                        matched = True
+                        break
+                except Exception:
+                    pass
+                try:
+                    if hasattr(unit, "_unit_contains_model_named") and unit._unit_contains_model_named(kw):
+                        matched = True
+                        break
+                except Exception:
+                    pass
+            if not matched:
+                return False
         if condition.attacker_within_objective_controlled:
             try:
                 if not unit._attacker_within_objective_controlled():
@@ -12935,6 +12954,9 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_contains_model_keywords_any:
+                kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
+                parts.append(f"while containing {kw} model")
             if cond.attacker_within_objective_controlled:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
@@ -13123,6 +13145,9 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_contains_model_keywords_any:
+                kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
+                parts.append(f"while containing {kw} model")
             if cond.attacker_within_objective_controlled:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
@@ -13319,6 +13344,9 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_contains_model_keywords_any:
+                kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
+                parts.append(f"while containing {kw} model")
             if cond.attacker_within_objective_controlled:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
@@ -13538,6 +13566,8 @@ class Unit:
             if cond is None:
                 return False
             if cond.attacker_below_starting_strength or cond.attacker_below_half_strength:
+                return False
+            if cond.attacker_contains_model_keywords_any:
                 return False
             if cond.target_below_starting_strength:
                 return False
@@ -27175,6 +27205,9 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_contains_model_keywords_any:
+                kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
+                parts.append(f"while containing {kw} model")
             if cond.attacker_within_objective_controlled:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
@@ -27449,6 +27482,9 @@ class Unit:
                 parts.append("while below Half-strength")
             if cond.attacker_charged_this_turn:
                 parts.append("after making a Charge move this turn")
+            if cond.attacker_contains_model_keywords_any:
+                kw = "/".join(k.upper() for k in cond.attacker_contains_model_keywords_any)
+                parts.append(f"while containing {kw} model")
             if cond.attacker_within_objective_controlled:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
