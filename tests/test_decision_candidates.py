@@ -52,3 +52,18 @@ def test_mask_blocks_illegal_choice():
     result = DecisionResult(decision_id=req.decision_id, player_id=None, option_id=masked_option_id)
     errors = validate_decision(None, req, result)
     assert any("masked" in err for err in errors)
+
+
+def test_mask_reasons_populated_for_masked_candidates():
+    options = [
+        DecisionOption.create("Alpha", payload={"x": 1}),
+        DecisionOption.create("Beta", payload={"x": 2}),
+    ]
+    req = DecisionRequest.create(
+        DECISION_CONFIRM_EXAMPLE,
+        "Prompt",
+        options=options,
+        mask=[False, True],
+    )
+
+    assert req.mask_reasons == ["masked_as_illegal", None]

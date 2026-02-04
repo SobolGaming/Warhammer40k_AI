@@ -241,6 +241,8 @@ class DecisionRequest:
         if len(self.mask) != len(self.candidates):
             raise ValueError("DecisionRequest mask length must match candidates length.")
         self.mask = [bool(val) for val in self.mask]
+        if not self.mask_reasons and any(not val for val in self.mask):
+            self.mask_reasons = ["masked_as_illegal" if not val else None for val in self.mask]
         if self.mask_reasons and len(self.mask_reasons) != len(self.candidates):
             raise ValueError("DecisionRequest mask_reasons length must match candidates length.")
 
