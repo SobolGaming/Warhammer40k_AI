@@ -74,6 +74,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "CORRUPTING TAINT",
     "UNLEASH BALEFIRE",
     "WARP VISION",
+    "CORRUPT REALSPACE",
+    "DAEMONIC INVULNERABILITY",
+    "DENIZENS OF THE WARP",
+    "DRAUGHT OF TERROR",
+    "THE REALM OF CHAOS",
+    "WARP SURGE",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -108,6 +114,9 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SKULLS FOR THE SKULL THRONE!",
     "SMOKESCREEN",
     "SKYBORNE SANCTUARY",
+    "CORRUPT REALSPACE",
+    "DAEMONIC INVULNERABILITY",
+    "THE REALM OF CHAOS",
     "SUMMONED BY SLAUGHTER",
     "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
@@ -955,6 +964,7 @@ class StratagemManager:
             "UNYIELDING FORMS",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
+            "DAEMONIC INVULNERABILITY",
         }
         fight_reaction_names = {
             "DEFIANT TO THE LAST",
@@ -1028,6 +1038,10 @@ class StratagemManager:
             "CHRONOSHIFT",
             "WARP VISION",
             "UNLEASH BALEFIRE",
+            "DAEMONIC INVULNERABILITY",
+            "DRAUGHT OF TERROR",
+            "DENIZENS OF THE WARP",
+            "WARP SURGE",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -1828,6 +1842,12 @@ class StratagemManager:
             "CORRUPTING TAINT": "Target: CHAOS KNIGHTS CHARACTER; select objective you control",
             "UNLEASH BALEFIRE": "Target: CHAOS KNIGHTS unit (not yet shot)",
             "WARP VISION": "Target: CHAOS KNIGHTS unit (not yet shot)",
+            "CORRUPT REALSPACE": "Target: LEGIONES DAEMONICA unit; select objective you control",
+            "DAEMONIC INVULNERABILITY": "Target: LEGIONES DAEMONICA unit (defensive reaction)",
+            "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
+            "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
+            "THE REALM OF CHAOS": "Target: up to two LEGIONES DAEMONICA units (end of opponent turn)",
+            "WARP SURGE": "Target: LEGIONES DAEMONICA unit (within Shadow of Chaos)",
         }
         return hints.get(name_u, "")
 
@@ -2079,6 +2099,227 @@ class StratagemManager:
             except Exception:
                 continue
         return candidates
+
+    def _is_legiones_daemonica_unit(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        army = getattr(self.player, "army", None)
+        if army is None:
+            return False
+        try:
+            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
+                return False
+        except Exception:
+            return False
+        has_kw = False
+        try:
+            has_kw = bool(root.has_any_keyword("LEGIONES DAEMONICA"))
+        except Exception:
+            has_kw = False
+        try:
+            faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
+        except Exception:
+            faction_id = ""
+        if not has_kw and faction_id != "CD":
+            return False
+        return True
+
+    def _daemon_incursion_battlefield_unit_candidates(self) -> List[Any]:
+        if self.player is None:
+            return []
+        try:
+            army = self.player.get_army()
+        except Exception:
+            return []
+        if army is None:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                uid = str(get_entity_id(root) or "")
+            except Exception:
+                uid = ""
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    continue
+            except Exception:
+                continue
+            if _unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_legiones_daemonica_unit(root):
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
+
+    def _daemon_incursion_reserve_deep_strike_candidates(self) -> List[Any]:
+        if self.player is None or self.game is None:
+            return []
+        try:
+            army = self.player.get_army()
+        except Exception:
+            return []
+        if army is None:
+            return []
+        turn = int(getattr(self.game, "turn", 0) or 0)
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                uid = str(get_entity_id(root) or "")
+            except Exception:
+                uid = ""
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            if _unit_cannot_be_target_of_stratagem(root):
+                continue
+            if not self._is_legiones_daemonica_unit(root):
+                continue
+            try:
+                if not getattr(root, "has_deep_strike", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "can_arrive_from_reserves", lambda _t: False)(turn):
+                    continue
+            except Exception:
+                continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
+
+    def _unit_within_shadow_of_chaos(self, unit) -> bool:
+        if unit is None or self.game is None:
+            return False
+        try:
+            army = self.player.get_army()
+        except Exception:
+            return False
+        if army is None:
+            return False
+        mgr = getattr(army, "shadow_of_chaos", None)
+        if mgr is None or not getattr(mgr, "army_has_shadow", lambda: False)():
+            return False
+        try:
+            return bool(mgr.is_unit_within_shadow(unit, game=self.game))
+        except Exception:
+            return False
+
+    def queue_realm_of_chaos_end_of_turn(self, *, turn_ending_player=None) -> None:
+        if self.game is None or self.player is None or turn_ending_player is None:
+            return
+        if turn_ending_player is self.player:
+            return
+        s = self.get_by_name("THE REALM OF CHAOS")
+        if not s:
+            return
+        if self.player.command_points < s.cp_cost:
+            return
+        if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+            return
+        if not s.can_use(self.player, self.game, phase_name="End of opponent's turn"):
+            return
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return
+        candidates = self._daemon_incursion_battlefield_unit_candidates()
+        within_shadow: list[Any] = []
+        outside_shadow: list[Any] = []
+        for unit in list(candidates or []):
+            try:
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(unit) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(unit, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    continue
+            except Exception:
+                continue
+            if self._unit_within_shadow_of_chaos(unit):
+                within_shadow.append(unit)
+            else:
+                outside_shadow.append(unit)
+        if not within_shadow and not outside_shadow:
+            return
+        for r in list(self._pending_reactions):
+            try:
+                if (
+                    r.get("event") == "turn_end"
+                    and r.get("stratagem") == s.name
+                    and r.get("turn_ending_player") is turn_ending_player
+                ):
+                    return
+            except Exception:
+                continue
+        self._queue_reaction(
+            {
+                "event": "turn_end",
+                "phase_name": "End of opponent's turn",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "candidates": list(within_shadow) + list(outside_shadow),
+                "candidates_within_shadow": within_shadow,
+                "candidates_outside_shadow": outside_shadow,
+                "turn_ending_player": turn_ending_player,
+            },
+            use_timer=False,
+        )
 
     def _get_necrons_mgr(self):
         try:
@@ -2628,6 +2869,37 @@ class StratagemManager:
                 self._heroic_intervention_units_this_phase = set()
             else:
                 self._heroic_intervention_units_this_phase.clear()
+        except Exception:
+            raise
+        # Chaos Daemons: CORRUPT REALSPACE (start of any Command phase)
+        try:
+            phase_key = getattr(phase, "name", None)
+            if phase_key == "COMMAND_PHASE":
+                s = self.get_by_name("CORRUPT REALSPACE")
+                if s and self.player.command_points >= s.cp_cost:
+                    if (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                        if s.can_use(self.player, self.game, phase_name="Command phase"):
+                            candidates = self._daemon_incursion_battlefield_unit_candidates()
+                            # Filter to units within a controlled objective
+                            candidates = [
+                                u for u in candidates
+                                if self._corrupting_taint_objective_candidates(u)
+                            ]
+                            if candidates:
+                                already = False
+                                for r in self._pending_reactions:
+                                    if r.get("event") == "phase_start" and r.get("stratagem") == s.name and r.get("phase") == "Command phase":
+                                        already = True
+                                        break
+                                if not already:
+                                    self._queue_reaction({
+                                        "event": "phase_start",
+                                        "phase": "Command phase",
+                                        "phase_name": "Command phase",
+                                        "stratagem": s.name,
+                                        "cp_cost": s.cp_cost,
+                                        "candidates": candidates,
+                                    }, use_timer=False)
         except Exception:
             raise
 
@@ -3368,6 +3640,26 @@ class StratagemManager:
                             sr.pop("unleash_balefire_turn", None)
                             sr.pop("unleash_balefire_source", None)
                             u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("daemonic_invulnerability_active") is True:
+                            exp = str(sr.get("daemonic_invulnerability_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                sr.pop("daemonic_invulnerability_active", None)
+                                sr.pop("daemonic_invulnerability_expires_phase", None)
+                                sr.pop("daemonic_invulnerability_source", None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("draught_of_terror_active") is True:
+                            exp = str(sr.get("draught_of_terror_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "draught_of_terror_active",
+                                    "draught_of_terror_ap_bonus",
+                                    "draught_of_terror_expires_phase",
+                                    "draught_of_terror_turn_owner",
+                                    "draught_of_terror_turn",
+                                    "draught_of_terror_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
                     except Exception:
                         raise
         except Exception:
@@ -3407,6 +3699,18 @@ class StratagemManager:
                             sr.pop("defiant_to_last_active", None)
                             sr.pop("defiant_to_last_expires_phase", None)
                             sr.pop("defiant_to_last_source", None)
+                        if isinstance(sr, dict) and sr.get("draught_of_terror_active") is True:
+                            exp = str(sr.get("draught_of_terror_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                for key in (
+                                    "draught_of_terror_active",
+                                    "draught_of_terror_ap_bonus",
+                                    "draught_of_terror_expires_phase",
+                                    "draught_of_terror_turn_owner",
+                                    "draught_of_terror_turn",
+                                    "draught_of_terror_source",
+                                ):
+                                    sr.pop(key, None)
                         u.special_rules = sr
                     except Exception:
                         raise
@@ -3463,6 +3767,71 @@ class StratagemManager:
                             sr.pop("merciless_reclamation_active", None)
                             sr.pop("merciless_reclamation_expires_phase", None)
                     root.special_rules = sr
+        except Exception:
+            raise
+        # Chaos Daemons: Denizens of the Warp (expires at end of Movement phase).
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "MOVEMENT_PHASE":
+                units = list(getattr(self.player.get_army(), "units", []) or [])
+                seen = set()
+                for unit in units:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    exp = str(sr.get("denizens_deep_strike_expires_phase", "") or "").strip().upper()
+                    if "denizens_deep_strike_min_distance" in sr and (not exp or exp == "MOVEMENT_PHASE"):
+                        for key in (
+                            "denizens_deep_strike_min_distance",
+                            "denizens_deep_strike_turn_owner",
+                            "denizens_deep_strike_turn",
+                            "denizens_deep_strike_expires_phase",
+                            "denizens_deep_strike_source",
+                        ):
+                            sr.pop(key, None)
+                        root.special_rules = sr
+        except Exception:
+            raise
+        # Chaos Daemons: Warp Surge (expires at end of Charge phase).
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "CHARGE_PHASE":
+                for unit in list(getattr(self.player.get_army(), "units", []) or []):
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        sr = getattr(root, "special_rules", None)
+                    except Exception:
+                        sr = None
+                    if not isinstance(sr, dict):
+                        continue
+                    exp = str(sr.get("warp_surge_expires_phase", "") or "").strip().upper()
+                    if sr.get("warp_surge_charge_after_advance") and (not exp or exp == "CHARGE_PHASE"):
+                        for key in (
+                            "warp_surge_charge_after_advance",
+                            "warp_surge_expires_phase",
+                            "warp_surge_source",
+                        ):
+                            sr.pop(key, None)
+                        root.special_rules = sr
         except Exception:
             raise
         # Clear generic defensive reaction effects at phase end.
@@ -4793,6 +5162,59 @@ class StratagemManager:
                         "attacking_unit": attacking_unit,
                             "candidates": smoke_candidates,
                         })
+        except Exception:
+            raise
+        # Chaos Daemons: DAEMONIC INVULNERABILITY (opponent Shooting phase, after targets selected).
+        try:
+            s = self.get_by_name("DAEMONIC INVULNERABILITY")
+            can_offer = bool(
+                s
+                and self.player.command_points >= s.cp_cost
+                and (s.name or "").strip().upper() not in self._used_stratagems_this_phase
+            )
+            if can_offer:
+                candidates = []
+                seen = set()
+                for u in list(target_units or []):
+                    try:
+                        root = u.get_attached_unit_root()
+                    except Exception:
+                        root = u
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    try:
+                        if not root.is_alive():
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if root.get_parent_army().player is not self.player:
+                            continue
+                    except Exception:
+                        continue
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                    if not self._is_legiones_daemonica_unit(root):
+                        continue
+                    candidates.append(root)
+                if candidates:
+                    self._queue_reaction({
+                        "event": "shooting_targets_selected",
+                        "phase_name": "Shooting phase",
+                        "stratagem": s.name,
+                        "cp_cost": s.cp_cost,
+                        "attacking_unit": attacking_unit,
+                        "target_units": list(target_units or []),
+                        "candidates": candidates,
+                    })
         except Exception:
             raise
         # ORKS: 'ARD AS NAILS (opponent Shooting phase, after targets selected).
@@ -12970,6 +13392,496 @@ class StratagemManager:
                 print(f"WARN: {s.name}: {defensive_reaction_note(spec)}")
             except Exception:
                 raise
+            return True
+
+        # Chaos Daemons: CORRUPT REALSPACE (start of any Command phase)
+        if s.name.upper() == "CORRUPT REALSPACE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            objective = kwargs.get("objective") or kwargs.get("objective_marker")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "CORRUPT REALSPACE":
+                        unit = r.get("unit") or r.get("target_unit")
+                        candidates = candidates or (r.get("candidates") or [])
+                        break
+            if unit is None:
+                print("ERROR: Corrupt Realspace: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_legiones_daemonica_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "command phase":
+                print("ERROR: Corrupt Realspace: wrong phase")
+                return False
+            obj_candidates = self._corrupting_taint_objective_candidates(root)
+            if objective is None:
+                objective = obj_candidates[0] if obj_candidates else None
+            if objective is None:
+                print("ERROR: Corrupt Realspace: no objective marker available")
+                return False
+            if obj_candidates:
+                try:
+                    if objective not in list(obj_candidates or []):
+                        print("ERROR: Corrupt Realspace: objective not in candidates")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                loc = getattr(objective, "location", None)
+                if loc is not None and hasattr(loc, "set_sticky_control"):
+                    loc.set_sticky_control(self.player, source="corrupt_realspace")
+                elif loc is not None:
+                    loc.sticky_controller = self.player
+                    loc.sticky_source = "corrupt_realspace"
+                    loc.controlling_player = self.player
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print("INFO: CORRUPT REALSPACE: objective remains under your control until broken.")
+            return True
+
+        # Chaos Daemons: DAEMONIC INVULNERABILITY (defensive reaction)
+        if s.name.upper() == "DAEMONIC INVULNERABILITY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DAEMONIC INVULNERABILITY":
+                        unit = r.get("unit") or r.get("target_unit")
+                        candidates = candidates or (r.get("candidates") or [])
+                        break
+            if unit is None:
+                print("ERROR: Daemonic Invulnerability: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_legiones_daemonica_unit(root):
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: Daemonic Invulnerability: target not in candidates")
+                        return False
+                except Exception:
+                    raise
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: Daemonic Invulnerability: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: Daemonic Invulnerability: not opponent's Shooting phase")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["daemonic_invulnerability_active"] = True
+                sr["daemonic_invulnerability_expires_phase"] = "SHOOTING_PHASE"
+                sr["daemonic_invulnerability_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DAEMONIC INVULNERABILITY: {getattr(root, 'name', 'Unit')} re-rolls invulnerable save 1s this phase.")
+            return True
+
+        # Chaos Daemons: DENIZENS OF THE WARP (Deep Strike min distance override)
+        if s.name.upper() == "DENIZENS OF THE WARP":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Denizens of the Warp: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_legiones_daemonica_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: Denizens of the Warp: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Denizens of the Warp: not your Movement phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Denizens of the Warp: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "is_in_reserves", lambda: False)():
+                    print("ERROR: Denizens of the Warp: target is not in Reserves")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "has_deep_strike", lambda: False)():
+                    print("ERROR: Denizens of the Warp: target lacks Deep Strike")
+                    return False
+            except Exception:
+                raise
+            try:
+                turn = int(getattr(self.game, "turn", 0) or 0)
+                if not getattr(root, "can_arrive_from_reserves", lambda _t: False)(turn):
+                    print("ERROR: Denizens of the Warp: target cannot arrive from Reserves this turn")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["denizens_deep_strike_min_distance"] = 6.0
+                sr["denizens_deep_strike_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["denizens_deep_strike_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["denizens_deep_strike_expires_phase"] = "MOVEMENT_PHASE"
+                sr["denizens_deep_strike_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DENIZENS OF THE WARP: {getattr(root, 'name', 'Unit')} can Deep Strike within 6\" this phase.")
+            return True
+
+        # Chaos Daemons: DRAUGHT OF TERROR (+1 AP, reroll wounds vs Battle-shocked)
+        if s.name.upper() == "DRAUGHT OF TERROR":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Draught of Terror: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_legiones_daemonica_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            phase_key = str(phase_name or "").strip().lower()
+            if phase_key not in ("shooting phase", "fight phase"):
+                print("ERROR: Draught of Terror: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if phase_key == "shooting phase" and active_player is not self.player:
+                print("ERROR: Draught of Terror: not your Shooting phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Draught of Terror: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if phase_key == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                    print("ERROR: Draught of Terror: target already shot this phase")
+                    return False
+                if phase_key == "fight phase":
+                    fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+                    fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
+                    if root in fought or bool(getattr(getattr(root, "round_state", None), "fought_this_round", False)):
+                        print("ERROR: Draught of Terror: target already fought this phase")
+                        return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["draught_of_terror_active"] = True
+                sr["draught_of_terror_ap_bonus"] = 1
+                sr["draught_of_terror_expires_phase"] = "SHOOTING_PHASE" if phase_key == "shooting phase" else "FIGHT_PHASE"
+                sr["draught_of_terror_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["draught_of_terror_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["draught_of_terror_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: DRAUGHT OF TERROR: {getattr(root, 'name', 'Unit')} gains +1 AP and wound rerolls vs Battle-shocked this phase.")
+            return True
+
+        # Chaos Daemons: THE REALM OF CHAOS (end of opponent's turn)
+        if s.name.upper() == "THE REALM OF CHAOS":
+            selected = (
+                kwargs.get("units")
+                or kwargs.get("target_units")
+                or kwargs.get("selected_units")
+                or kwargs.get("unit")
+                or kwargs.get("target_unit")
+            )
+            if selected is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "THE REALM OF CHAOS":
+                        selected = r.get("units") or r.get("target_units") or r.get("selected_units")
+                        break
+            if selected is None:
+                print("ERROR: The Realm of Chaos: no target units provided")
+                return False
+            if not isinstance(selected, (list, tuple)):
+                selected = [selected]
+            resolved = []
+            for entry in list(selected or []):
+                if entry is None:
+                    continue
+                if isinstance(entry, str):
+                    try:
+                        resolver = getattr(self.game, "_resolve_unit_by_id", None) if self.game is not None else None
+                        unit = resolver(entry) if callable(resolver) else None
+                    except Exception:
+                        unit = None
+                else:
+                    unit = entry
+                if unit is not None:
+                    resolved.append(unit)
+            if not resolved:
+                print("ERROR: The Realm of Chaos: no valid target units")
+                return False
+            if len(resolved) > 2:
+                print("ERROR: The Realm of Chaos: cannot target more than two units")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: The Realm of Chaos: not opponent's turn")
+                return False
+            within_shadow = []
+            outside_shadow = []
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                return False
+            for unit in resolved:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    return False
+                if not self._is_legiones_daemonica_unit(root):
+                    return False
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        print("ERROR: The Realm of Chaos: target cannot be selected")
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if not root.is_alive():
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if not getattr(root, "deployed", False):
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                        return False
+                except Exception:
+                    raise
+                try:
+                    engaged = False
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                        if game_map.is_within_engagement_range(root, enemy):
+                            engaged = True
+                            break
+                    if engaged:
+                        print("ERROR: The Realm of Chaos: unit within Engagement Range")
+                        return False
+                except Exception:
+                    raise
+                if self._unit_within_shadow_of_chaos(root):
+                    within_shadow.append(root)
+                else:
+                    outside_shadow.append(root)
+            if outside_shadow and len(resolved) != 1:
+                print("ERROR: The Realm of Chaos: only one unit can be selected if outside Shadow of Chaos")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=resolved[0]).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            for unit in resolved:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                try:
+                    root.enter_strategic_reserves_midgame(game=self.game, game_map=getattr(self.game, "map", None), reason=s.name)
+                except Exception:
+                    raise
+                try:
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        sr = {}
+                    sr["realm_of_chaos_temp_deep_strike"] = True
+                    sr["realm_of_chaos_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                    sr["realm_of_chaos_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                    sr["realm_of_chaos_source"] = s.name
+                    root.special_rules = sr
+                    if hasattr(root, "_ability_cache") and isinstance(getattr(root, "_ability_cache", None), dict):
+                        root._ability_cache.pop("deep_strike", None)
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print("INFO: THE REALM OF CHAOS: units placed into Strategic Reserves.")
+            return True
+
+        # Chaos Daemons: WARP SURGE (advance and charge in Shadow of Chaos)
+        if s.name.upper() == "WARP SURGE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Warp Surge: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_legiones_daemonica_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "charge phase":
+                print("ERROR: Warp Surge: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Warp Surge: not your Charge phase")
+                return False
+            if not self._unit_within_shadow_of_chaos(root):
+                print("ERROR: Warp Surge: unit is not within Shadow of Chaos")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["warp_surge_charge_after_advance"] = True
+                sr["warp_surge_expires_phase"] = "CHARGE_PHASE"
+                sr["warp_surge_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: WARP SURGE: {getattr(root, 'name', 'Unit')} can charge after advancing this phase.")
             return True
 
         # Provide phase_name for timing checks

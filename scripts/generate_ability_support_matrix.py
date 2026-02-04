@@ -6619,6 +6619,12 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "CAREEN!": "On Deadly Demise roll of 6: ORKS VEHICLE moves (Normal/Fall Back) before explosion; can move over enemy units except MONSTER/VEHICLE.",
         "'ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
         "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
+        "CORRUPT REALSPACE": "Command phase: corrupt a controlled objective; sticky until opponent controls it at start/end of any turn; 6\" area counts as Shadow of Chaos.",
+        "DAEMONIC INVULNERABILITY": "Opponent Shooting phase: targeted LEGIONES DAEMONICA unit re-rolls invulnerable saves of 1 until end of phase.",
+        "DENIZENS OF THE WARP": "Movement phase: Deep Strike arrival can be set up more than 6\" horizontally from enemies this phase.",
+        "DRAUGHT OF TERROR": "Shooting/Fight phase: LEGIONES DAEMONICA unit gains +1 AP and re-rolls Wound rolls vs Battle-shocked targets until end of phase.",
+        "THE REALM OF CHAOS": "End of opponent turn: up to two Shadow-of-Chaos units (or one other unit) enter Strategic Reserves and return next Movement phase via Deep Strike.",
+        "WARP SURGE": "Charge phase: LEGIONES DAEMONICA unit within Shadow of Chaos can charge after advancing this phase.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:

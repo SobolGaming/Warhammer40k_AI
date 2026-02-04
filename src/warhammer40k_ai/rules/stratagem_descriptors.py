@@ -78,13 +78,81 @@ _INFERNAL_LANCE_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.values()
 }
 
+_DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000008437002": StratagemToolDescriptor(
+        stratagem_id="000008437002",
+        name="Corrupt Realspace",
+        timing="command_phase_start_any",
+        target="legiones_daemonica_unit_on_controlled_objective",
+        duration="until_opponent_controls_start_or_end_of_turn",
+        effect="corrupt_realspace_sticky_objective",
+        cp_cost=1,
+        effect_params={"shadow_of_chaos_radius": 6},
+    ),
+    "000008437007": StratagemToolDescriptor(
+        stratagem_id="000008437007",
+        name="Daemonic Invulnerability",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="legiones_daemonica_unit_targeted",
+        duration="until_end_of_phase",
+        effect="reroll_invulnerable_saves_of_1",
+        cp_cost=1,
+    ),
+    "000008437005": StratagemToolDescriptor(
+        stratagem_id="000008437005",
+        name="Denizens of the Warp",
+        timing="movement_phase_reinforcements_step",
+        target="legiones_daemonica_unit_arriving_from_deep_strike",
+        duration="this_phase",
+        effect="deep_strike_min_distance_override",
+        cp_cost=1,
+        effect_params={"min_distance": 6, "distance_type": "horizontal"},
+    ),
+    "000008437004": StratagemToolDescriptor(
+        stratagem_id="000008437004",
+        name="Draught of Terror",
+        timing="shooting_or_fight_phase_on_select",
+        target="legiones_daemonica_unit_not_yet_acted",
+        duration="until_end_of_phase",
+        effect="ap_bonus_and_wound_reroll_vs_battleshocked",
+        cp_cost=1,
+        effect_params={"ap_bonus": 1, "reroll_wound_vs_battleshocked": True},
+    ),
+    "000008437006": StratagemToolDescriptor(
+        stratagem_id="000008437006",
+        name="The Realm of Chaos",
+        timing="end_of_opponent_turn",
+        target="up_to_two_legiones_daemonica_units",
+        duration="until_next_reinforcements_step",
+        effect="enter_strategic_reserves_with_temp_deep_strike",
+        cp_cost=1,
+        effect_params={"max_units": 2, "outside_shadow_max_units": 1, "grant_deep_strike": True},
+    ),
+    "000008437003": StratagemToolDescriptor(
+        stratagem_id="000008437003",
+        name="Warp Surge",
+        timing="charge_phase",
+        target="legiones_daemonica_unit_in_shadow",
+        duration="until_end_of_phase",
+        effect="charge_after_advance",
+        cp_cost=1,
+    ),
+}
+
+_DAEMONIC_INCURSION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
         desc = _INFERNAL_LANCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
-    return _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
+    return _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key) or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)

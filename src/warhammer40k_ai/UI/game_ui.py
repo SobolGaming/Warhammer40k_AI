@@ -207,6 +207,7 @@ class GameView:
         self.blood_tithe_dialog = None
         self.idols_of_khorne_dialog = None
         self.vessels_of_wrath_models_dialog = None
+        self.realm_of_chaos_units_dialog = None
         self.wrath_of_khorne_blessing_dialog = None
         self.templar_vows_dialog = None
         self.shadow_form_dialog = None
@@ -1307,6 +1308,117 @@ class GameView:
                 allow_skip=True,
             )
         self._request_corrupting_taint_objective = _request_corrupting_taint_objective
+
+        def _request_corrupt_realspace_objective(player, game, candidates, on_chosen):
+            from ..engine.decision_kinds import DECISION_PICK_OBJECTIVE
+            from ..engine.decisions import DecisionOption
+            from ..utility.entity_ids import get_entity_id
+
+            objs = list(candidates or [])
+            if not objs:
+                on_chosen(None)
+                return
+            options = []
+            for idx, obj in enumerate(objs):
+                label = getattr(obj, "name", None) or f"Objective {idx + 1}"
+                try:
+                    loc = getattr(obj, "location", None)
+                    if loc is not None:
+                        label = f"{label} ({float(getattr(loc, 'x', 0.0)):.1f}, {float(getattr(loc, 'y', 0.0)):.1f})"
+                except Exception:
+                    pass
+                options.append(DecisionOption.create(label, payload={"objective_id": get_entity_id(obj)}))
+            _resolve_option_selection_dialog(
+                player=player,
+                options=options,
+                on_chosen=on_chosen,
+                decision_type=DECISION_PICK_OBJECTIVE,
+                prompt="Select an objective marker your unit controls.",
+                title="Corrupt Realspace",
+                header="Select an objective marker to corrupt.",
+                subtitle="Objective remains under your control until opponent controls it at start or end of any turn.",
+                context={"ability": "corrupt_realspace"},
+                allow_skip=True,
+            )
+        self._request_corrupt_realspace_objective = _request_corrupt_realspace_objective
+
+        def _request_realm_of_chaos_units(player, game, candidates, on_chosen, *, outside_ids=None, max_units: int = 2):
+            from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
+            from ..engine.decisions import DecisionOption, DecisionRequest
+            from ..utility.decision_utils import resolve_decision_value
+            from ..utility.entity_ids import get_entity_id
+
+            units = list(candidates or [])
+            if not units:
+                on_chosen(None)
+                return
+            allowed_unit_ids = []
+            for unit in units:
+                try:
+                    allowed_unit_ids.append(str(get_entity_id(unit)))
+                except Exception:
+                    continue
+            options = [
+                DecisionOption.create("Confirm selection", payload={"action": "confirm"}),
+                DecisionOption.create("Do not use", payload={"action": "skip"}),
+            ]
+            ctx = {
+                "allowed_unit_ids": allowed_unit_ids,
+                "max_units": int(max_units or 2),
+                "outside_shadow_unit_ids": [str(v) for v in list(outside_ids or []) if v is not None],
+            }
+            req = DecisionRequest.create(
+                DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+                "Select up to two LEGIONES DAEMONICA units.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            if self.game is not None:
+                self.game.request_decision(req)
+
+            if self.realm_of_chaos_units_dialog is None:
+                try:
+                    from .dialogs import RealmOfChaosUnitsDialog
+                    sw, sh = self.screen.get_size()
+                    self.realm_of_chaos_units_dialog = RealmOfChaosUnitsDialog(sw, sh)
+                except Exception:
+                    self.realm_of_chaos_units_dialog = None
+            dlg = self.realm_of_chaos_units_dialog
+            if dlg is None:
+                on_chosen(None)
+                return
+
+            def _on_confirm(option_id: str, payload: dict):
+                value, apply = resolve_decision_value(
+                    self.game,
+                    req,
+                    option_id,
+                    result_payload=payload or {},
+                    player_id=getattr(player, "id", None),
+                )
+                if apply is None or not getattr(apply, "ok", False):
+                    on_chosen(None)
+                else:
+                    on_chosen(value)
+                try:
+                    dlg.hide()
+                except Exception:
+                    pass
+
+            dlg.show(
+                units=units,
+                max_units=int(max_units or 2),
+                on_confirm=_on_confirm,
+                outside_ids=outside_ids,
+                decision_request=req,
+            )
+            try:
+                self.dialog_manager.open(dlg, modal=True)
+            except Exception:
+                pass
+
+        self._request_realm_of_chaos_units = _request_realm_of_chaos_units
 
         def _request_murder_call_unit(player, game, candidates, on_chosen):
             from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -3168,6 +3280,7 @@ class GameView:
                 DECISION_CHOOSE_BLOOD_TITHE,
                 DECISION_CHOOSE_IDOL_OF_KHORNE,
                 DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
+                DECISION_SELECT_REALM_OF_CHAOS_UNITS,
                 DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
                 DECISION_CHOOSE_COMBAT_DOCTRINE,
                 DECISION_CHOOSE_COMBAT_DRUGS,
@@ -3344,6 +3457,57 @@ class GameView:
             )
             try:
                 self.dialog_manager.open(self.vessels_of_wrath_models_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_SELECT_REALM_OF_CHAOS_UNITS:
+            if self.realm_of_chaos_units_dialog is None:
+                try:
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    from .dialogs import RealmOfChaosUnitsDialog
+                    self.realm_of_chaos_units_dialog = RealmOfChaosUnitsDialog(sw, sh)
+                except Exception:
+                    self.realm_of_chaos_units_dialog = None
+            if self.realm_of_chaos_units_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            allowed_ids = [str(v) for v in list(ctx.get("allowed_unit_ids") or []) if v is not None]
+            outside_ids = [str(v) for v in list(ctx.get("outside_shadow_unit_ids") or []) if v is not None]
+            max_units = int(ctx.get("max_units", 2) or 2)
+            registry = getattr(self.game, "entity_registry", None)
+            units = []
+            for uid in allowed_ids:
+                unit = registry.get(str(uid), kind="unit") if registry is not None else None
+                if unit is not None:
+                    units.append(unit)
+            if not units:
+                return
+
+            def _on_confirm(option_id: str, payload: dict):
+                resolve_decision_command(
+                    self.game,
+                    request,
+                    option_id,
+                    result_payload=payload or {},
+                    player_id=getattr(player, "id", None),
+                )
+                try:
+                    self.realm_of_chaos_units_dialog.hide()
+                except Exception:
+                    pass
+
+            self.realm_of_chaos_units_dialog.show(
+                units=units,
+                max_units=max_units,
+                on_confirm=_on_confirm,
+                outside_ids=outside_ids,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.realm_of_chaos_units_dialog, modal=True)
             except Exception:
                 pass
             return
@@ -15835,6 +15999,65 @@ class GameView:
                 )
             return
 
+        if name_u == "CORRUPT REALSPACE" and "objective" not in context and "objective_marker" not in context:
+            if not callable(getattr(self, "_request_corrupt_realspace_objective", None)):
+                return
+            unit = context.get("unit") or context.get("target_unit")
+            if unit is None:
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_daemon_incursion_battlefield_unit_candidates"):
+                    try:
+                        candidates = manager._daemon_incursion_battlefield_unit_candidates()
+                    except Exception:
+                        candidates = []
+                if candidates and hasattr(manager, "_corrupting_taint_objective_candidates"):
+                    try:
+                        candidates = [u for u in candidates if manager._corrupting_taint_objective_candidates(u)]
+                    except Exception:
+                        pass
+                if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                    from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                    def _after_unit(chosen_unit):
+                        if chosen_unit is None:
+                            print("Corrupt Realspace: no unit selected")
+                            return
+                        try:
+                            obj_candidates = manager._corrupting_taint_objective_candidates(chosen_unit)
+                        except Exception:
+                            obj_candidates = []
+                        self._request_corrupt_realspace_objective(
+                            player,
+                            self.game,
+                            obj_candidates,
+                            lambda obj: self._finalize_corrupt_realspace(player, name, context, chosen_unit, obj),
+                        )
+
+                    self._resolve_unit_selection_dialog(
+                        player=player,
+                        candidates=candidates,
+                        on_chosen=_after_unit,
+                        decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                        prompt="Select a LEGIONES DAEMONICA unit within range of a controlled objective.",
+                        title="Corrupt Realspace",
+                        subtitle="Choose a unit to corrupt an objective marker.",
+                        enemy_unit=None,
+                        dialog=self.overwatch_shooter_dialog,
+                        allow_skip=True,
+                    )
+                return
+            try:
+                obj_candidates = manager._corrupting_taint_objective_candidates(unit)
+            except Exception:
+                obj_candidates = []
+            self._request_corrupt_realspace_objective(
+                player,
+                self.game,
+                obj_candidates,
+                lambda obj: self._finalize_corrupt_realspace(player, name, context, unit, obj),
+            )
+            return
+
         if name_u == "PROFANE SYMBIOSIS" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_request_profane_symbiosis_unit", None)):
                 candidates = context.get("candidates") or []
@@ -15848,6 +16071,153 @@ class GameView:
                     self.game,
                     candidates,
                     lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                )
+            return
+
+        if name_u == "DAEMONIC INVULNERABILITY" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_daemon_incursion_battlefield_unit_candidates"):
+                    try:
+                        candidates = manager._daemon_incursion_battlefield_unit_candidates()
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a LEGIONES DAEMONICA unit to gain invulnerable re-rolls.",
+                    title="Daemonic Invulnerability",
+                    subtitle="Re-roll invulnerable save rolls of 1 this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "DENIZENS OF THE WARP" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_daemon_incursion_reserve_deep_strike_candidates"):
+                    try:
+                        candidates = manager._daemon_incursion_reserve_deep_strike_candidates()
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a LEGIONES DAEMONICA unit arriving via Deep Strike.",
+                    title="Denizens of the Warp",
+                    subtitle="Set up more than 6\" horizontally from enemy models.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "DRAUGHT OF TERROR" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_daemon_incursion_battlefield_unit_candidates"):
+                    try:
+                        candidates = manager._daemon_incursion_battlefield_unit_candidates()
+                    except Exception:
+                        candidates = []
+                phase_label = (context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "").strip().lower()
+                filtered = []
+                for unit in list(candidates or []):
+                    if unit is None:
+                        continue
+                    if phase_label == "shooting phase":
+                        if bool(getattr(getattr(unit, "round_state", None), "shot_this_round", False)):
+                            continue
+                    if phase_label == "fight phase":
+                        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+                        fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
+                        if unit in fought or bool(getattr(getattr(unit, "round_state", None), "fought_this_round", False)):
+                            continue
+                    filtered.append(unit)
+                candidates = filtered or candidates
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a LEGIONES DAEMONICA unit that has not fought or shot this phase.",
+                    title="Draught of Terror",
+                    subtitle="+1 AP and re-roll Wound vs Battle-shocked targets this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "THE REALM OF CHAOS" and not (
+            "units" in context or "target_units" in context or "selected_units" in context
+        ):
+            if callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                from ..utility.entity_ids import get_entity_id
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_daemon_incursion_battlefield_unit_candidates"):
+                    try:
+                        candidates = manager._daemon_incursion_battlefield_unit_candidates()
+                    except Exception:
+                        candidates = []
+                outside = context.get("candidates_outside_shadow") or []
+                outside_ids = []
+                try:
+                    outside_ids = [str(get_entity_id(u)) for u in list(outside or []) if u is not None]
+                except Exception:
+                    outside_ids = []
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda units: self._finalize_realm_of_chaos(player, name, context, units),
+                    outside_ids=outside_ids,
+                    max_units=2,
+                )
+            return
+
+        if name_u == "WARP SURGE" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_daemon_incursion_battlefield_unit_candidates"):
+                    try:
+                        candidates = manager._daemon_incursion_battlefield_unit_candidates()
+                    except Exception:
+                        candidates = []
+                filtered = []
+                for unit in list(candidates or []):
+                    try:
+                        if manager._unit_within_shadow_of_chaos(unit):
+                            filtered.append(unit)
+                    except Exception:
+                        continue
+                candidates = filtered or candidates
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a LEGIONES DAEMONICA unit within your Shadow of Chaos.",
+                    title="Warp Surge",
+                    subtitle="Unit can charge after advancing this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
                 )
             return
 
@@ -16502,6 +16872,47 @@ class GameView:
             return
         ctx = dict(context)
         ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_corrupt_realspace(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Corrupt Realspace: no unit selected")
+            return
+        if objective is None:
+            print("Corrupt Realspace: no objective selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+        ctx["objective"] = objective
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_realm_of_chaos(self, player, name: str, context: Dict[str, Any], units) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if units is None:
+            print("The Realm of Chaos: no units selected")
+            return
+        if not isinstance(units, (list, tuple)):
+            units = [units]
+        units = [u for u in units if u is not None]
+        if not units:
+            print("The Realm of Chaos: no units selected")
+            return
+        ctx = dict(context)
+        ctx["units"] = list(units)
         ok = manager.use(name, **ctx)
         if ok:
             print(f"Used stratagem: {name}")

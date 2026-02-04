@@ -17564,6 +17564,30 @@ class Unit:
         except Exception:
             pass
         try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("warp_surge_charge_after_advance"):
+                apply_bonus = True
+                exp = str(sr.get("warp_surge_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    except Exception:
+                        game = None
+                    if game is not None:
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    else:
+                        pname = ""
+                    if pname and pname != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    return True
+        except Exception:
+            pass
+        try:
             if self._dark_ritual_active():
                 return True
         except Exception:
@@ -24216,8 +24240,9 @@ class Unit:
         found = False
         try:
             sr = getattr(self, "special_rules", None)
-            if isinstance(sr, dict) and sr.get("bearer_unit_deep_strike"):
-                found = True
+            if isinstance(sr, dict):
+                if sr.get("bearer_unit_deep_strike") or sr.get("realm_of_chaos_temp_deep_strike"):
+                    found = True
         except Exception:
             pass
         if not found:
@@ -24308,6 +24333,40 @@ class Unit:
                 cloud_min = 0.0
             if cloud_min > 0:
                 min_dist = cloud_min if min_dist is None else min(min_dist, cloud_min)
+
+        try:
+            denizens_min = float(sr.get("denizens_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            denizens_min = 0.0
+        if denizens_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("denizens_deep_strike_turn_owner", "") or "")
+                turn = int(sr.get("denizens_deep_strike_turn", 0) or 0)
+                if game is not None:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    exp = str(sr.get("denizens_deep_strike_expires_phase", "") or "").strip().upper()
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        denizens_min = 0.0
+                    elif turn and cur_turn and turn != cur_turn:
+                        denizens_min = 0.0
+                    elif exp and pname and exp != pname:
+                        denizens_min = 0.0
+            except Exception:
+                denizens_min = 0.0
+            if denizens_min > 0:
+                min_dist = denizens_min if min_dist is None else min(min_dist, denizens_min)
 
         return float(min_dist) if min_dist is not None else None
 
@@ -31824,6 +31883,33 @@ class Unit:
                     if owner:
                         sr["pain_swooping_descent_no_charge_turn_owner"] = owner
                     self.special_rules = sr
+        except Exception:
+            pass
+
+        # Clear temporary Deep Strike flags from Realm of Chaos/Denizens of the Warp.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict):
+                if sr.get("realm_of_chaos_temp_deep_strike") is True:
+                    for key in (
+                        "realm_of_chaos_temp_deep_strike",
+                        "realm_of_chaos_turn_owner",
+                        "realm_of_chaos_turn",
+                        "realm_of_chaos_source",
+                    ):
+                        sr.pop(key, None)
+                if "denizens_deep_strike_min_distance" in sr or "denizens_deep_strike_expires_phase" in sr:
+                    for key in (
+                        "denizens_deep_strike_min_distance",
+                        "denizens_deep_strike_turn_owner",
+                        "denizens_deep_strike_turn",
+                        "denizens_deep_strike_expires_phase",
+                        "denizens_deep_strike_source",
+                    ):
+                        sr.pop(key, None)
+                self.special_rules = sr
+                if hasattr(self, "_ability_cache") and isinstance(getattr(self, "_ability_cache", None), dict):
+                    self._ability_cache.pop("deep_strike", None)
         except Exception:
             pass
 

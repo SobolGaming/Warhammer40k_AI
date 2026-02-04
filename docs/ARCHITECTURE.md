@@ -150,6 +150,7 @@ Responsibilities:
 - render the battlefield and unit panels
 - show dialogs that correspond to engine DecisionRequests
 - convert user choices into deterministic Commands
+- avoid importing GUI backends at package import time; entry points should import GUI modules lazily so headless tooling/tests remain stable
 
 See also: `docs/DIALOG_MANAGER.md` and dialog mapping in `docs/NETWORK_SAVELOAD_DESIGN.md`.
 

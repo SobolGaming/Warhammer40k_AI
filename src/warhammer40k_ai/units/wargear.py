@@ -720,6 +720,26 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            sr = getattr(attacker.parent_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("draught_of_terror_active"):
+                apply_bonus = True
+                exp = str(sr.get("draught_of_terror_expires_phase", "") or "").strip().upper()
+                if exp:
+                    try:
+                        army = attacker.parent_unit.get_parent_army()
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        pname = ""
+                    if pname and pname != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    bonus = int(sr.get("draught_of_terror_ap_bonus", 0) or 0)
+                    if bonus:
+                        ap_val -= bonus
+        except Exception:
+            pass
+        try:
             unit = getattr(attacker, "parent_unit", None)
             army = unit.get_parent_army() if unit is not None else None
             mgr = getattr(army, "doctrina_imperatives", None) if army is not None else None
@@ -6209,7 +6229,11 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
                     )
-        if self.parent_wargear and self.parent_wargear.is_ranged() and isinstance(strength, int):
+        if (
+            self.parent_wargear
+            and getattr(self.parent_wargear, "is_ranged", lambda: False)()
+            and isinstance(strength, int)
+        ):
             sr = self._unit_special_rules(attacker)
             r_bonus = int(sr.get("enhancement_bearer_ranged_strength_bonus", 0) or 0)
             if r_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
@@ -6969,6 +6993,22 @@ class WargearProfile:
             if rule and bool(rule.get("reroll_wound")):
                 reason = str(rule.get("source", "") or "Monster/Vehicle rerolls").strip() or "Monster/Vehicle rerolls"
                 reroll_full_reasons.append(reason)
+        except Exception:
+            pass
+        # Draught of Terror: re-roll Wound roll vs Battle-shocked targets.
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            if isinstance(sr, dict) and sr.get("draught_of_terror_active"):
+                apply_bonus = True
+                exp = str(sr.get("draught_of_terror_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=unit, target_unit=target)
+                    if phase_key and phase_key != exp:
+                        apply_bonus = False
+                if apply_bonus:
+                    if target is not None and bool(getattr(target, "is_battle_shocked", lambda: False)()):
+                        reroll_full_reasons.append("Draught of Terror")
         except Exception:
             pass
         # Twin-linked grants reroll of wound rolls.
@@ -8829,6 +8869,41 @@ class WargearProfile:
             dice_roll = int(new_roll)
             save_result['roll'] = dice_roll
             save_result['special_effects'].append("Ability: set roll to 6")
+
+        # Daemonic Invulnerability: re-roll invulnerable save rolls of 1.
+        try:
+            if (
+                rerolls_allowed
+                and not shadow_field_no_reroll
+                and dice_roll == 1
+                and "reroll" not in save_result
+                and save_result.get("save_type") == "invulnerable"
+            ):
+                t_unit = getattr(target_model, "parent_unit", None)
+                sr = getattr(t_unit, "special_rules", None) if t_unit is not None else None
+                if isinstance(sr, dict) and sr.get("daemonic_invulnerability_active"):
+                    apply_bonus = True
+                    exp = str(sr.get("daemonic_invulnerability_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        try:
+                            army = t_unit.get_parent_army() if t_unit is not None else None
+                            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                            pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            pname = ""
+                        if pname and pname != exp:
+                            apply_bonus = False
+                    if apply_bonus:
+                        rr = _reroll_save()
+                        save_result["reroll_of_one"] = 1
+                        save_result["reroll"] = rr
+                        save_result["special_effects"].append(
+                            "Daemonic Invulnerability: re-roll invulnerable save of 1"
+                        )
+                        dice_roll = rr
+                        save_result["roll"] = dice_roll
+        except Exception:
+            pass
         
         if dice_roll == 1:  # unmodified dice roll of 1 is always a fail
             save_result['saved'] = False

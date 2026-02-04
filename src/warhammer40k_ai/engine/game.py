@@ -176,6 +176,8 @@ class Game:
         self._phase_enemy_unit_destroyers: Dict[str, set[str]] = {}
         # Phase-scoped enemy model destruction tracking (for phase-end penalties like Daemonic Patrons).
         self._phase_enemy_model_destroyers: Dict[str, set[str]] = {}
+        # Corrupt Realspace: allow sticky break only at start/end of turn.
+        self._corrupt_realspace_check: bool = False
         # Return-on-death pending returns (processed at end of the phase they were destroyed in)
         self._phoenix_gem_pending: List[Dict[str, Any]] = []
         # World Eaters: Blood Surge shooting snapshots (attacker -> {target: model_count})
@@ -15571,6 +15573,37 @@ class Game:
             for unit in list(getattr(army, "units", []) or []):
                 maybe_upgrade_adaptive_biology(unit)
 
+    def _evaluate_corrupt_realspace_turn_boundary(self, *, timing: str, player: Player | None = None) -> None:
+        """Check Corrupt Realspace sticky objectives at the start/end of any turn."""
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        if not objectives:
+            return
+        has_corrupt = False
+        for obj in objectives:
+            loc = getattr(obj, "location", None)
+            if loc is None or getattr(loc, "removed", False):
+                continue
+            if str(getattr(loc, "sticky_source", "") or "") == "corrupt_realspace":
+                has_corrupt = True
+                break
+        if not has_corrupt:
+            return
+        self._corrupt_realspace_check = True
+        try:
+            for obj in objectives:
+                loc = getattr(obj, "location", None)
+                if loc is None or getattr(loc, "removed", False):
+                    continue
+                if str(getattr(loc, "sticky_source", "") or "") != "corrupt_realspace":
+                    continue
+                if hasattr(loc, "update_control"):
+                    loc.update_control(self)
+        finally:
+            self._corrupt_realspace_check = False
+
     def _warp_rifts_min_distance(self, unit: Unit) -> float:
         if unit is None or not self._unit_has_keyword(unit, "LEGIONES DAEMONICA"):
             return 9.0
@@ -15668,6 +15701,9 @@ class Game:
         army = self._get_player_army(current_player)
         if army is None:
             return
+
+        # Corrupt Realspace: check at the start of any turn.
+        self._evaluate_corrupt_realspace_turn_boundary(timing="start", player=current_player)
 
         # Adaptive Biology (Tyranids enhancement): check at the start of any turn.
         self._apply_adaptive_biology_turn_start()
@@ -16224,6 +16260,9 @@ class Game:
         """Apply end-of-turn scoring for primaries and secondaries, manage discard rules and CP gain."""
         turn_ending_player = self.get_current_player()
 
+        # Corrupt Realspace: check at the end of any turn before scoring.
+        self._evaluate_corrupt_realspace_turn_boundary(timing="end", player=turn_ending_player)
+
         # Track destroyed units for this turn should already be collected elsewhere; ensure attribute exists
         if not hasattr(self, 'destroyed_units_this_turn'):
             self.destroyed_units_this_turn = []
@@ -16386,6 +16425,13 @@ class Game:
 
         # End of opponent's turn: optional abilities to move units into Strategic Reserves.
         self._maybe_prompt_end_of_opponent_turn_strategic_reserves(turn_ending_player)
+        # Chaos Daemons: The Realm of Chaos (end of opponent's turn stratagem).
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            mgr = getattr(p, "stratagems", None)
+            if mgr is not None and hasattr(mgr, "queue_realm_of_chaos_end_of_turn"):
+                mgr.queue_realm_of_chaos_end_of_turn(turn_ending_player=turn_ending_player)
 
         # Clear per-turn event lists
         self.destroyed_units_this_turn = []

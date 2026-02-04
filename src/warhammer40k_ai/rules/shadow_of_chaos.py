@@ -299,6 +299,31 @@ class ShadowOfChaosManager:
         if unit_army is not None and unit_army is player_army:
             if self.unit_within_greater_daemon_shadow_aura(unit, player_army, game=game):
                 return True
+        # Corrupt Realspace: objectives corrupted and controlled by the player extend Shadow of Chaos 6".
+        try:
+            from ..utility.aura_utils import unit_within_range_of_point_3d
+        except Exception:
+            unit_within_range_of_point_3d = None
+        if callable(unit_within_range_of_point_3d):
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+            if game_map is not None:
+                for obj in list(getattr(game_map, "objectives", []) or []):
+                    loc = getattr(obj, "location", None)
+                    if loc is None or getattr(loc, "removed", False):
+                        continue
+                    if str(getattr(loc, "sticky_source", "") or "") != "corrupt_realspace":
+                        continue
+                    owner = getattr(loc, "controlling_player", None) or getattr(loc, "sticky_controller", None)
+                    if owner is not player:
+                        continue
+                    try:
+                        if unit_within_range_of_point_3d(unit, (float(loc.x), float(loc.y)), 6.0, use_attached_aggregate=True):
+                            return True
+                    except Exception:
+                        continue
         zones = self.get_shadow_zones(game=game, player=player)
         if not zones:
             return False

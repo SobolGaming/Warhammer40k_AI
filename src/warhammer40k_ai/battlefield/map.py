@@ -2523,7 +2523,11 @@ class ObjectivePoint:
                     opponent_max = max(opponent_max, int(oc or 0))
                 except Exception:
                     continue
-            if opponent_max > sticky_oc:
+            sticky_source = getattr(self, "sticky_source", None)
+            allow_break = True
+            if sticky_source == "corrupt_realspace":
+                allow_break = bool(getattr(game_state, "_corrupt_realspace_check", False))
+            if opponent_max > sticky_oc and allow_break:
                 # Sticky control broken.
                 self.sticky_controller = None
                 self.sticky_source = None

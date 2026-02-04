@@ -8,6 +8,7 @@ from ..decision_kinds import (
     DECISION_CHOOSE_BLOOD_TITHE,
     DECISION_CHOOSE_IDOL_OF_KHORNE,
     DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
     DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,
     DECISION_CHOOSE_RITUALS,
     DECISION_CHOOSE_CHIVALRIC_OATH,
@@ -385,6 +386,53 @@ def _apply_select_vessel_of_wrath_models(game: object, request: DecisionRequest,
         player = getattr(army, "player", None)
         _log_action_for_players(game, player, f"Wrath of Khorne: selected {len(model_ids)} model(s).")
     return applied
+
+
+def _validate_select_realm_of_chaos_units(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    unit_ids = result.payload.get("unit_ids")
+    if not isinstance(unit_ids, list) or not unit_ids:
+        return ("The Realm of Chaos requires unit_ids.",)
+    ctx = getattr(request, "context", {}) or {}
+    max_units = ctx.get("max_units")
+    if max_units is not None and len(unit_ids) > int(max_units):
+        return ("Too many units selected for The Realm of Chaos.",)
+    allowed_ids = {str(v) for v in list(ctx.get("allowed_unit_ids") or []) if v is not None}
+    outside_ids = {str(v) for v in list(ctx.get("outside_shadow_unit_ids") or []) if v is not None}
+    seen: set[str] = set()
+    outside_selected = 0
+    for uid in list(unit_ids or []):
+        uid = str(uid or "")
+        if not uid:
+            return ("The Realm of Chaos requires valid unit_ids.",)
+        if uid in seen:
+            return ("The Realm of Chaos unit_ids must be unique.",)
+        seen.add(uid)
+        if allowed_ids and uid not in allowed_ids:
+            return ("The Realm of Chaos unit is not eligible.",)
+        if uid in outside_ids:
+            outside_selected += 1
+        if resolve_unit(game, uid) is None:
+            return ("The Realm of Chaos unit not found.",)
+    if outside_selected and len(seen) > 1:
+        return ("Only one unit can be selected if it is outside the Shadow of Chaos.",)
+    return ()
+
+
+def _apply_select_realm_of_chaos_units(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    unit_ids = list(result.payload.get("unit_ids") or [])
+    units = []
+    for uid in unit_ids:
+        unit = resolve_unit(game, str(uid))
+        if unit is not None:
+            units.append(unit)
+    return units
 
 
 def _validate_choose_vessel_of_wrath_blessing(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -3958,6 +4006,11 @@ register_decision_handler(
     DECISION_SELECT_VESSEL_OF_WRATH_MODELS,
     validate=_validate_select_vessel_of_wrath_models,
     apply=_apply_select_vessel_of_wrath_models,
+)
+register_decision_handler(
+    DECISION_SELECT_REALM_OF_CHAOS_UNITS,
+    validate=_validate_select_realm_of_chaos_units,
+    apply=_apply_select_realm_of_chaos_units,
 )
 register_decision_handler(
     DECISION_CHOOSE_VESSEL_OF_WRATH_BLESSING,

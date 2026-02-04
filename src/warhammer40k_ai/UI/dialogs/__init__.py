@@ -48,6 +48,7 @@ from .grand_coven_dialog import GrandCovenDialog
 from .combat_drugs_dialog import CombatDrugsDialog
 from .idols_of_khorne_dialog import IdolsOfKhorneDialog
 from .vessels_of_wrath_models_dialog import VesselsOfWrathModelsDialog
+from .realm_of_chaos_units_dialog import RealmOfChaosUnitsDialog
 from .wrath_of_khorne_blessing_dialog import WrathOfKhorneBlessingDialog
 from .hyper_adaptations_dialog import HyperAdaptationsDialog
 from .code_chivalric_dialog import CodeChivalricDialog
@@ -109,6 +110,7 @@ __all__ = [
     'CombatDrugsDialog',
     'IdolsOfKhorneDialog',
     'VesselsOfWrathModelsDialog',
+    'RealmOfChaosUnitsDialog',
     'WrathOfKhorneBlessingDialog',
     'HyperAdaptationsDialog',
     'CodeChivalricDialog',
