@@ -217,25 +217,40 @@ def _validate_resolve_decision(game: object, command: GameCommand) -> Sequence[s
     payload = command.payload or {}
     decision_id = payload.get("decision_id")
     option_id = payload.get("option_id")
+    def _fail(message: str) -> Sequence[str]:
+        try:
+            req = None
+            queue = getattr(game, "decision_queue", None)
+            if queue is not None and hasattr(queue, "get") and isinstance(decision_id, str) and decision_id:
+                req = queue.get(decision_id)
+            req_player = getattr(req, "player_id", None) if req is not None else None
+            print(
+                "ERROR: Resolve decision validation failed: "
+                f"{message} (decision_id={decision_id}, command_player_id={command.player_id}, request_player_id={req_player})"
+            )
+        except Exception:
+            pass
+        return (message,)
+
     if not isinstance(decision_id, str) or not decision_id:
-        return ("Decision resolution requires decision_id.",)
+        return _fail("Decision resolution requires decision_id.")
     if not isinstance(option_id, str) or not option_id:
-        return ("Decision resolution requires option_id.",)
+        return _fail("Decision resolution requires option_id.")
     queue = getattr(game, "decision_queue", None)
     if queue is None or not hasattr(queue, "get"):
-        return ("Game missing decision_queue.",)
+        return _fail("Game missing decision_queue.")
     request = queue.get(decision_id)
     if request is None:
-        return (f"Decision not found: {decision_id}",)
+        return _fail(f"Decision not found: {decision_id}")
     request_player = getattr(request, "player_id", None)
     if request_player is not None:
         if command.player_id is None:
-            return ("Decision resolution requires player_id.",)
+            return _fail("Decision resolution requires player_id.")
         if str(command.player_id) != str(request_player):
-            return ("Decision belongs to another player.",)
+            return _fail("Decision belongs to another player.")
     result_payload = payload.get("result_payload", {})
     if result_payload is not None and not isinstance(result_payload, dict):
-        return ("result_payload must be a dict.",)
+        return _fail("result_payload must be a dict.")
     result = DecisionResult(
         decision_id=str(decision_id or ""),
         player_id=command.player_id,

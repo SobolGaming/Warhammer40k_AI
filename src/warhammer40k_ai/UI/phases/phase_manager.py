@@ -10,6 +10,7 @@ from warhammer40k_ai.utility.entity_ids import get_entity_id
 from warhammer40k_ai.utility.dice import get_roll
 
 from ..ui_constants import TILE_SIZE
+from ...utility.debug import describe_callable
 
 
 def _apply_game_command(game, kind: str, *, player_id: str | None = None, payload: Optional[dict] = None):
@@ -3190,10 +3191,23 @@ class BattlePhaseHandler(BasePhaseHandler):
         def _on_move_complete(completed: bool):
             if completed:
                 payload = {"model_positions": self._serialize_unit_positions(unit, allowed_model_ids=allowed_set)}
-                resolve_decision_command(self.game, req, confirm_id, result_payload=payload)
+                cmd_result = resolve_decision_command(self.game, req, confirm_id, result_payload=payload)
+                if not getattr(cmd_result, "ok", False):
+                    try:
+                        err_list = list(getattr(cmd_result, "errors", ()) or ())
+                    except Exception:
+                        err_list = []
+                    print(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
             else:
-                resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
+                cmd_result = resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
+                if not getattr(cmd_result, "ok", False):
+                    try:
+                        err_list = list(getattr(cmd_result, "errors", ()) or ())
+                    except Exception:
+                        err_list = []
+                    print(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
             if callable(callback):
+                print(f"DEBUG: Calling callback from _on_move_complete {describe_callable(callback)} with argument {completed}")
                 callback(completed)
 
         self.game_view.individual_model_movement_dialog.show(
@@ -3212,6 +3226,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         try:
             self.game_view.dialog_manager.open(self.game_view.individual_model_movement_dialog, modal=True)
         except Exception:
+            print(f"Unexpected Error while opening individual_model_movement_dialog")
             pass
 
     def _request_melee_weapon_declarations(
@@ -5106,6 +5121,31 @@ class PhaseManager:
     def is_action_allowed(self, action: str) -> bool:
         """Check if an action is allowed in the current phase"""
         return action in self.get_current_allowed_actions()
+
+    def _request_move_unit_decision(
+        self,
+        unit: 'Unit',
+        movement_type: str,
+        callback,
+        *,
+        max_distance: float | None = None,
+        target_unit=None,
+        placement_validator=None,
+        decision_request=None,
+    ) -> None:
+        """PhaseManager proxy for move/placement decisions used by multiple UI entry points."""
+        handler = getattr(self, "battle_handler", None)
+        if handler is None or not hasattr(handler, "_request_move_unit_decision"):
+            raise RuntimeError("PhaseManager missing battle_handler move decision helper.")
+        handler._request_move_unit_decision(
+            unit,
+            movement_type,
+            callback,
+            max_distance=max_distance,
+            target_unit=target_unit,
+            placement_validator=placement_validator,
+            decision_request=decision_request,
+        )
 
     def check_unit_coherency_after_movement(self, unit: 'Unit'):
         """

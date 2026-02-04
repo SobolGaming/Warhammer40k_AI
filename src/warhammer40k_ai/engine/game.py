@@ -14605,11 +14605,64 @@ class Game:
             self._maybe_apply_daemonic_patrons_loss_followup(request, result)
             self._maybe_apply_cult_ambush_followup(request, result)
             self._maybe_queue_code_chivalric_followup(request, result)
+        else:
+            try:
+                dtype = getattr(request, "decision_type", "")
+                pid = getattr(request, "player_id", None)
+                err_list = list(getattr(apply_result, "errors", ()) or ())
+                print(f"ERROR: Decision rejected ({dtype}) for player {pid}: {err_list}")
+            except Exception:
+                print(f"ERROR: Unexpected Decision Failure for {request} with {apply_result}")
+ 
         return apply_result
 
     def get_current_player(self) -> Player:
         """Get the current player."""
         return self.players[self.current_player_index]
+
+    def get_waiting_player_id(self) -> str | None:
+        """Return the single player id the game is currently waiting on for input."""
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None:
+            req = queue.peek()
+            pid = getattr(req, "player_id", None) if req is not None else None
+            if pid:
+                try:
+                    if self.is_in_setup_phase():
+                        phase = self.get_current_setup_phase()
+                        if getattr(phase, "name", None) == "DEPLOY_ARMIES":
+                            from .decision_kinds import DECISION_MOVE_UNIT
+                            if getattr(req, "decision_type", None) != DECISION_MOVE_UNIT:
+                                pid = None
+                            else:
+                                ctx = dict(getattr(req, "context", {}) or {})
+                                placement_kind = str(ctx.get("placement_kind", "") or "")
+                                if placement_kind not in ("deployment", "reserves_arrival"):
+                                    pid = None
+                except Exception:
+                    pass
+            if pid:
+                return str(pid)
+
+        try:
+            if self.is_in_setup_phase():
+                phase = self.get_current_setup_phase()
+                if getattr(phase, "name", None) == "DEPLOY_ARMIES":
+                    player = self.get_current_deployment_player()
+                else:
+                    player = self.get_current_player()
+            elif self.is_deployment_phase():
+                player = self.get_current_deployment_player()
+            else:
+                player = self.get_current_player()
+            return str(player.id) if player is not None else None
+        except Exception:
+            return None
+
+    def get_waiting_player_ids(self) -> set[str]:
+        """Return player ids the game is currently waiting on for input."""
+        pid = self.get_waiting_player_id()
+        return {pid} if pid else set()
 
     def get_opponent(self) -> Player:
         """Get the opponent of the current player."""
@@ -18713,6 +18766,9 @@ class Game:
                 army.resolve_daemonic_allegiances(player=player, game=self)
         else:
             print("Not enough players loaded")
+
+        # Armies and units are now populated; rebuild the entity registry for decision resolution.
+        self.rebuild_entity_registry()
     
     def execute_select_mission_objectives_phase(self) -> None:
         """Phase 2: Select Mission Objectives - Choose mission and objectives."""
@@ -19533,9 +19589,12 @@ class Game:
         elif self.setup_phase == SetupPhase.DECLARE_BATTLE_FORMATIONS:
             self.execute_declare_battle_formations_phase()
         elif self.setup_phase == SetupPhase.DEPLOY_ARMIES:
+            decision_makers = kwargs.get('decision_makers')
+            if decision_makers is None:
+                decision_makers = getattr(self, "_pending_setup_decision_makers", None)
             self.execute_deploy_armies_phase(
                 manual_phases=kwargs.get('manual_phases', False),
-                decision_makers=kwargs.get('decision_makers')
+                decision_makers=decision_makers
             )
         elif self.setup_phase == SetupPhase.REDEPLOY_UNITS:
             self.execute_redeploy_units_phase()
@@ -19549,8 +19608,10 @@ class Game:
         if self.in_command_context():
             self._execute_current_setup_phase_impl(**kwargs)
             return
-        if kwargs.get("decision_makers") is not None:
-            raise ValueError("decision_makers cannot be serialized in command dispatch.")
+        decision_makers = kwargs.get("decision_makers")
+        if decision_makers is not None:
+            # Store temporarily so command dispatch can stay serializable.
+            self._pending_setup_decision_makers = decision_makers
         payload = {
             "player1_army_file": kwargs.get("player1_army_file"),
             "player2_army_file": kwargs.get("player2_army_file"),
@@ -19562,7 +19623,11 @@ class Game:
         except Exception:
             player_id = None
         cmd = GameCommand.create(CMD_EXECUTE_SETUP_PHASE, player_id=player_id, payload=payload)
-        self.apply_command(cmd)
+        try:
+            self.apply_command(cmd)
+        finally:
+            if decision_makers is not None:
+                self._pending_setup_decision_makers = None
 
     def _apply_selected_mission(self, combination: dict, layout: object) -> None:
         self.selected_mission_info = {

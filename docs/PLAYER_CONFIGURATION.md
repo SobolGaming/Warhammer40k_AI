@@ -36,6 +36,10 @@ This mode provides step-by-step control over game progression:
 - Each unit deployment requires a separate SPACE key press
 - Shows deployment action tracking: "Unit deployed at (x, y)" or "Unit placed in Reserves"
 - Displays whose turn it is during alternating deployment
+- Local-only deployment helpers (e.g., `HumanDeploymentDecisionMaker`) are injected at runtime
+  when setup phases are executed; they are not serialized into command payloads.
+- Selecting an undeployed unit in a roster pane opens the per-model deployment dialog;
+  battlefield clicks do nothing until a unit is selected for deployment.
 
 ### Battle Rounds
 - SPACE key required to advance between each phase
@@ -83,6 +87,7 @@ Optional hooks for automation:
 - Player names update with attacker/defender roles after setup
 - Unit health indicators and deployment status
 - Interactive selection for deployment and details
+- Active player banner highlights neon green when the game is waiting on that player to act (local or remote).
 
 ### Info Panel
 - Game phase and turn indicators

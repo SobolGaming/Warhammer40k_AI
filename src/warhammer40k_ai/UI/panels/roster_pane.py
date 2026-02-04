@@ -40,6 +40,7 @@ TEXT_PRIMARY = (255, 255, 255)  # Primary text
 TEXT_SECONDARY = (200, 200, 200)  # Secondary text
 TEXT_ACCENT = (100, 149, 237)  # Accent text
 DARK_GREY = (30, 30, 30)  # Dark grey for headers
+ACTIVE_PLAYER_BG = (57, 255, 20)  # Neon green for active player banner
 
 # Button dimensions
 ROSTER_PANE_BUTTON_HEIGHT = 80
@@ -266,7 +267,37 @@ class RosterPane(pygame.sprite.Sprite):
         
         # Draw header
         header_rect = pygame.Rect(self.rect.left, self.rect.top, self.rect.width, 35)
-        pygame.draw.rect(surface, DARK_GREY, header_rect)
+        header_color = DARK_GREY
+        if game is not None:
+            try:
+                waiting_id = game.get_waiting_player_id()
+            except Exception:
+                waiting_id = None
+            if self.game_view is not None:
+                last_id = getattr(self.game_view, "_last_highlighted_player_id", None)
+                if waiting_id != last_id:
+                    if waiting_id:
+                        player_obj = next((p for p in list(getattr(game, "players", []) or []) if str(getattr(p, "id", "")) == str(waiting_id)), None)
+                        label = None
+                        if player_obj is not None:
+                            role = None
+                            try:
+                                idx_att = getattr(game, "attacker_index", None)
+                                idx_def = getattr(game, "defender_index", None)
+                                if idx_att is not None and 0 <= int(idx_att) < len(getattr(game, "players", []) or []):
+                                    if game.players[int(idx_att)] is player_obj:
+                                        role = "Attacker"
+                                if role is None and idx_def is not None and 0 <= int(idx_def) < len(getattr(game, "players", []) or []):
+                                    if game.players[int(idx_def)] is player_obj:
+                                        role = "Defender"
+                            except Exception:
+                                role = None
+                            label = f"{player_obj.name} ({role})" if role else f"{player_obj.name}"
+                        print(f"DEBUG: Active player highlight -> {label or waiting_id}")
+                    self.game_view._last_highlighted_player_id = waiting_id
+            if self.player is not None and waiting_id and str(self.player.id) == str(waiting_id):
+                header_color = ACTIVE_PLAYER_BG
+        pygame.draw.rect(surface, header_color, header_rect)
         
         # Player name with control indicator
         player_control_str = ""

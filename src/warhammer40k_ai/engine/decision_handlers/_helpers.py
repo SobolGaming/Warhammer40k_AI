@@ -110,6 +110,7 @@ def is_skip_choice(request: DecisionRequest, result: DecisionResult) -> bool:
 
 
 def validate_model_positions(game: object, unit: object, model_positions: object, *, context: str = "Move unit") -> Sequence[str]:
+    print(f"DEBUG: Validating model positions for {unit}")
     if not isinstance(model_positions, list) or not model_positions:
         return (f"{context} requires model_positions list.",)
     for entry in model_positions:
@@ -131,8 +132,15 @@ def validate_model_positions(game: object, unit: object, model_positions: object
                 float(pos[2])
         except (TypeError, ValueError):
             return ("Model position coordinates must be numeric.",)
-        if getattr(model, "parent_unit", None) is not unit:
-            return ("Model does not belong to the selected unit.",)
+        parent_unit = getattr(model, "parent_unit", None)
+        if parent_unit is not unit:
+            members = None
+            try:
+                members = set(unit.get_attached_unit_members() or [])
+            except Exception:
+                members = None
+            if not members or parent_unit not in members:
+                return ("Model does not belong to the selected unit.",)
     return ()
 
 

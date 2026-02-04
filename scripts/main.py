@@ -87,7 +87,7 @@ def execute_setup_phases(game: Game, player_configs: dict, ui_interface) -> None
 
         if current_phase.name == "DEPLOY_ARMIES":
             decision_makers = {
-                player.name: HumanDeploymentDecisionMaker(ui_interface=ui_interface)
+                player.id: HumanDeploymentDecisionMaker(ui_interface=ui_interface)
                 for player in game.players
             }
             setup_kwargs["decision_makers"] = decision_makers
@@ -159,7 +159,7 @@ def run_game_loop(player_configs: dict) -> None:
 
                         if current_phase.name == "DEPLOY_ARMIES":
                             decision_makers = {
-                                player.name: HumanDeploymentDecisionMaker(ui_interface=ui_interface)
+                                player.id: HumanDeploymentDecisionMaker(ui_interface=ui_interface)
                                 for player in game.players
                             }
                             setup_kwargs["decision_makers"] = decision_makers
