@@ -419,7 +419,8 @@ class FightPhaseManager:
                         pass
                     try:
                         if hasattr(fighting_unit, "_formless_horror_target_blocked"):
-                            if fighting_unit._formless_horror_target_blocked(enemy_root, game=self.game):
+                            blocked = fighting_unit._formless_horror_target_blocked(enemy_root, game=self.game)
+                            if isinstance(blocked, bool) and blocked:
                                 continue
                     except Exception:
                         pass

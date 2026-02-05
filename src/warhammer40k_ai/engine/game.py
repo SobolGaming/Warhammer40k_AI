@@ -11369,6 +11369,73 @@ class Game:
                         spec=spec,
                     )
 
+    def _on_phase_end_grotesque_regeneration(self, player=None, phase=None, **_kwargs) -> None:
+        """End of each phase: Beasts of Nurgle models regain all lost wounds."""
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ..utility.entity_ids import get_entity_id
+        from ..utility.event_bus import append_action
+
+        def _unit_has_regen(unit) -> bool:
+            for ab in unit._iter_active_possible_abilities():
+                if isinstance(ab, str):
+                    name = ab
+                else:
+                    name = getattr(ab, "name", "")
+                if str(name or "").strip().lower() == "grotesque regeneration":
+                    return True
+            return False
+
+        for owner in list(getattr(self, "players", []) or []):
+            if owner is None:
+                continue
+            army = self._get_player_army(owner)
+            if army is None:
+                continue
+            seen: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                uid = get_entity_id(root)
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                if not getattr(root, "is_alive", lambda: False)():
+                    continue
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                    continue
+                in_reserves = False
+                fn = getattr(root, "is_in_reserves", None)
+                if callable(fn):
+                    in_reserves = bool(fn())
+                else:
+                    in_reserves = str(getattr(root, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+                if in_reserves:
+                    continue
+                if bool(getattr(root, "embarked_in", None)) or bool(getattr(root, "is_embarked", False)):
+                    continue
+                if not _unit_has_regen(root):
+                    continue
+
+                models = list(getattr(root, "models", []) or [])
+                healed = 0
+                for model in models:
+                    if not bool(getattr(model, "is_alive", True)):
+                        continue
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+                    if base_wounds <= 0:
+                        continue
+                    current = int(getattr(model, "wounds", 0) or 0)
+                    if current < base_wounds:
+                        model.wounds = base_wounds
+                        healed += 1
+                if healed > 0:
+                    append_action(owner, f"Grotesque Regeneration: {getattr(root, 'name', 'Unit')} fully healed ({healed} model(s)).")
+
     def _on_phase_end_movement_phase_mortal_table(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: roll a D6 for each enemy unit within range of this model; apply mortal wound table."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

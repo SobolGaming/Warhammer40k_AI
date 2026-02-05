@@ -1657,6 +1657,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "End of Movement: select a Battle-shocked enemy within 12\"; friendly SLAANESH LEGIONES DAEMONICA models re-roll Hit and Wound rolls vs that unit until end of turn.",
         ),
+        ("CD", "Grotesque Regeneration"): (
+            "Supported",
+            "End of each phase: each damaged Beasts of Nurgle model regains all lost wounds.",
+        ),
         ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
         ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
         ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),

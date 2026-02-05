@@ -384,6 +384,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
             predicate=lambda ctxs, _g: any_manager(ctxs, "shadow_form"),
             subscriptions=[
                 ("battle_shock_test_resolved", "_on_battle_shock_test_resolved_shadow_form"),
+                ("phase_end", "_on_phase_end_grotesque_regeneration"),
             ],
         )
     )
