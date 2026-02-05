@@ -2086,6 +2086,79 @@ class Game:
                         sr.pop(key, None)
                     unit.special_rules = sr
 
+    def _on_phase_start_death_hex_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Death Hex effects at the start of the owner's Movement phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Death Hex cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Death Hex cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("death_hex_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("death_hex_active"):
+                    for key in (
+                        "death_hex_active",
+                        "death_hex_owner",
+                        "death_hex_turn",
+                        "death_hex_source",
+                        "death_hex_ap_bonus",
+                    ):
+                        sr.pop(key, None)
+                    unit.special_rules = sr
+
+    def _on_phase_end_shooting_phase_disrupt_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Shooting phase disruption effects at the end of the active player's Shooting phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Shooting disruption cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Shooting disruption cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("shooting_phase_hit_penalty_owner", "") or "") == owner_id and sr.get("shooting_phase_hit_penalty_active"):
+                    for key in (
+                        "shooting_phase_hit_penalty_active",
+                        "shooting_phase_hit_penalty_owner",
+                        "shooting_phase_hit_penalty_turn",
+                        "shooting_phase_hit_penalty_source",
+                        "shooting_phase_hit_penalty_expires_phase",
+                    ):
+                        sr.pop(key, None)
+                if str(sr.get("shooting_phase_ineligible_owner", "") or "") == owner_id and sr.get("shooting_phase_ineligible_active"):
+                    for key in (
+                        "shooting_phase_ineligible_active",
+                        "shooting_phase_ineligible_owner",
+                        "shooting_phase_ineligible_turn",
+                        "shooting_phase_ineligible_source",
+                        "shooting_phase_ineligible_expires_phase",
+                    ):
+                        sr.pop(key, None)
+                unit.special_rules = sr
+
     def _cleanup_movement_phase_visible_bonus(self, player=None, phase=None, *, kind: str) -> None:
         """Clear movement-phase hit/wound bonus markers at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -2968,6 +3041,363 @@ class Game:
                         candidates=candidates,
                         spec=spec,
                     )
+
+    def _on_phase_start_death_hex(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: Death Hex selection and roll."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        try:
+            ability_used = getattr(player, "_ability_used_this_turn", None)
+        except Exception:
+            ability_used = None
+        ability_key = "DEATH_HEX"
+        if callable(ability_used) and ability_used(ability_key):
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) == "death_hex" and str(ctx.get("ability_key", "") or "") == ability_key:
+                    return
+
+        from ..utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+        pairs: list[tuple[Any, Any, Any, dict]] = []
+        seen: set[tuple[str, str]] = set()
+        ability_name = None
+        ap_bonus = 1
+        optional = True
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_start_shooting_phase_death_hex_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    ability_name = ability_name or str(spec.get("source", "") or "Death Hex").strip() or "Death Hex"
+                    try:
+                        ap_bonus = int(spec.get("ap_bonus", 1) or 1)
+                    except Exception:
+                        ap_bonus = 1
+                    optional = bool(spec.get("optional", True))
+                    for cand in list(candidates):
+                        model_id = str(get_entity_id(model) or "")
+                        target_id = str(get_entity_id(cand) or "")
+                        if not model_id or not target_id:
+                            continue
+                        key = (model_id, target_id)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        pairs.append((model, cand, source_unit, spec))
+
+        if not pairs:
+            return
+
+        try:
+            from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+            from ..engine.decisions import DecisionOption, DecisionRequest
+        except Exception:
+            return
+
+        options = []
+        if optional:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        pairs.sort(key=lambda t: (str(get_entity_id(t[0]) or ""), str(get_entity_id(t[1]) or "")))
+        for model, cand, source_unit, _spec in pairs:
+            model_id = str(get_entity_id(model) or "")
+            unit_id = str(get_entity_id(source_unit) or "")
+            target_id = str(get_entity_id(cand) or "")
+            if not model_id or not target_id:
+                continue
+            label = f"{getattr(model, 'name', 'Model')} -> {getattr(cand, 'name', 'Unit')}"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "target_unit_id": target_id,
+                        "model_id": model_id,
+                        "source_unit_id": unit_id,
+                    },
+                )
+            )
+        if not options:
+            return
+
+        ability_name = ability_name or "Death Hex"
+        ctx = {
+            "ability": "death_hex",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase": "Shooting phase",
+            "ap_bonus": int(ap_bonus),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+
+    def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for opp in list(getattr(self, "players", []) or []):
+            if opp is None or opp is player:
+                continue
+            army = self._get_player_army(opp)
+            if army is None:
+                continue
+            enemy_roots = self._collect_enemy_unit_roots(opp)
+            if not enemy_roots:
+                continue
+            enemy_roots.sort(key=_unit_sort_key)
+            groups: dict[tuple, list[tuple]] = {}
+            group_meta: dict[tuple, dict] = {}
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not getattr(unit, "is_alive", lambda: False)():
+                    continue
+                if not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+                for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                    spec_fn = getattr(root, "model_start_opponent_shooting_phase_disrupt_specs", None)
+                    if not callable(spec_fn):
+                        continue
+                    specs = spec_fn(model) or []
+                    if not specs:
+                        continue
+                    source_unit = getattr(model, "parent_unit", None) or root
+                    for spec in specs:
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        if range_value <= 0:
+                            continue
+                        candidates = self._visible_enemy_candidates_for_model(
+                            source_unit=source_unit,
+                            model=model,
+                            enemy_roots=enemy_roots,
+                            range_value=float(range_value),
+                            game_map=game_map,
+                        )
+                        if not candidates:
+                            continue
+                        ability_name = str(spec.get("source", "") or "Opponent Shooting phase disruption").strip()
+                        ability_key = re.sub(r"[^a-z0-9]+", "_", ability_name.lower()).strip("_") or "opponent_shooting_phase_disrupt"
+                        limit_one = bool(spec.get("limit_one_per_army", False))
+                        optional = bool(spec.get("optional", False))
+                        mortal_on_one = bool(spec.get("mortal_on_one", False))
+                        used_fn = getattr(opp, "_ability_used_this_turn", None)
+                        if limit_one and callable(used_fn) and used_fn(ability_key):
+                            continue
+                        model_id = str(get_entity_id(model) or "")
+                        if not model_id:
+                            continue
+                        group_key = (str(getattr(opp, "id", "") or ""), ability_key) if limit_one else (str(getattr(opp, "id", "") or ""), ability_key, model_id)
+                        if group_key not in group_meta:
+                            group_meta[group_key] = {
+                                "ability_name": ability_name,
+                                "ability_key": ability_key,
+                                "optional": optional,
+                                "limit_one": limit_one,
+                                "mortal_on_one": mortal_on_one,
+                                "model_id": None if limit_one else model_id,
+                            }
+                        entries = groups.setdefault(group_key, [])
+                        for cand in list(candidates):
+                            target_id = str(get_entity_id(cand) or "")
+                            if not target_id:
+                                continue
+                            entries.append((model, cand, source_unit))
+
+            if not groups:
+                continue
+
+            queue = getattr(self, "decision_queue", None)
+
+            for group_key, entries in list(groups.items()):
+                meta = dict(group_meta.get(group_key, {}) or {})
+                ability_key = str(meta.get("ability_key", "") or "")
+                model_filter = str(meta.get("model_id", "") or "")
+                if queue is not None and hasattr(queue, "list"):
+                    skip = False
+                    for req in list(queue.list() or []):
+                        ctx = dict(getattr(req, "context", {}) or {})
+                        if str(ctx.get("ability", "")) != "opponent_shooting_phase_disrupt":
+                            continue
+                        if str(ctx.get("ability_key", "") or "") != ability_key:
+                            continue
+                        if model_filter and str(ctx.get("model_id", "") or "") != model_filter:
+                            continue
+                        skip = True
+                        break
+                    if skip:
+                        continue
+                options = []
+                if meta.get("optional"):
+                    options.append(DecisionOption.create("None", payload={"action": "skip"}))
+                seen_pairs: set[tuple[str, str]] = set()
+                entries.sort(key=lambda t: (str(get_entity_id(t[0]) or ""), str(get_entity_id(t[1]) or "")))
+                for model, cand, source_unit in entries:
+                    model_id = str(get_entity_id(model) or "")
+                    target_id = str(get_entity_id(cand) or "")
+                    unit_id = str(get_entity_id(source_unit) or "")
+                    if not model_id or not target_id:
+                        continue
+                    key = (model_id, target_id)
+                    if key in seen_pairs:
+                        continue
+                    seen_pairs.add(key)
+                    label = f"{getattr(model, 'name', 'Model')} -> {getattr(cand, 'name', 'Unit')}"
+                    options.append(
+                        DecisionOption.create(
+                            label,
+                            payload={
+                                "target_unit_id": target_id,
+                                "model_id": model_id,
+                                "source_unit_id": unit_id,
+                            },
+                        )
+                    )
+                if not options:
+                    continue
+                ability_name = str(meta.get("ability_name", "") or "Opponent Shooting phase disruption").strip()
+                ctx = {
+                    "ability": "opponent_shooting_phase_disrupt",
+                    "ability_name": ability_name,
+                    "ability_key": ability_key,
+                    "mortal_on_one": bool(meta.get("mortal_on_one", False)),
+                    "optional": bool(meta.get("optional", False)),
+                    "limit_one_per_army": bool(meta.get("limit_one", False)),
+                    "phase": "Shooting phase",
+                }
+                if model_filter:
+                    ctx["model_id"] = model_filter
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select a unit.",
+                    player_id=getattr(opp, "id", None),
+                    options=options,
+                    context=ctx,
+                )
+                self.request_decision(request)
 
     def _on_phase_start_aeldari_enhancements(self, player=None, phase=None, **_kwargs) -> None:
         """Aeldari enhancements that trigger at the start of Command or Shooting phases."""
@@ -10359,7 +10789,8 @@ class Game:
 
         for spec in specs:
             weapon_key = str(spec.get("weapon_key", "") or "")
-            if not weapon_key:
+            any_weapon = bool(spec.get("any_weapon", False))
+            if not weapon_key and not any_weapon:
                 continue
             candidates: list[Any] = []
             for target_unit, hits in (hits_by_target or {}).items():
@@ -10369,8 +10800,9 @@ class Game:
                     continue
                 if not _is_enemy_unit(target_unit):
                     continue
-                if not _target_hit_with_weapon(target_unit, weapon_key):
-                    continue
+                if weapon_key:
+                    if not _target_hit_with_weapon(target_unit, weapon_key):
+                        continue
                 candidates.append(target_unit)
             if not candidates:
                 continue
@@ -10520,6 +10952,79 @@ class Game:
                     "attack_type": attack_type,
                     "ap_bonus": int(ap_bonus),
                     "limit_scope": limit_scope,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_keyword_wound_reroll(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot keyword wound reroll requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        specs = attacker_unit.unit_post_shoot_keyword_wound_reroll_specs() or []
+        if not specs:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot Wound reroll").strip() or "Post-shoot Wound reroll"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_keyword_wound_reroll",
+                    "ability_name": ability_name,
+                    "keyword_phrase": str(spec.get("keyword_phrase", "") or "").strip(),
+                    "limit_scope": str(spec.get("limit_scope", "") or "").strip(),
                 },
             )
             self.request_decision(request)

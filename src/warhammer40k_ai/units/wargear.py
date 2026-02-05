@@ -850,6 +850,34 @@ class WargearProfile:
                     bonus = int(sr.get("post_shoot_ap_bonus_value", 0) or 0)
                     if bonus:
                         ap_val -= bonus
+        # Death Hex: marked target suffers AP -1 for attacks by the caster's army.
+        if target_root is not None and attacker_unit is not None:
+            sr = getattr(target_root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("death_hex_active"):
+                apply_bonus = True
+                owner_id = str(sr.get("death_hex_owner", "") or "")
+                if owner_id:
+                    attacker_player = None
+                    try:
+                        army = attacker_unit.get_parent_army()
+                        attacker_player = getattr(army, "player", None) if army is not None else None
+                    except Exception:
+                        attacker_player = None
+                    attacker_id = ""
+                    if attacker_player is not None:
+                        try:
+                            attacker_id = get_entity_id(attacker_player)
+                        except Exception:
+                            attacker_id = str(getattr(attacker_player, "id", "") or "")
+                    if attacker_id and owner_id != attacker_id:
+                        apply_bonus = False
+                if apply_bonus:
+                    try:
+                        bonus = int(sr.get("death_hex_ap_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    if bonus:
+                        ap_val -= int(bonus)
         # Fight phase target AP bonus (e.g., Blood Throne).
         try:
             if target_root is not None and attacker_unit is not None:
@@ -3753,6 +3781,44 @@ class WargearProfile:
                     _add_hit_mod(-1, "-1 from Agonising Suppression (suppressed)")
                 if sr.get("post_shoot_suppressed_active"):
                     _add_hit_mod(-1, "-1 from Suppressed")
+                if sr.get("shooting_phase_hit_penalty_active"):
+                    apply_penalty = True
+                    exp = str(sr.get("shooting_phase_hit_penalty_expires_phase", "") or "").strip().upper()
+                    if exp:
+                        phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=target)
+                        if phase_key and phase_key != exp:
+                            apply_penalty = False
+                    if apply_penalty:
+                        owner_id = str(sr.get("shooting_phase_hit_penalty_owner", "") or "")
+                        if owner_id:
+                            try:
+                                army = attacker.parent_unit.get_parent_army()
+                                player = getattr(army, "player", None) if army is not None else None
+                            except Exception:
+                                player = None
+                            attacker_id = ""
+                            if player is not None:
+                                try:
+                                    attacker_id = get_entity_id(player)
+                                except Exception:
+                                    attacker_id = str(getattr(player, "id", "") or "")
+                            if attacker_id and attacker_id != owner_id:
+                                apply_penalty = False
+                    if apply_penalty:
+                        try:
+                            turn = int(sr.get("shooting_phase_hit_penalty_turn", 0) or 0)
+                        except Exception:
+                            turn = 0
+                        if turn:
+                            try:
+                                game = getattr(getattr(attacker.parent_unit.get_parent_army(), "player", None), "game", None)
+                            except Exception:
+                                game = None
+                            if game is not None and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                                apply_penalty = False
+                    if apply_penalty:
+                        source = str(sr.get("shooting_phase_hit_penalty_source", "") or "Disrupting Gaze").strip()
+                        _add_hit_mod(-1, f"-1 from {source}")
         except Exception:
             pass
         # Fight selection engagement penalty: -1 to hit for melee attacks while active.

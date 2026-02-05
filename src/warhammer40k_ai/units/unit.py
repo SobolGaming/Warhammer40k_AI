@@ -1438,7 +1438,7 @@ class Unit:
     _BEARER_UNIT_TARGET_HIT_PENALTY_RE = re.compile(
         r"each\s+time\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack(?:s)?\s+"
         r"(?:targets|is\s+made\s+against)\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit),\s+"
-        r"subtract\s+1\s+from\s+the\s+hit\s+roll",
+        r"subtract\s+1\s+(?:from|form)\s+the\s+hit\s+roll",
         re.IGNORECASE,
     )
     _OBJECTIVE_RANGE_BENEFIT_OF_COVER_RE = re.compile(
@@ -1715,9 +1715,29 @@ class Unit:
         r"that area terrain feature is considered to be within your army s shadow of chaos",
         re.IGNORECASE,
     )
+    _START_SHOOTING_PHASE_DEATH_HEX_RE = re.compile(
+        r"at the start of your shooting phase one psyker with this ability can use it if it does "
+        r"select one enemy unit within (?P<range>\d+) of and visible to that psyker and roll (?:one|1) d6 "
+        r"on a 1 that psyker s unit suffers d3 mortal wounds on a 2\+? until the start of your next movement phase "
+        r"each time an attack targets that enemy unit improve the (?:armour|armor) penetration characteristic of that attack by (?P<ap>\d+)",
+        re.IGNORECASE,
+    )
     _START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE = re.compile(
         r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
         r"that enemy unit must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _START_OPP_SHOOTING_PHASE_MISCHIEF_CONFUSION_RE = re.compile(
+        r"at the start of your opponent s shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
+        r"and roll (?:one|1) d6 on a 2 5 until the end of the phase each time a model in that enemy unit makes an attack "
+        r"subtract 1 from the hit roll on a 6 that enemy unit is not eligible to shoot this phase",
+        re.IGNORECASE,
+    )
+    _START_OPP_SHOOTING_PHASE_HORRIBLE_FASCINATION_RE = re.compile(
+        r"at the start of your opponent s shooting phase one psyker model from your army with this ability can use it if it does "
+        r"select one enemy unit within (?P<range>\d+) of and visible to that psyker model and roll (?:one|1) d6 "
+        r"on a 1 that psyker model suffers d3 mortal wounds on a 2 5 until the end of the phase each time a model in that enemy unit "
+        r"makes an attack subtract 1 from the hit roll on a 6 that enemy unit is not eligible to shoot this phase",
         re.IGNORECASE,
     )
     _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
@@ -1827,6 +1847,17 @@ class Unit:
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
         r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the end of the phase that enemy unit cannot have the benefit of cover",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_NO_COVER_RE = re.compile(
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit (?:that was )?hit by one or more of those attacks "
+        r"until the end of the phase that (?:enemy )?unit cannot have the benefit of cover",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_KEYWORD_WOUND_REROLL_RE = re.compile(
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the turn each time a friendly (?P<keyword>[a-z0-9 ]+) unit makes an attack that targets that unit "
+        r"you can re ?roll the wound roll",
         re.IGNORECASE,
     )
     _POST_SHOOT_WRACKING_AGONIES_RE = re.compile(
@@ -2308,14 +2339,19 @@ class Unit:
         r"^the bearer has a save characteristic of (\d)\+\.?$",
         re.IGNORECASE,
     )
+    _FORTIFICATION_COVER_RE = re.compile(
+        r"^each time a ranged attack is allocated to a model if that model is not fully visible to "
+        r"(?:every model in )?the attacking unit because of this fortification that model has the benefit of cover against that attack\.?$",
+        re.IGNORECASE,
+    )
     _TARGET_HIT_ROLL_PENALTY_UNIT_RE = re.compile(
         r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? "
-        r"(?:targets|is made against) this unit, subtract 1 from the hit roll",
+        r"(?:targets|is made against) this unit, subtract 1 (?:from|form) the hit roll",
         re.IGNORECASE,
     )
     _TARGET_HIT_ROLL_PENALTY_MODEL_RE = re.compile(
         r"^each time (?:a model makes (?:a|an) )?(?:(?P<atype>melee|ranged) )?attack(?:s)?(?: that)? "
-        r"(?:targets|is made against) this model, subtract 1 from the hit roll",
+        r"(?:targets|is made against) this model, subtract 1 (?:from|form) the hit roll",
         re.IGNORECASE,
     )
     _ENEMY_MELEE_HAZARDOUS_WHILE_TARGETING_RE = re.compile(
@@ -14249,6 +14285,65 @@ class Unit:
         except Exception:
             pass
 
+        # Target buffs: post-shoot keyword wound reroll (e.g., Death's Heads).
+        try:
+            if target is not None:
+                t_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                sr = getattr(t_root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("post_shoot_keyword_wound_reroll_active"):
+                    owner_id = str(sr.get("post_shoot_keyword_wound_reroll_owner", "") or "")
+                    try:
+                        turn = int(sr.get("post_shoot_keyword_wound_reroll_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    game = None
+                    try:
+                        game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                    if game is not None and owner_id:
+                        try:
+                            current_id = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            current_id = ""
+                        try:
+                            if int(getattr(game, "turn", 0) or 0) != turn or (current_id and current_id != owner_id):
+                                for k in (
+                                    "post_shoot_keyword_wound_reroll_active",
+                                    "post_shoot_keyword_wound_reroll_owner",
+                                    "post_shoot_keyword_wound_reroll_turn",
+                                    "post_shoot_keyword_wound_reroll_source",
+                                    "post_shoot_keyword_wound_reroll_phrase",
+                                ):
+                                    sr.pop(k, None)
+                                t_root.special_rules = sr
+                                sr = None
+                        except Exception:
+                            pass
+                    if isinstance(sr, dict) and sr.get("post_shoot_keyword_wound_reroll_active"):
+                        applies = True
+                        if owner_id:
+                            try:
+                                army = root.get_parent_army()
+                                player = getattr(army, "player", None) if army is not None else None
+                            except Exception:
+                                player = None
+                            if player is not None and str(getattr(player, "id", "") or "") != owner_id:
+                                applies = False
+                        phrase = str(sr.get("post_shoot_keyword_wound_reroll_phrase", "") or "").strip()
+                        if applies and phrase:
+                            try:
+                                if not self._unit_matches_keyword_phrase(root, phrase, use_effective=True):
+                                    applies = False
+                            except Exception:
+                                applies = False
+                        if applies:
+                            source = str(sr.get("post_shoot_keyword_wound_reroll_source", "") or "Post-shoot Wound reroll").strip()
+                            mods["reroll_wound_full"] = True
+                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+        except Exception:
+            pass
+
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
         mods["crit_wound_threshold"] = crit_wound_threshold
@@ -18320,6 +18415,45 @@ class Unit:
             pass
             
         return False
+
+    def is_shooting_phase_ineligible(self, game=None) -> bool:
+        """Return True if this unit is currently not eligible to shoot in the Shooting phase."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("shooting_phase_ineligible_active"):
+            return False
+        if game is None:
+            try:
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+        owner_id = str(sr.get("shooting_phase_ineligible_owner", "") or "")
+        try:
+            turn = int(sr.get("shooting_phase_ineligible_turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if game is None:
+            return True
+        try:
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        if phase_name and phase_name != "SHOOTING_PHASE":
+            return False
+        if owner_id:
+            try:
+                current = game.get_current_player()
+            except Exception:
+                current = None
+            if current is not None and str(getattr(current, "id", "") or "") != owner_id:
+                return False
+        if turn:
+            try:
+                if int(getattr(game, "turn", 0) or 0) != turn:
+                    return False
+            except Exception:
+                return False
+        return True
 
     def _dark_ritual_active(self, game=None) -> bool:
         try:
@@ -26759,6 +26893,61 @@ class Unit:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_fortification_cover_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Fortification cover abilities like:
+        "Each time a ranged attack is allocated to a model, if that model is not fully visible to every model in the attacking unit
+        because of this FORTIFICATION, that model has the Benefit of Cover against that attack."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "fortification_cover_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            if not root.has_any_keyword("Fortification"):
+                root._ability_cache[cache_key] = None
+                return None
+        except Exception:
+            pass
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = unit._strip_eligibility_prefix(text_src)
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not unit._FORTIFICATION_COVER_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Fortification Cover").strip() or "Fortification Cover"
+                rule = {"source": source}
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def can_use_beast_handler_heroic_intervention(self, game=None) -> bool:
         """Return True if Beast Handler can grant Heroic Intervention for 0CP (once per battle)."""
         try:
@@ -29921,12 +30110,13 @@ class Unit:
 
     def unit_post_shoot_no_cover_specs(self) -> List[dict]:
         """
-        Unit-specific rule: after this unit has shot, select a hit enemy unit hit by weapon; target loses Benefit of Cover until phase end.
+        Unit-specific rule: after this unit has shot, select a hit enemy unit; target loses Benefit of Cover until phase end.
 
         Returns a list of specs with keys:
             - source: ability name
-            - weapon_key: str (normalized)
+            - weapon_key: Optional[str] (normalized; None means any weapon)
             - weapon_name: str (display)
+            - any_weapon: bool
         """
         try:
             root = self.get_attached_unit_root()
@@ -29958,18 +30148,31 @@ class Unit:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = unit._POST_SHOOT_NO_COVER_WEAPON_RE.fullmatch(normalized)
-                if not m:
-                    continue
-                weapon_raw = str(m.group("weapon") or "").strip()
-                if not weapon_raw:
-                    continue
-                weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                weapon_raw = ""
+                weapon_key = ""
+                any_weapon = False
+                if m:
+                    weapon_raw = str(m.group("weapon") or "").strip()
+                    if weapon_raw:
+                        weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                else:
+                    m = unit._POST_SHOOT_NO_COVER_RE.fullmatch(normalized)
+                    if not m:
+                        continue
+                    any_weapon = True
                 source = str(name or "Post-shoot no cover").strip() or "Post-shoot no cover"
-                key = (source.lower(), weapon_key)
+                key = (source.lower(), weapon_key or "any")
                 if key in seen:
                     continue
                 seen.add(key)
-                specs.append({"source": source, "weapon_key": weapon_key, "weapon_name": weapon_raw})
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": weapon_key or None,
+                        "weapon_name": weapon_raw,
+                        "any_weapon": bool(any_weapon),
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
@@ -30100,6 +30303,69 @@ class Unit:
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_keyword_wound_reroll_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit; friendly keyword units can re-roll Wound rolls vs that unit.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - keyword_phrase: str
+            - limit_scope: str ("turn")
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_keyword_wound_reroll_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._POST_SHOOT_KEYWORD_WOUND_REROLL_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                if not keyword_raw:
+                    continue
+                keyword_phrase = " ".join(keyword_raw.split())
+                source = str(name or "Post-shoot Wound reroll").strip() or "Post-shoot Wound reroll"
+                key = (source.lower(), keyword_phrase.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "keyword_phrase": keyword_phrase,
+                        "limit_scope": "turn",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
         return list(specs)
 
     def model_start_fight_phase_engagement_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
@@ -31507,6 +31773,138 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"source": source, "range": int(range_value)})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_shooting_phase_death_hex_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select a visible enemy within range; roll D6 for Death Hex.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+            - ap_bonus: int (AP improvement on 2+)
+            - optional: bool
+            - limit_one_per_army: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_death_hex:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_DEATH_HEX_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            try:
+                ap_bonus = int(m.group("ap") or 0)
+            except Exception:
+                ap_bonus = 0
+            if ap_bonus <= 0:
+                ap_bonus = 1
+            source = str(name or "Death Hex").strip() or "Death Hex"
+            key = (source.lower(), int(range_value), int(ap_bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "ap_bonus": int(ap_bonus),
+                    "optional": True,
+                    "limit_one_per_army": True,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_opponent_shooting_phase_disrupt_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of opponent's Shooting phase, select a visible enemy; roll D6 for hit penalty or no-shoot.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+            - mortal_on_one: bool
+            - optional: bool
+            - limit_one_per_army: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_opponent_shooting_phase_disrupt:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_OPP_SHOOTING_PHASE_MISCHIEF_CONFUSION_RE.fullmatch(normalized)
+            mortal_on_one = False
+            optional = False
+            limit_one = False
+            if not m:
+                m = self._START_OPP_SHOOTING_PHASE_HORRIBLE_FASCINATION_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                mortal_on_one = True
+                optional = True
+                limit_one = True
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Opponent Shooting phase disruption").strip() or "Opponent Shooting phase disruption"
+            key = (source.lower(), int(range_value), bool(mortal_on_one))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "mortal_on_one": bool(mortal_on_one),
+                    "optional": bool(optional),
+                    "limit_one_per_army": bool(limit_one),
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

@@ -1752,6 +1752,31 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Post-shoot: select a hit enemy non-MONSTER/VEHICLE unit, roll 1D6; on 4+, it is aflame until end of opponent's next turn (-2\" Move, -2 Advance, -2 Charge).",
         ),
+        ("CD", "Eldritch Flames (Psychic)"): (
+            "Supported",
+            "Post-shoot: select a hit enemy unit; it cannot gain Benefit of Cover until end of phase.",
+        ),
+        ("CD", "Death\u2019s Heads"): (
+            "Supported",
+            "Post-shoot: select a hit enemy unit; friendly keyword units re-roll Wound rolls vs that unit until end of turn.",
+        ),
+        ("CD", "Mischief and Confusion"): (
+            "Supported",
+            "Start of opponent Shooting: select a visible enemy within 12\"; roll D6 (2-5: -1 to hit; 6: not eligible to shoot) until phase end.",
+        ),
+        ("CD", "Horrible Fascination(Psychic)"): (
+            "Supported",
+            "Start of opponent Shooting: select a visible enemy within 12\"; roll D6 (1: Psyker suffers D3 MW; 2-5: -1 to hit; 6: not eligible to shoot) until phase end.",
+        ),
+        ("CD", "Fluxmaster"): ("Supported", "Leading: attacks against the unit suffer -1 to hit."),
+        ("CD", "Cover"): (
+            "Supported",
+            "Fortification: if target is not fully visible due to this Fortification, it gains Benefit of Cover against the attack.",
+        ),
+        ("CD", "Diseased Cover"): (
+            "Supported",
+            "Fortification: if target is not fully visible due to this Fortification, it gains Benefit of Cover against the attack.",
+        ),
         ("CD", "Master of Magicks (Psychic)"): (
             "Supported",
             "Shooting phase: choose Ignores Cover, Lethal Hits, or Sustained Hits D3 for Bolt of Change until end of phase.",
@@ -1772,6 +1797,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Malign Sacrifice"): (
             "Supported",
             "Start of Fight phase: select a Dark Disciple and an enemy within Engagement Range, roll D6 (2-5=1 MW, 6=D3 MW) and destroy the Disciple.",
+        ),
+        ("CSM", "Death Hex (Psychic)"): (
+            "Supported",
+            "Start of Shooting: select a visible enemy within 12\"; roll D6 (1: Psyker unit suffers D3 MW; 2+: attacks vs target improve AP by 1) until next Movement phase.",
         ),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("CSM", "Warp Strike"): ("Supported", "End of Fight: if destroyed an enemy unit and not engaged, enter Strategic Reserves."),

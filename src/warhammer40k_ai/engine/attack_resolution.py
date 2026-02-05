@@ -1496,6 +1496,42 @@ class AttackResolutionManager:
                     wound_instance["benefit_of_cover_reason"] = cover_info.get("reason")
         except Exception:
             pass
+        # Benefit of Cover from Fortification cover abilities (ranged only).
+        try:
+            is_melee = False
+            if profile.parent_wargear is not None and hasattr(profile.parent_wargear, "is_melee"):
+                is_melee = bool(profile.parent_wargear.is_melee())
+            if (not is_melee) and game_map is not None and not wound_instance.get("benefit_of_cover"):
+                fortifications = []
+                try:
+                    players = list(getattr(game, "players", []) or [])
+                except Exception:
+                    players = []
+                for p in players:
+                    if p is None:
+                        continue
+                    try:
+                        army = p.get_army()
+                    except Exception:
+                        army = None
+                    if army is None:
+                        continue
+                    for unit in list(getattr(army, "units", []) or []):
+                        fortifications.append(unit)
+                cover_info = game_map.get_benefit_of_cover_from_fortifications(
+                    attacking_unit=attacker.parent_unit,
+                    target_model=target_model,
+                    fortification_units=fortifications,
+                    weapon_profile=profile,
+                )
+                if cover_info.get("has_benefit_of_cover", False):
+                    wound_instance["benefit_of_cover"] = True
+                    source_unit = cover_info.get("source_unit")
+                    source_name = getattr(source_unit, "name", None) if source_unit is not None else None
+                    wound_instance["benefit_of_cover_source"] = source_name or "Fortification"
+                    wound_instance["benefit_of_cover_reason"] = cover_info.get("reason")
+        except Exception:
+            pass
         # Mortal wounds: queue for resolution after attacks.
         is_mortal_only = bool(wound_instance.get("mortal_wound", False)) and not bool(wound_instance.get("mortal_wound_in_addition", False))
         is_mortal_additional = bool(wound_instance.get("mortal_wound_in_addition", False))

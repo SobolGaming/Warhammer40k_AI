@@ -87,6 +87,11 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             return ("Formless Horror: Battle-shock test pending.",)
     except Exception:
         pass
+    try:
+        if hasattr(unit, "is_shooting_phase_ineligible") and unit.is_shooting_phase_ineligible(game):
+            return ("Unit is not eligible to shoot this phase.",)
+    except Exception:
+        pass
     if bool(result.payload.get("skipped", False)) or str(payload.get("action", "") or "") == "skip":
         return ()
     declarations = result.payload.get("declarations")

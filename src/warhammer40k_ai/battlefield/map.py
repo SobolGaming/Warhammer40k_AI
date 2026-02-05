@@ -525,6 +525,144 @@ class Map:
 
         return result
 
+    def get_benefit_of_cover_from_fortifications(
+        self,
+        attacking_unit: Unit,
+        target_model: Model,
+        fortification_units: list,
+        weapon_profile: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Evaluate Benefit of Cover from Fortification units that grant Cover."""
+        result: Dict[str, Any] = {
+            "has_benefit_of_cover": False,
+            "source_unit": None,
+            "reason": None,
+        }
+
+        if target_model is None or attacking_unit is None:
+            return result
+
+        # If weapon ignores cover, it cancels Benefit of Cover.
+        try:
+            if weapon_profile is not None:
+                parent_wg = getattr(weapon_profile, "parent_wargear", None)
+                if parent_wg is not None and hasattr(parent_wg, "is_ignores_cover") and parent_wg.is_ignores_cover():
+                    return result
+        except Exception:
+            pass
+
+        if not fortification_units:
+            return result
+
+        def _unit_root(unit):
+            try:
+                return unit.get_attached_unit_root()
+            except Exception:
+                return unit
+
+        def _footprint_for_unit(unit):
+            models = []
+            try:
+                models = list(unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(unit, "models", []) or [])
+            shapes = []
+            max_z = 0.0
+            for m in models:
+                if not getattr(m, "is_alive", True):
+                    continue
+                base = getattr(m, "model_base", None)
+                if base is None:
+                    continue
+                try:
+                    shape = base.get_base_shape()
+                except Exception:
+                    shape = None
+                if shape is None:
+                    continue
+                shapes.append(shape)
+                try:
+                    z_here = float(getattr(base, "z", 0.0) or 0.0)
+                except Exception:
+                    z_here = 0.0
+                try:
+                    height = float(getattr(base, "model_height", 0.0) or 0.0)
+                except Exception:
+                    height = 0.0
+                max_z = max(max_z, z_here + height)
+            if not shapes:
+                return None, None
+            try:
+                from shapely.ops import unary_union
+                footprint = unary_union(shapes)
+            except Exception:
+                footprint = shapes[0]
+            try:
+                bounds = footprint.bounds
+            except Exception:
+                return None, None
+            bounding_box = {
+                "min": (bounds[0], bounds[1], 0.0),
+                "max": (bounds[2], bounds[3], max_z),
+            }
+            return footprint, bounding_box
+
+        target_root = _unit_root(getattr(target_model, "parent_unit", None))
+
+        for fort in list(fortification_units or []):
+            if fort is None:
+                continue
+            try:
+                root = _unit_root(fort)
+            except Exception:
+                root = fort
+            if root is None:
+                continue
+            if target_root is not None and root is target_root:
+                continue
+            try:
+                if not getattr(root, "is_alive", lambda: True)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", True):
+                    continue
+            except Exception:
+                pass
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                rule = root.get_fortification_cover_rule()
+            except Exception:
+                rule = None
+            if not rule:
+                continue
+            footprint, bbox = _footprint_for_unit(root)
+            if footprint is None or bbox is None:
+                continue
+            proxy = type("FortificationCoverProxy", (), {})()
+            proxy.footprint = footprint
+            proxy.bounding_box = bbox
+            for attacker_model in list(getattr(attacking_unit, "models", []) or []):
+                if not getattr(attacker_model, "is_alive", False):
+                    continue
+                try:
+                    fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
+                except Exception:
+                    fully_visible = True
+                if not fully_visible:
+                    result["has_benefit_of_cover"] = True
+                    result["source_unit"] = root
+                    src_name = str(rule.get("source", "") or getattr(root, "name", "Fortification") or "Fortification")
+                    result["reason"] = f"Not fully visible due to {src_name}"
+                    return result
+
+        return result
+
     def get_height_at_point(self, x: float, y: float) -> float:
         """
         Check if a given X,Y coordinate has terrain and return its height (Z coordinate).

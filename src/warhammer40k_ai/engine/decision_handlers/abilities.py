@@ -2073,6 +2073,202 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname}.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "death_hex":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        model_id = payload.get("model_id") or ctx.get("model_id")
+        model = resolve_model(game, model_id)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Death Hex").strip() or "Death Hex"
+        ability_key = str(ctx.get("ability_key", "") or "DEATH_HEX").strip().upper()
+        if player is not None:
+            try:
+                mark_fn = getattr(player, "_mark_ability_used_turn", None)
+                if callable(mark_fn):
+                    mark_fn(ability_key)
+            except Exception:
+                pass
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {roll}")
+        if roll <= 1:
+            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            if callable(append_dice) and player is not None:
+                append_dice(player, f"{ability_name} mortal wounds: {mortal}")
+            if mortal > 0 and source_unit is not None:
+                try:
+                    source_unit._apply_mortal_wounds_to_unit(
+                        source_unit,
+                        int(mortal),
+                        game_map=getattr(game, "map", None),
+                        is_psychic_attack=True,
+                    )
+                except Exception:
+                    pass
+            try:
+                sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} suffers {int(mortal)} mortal wounds.")
+            except Exception:
+                pass
+            return target_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["death_hex_active"] = True
+        sr["death_hex_owner"] = str(getattr(player, "id", "") or "")
+        try:
+            sr["death_hex_turn"] = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            sr["death_hex_turn"] = 0
+        sr["death_hex_source"] = ability_name
+        try:
+            sr["death_hex_ap_bonus"] = int(ctx.get("ap_bonus", 1) or 1)
+        except Exception:
+            sr["death_hex_ap_bonus"] = 1
+        target_root.special_rules = sr
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {tname} marked for AP -1.")
+        except Exception:
+            pass
+    if str(ctx.get("ability", "") or "") == "opponent_shooting_phase_disrupt":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        model_id = payload.get("model_id") or ctx.get("model_id")
+        model = resolve_model(game, model_id)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        player = _resolve_player(game, request, payload)
+        if player is None and source_unit is not None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Opponent Shooting phase disruption").strip() or "Opponent Shooting phase disruption"
+        ability_key = str(ctx.get("ability_key", "") or ability_name).strip().upper()
+        if bool(ctx.get("limit_one_per_army")) and player is not None:
+            try:
+                mark_fn = getattr(player, "_mark_ability_used_turn", None)
+                if callable(mark_fn):
+                    mark_fn(ability_key)
+            except Exception:
+                pass
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {roll}")
+        if roll <= 1:
+            if bool(ctx.get("mortal_on_one")) and source_unit is not None:
+                mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+                if callable(append_dice) and player is not None:
+                    append_dice(player, f"{ability_name} mortal wounds: {mortal}")
+                if mortal > 0:
+                    try:
+                        source_unit._apply_mortal_wounds_to_unit(
+                            source_unit,
+                            int(mortal),
+                            game_map=getattr(game, "map", None),
+                            is_psychic_attack=True,
+                        )
+                    except Exception:
+                        pass
+                try:
+                    sname = str(getattr(source_unit, "name", "Unit") or "Unit")
+                    _log_action_for_players(game, player, f"{ability_name}: {sname} suffers {int(mortal)} mortal wounds.")
+                except Exception:
+                    pass
+            return target_unit
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        try:
+            phase_owner = game.get_current_player()
+        except Exception:
+            phase_owner = None
+        owner_id = str(getattr(phase_owner, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if 2 <= roll <= 5:
+            for unit in members:
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shooting_phase_hit_penalty_active"] = True
+                sr["shooting_phase_hit_penalty_owner"] = owner_id
+                sr["shooting_phase_hit_penalty_turn"] = int(turn or 0)
+                sr["shooting_phase_hit_penalty_source"] = ability_name
+                sr["shooting_phase_hit_penalty_expires_phase"] = "SHOOTING_PHASE"
+                unit.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} suffers -1 to hit this phase.")
+            except Exception:
+                pass
+        elif roll >= 6:
+            for unit in members:
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shooting_phase_ineligible_active"] = True
+                sr["shooting_phase_ineligible_owner"] = owner_id
+                sr["shooting_phase_ineligible_turn"] = int(turn or 0)
+                sr["shooting_phase_ineligible_source"] = ability_name
+                sr["shooting_phase_ineligible_expires_phase"] = "SHOOTING_PHASE"
+                unit.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} cannot shoot this phase.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "maggot_maws":
         source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
         if chosen is not None:
@@ -2435,6 +2631,38 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     player = getattr(attacker_unit.get_parent_army(), "player", None)
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_keyword_wound_reroll":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Post-shoot Wound reroll").strip() or "Post-shoot Wound reroll"
+            phrase = str(ctx.get("keyword_phrase", "") or "").strip()
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_keyword_wound_reroll_active"] = True
+            sr["post_shoot_keyword_wound_reroll_owner"] = owner_id
+            sr["post_shoot_keyword_wound_reroll_turn"] = int(turn or 0)
+            sr["post_shoot_keyword_wound_reroll_source"] = ability_name
+            sr["post_shoot_keyword_wound_reroll_phrase"] = phrase
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} marked for Wound re-rolls.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_ap_bonus":

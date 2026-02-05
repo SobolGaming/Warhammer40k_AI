@@ -2054,6 +2054,13 @@ class BattlePhaseHandler(BasePhaseHandler):
         if unit.round_state.shot_this_round:
             print(f"ERROR: {unit.name} has already shot this round")
             return
+
+        try:
+            if hasattr(unit, "is_shooting_phase_ineligible") and unit.is_shooting_phase_ineligible(self.game):
+                print(f"ERROR: {unit.name} is not eligible to shoot this phase")
+                return
+        except Exception:
+            pass
         
         if unit.round_state.fell_back_this_round:
             print(f"ERROR: {unit.name} cannot shoot after falling back")
