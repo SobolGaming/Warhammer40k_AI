@@ -850,6 +850,22 @@ class WargearProfile:
                     bonus = int(sr.get("post_shoot_ap_bonus_value", 0) or 0)
                     if bonus:
                         ap_val -= bonus
+        # Fight phase target AP bonus (e.g., Blood Throne).
+        try:
+            if target_root is not None and attacker_unit is not None:
+                try:
+                    is_melee = bool(self.parent_wargear and self.parent_wargear.is_melee())
+                except Exception:
+                    is_melee = False
+                attack_type = "melee" if is_melee else "ranged"
+                army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                bonuses = target_root.get_fight_phase_target_attack_bonuses(attacker_unit, game=game, attack_type=attack_type)
+                ap_bonus = int((bonuses or {}).get("ap_bonus", 0) or 0)
+                if ap_bonus:
+                    ap_val -= ap_bonus
+        except Exception:
+            pass
         # Defensive stratagems that worsen AP for attacks against a specific target.
         try:
             if target_root is not None and attacker_unit is not None:
@@ -6166,6 +6182,19 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                bonus, reasons = getattr(attacker, "get_temporary_melee_strength_bonus", lambda: (0, []))()
+                if bonus:
+                    strength = strength + int(bonus)
+                    if reasons:
+                        wound_result.setdefault("modifiers", []).extend(list(reasons))
+                    else:
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(bonus)}S from temporary melee bonus"
+                        )
+        except Exception:
+            pass
+        try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             bonuses = list(sr.get("daemonic_allegiance_weapon_bonuses", []) or []) if isinstance(sr, dict) else []
             if bonuses and self.parent_wargear and isinstance(strength, int):
@@ -6365,6 +6394,28 @@ class WargearProfile:
                 strength = strength + int(s_bonus)
                 if s_reasons:
                     wound_result.setdefault("modifiers", []).extend(list(s_reasons))
+        # Fight phase target bonuses: improve Strength vs selected target.
+        try:
+            if target is not None and isinstance(strength, int):
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if attacker_unit is not None:
+                    army = attacker_unit.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                else:
+                    game = None
+                try:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                except Exception:
+                    is_melee = False
+                attack_type = "melee" if is_melee else "ranged"
+                bonuses = target.get_fight_phase_target_attack_bonuses(attacker_unit, game=game, attack_type=attack_type)
+                s_bonus = int((bonuses or {}).get("strength_bonus", 0) or 0)
+                if s_bonus:
+                    strength = strength + int(s_bonus)
+                    for reason in list((bonuses or {}).get("strength_reasons", []) or []):
+                        wound_result.setdefault("modifiers", []).append(reason)
+        except Exception:
+            pass
         # Bondsman: Magaera's Duty (+1S vs closest target for ranged attacks).
         try:
             if self._bondsman_magaera_bonus_applies(attacker, target):
@@ -6550,6 +6601,26 @@ class WargearProfile:
             if bonus:
                 dice_modifier += int(bonus)
                 wound_result['modifiers'].append(reason or f"+{int(bonus)} to wound from Movement phase bonus")
+        except Exception:
+            pass
+        # Fight phase target wound bonus (e.g., The Eternal Dance).
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            if attacker_unit is not None:
+                army = attacker_unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            else:
+                game = None
+            try:
+                is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            except Exception:
+                is_melee = False
+            attack_type = "melee" if is_melee else "ranged"
+            bonuses = target.get_fight_phase_target_attack_bonuses(attacker_unit, game=game, attack_type=attack_type)
+            w_bonus = int((bonuses or {}).get("wound_bonus", 0) or 0)
+            if w_bonus:
+                dice_modifier += int(w_bonus)
+                wound_result['modifiers'].extend(list((bonuses or {}).get("wound_reasons", []) or []))
         except Exception:
             pass
         # Dark Ritual (once per battle): +1 to wound until end of turn.
@@ -9500,6 +9571,20 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+        # Temporary melee damage bonuses (once-per-battle buffs).
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                d_bonus, d_reasons = getattr(attacker, "get_temporary_melee_damage_bonus", lambda: (0, []))()
+                if d_bonus:
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(d_bonus), source="ability:temporary_melee_damage_add")
+                    )
+                    if d_reasons:
+                        damage_result['special_effects'].extend(list(d_reasons))
+                    else:
+                        damage_result['special_effects'].append(f"+{int(d_bonus)}D from temporary melee bonus")
+        except Exception:
+            pass
         if self.parent_wargear and self.parent_wargear.is_melee():
             _s_bonus, d_bonus, _s_reasons, d_reasons = self._get_charge_melee_strength_damage_bonus(attacker, attack_instance)
             if d_bonus:
@@ -9508,6 +9593,32 @@ class WargearProfile:
                 )
                 if d_reasons:
                     damage_result['special_effects'].extend(list(d_reasons))
+        # Fight phase target bonuses: improve Damage vs selected target.
+        try:
+            target_unit = getattr(target_model, "parent_unit", None) if target_model is not None else None
+            if target_unit is not None:
+                try:
+                    target_root = target_unit.get_attached_unit_root()
+                except Exception:
+                    target_root = target_unit
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if attacker_unit is not None and target_root is not None:
+                    try:
+                        is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                    except Exception:
+                        is_melee = False
+                    attack_type = "melee" if is_melee else "ranged"
+                    army = attacker_unit.get_parent_army()
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    bonuses = target_root.get_fight_phase_target_attack_bonuses(attacker_unit, game=game, attack_type=attack_type)
+                    d_bonus = int((bonuses or {}).get("damage_bonus", 0) or 0)
+                    if d_bonus:
+                        damage_mods.append(
+                            Modifier(ModifierOp.ADD, int(d_bonus), source="ability:fight_phase_target_damage_add")
+                        )
+                        damage_result['special_effects'].extend(list((bonuses or {}).get("damage_reasons", []) or []))
+        except Exception:
+            pass
         # Berzerker Glaive: +1 Damage to melee weapons (excluding Extra Attacks).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee() and not self.is_extra_attacks():

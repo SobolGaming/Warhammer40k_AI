@@ -3392,6 +3392,7 @@ class GameView:
                 DECISION_CHOOSE_MOMENT_SHACKLE,
                 DECISION_CHOOSE_CRUEL_AMUSEMENT,
                 DECISION_CHOOSE_MASTER_OF_MAGICKS,
+                DECISION_CHOOSE_HARBINGER_OF_DEATH,
                 DECISION_CHOOSE_DANCE_OF_DEATH,
                 DECISION_USE_CAREEN,
                 DECISION_USE_GILDED_CHAMPION,
@@ -4307,6 +4308,74 @@ class GameView:
             ctx = dict(getattr(request, "context", {}) or {})
             default_name = "Cruel Amusement" if decision_type == DECISION_CHOOSE_CRUEL_AMUSEMENT else "Master of Magicks"
             ability_name = str(ctx.get("ability_name", "") or default_name).strip()
+            weapon_name = str(ctx.get("weapon_name", "") or "")
+            model_name = ""
+            unit_name = ""
+            try:
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    reg = getattr(game, "entity_registry", None)
+                    model_obj = reg.get(model_id, kind="model") if reg is not None else None
+                    if model_obj is not None:
+                        model_name = getattr(model_obj, "name", "") or ""
+                        unit_obj = getattr(model_obj, "parent_unit", None)
+                        unit_name = getattr(unit_obj, "name", "") if unit_obj is not None else ""
+            except Exception:
+                model_name = ""
+                unit_name = ""
+            subtitle_bits = []
+            if model_name:
+                subtitle_bits.append(model_name)
+            if unit_name:
+                subtitle_bits.append(f"({unit_name})")
+            if weapon_name:
+                subtitle_bits.append(f"- {weapon_name}")
+            subtitle = " ".join(subtitle_bits) if subtitle_bits else "Select a weapon ability."
+
+            def _on_confirm(option_id: str):
+                resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                try:
+                    self.martial_katah_dialog.hide()
+                except Exception:
+                    pass
+
+            def _on_cancel():
+                default_id = first_option_id(request)
+                if default_id:
+                    resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                try:
+                    self.martial_katah_dialog.hide()
+                except Exception:
+                    pass
+
+            self.martial_katah_dialog.show(
+                on_confirm=_on_confirm,
+                on_cancel=_on_cancel,
+                subtitle=subtitle,
+                title=ability_name,
+                decision_request=request,
+            )
+            try:
+                self.dialog_manager.open(self.martial_katah_dialog, modal=True)
+            except Exception:
+                pass
+            return
+
+        if decision_type == DECISION_CHOOSE_HARBINGER_OF_DEATH:
+            if self.martial_katah_dialog is None:
+                try:
+                    from .dialogs import MartialKatahDialog
+                    sw, sh = self.screen.get_width(), self.screen.get_height()
+                    self.martial_katah_dialog = MartialKatahDialog(sw, sh)
+                except Exception:
+                    self.martial_katah_dialog = None
+            if self.martial_katah_dialog is None:
+                return
+            from ..utility.decision_utils import resolve_decision_command
+            from .decision_ui_utils import first_option_id
+
+            ctx = dict(getattr(request, "context", {}) or {})
+            ability_name = str(ctx.get("ability_name", "") or "Harbinger of Death").strip()
             weapon_name = str(ctx.get("weapon_name", "") or "")
             model_name = ""
             unit_name = ""

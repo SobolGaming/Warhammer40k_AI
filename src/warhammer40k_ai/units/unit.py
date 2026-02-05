@@ -1874,6 +1874,44 @@ class Unit:
         r"characteristic of those weapons by 1",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_MELEE_FULL_BUFF_RE = re.compile(
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"improve the strength attacks armou?r penetration and damage characteristics of melee weapons equipped by this model by (?P<val>\d+)",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_HELLFORGED_ATTACKS_RE = re.compile(
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"add (?P<val>\d+) to the attacks characteristic of this model s hellforged weapons",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_TARGET_ATTACK_BONUS_RE = re.compile(
+        r"at the start of the fight phase select one enemy unit within (?P<range>\d+)\s*\"?\s*of(?: and visible to)? this model "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) unit makes an attack that targets that unit "
+        r"improve the strength armou?r penetration and damage characteristics of that attack by (?P<val>\d+)",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_TARGET_MELEE_WOUND_BONUS_RE = re.compile(
+        r"at the start of the fight phase select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
+        r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes a melee attack that targets that enemy unit "
+        r"add (?P<bonus>\d+) to the wound roll",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_TARGET_MELEE_WOUND_PENALTY_RE = re.compile(
+        r"each time a model in that enemy unit makes a melee attack subtract (?P<pen>\d+) from the wound roll",
+        re.IGNORECASE,
+    )
+    _HARBINGER_OF_DEATH_RE = re.compile(
+        r"each time this model is selected to fight select one of the following abilities until the end of the phase this model s "
+        r"hellforged weapons have that ability",
+        re.IGNORECASE,
+    )
+    _MALIGN_SACRIFICE_RE = re.compile(
+        r"at the start of the fight phase if this unit contains one or more (?P<model>[a-z0-9 ]+?) models "
+        r"you can select one of those models and one enemy unit within engagement range of this unit then roll one d6 "
+        r"on a 2 5 that enemy unit suffers 1 mortal wound on a 6 that enemy unit suffers d3 mortal wounds "
+        r"that (?P=model) model is then destroyed",
+        re.IGNORECASE,
+    )
     _START_ANY_PHASE_DAMAGE_SET_ONE_RE = re.compile(
         r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
         r"each time an attack is allocated to this model change the damage characteristic of that attack to 1",
@@ -8910,6 +8948,204 @@ class Unit:
         source = str(sr.get("movement_phase_visible_wound_bonus_source", "") or "Movement phase wound bonus").strip() or "Movement phase wound bonus"
         return int(bonus), f"+{int(bonus)} to wound from {source}"
 
+    def apply_fight_phase_target_attack_bonus(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        keyword: str,
+        attack_type: str,
+        strength_bonus: int = 0,
+        ap_bonus: int = 0,
+        damage_bonus: int = 0,
+        wound_bonus: int = 0,
+        source_model_id: Optional[str] = None,
+    ) -> None:
+        """Apply a temporary fight-phase target bonus vs this unit."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        entries = list(sr.get("fight_phase_target_attack_bonuses", []) or [])
+        atype = str(attack_type or "any").strip().lower()
+        if atype not in ("melee", "ranged", "any"):
+            atype = "any"
+        entry = {
+            "owner_id": str(owner_id or ""),
+            "turn": int(turn or 0),
+            "source": str(source or "Fight phase target bonus").strip() or "Fight phase target bonus",
+            "keyword": str(keyword or "").strip(),
+            "attack_type": atype,
+            "strength_bonus": int(strength_bonus or 0),
+            "ap_bonus": int(ap_bonus or 0),
+            "damage_bonus": int(damage_bonus or 0),
+            "wound_bonus": int(wound_bonus or 0),
+        }
+        if source_model_id:
+            entry["source_model_id"] = str(source_model_id)
+        entries.append(entry)
+        sr["fight_phase_target_attack_bonuses"] = entries
+        self.special_rules = sr
+
+    def apply_fight_phase_melee_wound_penalty(
+        self,
+        *,
+        owner_id: str,
+        turn: int,
+        source: str,
+        penalty: int,
+    ) -> None:
+        """Apply a temporary fight-phase melee wound penalty to this unit's attacks."""
+        try:
+            penalty = int(penalty or 0)
+        except Exception:
+            penalty = 0
+        if penalty <= 0:
+            return
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        entries = list(sr.get("fight_phase_melee_wound_penalties", []) or [])
+        entries.append(
+            {
+                "owner_id": str(owner_id or ""),
+                "turn": int(turn or 0),
+                "source": str(source or "Fight phase melee penalty").strip() or "Fight phase melee penalty",
+                "penalty": int(penalty),
+            }
+        )
+        sr["fight_phase_melee_wound_penalties"] = entries
+        self.special_rules = sr
+
+    def get_fight_phase_target_attack_bonuses(
+        self,
+        attacker_unit=None,
+        *,
+        game=None,
+        attack_type: str = "any",
+    ) -> dict:
+        """Return aggregated fight-phase bonuses vs this unit for the attacker."""
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return {}
+        entries = list(sr.get("fight_phase_target_attack_bonuses", []) or [])
+        if not entries:
+            return {}
+
+        if game is None and attacker_unit is not None:
+            try:
+                army = attacker_unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+
+        phase_name = ""
+        current_turn = 0
+        if game is not None:
+            try:
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+        if phase_name and phase_name != "FIGHT_PHASE":
+            # Expired outside fight phase.
+            sr.pop("fight_phase_target_attack_bonuses", None)
+            self.special_rules = sr
+            return {}
+
+        attacker_owner = ""
+        if attacker_unit is not None:
+            try:
+                army = attacker_unit.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                attacker_owner = str(get_entity_id(player) or getattr(player, "id", "") or "")
+            except Exception:
+                attacker_owner = ""
+
+        atype = str(attack_type or "any").strip().lower()
+        if atype not in ("melee", "ranged", "any"):
+            atype = "any"
+
+        active: list[dict] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if current_turn:
+                try:
+                    if int(entry.get("turn", 0) or 0) not in (0, current_turn):
+                        continue
+                except Exception:
+                    pass
+            if attacker_owner:
+                owner_id = str(entry.get("owner_id", "") or "")
+                if owner_id and owner_id != attacker_owner:
+                    continue
+            kw = str(entry.get("keyword", "") or "").strip()
+            if kw and attacker_unit is not None:
+                try:
+                    if not self._unit_matches_keyword_phrase(attacker_unit, kw):
+                        continue
+                except Exception:
+                    continue
+            entry_attack_type = str(entry.get("attack_type", "") or "any").strip().lower()
+            if entry_attack_type not in ("melee", "ranged", "any"):
+                entry_attack_type = "any"
+            if entry_attack_type != "any" and atype != "any" and entry_attack_type != atype:
+                continue
+            active.append(entry)
+
+        if len(active) != len(entries):
+            sr["fight_phase_target_attack_bonuses"] = active
+            self.special_rules = sr
+
+        if not active:
+            return {}
+
+        out = {
+            "strength_bonus": 0,
+            "ap_bonus": 0,
+            "damage_bonus": 0,
+            "wound_bonus": 0,
+            "strength_reasons": [],
+            "ap_reasons": [],
+            "damage_reasons": [],
+            "wound_reasons": [],
+        }
+        for entry in active:
+            source = str(entry.get("source", "") or "Fight phase target bonus").strip() or "Fight phase target bonus"
+            try:
+                s_bonus = int(entry.get("strength_bonus", 0) or 0)
+            except Exception:
+                s_bonus = 0
+            try:
+                ap_bonus = int(entry.get("ap_bonus", 0) or 0)
+            except Exception:
+                ap_bonus = 0
+            try:
+                d_bonus = int(entry.get("damage_bonus", 0) or 0)
+            except Exception:
+                d_bonus = 0
+            try:
+                w_bonus = int(entry.get("wound_bonus", 0) or 0)
+            except Exception:
+                w_bonus = 0
+            if s_bonus:
+                out["strength_bonus"] += int(s_bonus)
+                out["strength_reasons"].append(f"{source}: +{int(s_bonus)}S")
+            if ap_bonus:
+                out["ap_bonus"] += int(ap_bonus)
+                out["ap_reasons"].append(f"{source}: +{int(ap_bonus)}AP")
+            if d_bonus:
+                out["damage_bonus"] += int(d_bonus)
+                out["damage_reasons"].append(f"{source}: +{int(d_bonus)}D")
+            if w_bonus:
+                out["wound_bonus"] += int(w_bonus)
+                out["wound_reasons"].append(f"{source}: +{int(w_bonus)} to wound")
+        return out
+
     def apply_start_of_battle_keyword_reroll_choice(
         self,
         model: Optional['Model'],
@@ -13747,6 +13983,52 @@ class Unit:
                     mods["wound"] += int(penalty)
                     source = str(sr.get("misfortune_source", "") or "Misfortune").strip() or "Misfortune"
                     wound_reasons.append(f"{int(penalty):+d} to wound from {source}")
+        except Exception:
+            pass
+
+        # Fight phase: temporary melee wound penalties (e.g., The Eternal Dance).
+        try:
+            if atype in ("melee", "any"):
+                sr = getattr(root, "special_rules", None)
+                entries = list(sr.get("fight_phase_melee_wound_penalties", []) or []) if isinstance(sr, dict) else []
+                if entries:
+                    phase_name = ""
+                    current_turn = 0
+                    if game is not None:
+                        try:
+                            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            phase_name = ""
+                        try:
+                            current_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                    if phase_name and phase_name != "FIGHT_PHASE":
+                        sr.pop("fight_phase_melee_wound_penalties", None)
+                        root.special_rules = sr
+                    else:
+                        kept = []
+                        for entry in entries:
+                            if not isinstance(entry, dict):
+                                continue
+                            if current_turn:
+                                try:
+                                    if int(entry.get("turn", 0) or 0) not in (0, current_turn):
+                                        continue
+                                except Exception:
+                                    pass
+                            kept.append(entry)
+                            try:
+                                pen = int(entry.get("penalty", 0) or 0)
+                            except Exception:
+                                pen = 0
+                            if pen:
+                                mods["wound"] -= int(pen)
+                                source = str(entry.get("source", "") or "Fight phase melee penalty").strip()
+                                wound_reasons.append(f"{-int(pen):+d} to wound from {source}")
+                        if isinstance(sr, dict):
+                            sr["fight_phase_melee_wound_penalties"] = kept
+                            root.special_rules = sr
         except Exception:
             pass
 
@@ -22562,6 +22844,46 @@ class Unit:
                 break
         return results
 
+    def iter_harbinger_of_death_models(self) -> list[dict]:
+        """
+        Return models with Harbinger of Death (hellforged weapon keyword choice in Fight phase).
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "harbinger of death" not in str(name or text_src).lower():
+                    if not root._HARBINGER_OF_DEATH_RE.fullmatch(normalized):
+                        continue
+                results.append(
+                    {
+                        "model": model,
+                        "weapon_name": "hellforged",
+                        "source": str(name or "Harbinger of Death").strip() or "Harbinger of Death",
+                    }
+                )
+                break
+        return results
+
     def iter_cry_of_the_wind_models(self) -> list[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -23252,6 +23574,14 @@ class Unit:
             temp_rules = []
         if temp_rules:
             rules = list(rules or []) + list(temp_rules or [])
+        try:
+            if weapon_profile is not None:
+                from ..utility.aura_effects import get_aura_weapon_keyword_bonuses
+                aura_rules = get_aura_weapon_keyword_bonuses(self, weapon_profile)
+                if aura_rules:
+                    rules = list(rules or []) + list(aura_rules or [])
+        except Exception:
+            pass
         try:
             if target is not None:
                 sr = getattr(self, "special_rules", None)
@@ -29659,6 +29989,250 @@ class Unit:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_fight_phase_melee_full_characteristic_boost_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of the Fight phase, improve S/A/AP/D by 1.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_melee_full_boost:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_MELEE_FULL_BUFF_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                bonus = int(m.group("val") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Fight phase melee boost").strip() or "Fight phase melee boost"
+            key_seed = self._normalize_keyword_phrase(source)
+            if not key_seed:
+                key_seed = "fight_phase_melee_full_boost"
+            key = f"fight_phase_melee_full_boost:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "key": key, "bonus": int(bonus)})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_fight_phase_hellforged_attacks_bonus_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of the Fight phase, add Attacks to hellforged weapons.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - weapon_name: str
+            - attacks_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_hellforged_attacks:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._FIGHT_PHASE_HELLFORGED_ATTACKS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                bonus = int(m.group("val") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Fight phase hellforged attacks").strip() or "Fight phase hellforged attacks"
+            key_seed = self._normalize_keyword_phrase(source)
+            if not key_seed:
+                key_seed = "fight_phase_hellforged_attacks"
+            key = f"fight_phase_hellforged_attacks:{key_seed}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "weapon_name": "hellforged",
+                    "attacks_bonus": int(bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_fight_phase_target_attack_bonus_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: at the start of the Fight phase, select an enemy unit within range (optionally visible);
+        friendly keyword attacks gain bonuses vs that target until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - requires_visibility: bool
+            - keyword: str
+            - attack_type: str ("melee" | "ranged" | "any")
+            - strength_bonus: int
+            - ap_bonus: int
+            - damage_bonus: int
+            - wound_bonus: int
+            - enemy_melee_wound_penalty: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_fight_phase_target_attack_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            source = str(name or "Fight phase target bonus").strip() or "Fight phase target bonus"
+
+            m = self._FIGHT_PHASE_TARGET_ATTACK_BONUS_RE.fullmatch(normalized)
+            if m:
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    bonus = int(m.group("val") or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                keyword = self._normalize_keyword_phrase(keyword_raw) or keyword_raw.lower() or "friendly"
+                requires_visibility = "visible to this model" in normalized
+                key = (source.lower(), range_value, keyword, bonus, "sapd")
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "requires_visibility": bool(requires_visibility),
+                        "keyword": keyword,
+                        "attack_type": "any",
+                        "strength_bonus": int(bonus),
+                        "ap_bonus": int(bonus),
+                        "damage_bonus": int(bonus),
+                        "wound_bonus": 0,
+                        "enemy_melee_wound_penalty": 0,
+                    }
+                )
+                continue
+
+            m = self._FIGHT_PHASE_TARGET_MELEE_WOUND_BONUS_RE.search(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            keyword_raw = str(m.group("keyword") or "").strip()
+            keyword = self._normalize_keyword_phrase(keyword_raw) or keyword_raw.lower() or "friendly"
+            try:
+                bonus = int(m.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            penalty = 0
+            try:
+                p = self._FIGHT_PHASE_TARGET_MELEE_WOUND_PENALTY_RE.search(normalized)
+                if p:
+                    penalty = int(p.group("pen") or 0)
+            except Exception:
+                penalty = 0
+            key = (source.lower(), range_value, keyword, bonus, penalty, "wound")
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "requires_visibility": False,
+                    "keyword": keyword,
+                    "attack_type": "melee",
+                    "strength_bonus": 0,
+                    "ap_bonus": 0,
+                    "damage_bonus": 0,
+                    "wound_bonus": int(bonus),
+                    "enemy_melee_wound_penalty": int(penalty),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_any_phase_damage_set_one_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: once per battle, at the start of any phase, set incoming damage to 1.
@@ -30874,6 +31448,44 @@ class Unit:
                     "mortal_per_success": 1,
                 }
             )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_start_fight_phase_malign_sacrifice_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: at the start of the Fight phase, select a Dark Disciple and an engaged enemy,
+        then roll for mortal wounds and destroy that model (Malign Sacrifice).
+        """
+        cache_key = "unit_fight_phase_malign_sacrifice"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_ability_entries_for_rules(model=None):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MALIGN_SACRIFICE_RE.fullmatch(normalized)
+            if not m:
+                continue
+            model_name = str(m.group("model") or "dark disciple").strip() or "dark disciple"
+            source = str(name or "Malign Sacrifice").strip() or "Malign Sacrifice"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "model_name": model_name})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

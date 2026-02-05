@@ -46,6 +46,39 @@ def _get_unit(game: object, unit_id: Optional[str]):
     return None
 
 
+def _get_model(game: object, model_id: Optional[str]):
+    if not model_id:
+        return None
+    registry = getattr(game, "entity_registry", None)
+    if registry is None:
+        registry = None
+    try:
+        if registry is not None:
+            found = registry.get(str(model_id), kind="model")
+            if found is not None:
+                return found
+    except Exception:
+        pass
+    try:
+        players = list(getattr(game, "players", []) or [])
+        from ..utility.entity_ids import get_entity_id
+        for player in players:
+            try:
+                army = player.get_army()
+            except Exception:
+                army = getattr(player, "army", None)
+            for unit in list(getattr(army, "units", []) or []):
+                for model in list(getattr(unit, "models", []) or []):
+                    try:
+                        if str(get_entity_id(model)) == str(model_id):
+                            return model
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    return None
+
+
 def handle_daemonic_poisons_roll(game: object, state: DiceRollState):
     spec = dict(getattr(state, "spec", {}) or {})
     unit_id = spec.get("unit_id")
@@ -263,6 +296,56 @@ def handle_grenade_pack_flyover(game: object, state: DiceRollState):
     except Exception:
         pass
     return int(total_mw)
+
+
+def handle_malign_sacrifice_roll(game: object, state: DiceRollState):
+    spec = dict(getattr(state, "spec", {}) or {})
+    source_id = spec.get("source_unit_id") or spec.get("unit_id")
+    source_unit = _get_unit(game, source_id)
+    target_id = spec.get("target_unit_id") or spec.get("target_unit") or spec.get("target_id")
+    target_unit = _get_unit(game, target_id)
+    model_id = spec.get("model_id")
+    model = _get_model(game, model_id)
+    if source_unit is None or target_unit is None:
+        return None
+    ability_name = str(spec.get("ability_name", "") or "Malign Sacrifice").strip() or "Malign Sacrifice"
+    roll_val = int(state.total or 0)
+    mortal = 0
+    if roll_val >= 6:
+        try:
+            from ..utility.dice import get_roll
+            mortal = int(get_roll("D3") or 0)
+        except Exception:
+            mortal = 0
+    elif roll_val >= 2:
+        mortal = 1
+
+    if mortal > 0:
+        try:
+            if hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
+                source_unit._apply_mortal_wounds_to_unit(target_unit, int(mortal), game_map=getattr(game, "map", None))
+        except Exception:
+            pass
+    try:
+        if model is not None and hasattr(model, "die"):
+            model.die(game_map=getattr(game, "map", None))
+    except Exception:
+        pass
+    try:
+        from ..utility.event_bus import append_action, append_dice
+        player = source_unit.get_parent_army().player if hasattr(source_unit, "get_parent_army") else None
+        if player is not None:
+            append_dice(
+                player,
+                f"{ability_name}: roll {roll_val} => {int(mortal)} mortal wounds to {getattr(target_unit, 'name', 'Unit')}.",
+            )
+            append_action(
+                player,
+                f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds; {getattr(model, 'name', 'Model')} destroyed.",
+            )
+    except Exception:
+        pass
+    return int(mortal)
 
 
 def handle_advance_roll(game: object, state: DiceRollState):
@@ -635,4 +718,5 @@ register_roll_handler("daemonic_poisons", handle_daemonic_poisons_roll)
 register_roll_handler("daemonic_poisons_damage", handle_daemonic_poisons_damage_roll)
 register_roll_handler("move_over_mortal_wounds", handle_move_over_mortal_wounds)
 register_roll_handler("grenade_pack_flyover", handle_grenade_pack_flyover)
+register_roll_handler("malign_sacrifice", handle_malign_sacrifice_roll)
 register_roll_handler("battle_focus_reactive_move", handle_battle_focus_reactive_move)

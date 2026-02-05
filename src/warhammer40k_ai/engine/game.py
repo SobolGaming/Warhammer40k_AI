@@ -1346,6 +1346,107 @@ class Game:
                             payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
                             instance_key=f"{model_id}:{key}",
                         )
+            # Once per battle: start of Fight phase -> improve S/A/AP/D for this model.
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    specs = []
+                    try:
+                        specs = list(unit.model_start_fight_phase_melee_full_characteristic_boost_specs(m) or [])
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "fight_phase_melee_full_boost").strip().lower()
+                        if not key:
+                            key = "fight_phase_melee_full_boost"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(spec.get("source", "") or "Fight phase melee boost").strip()
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": key,
+                            "bonus": int(spec.get("bonus", 1) or 1),
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(unit, 'name', 'Unit')})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="chance_for_glory",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
+                            instance_key=f"{model_id}:{key}",
+                        )
+            # Once per battle: start of Fight phase -> add Attacks to hellforged weapons.
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    specs = []
+                    try:
+                        specs = list(unit.model_start_fight_phase_hellforged_attacks_bonus_specs(m) or [])
+                    except Exception:
+                        specs = []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "fight_phase_hellforged_attacks").strip().lower()
+                        if not key:
+                            key = "fight_phase_hellforged_attacks"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(spec.get("source", "") or "Fight phase hellforged attacks").strip()
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": key,
+                            "weapon_name": str(spec.get("weapon_name", "") or "hellforged"),
+                            "attacks_bonus": int(spec.get("attacks_bonus", 0) or 0),
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(unit, 'name', 'Unit')})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="malefic_destruction",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "buff_key": key,
+                                "weapon_name": ctx["weapon_name"],
+                                "attacks_bonus": int(ctx["attacks_bonus"]),
+                            },
+                            instance_key=f"{model_id}:{key}",
+                        )
             # Enhancement: once per battle, start of Fight phase -> Fight First for bearer's unit.
             for unit in list(army.units):
                 if not unit.is_alive():
@@ -2420,6 +2521,277 @@ class Game:
                         },
                     )
                     self.request_decision(request)
+
+    def _on_phase_start_fight_phase_target_attack_bonus(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: select an enemy unit to mark for attack bonuses (e.g., Blood Throne, The Eternal Dance)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "fight_phase_target_attack_bonus":
+                        continue
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            enemy_roots = self._collect_enemy_unit_roots(p)
+            if not enemy_roots:
+                continue
+            enemy_roots.sort(key=_unit_sort_key)
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                if not models:
+                    continue
+                for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id and model_id in pending_models:
+                        continue
+                    specs = root.model_start_fight_phase_target_attack_bonus_specs(model) or []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        try:
+                            range_value = int(spec.get("range", 0) or 0)
+                        except Exception:
+                            range_value = 0
+                        if range_value <= 0:
+                            continue
+                        requires_visibility = bool(spec.get("requires_visibility", False))
+                        if requires_visibility:
+                            candidates = self._visible_enemy_candidates_for_model(
+                                source_unit=root,
+                                model=model,
+                                enemy_roots=enemy_roots,
+                                range_value=float(range_value),
+                                game_map=game_map,
+                            )
+                        else:
+                            candidates = self._enemy_candidates_within_range_of_model(
+                                model=model,
+                                enemy_roots=enemy_roots,
+                                range_value=float(range_value),
+                            )
+                        if not candidates:
+                            continue
+                        self._queue_fight_phase_target_attack_bonus(
+                            player=p,
+                            source_unit=root,
+                            model=model,
+                            candidates=candidates,
+                            spec=spec,
+                        )
+
+    def _on_phase_start_malign_sacrifice(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: optional Malign Sacrifice (select Dark Disciple + engaged enemy)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        pending_units = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "malign_sacrifice":
+                        continue
+                    uid = str(ctx.get("source_unit_id", "") or "")
+                    if uid:
+                        pending_units.add(uid)
+        except Exception:
+            pending_units = set()
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = p.get_army()
+            if army is None:
+                continue
+            for unit in sorted(list(army.units or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                if not unit.is_alive() or not getattr(unit, "deployed", True):
+                    continue
+                try:
+                    if unit.is_in_reserves() or unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None or not root.is_alive():
+                    continue
+                uid = str(get_entity_id(root) or "")
+                if uid and uid in pending_units:
+                    continue
+                specs = root.unit_start_fight_phase_malign_sacrifice_specs() or []
+                if not specs:
+                    continue
+                spec = specs[0]
+                ability_name = str(spec.get("source", "") or "Malign Sacrifice").strip() or "Malign Sacrifice"
+                model_name = str(spec.get("model_name", "") or "dark disciple").strip() or "dark disciple"
+                norm_target = root._normalize_attached_unit_name(model_name)
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                disciples = []
+                target_tokens = set(norm_target.split()) if norm_target else set()
+                for m in list(models or []):
+                    try:
+                        if not getattr(m, "is_alive", True):
+                            continue
+                    except Exception:
+                        continue
+                    name = root._normalize_attached_unit_name(getattr(m, "name", ""))
+                    if not name:
+                        continue
+                    if norm_target and (norm_target in name or (target_tokens and target_tokens.issubset(set(name.split())))):
+                        disciples.append(m)
+                if not disciples:
+                    continue
+
+                enemy_units = []
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None or not enemy_root.is_alive():
+                        continue
+                    try:
+                        if not getattr(enemy_root, "deployed", True):
+                            continue
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    try:
+                        if not game_map.is_within_engagement_range(root, enemy_root):
+                            continue
+                    except Exception:
+                        continue
+                    enemy_units.append(enemy_root)
+                if not enemy_units:
+                    continue
+
+                try:
+                    disciples.sort(key=_model_sort_key)
+                except Exception:
+                    pass
+                try:
+                    enemy_units.sort(key=_unit_sort_key)
+                except Exception:
+                    pass
+
+                from ..engine.decisions import DecisionOption, DecisionRequest
+
+                options = [
+                    DecisionOption.create(
+                        "Do not use",
+                        payload={"action": "skip"},
+                    )
+                ]
+                for disciple in disciples:
+                    for enemy_root in enemy_units:
+                        label = f"{getattr(disciple, 'name', 'Model')} -> {getattr(enemy_root, 'name', 'Unit')}"
+                        options.append(
+                            DecisionOption.create(
+                                label,
+                                payload={
+                                    "model_id": get_entity_id(disciple),
+                                    "target_unit_id": get_entity_id(enemy_root),
+                                },
+                            )
+                        )
+                if len(options) <= 1:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select a sacrifice target.",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context={
+                        "ability": "malign_sacrifice",
+                        "ability_name": ability_name,
+                        "source_unit_id": uid,
+                    },
+                )
+                self.request_decision(request)
 
     def _on_phase_start_hallowed_ground(self, player=None, phase=None, **_kwargs) -> None:
         if phase is None:
@@ -5192,6 +5564,68 @@ class Game:
             bonus_kind="hit",
         )
 
+    def _queue_fight_phase_target_attack_bonus(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        options = []
+        for cand in candidates:
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Fight phase target bonus").strip() or "Fight phase target bonus"
+        ctx = {
+            "ability": "fight_phase_target_attack_bonus",
+            "ability_name": ability_name,
+            "phase": "Fight phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(spec.get("range", 0) or 0),
+            "keyword": str(spec.get("keyword", "") or "").strip(),
+            "attack_type": str(spec.get("attack_type", "") or "any").strip().lower() or "any",
+            "strength_bonus": int(spec.get("strength_bonus", 0) or 0),
+            "ap_bonus": int(spec.get("ap_bonus", 0) or 0),
+            "damage_bonus": int(spec.get("damage_bonus", 0) or 0),
+            "wound_bonus": int(spec.get("wound_bonus", 0) or 0),
+            "enemy_melee_wound_penalty": int(spec.get("enemy_melee_wound_penalty", 0) or 0),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_movement_phase_end_misfortune(
         self,
         *,
@@ -6923,6 +7357,8 @@ class Game:
             "waaagh",
             "possessed_lord",
             "fight_phase_melee_ap_boost",
+            "chance_for_glory",
+            "malefic_destruction",
             "start_any_phase_damage_set_one",
             "start_any_phase_fnp",
             "dark_ritual",
@@ -7016,6 +7452,60 @@ class Game:
                 return
             ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
             model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
+            return
+
+        if ability_key == "chance_for_glory":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(payload.get("buff_key") or ctx.get("buff_key") or "fight_phase_melee_full_boost").strip().lower()
+            if not key:
+                key = "fight_phase_melee_full_boost"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Chance for Glory").strip()
+            try:
+                bonus = int(payload.get("bonus") or ctx.get("bonus") or 1)
+            except Exception:
+                bonus = 1
+            model.activate_fight_phase_melee_full_characteristic_boost(
+                key=key,
+                ability_name=ability_name,
+                bonus=int(bonus),
+            )
+            return
+
+        if ability_key == "malefic_destruction":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(payload.get("buff_key") or ctx.get("buff_key") or "fight_phase_hellforged_attacks").strip().lower()
+            if not key:
+                key = "fight_phase_hellforged_attacks"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Malefic Destruction").strip()
+            weapon_name = str(payload.get("weapon_name") or ctx.get("weapon_name") or "hellforged").strip() or "hellforged"
+            try:
+                attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0)
+            except Exception:
+                attacks_bonus = 0
+            model.activate_fight_phase_hellforged_attacks_bonus(
+                key=key,
+                ability_name=ability_name,
+                weapon_name=weapon_name,
+                attacks_bonus=int(attacks_bonus or 0),
+            )
             return
 
         if ability_key == "start_any_phase_damage_set_one":
@@ -14231,6 +14721,99 @@ class Game:
             },
             instance_key=str(unit_id or ""),
         )
+
+    def _on_fight_unit_selected_harbinger_of_death(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        try:
+            entries = list(root.iter_harbinger_of_death_models() or [])
+        except Exception:
+            entries = []
+        if not entries:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_HARBINGER_OF_DEATH
+        from .decisions import DecisionOption, DecisionRequest
+
+        pending_models = set()
+        try:
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_HARBINGER_OF_DEATH:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    mid = str(ctx.get("model_id", "") or "")
+                    if mid:
+                        pending_models.add(mid)
+        except Exception:
+            pending_models = set()
+
+        def _sort_key(entry):
+            try:
+                return str(get_entity_id(entry.get("model")))
+            except Exception:
+                return ""
+
+        for entry in sorted(list(entries or []), key=_sort_key):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            weapon_name = str(entry.get("weapon_name", "") or "hellforged").strip() or "hellforged"
+            ability_name = str(entry.get("source", "") or "Harbinger of Death").strip() or "Harbinger of Death"
+            options = [
+                DecisionOption.create(
+                    "Lethal Hits",
+                    payload={"choice": "LETHAL_HITS", "summary": "Weapons gain [LETHAL HITS] until end of phase."},
+                ),
+                DecisionOption.create(
+                    "Precision",
+                    payload={"choice": "PRECISION", "summary": "Weapons gain [PRECISION] until end of phase."},
+                ),
+                DecisionOption.create(
+                    "Sustained Hits 1",
+                    payload={"choice": "SUSTAINED_HITS_1", "summary": "Weapons gain [SUSTAINED HITS 1] until end of phase."},
+                ),
+            ]
+            ctx = {
+                "unit_id": get_entity_id(root),
+                "model_id": model_id,
+                "weapon_name": weapon_name,
+                "ability_name": ability_name,
+                "phase_name": "FIGHT_PHASE",
+            }
+            req = DecisionRequest.create(
+                DECISION_CHOOSE_HARBINGER_OF_DEATH,
+                f"{ability_name}: select a weapon ability.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(req)
 
     def _on_fight_unit_selected_maddened_ferocity(self, unit=None, **_kwargs) -> None:
         if unit is None:

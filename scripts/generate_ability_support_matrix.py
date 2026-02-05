@@ -1716,6 +1716,30 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Leading: bearer unit gains +1 Move and can re-roll Advance rolls.",
         ),
+        ("CD", "Blood Throne"): (
+            "Supported",
+            "Start of Fight phase: select an enemy within range (and visibility when specified); friendly KHORNE LEGIONES DAEMONICA attacks vs that unit gain +1S/+1AP/+1D until end of phase.",
+        ),
+        ("CD", "Champion Slayer"): (
+            "Supported",
+            "Re-roll Wound rolls vs CHARACTER/MONSTER targets; heal D6 lost wounds when destroying a CHARACTER/MONSTER unit.",
+        ),
+        ("CD", "Harbinger of Death"): (
+            "Supported",
+            "Selected to fight: choose Lethal Hits, Precision, or Sustained Hits 1 for hellforged weapons until end of phase.",
+        ),
+        ("CD", "Malefic Destruction"): (
+            "Supported",
+            "Once per battle, start of Fight phase: hellforged weapons gain +3 Attacks until end of phase.",
+        ),
+        ("CD", "The Eternal Dance"): (
+            "Supported",
+            "Start of Fight phase: select enemy within 6\"; friendly SLAANESH LEGIONES DAEMONICA melee attacks gain +1 to wound and that enemy's melee attacks suffer -1 to wound.",
+        ),
+        ("CD", "Tormentbringer (Aura)"): (
+            "Supported",
+            "Friendly SLAANESH LEGIONES DAEMONICA units within 6\" grant Sustained Hits 1 to their melee weapons.",
+        ),
         ("CD", "Blazing Warpfire (Psychic)"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("CD", "Flames of Change (Psychic)"): (
             "Supported",
@@ -1734,6 +1758,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Each time an enemy unit wishes to target The Changeling, it must take a Battle-shock test; on failure it cannot target The Changeling for the rest of the phase.",
         ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
+        ("CSM", "Chance for Glory"): (
+            "Supported",
+            "Once per battle, start of Fight phase: improve S/A/AP/D of the bearer's melee weapons by 1 until end of phase.",
+        ),
+        ("CSM", "Malign Sacrifice"): (
+            "Supported",
+            "Start of Fight phase: select a Dark Disciple and an enemy within Engagement Range, roll D6 (2-5=1 MW, 6=D3 MW) and destroy the Disciple.",
+        ),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),
         ("ADM", "Elevated Strider"): ("Partial", "Shoot-after-Fall-Back/Advance supported; Desperate Escape rerolls not implemented."),

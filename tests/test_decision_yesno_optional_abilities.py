@@ -214,6 +214,87 @@ class TestYesNoOptionalAbilityDecisions(unittest.TestCase):
         self.assertEqual(int(model.get_temporary_melee_attacks_bonus()), 3)
         self.assertEqual(int(model.get_temporary_melee_ap_bonus()), 1)
 
+    def test_chance_for_glory_queues_and_applies(self):
+        army = Army("Chaos", detachment_type="Other")
+        army.faction_id = "CSM"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Chaos", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, at the start of the Fight phase, this model can use this ability. If it does, until the "
+            "end of the phase, improve the Strength, Attacks, Armour Penetration and Damage characteristics of melee "
+            "weapons equipped by this model by 1."
+        )
+        ability = Ability("Chance for Glory", "CSM", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Chaos Lord", army, abilities=[ability])
+        model = self._make_model("Chaos Lord", unit)
+        unit.models = [model]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_optional_abilities(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "chance_for_glory")
+        self.assertEqual(ctx.get("model_id"), get_entity_id(model))
+
+        self._resolve_yes(game, request, player)
+
+        self.assertEqual(int(model.get_temporary_melee_attacks_bonus()), 1)
+        self.assertEqual(int(model.get_temporary_melee_ap_bonus()), 1)
+        self.assertEqual(int(model.get_temporary_melee_strength_bonus()[0]), 1)
+        self.assertEqual(int(model.get_temporary_melee_damage_bonus()[0]), 1)
+
+    def test_malefic_destruction_queues_and_applies(self):
+        army = Army("Chaos", detachment_type="Other")
+        army.faction_id = "CD"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Chaos", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, at the start of the Fight phase, this model can use this ability. If it does, until the "
+            "end of the phase, add 3 to the Attacks characteristic of this model's hellforged weapons."
+        )
+        ability = Ability("Malefic Destruction", "CD", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Daemon Prince", army, abilities=[ability])
+        model = self._make_model("Daemon Prince", unit)
+        unit.models = [model]
+        army.units = [unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_optional_abilities(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CONFIRM_YES_NO)
+        ctx = request.context or {}
+        self.assertEqual(ctx.get("ability"), "malefic_destruction")
+        self.assertEqual(ctx.get("model_id"), get_entity_id(model))
+
+        self._resolve_yes(game, request, player)
+
+        bonus, _reasons = model.get_temporary_weapon_attacks_bonus("Hellforged blade")
+        self.assertEqual(int(bonus), 3)
+
     def test_movement_phase_normal_move_weapon_attacks_bonus_queues_and_applies(self):
         army = Army("Aeldari", detachment_type="Other")
         army.faction_id = "AE"

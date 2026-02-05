@@ -344,6 +344,8 @@ class Model:
         ability_name: str,
         attacks_bonus: int = 0,
         ap_bonus: int = 0,
+        strength_bonus: int = 0,
+        damage_bonus: int = 0,
         devastating_wounds: bool = False,
     ) -> bool:
         key = str(key or "").strip().lower()
@@ -360,6 +362,12 @@ class Model:
             entry["melee_attacks_bonus"] = int(attacks_bonus)
         if ap_bonus:
             entry["melee_ap_bonus"] = int(ap_bonus)
+        if strength_bonus:
+            entry["melee_strength_bonus"] = int(strength_bonus)
+            entry["melee_strength_bonus_source"] = str(ability_name or "").strip() or "Melee strength bonus"
+        if damage_bonus:
+            entry["melee_damage_bonus"] = int(damage_bonus)
+            entry["melee_damage_bonus_source"] = str(ability_name or "").strip() or "Melee damage bonus"
         if devastating_wounds:
             entry["devastating_wounds_melee"] = True
         effects[key] = entry
@@ -402,6 +410,67 @@ class Model:
             attacks_bonus=3,
             ap_bonus=1,
         )
+
+    def activate_fight_phase_melee_full_characteristic_boost(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        bonus: int = 1,
+    ) -> bool:
+        """
+        Once per battle, at the start of the Fight phase, this model can use this ability.
+        If it does, until the end of the phase, improve the Strength, Attacks, Armour Penetration
+        and Damage characteristics of melee weapons equipped by this model by the given bonus.
+        """
+        label = str(ability_name or "").strip() or "Fight phase melee boost"
+        try:
+            bonus = int(bonus or 0)
+        except Exception:
+            bonus = 0
+        if bonus == 0:
+            return False
+        return self._activate_once_per_battle_melee_buff(
+            key=key,
+            ability_name=label,
+            attacks_bonus=bonus,
+            ap_bonus=bonus,
+            strength_bonus=bonus,
+            damage_bonus=bonus,
+        )
+
+    def activate_fight_phase_hellforged_attacks_bonus(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        weapon_name: str = "hellforged",
+        attacks_bonus: int = 3,
+    ) -> bool:
+        """
+        Once per battle, at the start of the Fight phase:
+        add Attacks to this model's hellforged weapons until end of phase.
+        """
+        key = str(key or "").strip().lower()
+        if not key:
+            return False
+        if self.has_used_once_per_battle(key):
+            return False
+        try:
+            attacks_bonus = int(attacks_bonus or 0)
+        except Exception:
+            attacks_bonus = 0
+        if attacks_bonus <= 0:
+            return False
+        self.set_temporary_weapon_bonus(
+            key=key,
+            weapon_name=str(weapon_name or "hellforged").strip() or "hellforged",
+            attacks_bonus=int(attacks_bonus),
+            source=str(ability_name or "").strip() or "Hellforged weapons",
+            expires_phase="FIGHT_PHASE",
+        )
+        self.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
+        return True
 
     def activate_movement_phase_move_weapon_bonus(
         self,
@@ -516,6 +585,46 @@ class Model:
             except Exception:
                 continue
         return total
+
+    def get_temporary_melee_strength_bonus(self) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            try:
+                bonus = int(v.get("melee_strength_bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus:
+                total += int(bonus)
+                source = str(v.get("melee_strength_bonus_source") or "").strip()
+                label = source or "Temporary melee strength bonus"
+                reasons.append(f"{label} +{int(bonus)}S (melee)")
+        return int(total), reasons
+
+    def get_temporary_melee_damage_bonus(self) -> tuple[int, list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            try:
+                bonus = int(v.get("melee_damage_bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus:
+                total += int(bonus)
+                source = str(v.get("melee_damage_bonus_source") or "").strip()
+                label = source or "Temporary melee damage bonus"
+                reasons.append(f"{label} +{int(bonus)}D (melee)")
+        return int(total), reasons
 
     def has_temporary_devastating_wounds_melee(self) -> bool:
         eff = getattr(self, "_temporary_effects", {}) or {}

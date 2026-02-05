@@ -94,6 +94,47 @@ def _normalize_desc(desc: str) -> str:
     return text
 
 
+def _normalize_keyword_phrase(value: str) -> str:
+    t = str(value or "").lower()
+    t = t.replace("\u2019", "'").replace("\u0192?T", "'")
+    t = re.sub(r"[^a-z0-9]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+def _unit_matches_keyword_phrase(unit, phrase: str) -> bool:
+    key_phrase = _normalize_keyword_phrase(phrase)
+    if not key_phrase or unit is None:
+        return False
+    tokens = key_phrase.split()
+    if not tokens:
+        return False
+    keywords: set[str] = set()
+    try:
+        kws = list(getattr(unit, "get_effective_keywords")() or [])
+    except Exception:
+        kws = list(getattr(unit, "keywords", []) or [])
+    try:
+        kws += list(getattr(unit, "get_effective_faction_keywords")() or [])
+    except Exception:
+        kws += list(getattr(unit, "faction_keywords", []) or [])
+    for kw in kws:
+        norm = _normalize_keyword_phrase(kw)
+        if norm:
+            keywords.add(norm)
+    if not keywords:
+        return False
+    n = len(tokens)
+    dp = [False] * (n + 1)
+    dp[n] = True
+    for i in range(n - 1, -1, -1):
+        for j in range(i + 1, n + 1):
+            cand = " ".join(tokens[i:j])
+            if cand in keywords and dp[j]:
+                dp[i] = True
+                break
+    return dp[0]
+
+
 def _iter_possible_abilities(unit) -> Iterable[object]:
     is_active = getattr(unit, "_ability_is_active", None)
     for ab in (getattr(unit, "possible_abilities", []) or []):
@@ -1059,6 +1100,30 @@ def _parse_melee_attacks_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_melee_weapon_sustained_hits_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" of this model, melee weapons in that unit have the [SUSTAINED HITS Y] ability."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) unit is within (?P<rng>\d+)" of this model, melee weapons in that unit have the \[SUSTAINED HITS (?P<val>\d+)\] ability',
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "value": int(m.group("val")),
+    }
+
+
 def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None) -> tuple[int, tuple[str, ...]]:
     """
     Return (bonus_attacks, reasons) from strict "melee Attacks characteristic" auras affecting attacker_unit.
@@ -1098,6 +1163,55 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
             reasons.append(f"Aura: +{amt}A (melee) from {ab_name}")
 
     return int(total), tuple(reasons)
+
+
+def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=None) -> list[dict]:
+    """
+    Return aura-granted weapon keyword bonuses (e.g., Sustained Hits) affecting attacker_unit.
+    """
+    if attacker_unit is None or weapon_profile is None:
+        return []
+    pw = getattr(weapon_profile, "parent_wargear", None)
+    if pw is None or not bool(pw.is_melee()):
+        return []
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(attacker_unit)
+    if game_map is None or not hasattr(game_map, "get_friendly_units"):
+        return []
+
+    rules: list[dict] = []
+    applied_aura_names: set[str] = set()
+
+    for source in list(game_map.get_friendly_units(attacker_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_melee_weapon_sustained_hits_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec["faction_keyword"] and not _unit_matches_keyword_phrase(attacker_unit, spec["faction_keyword"]):
+                continue
+            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            try:
+                val = int(spec["value"])
+            except Exception:
+                val = 0
+            if val <= 0:
+                continue
+            rules.append(
+                {
+                    "attack_type": "melee",
+                    "keyword": f"SUSTAINED HITS {int(val)}",
+                    "source": ab_name or "Aura",
+                }
+            )
+
+    return rules
 
 
 def _parse_stealth_aura(ability) -> Optional[dict]:
