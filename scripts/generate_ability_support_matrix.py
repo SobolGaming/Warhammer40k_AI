@@ -1781,6 +1781,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Shooting phase: choose Ignores Cover, Lethal Hits, or Sustained Hits D3 for Bolt of Change until end of phase.",
         ),
+        ("CD", "Warp Strike"): ("Supported", "End of Fight: if destroyed an enemy unit and not engaged, enter Strategic Reserves."),
         ("CD", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITANIC units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",
