@@ -2642,6 +2642,41 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(penalty)} to wound.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "nurgles_rot":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))
+            try:
+                player = getattr(source_unit.get_parent_army(), "player", None) if source_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Nurgle's Rot").strip() or "Nurgle's Rot"
+            try:
+                penalty = int(ctx.get("penalty", -1) or -1)
+            except Exception:
+                penalty = -1
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["nurgles_rot_active"] = True
+            sr["nurgles_rot_owner"] = owner_id
+            sr["nurgles_rot_turn"] = int(turn or 0)
+            sr["nurgles_rot_source"] = ability_name
+            sr["nurgles_rot_penalty"] = int(penalty or -1)
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(penalty)} Toughness.")
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "piratical_raiders":
         if chosen is not None:
             source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("attacker_unit_id") or ctx.get("unit_id"))

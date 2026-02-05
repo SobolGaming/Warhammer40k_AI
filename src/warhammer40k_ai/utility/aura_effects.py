@@ -681,6 +681,36 @@ def _parse_battleshock_leadership_test_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for enemy auras like:
+      "While an enemy unit is within N\" of this model, subtract X from the Move characteristic and
+       subtract Y from the Objective Control characteristic of models in that unit."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While an enemy unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        r"subtract (?P<move>\d+) from the Move characteristic and subtract (?P<oc>\d+) from the Objective Control characteristic of models in that unit",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    try:
+        rng = float(m.group("rng"))
+        move = int(m.group("move"))
+        oc = int(m.group("oc"))
+    except Exception:
+        return None
+    if rng <= 0 or move <= 0 or oc <= 0:
+        return None
+    return {"range": float(rng), "move": -abs(int(move)), "oc": -abs(int(oc))}
+
+
 def _nurgles_gift_contagion_range(battle_round: int) -> float:
     # 10e baseline: BR1=3", BR2=6", BR3+=9"
     br = int(battle_round or 0)
@@ -1034,6 +1064,39 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
             if amt:
                 modifiers.append((amt, f"Aura: {ab_name}"))
     return modifiers
+
+
+def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
+    """
+    Return (move_penalty, oc_penalty) from enemy auras affecting this unit.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if unit is None:
+        return 0, 0
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return 0, 0
+
+    move_penalty = 0
+    oc_penalty = 0
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_enemy_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_enemy_move_oc_penalty_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            move_penalty += int(spec["move"])
+            oc_penalty += int(spec["oc"])
+    return int(move_penalty), int(oc_penalty)
 
 
 def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str]:

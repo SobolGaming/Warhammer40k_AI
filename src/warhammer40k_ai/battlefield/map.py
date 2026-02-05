@@ -711,6 +711,7 @@ class TerrainFeature:
         self.footprint = footprint
         self.bounding_box = bounding_box
         self.traversal_rules = traversal_rules or {}
+        self.shadow_of_chaos_owner_ids: set[str] = set()
 
     @property
     def id(self) -> str:

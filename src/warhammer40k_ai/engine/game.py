@@ -2053,6 +2053,39 @@ class Game:
                         sr.pop(key, None)
                     unit.special_rules = sr
 
+    def _on_phase_start_nurgles_rot_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear Nurgle's Rot effects at the start of the owner's Movement phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Nurgle's Rot cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Nurgle's Rot cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("nurgles_rot_owner", "") or "") != owner_id:
+                    continue
+                if sr.get("nurgles_rot_active"):
+                    for key in (
+                        "nurgles_rot_active",
+                        "nurgles_rot_owner",
+                        "nurgles_rot_turn",
+                        "nurgles_rot_source",
+                        "nurgles_rot_penalty",
+                    ):
+                        sr.pop(key, None)
+                    unit.special_rules = sr
+
     def _cleanup_movement_phase_visible_bonus(self, player=None, phase=None, *, kind: str) -> None:
         """Clear movement-phase hit/wound bonus markers at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -5724,6 +5757,87 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _queue_movement_phase_end_nurgles_rot(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "nurgles_rot":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+        ]
+        options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Nurgle's Rot").strip() or "Nurgle's Rot"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        try:
+            penalty = int(spec.get("penalty", -1) or -1)
+        except Exception:
+            penalty = -1
+        ctx = {
+            "ability": "nurgles_rot",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "penalty": int(penalty),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_symphony_of_pain(
         self,
         *,
@@ -7370,6 +7484,7 @@ class Game:
             "power_from_pain_empower",
             "enhancement_fight_first",
             "opponent_turn_strategic_reserves",
+            "fight_phase_destroyed_strategic_reserves",
             "opponent_turn_destroyed_reposition",
             "cloudstrider",
             "seductive_gambit",
@@ -7965,6 +8080,29 @@ class Game:
                     )
                 if per_battle and per_battle_key:
                     unit.mark_unit_once_per_battle_used(per_battle_key, ability_name=ability_name)
+            return
+
+        if ability_key == "fight_phase_destroyed_strategic_reserves":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            used = unit.enter_strategic_reserves_midgame(
+                game=self,
+                game_map=getattr(self, "map", None),
+                reason="end of fight phase",
+            )
+            if used:
+                from ..utility.event_bus import append_action
+                player = getattr(unit.get_parent_army(), "player", None)
+                ability_name = str(ctx.get("ability_name", "") or "Strategic Reserves")
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} placed into Strategic Reserves.",
+                    )
             return
 
         if ability_key == "opponent_turn_destroyed_reposition":
@@ -11746,6 +11884,207 @@ class Game:
                         spec=spec,
                     )
 
+    def _on_phase_end_nurgles_rot(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select an enemy unit within range for -1 Toughness (Nurgle's Rot)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        for unit in list(army.units):
+            if unit is None:
+                continue
+            try:
+                if not getattr(unit, "is_alive", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_movement_phase_end_toughness_penalty_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._enemy_candidates_within_range_of_model(
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                    )
+                    if not candidates:
+                        continue
+                    self._queue_movement_phase_end_nurgles_rot(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
+    def _on_phase_end_seed_the_garden_of_nurgle(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: if within Area Terrain, mark terrain as within Shadow of Chaos (Seed the Garden)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            from ..battlefield.map import TerrainType
+        except Exception:
+            TerrainType = None
+
+        area_types = set()
+        if TerrainType is not None:
+            area_types = {
+                TerrainType.CRATER_AND_RUBBLE,
+                TerrainType.DEBRIS_AND_STATUARY,
+                TerrainType.HILLS_AND_SEALED_BUILDINGS,
+                TerrainType.WOODS,
+                TerrainType.RUINS,
+            }
+
+        def _model_in_area_terrain(model):
+            if model is None:
+                return []
+            base = getattr(model, "model_base", None)
+            if base is None:
+                return []
+            try:
+                base_shape = base.get_base_shape()
+            except Exception:
+                return []
+            matches = []
+            for terrain in list(getattr(game_map, "terrain_features", []) or []):
+                if TerrainType is not None and getattr(terrain, "terrain_type", None) not in area_types:
+                    continue
+                footprint = getattr(terrain, "footprint", None)
+                if footprint is None:
+                    continue
+                try:
+                    if footprint.intersects(base_shape):
+                        matches.append(terrain)
+                except Exception:
+                    continue
+            return matches
+
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        from ..utility.entity_ids import get_entity_id
+        for unit in list(army.units):
+            if unit is None:
+                continue
+            try:
+                if not getattr(unit, "is_alive", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+            for model in list(models or []):
+                if not getattr(model, "is_alive", True):
+                    continue
+                spec_fn = getattr(root, "model_movement_phase_end_shadow_of_chaos_terrain_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                terrain_matches = _model_in_area_terrain(model)
+                if not terrain_matches:
+                    continue
+                terrain_matches.sort(key=lambda t: str(get_entity_id(t)))
+                terrain = terrain_matches[0]
+                try:
+                    owners = getattr(terrain, "shadow_of_chaos_owner_ids", None)
+                    if not isinstance(owners, set):
+                        owners = set(owners or [])
+                    if owner_id in owners:
+                        continue
+                    owners.add(owner_id)
+                    terrain.shadow_of_chaos_owner_ids = owners
+                except Exception:
+                    continue
+                try:
+                    from ..utility.event_bus import append_action
+                    ability_name = str(specs[0].get("source", "") or "Seed the Garden of Nurgle").strip()
+                    append_action(
+                        player,
+                        f"{ability_name}: area terrain seeded with Shadow of Chaos.",
+                    )
+                except Exception:
+                    pass
+
     def _on_phase_end_movement_phase_symphony_of_pain(self, player=None, phase=None, **_kwargs) -> None:
         """Movement phase end: select a Battle-shocked enemy within range for full hit/wound rerolls (Symphony of Pain)."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -12680,6 +13019,76 @@ class Game:
                             phase="Fight phase",
                         )
 
+    def _on_phase_end_fight_phase_destroyed_strategic_reserves(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase end: units that destroyed enemies can enter Strategic Reserves (Warp Strike)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        tracked = set(self._phase_enemy_unit_destroyers.get(pname, set()) or set())
+        if not tracked:
+            return
+
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            seen = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                uid = get_entity_id(root)
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                if uid not in tracked:
+                    continue
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+                ability = root.get_end_of_fight_phase_destroyed_strategic_reserves_ability()
+                if not ability:
+                    continue
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not enemy.is_alive() or not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    continue
+                unit_id = get_entity_id(root)
+                ability_name = str(ability.get("name", "") or "Strategic Reserves").strip() or "Strategic Reserves"
+                ctx = {
+                    "ability_name": ability_name,
+                    "unit": getattr(root, "name", "") or "",
+                    "phase": "End of Fight phase",
+                    "unit_id": unit_id,
+                }
+                message = (
+                    f"{getattr(root, 'name', 'Unit')} can enter Strategic Reserves at the end of the Fight phase.\n\n"
+                    "Use this ability?"
+                )
+                self._queue_optional_ability_confirmation(
+                    player=p,
+                    ability_key="fight_phase_destroyed_strategic_reserves",
+                    ability_name=ability_name,
+                    message=message,
+                    context=ctx,
+                    payload={"unit_id": unit_id},
+                    instance_key=str(unit_id or ""),
+                )
+
     def _on_phase_end_leadership_cp_gain(self, player=None, phase=None, **_kwargs) -> None:
         """End of Shooting/Fight phase: Leadership test to gain CP after destroying enemy units."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -13508,18 +13917,11 @@ class Game:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
             return
-        current_player = None
-        try:
-            current_player = self.get_current_player()
-        except Exception:
-            current_player = None
-        if current_player is None:
-            return
         try:
             owner = destroyed_by_unit.get_parent_army().player
         except Exception:
             owner = None
-        if owner is None or owner is not current_player:
+        if owner is None:
             return
         try:
             root = destroyed_by_unit.get_attached_unit_root()
@@ -19300,6 +19702,7 @@ class Game:
                     except Exception:
                         pass
                 charging_unit._apply_charge_move_devastating_wounds()
+                charging_unit._apply_charge_move_weapon_keyword_bonuses()
                 print(
                     f"Charge successful: {charging_unit.name} achieved {final_distance:.1f}\" "
                     f"edge-to-edge distance with {target_unit.name}"

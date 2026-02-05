@@ -393,6 +393,48 @@ class ShadowOfChaosManager:
         except Exception:
             models = list(getattr(unit, "models", []) or [])
 
+        # Seed the Garden of Nurgle: Area Terrain features seeded as Shadow of Chaos.
+        try:
+            game_map = getattr(game, "map", None)
+        except Exception:
+            game_map = None
+        if game_map is not None:
+            try:
+                terrain_features = list(getattr(game_map, "terrain_features", []) or [])
+            except Exception:
+                terrain_features = []
+            for terrain in terrain_features:
+                owners = getattr(terrain, "shadow_of_chaos_owner_ids", None)
+                if not owners:
+                    continue
+                try:
+                    owner_ids = set(owners)
+                except Exception:
+                    owner_ids = set()
+                if str(getattr(player, "id", "") or "") not in owner_ids:
+                    continue
+                footprint = getattr(terrain, "footprint", None)
+                if footprint is None:
+                    continue
+                for model in models:
+                    try:
+                        if not getattr(model, "is_alive", True):
+                            continue
+                    except Exception:
+                        continue
+                    base = getattr(model, "model_base", None)
+                    if base is None:
+                        continue
+                    try:
+                        base_shape = base.get_base_shape()
+                    except Exception:
+                        continue
+                    try:
+                        if footprint.intersects(base_shape):
+                            return True
+                    except Exception:
+                        continue
+
         for model in models:
             try:
                 if not getattr(model, "is_alive", True):

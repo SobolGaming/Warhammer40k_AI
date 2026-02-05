@@ -424,6 +424,13 @@ class Unit:
                     mods.append(Modifier(ModifierOp.ADD, bonus, source="aura:objective_control_add"))
             except Exception:
                 pass
+            try:
+                from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
+                _move_pen, oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
+                if oc_pen:
+                    mods.append(Modifier(ModifierOp.ADD, int(oc_pen), source="aura:enemy_objective_control_penalty"))
+            except Exception:
+                pass
 
         if ckey == "toughness":
             if game_map is None:
@@ -446,6 +453,15 @@ class Unit:
                     bonus = int(sr.get("daemonic_allegiance_toughness_bonus", 0) or 0)
                     if bonus:
                         mods.append(Modifier(ModifierOp.ADD, int(bonus), source="daemonic_allegiance:toughness_add"))
+            except Exception:
+                pass
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("nurgles_rot_active"):
+                    penalty = int(sr.get("nurgles_rot_penalty", 0) or 0)
+                    if penalty:
+                        source = str(sr.get("nurgles_rot_source", "") or "Nurgle's Rot").strip() or "Nurgle's Rot"
+                        mods.append(Modifier(ModifierOp.ADD, int(penalty), source=f"ability:nurgles_rot:{source}"))
             except Exception:
                 pass
 
@@ -542,6 +558,13 @@ class Unit:
                     daemonic_bonus = int(sr.get("daemonic_allegiance_move_bonus", 0) or 0)
                     if daemonic_bonus:
                         mods.append(Modifier(ModifierOp.ADD, int(daemonic_bonus), source="daemonic_allegiance:move_add"))
+            except Exception:
+                pass
+            try:
+                from ..utility.aura_effects import get_enemy_aura_move_oc_penalties
+                move_pen, _oc_pen = get_enemy_aura_move_oc_penalties(self, game_map=game_map)
+                if move_pen:
+                    mods.append(Modifier(ModifierOp.ADD, int(move_pen), source="aura:enemy_move_penalty"))
             except Exception:
                 pass
             try:
@@ -1464,6 +1487,12 @@ class Unit:
         r"you can remove (?:it|that unit|this unit) from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_END_DESTROYED_STRATEGIC_RESERVES_RE = re.compile(
+        r"at the end of the fight phase if (?:this unit|that unit|this model s unit|this models unit|the bearer s unit) "
+        r"destroyed one or more enemy units this phase and is not within engagement range of one or more enemy units "
+        r"you can remove (?:this unit|that unit) from the battlefield and place it into strategic reserves",
+        re.IGNORECASE,
+    )
     _OPPONENT_TURN_FRIENDLY_UNIT_DESTROYED_REPOSITION_RE = re.compile(
         r"once in each of your opponents turns if this model is on the battlefield when (?:another )?friendly "
         r"(?P<keyword>[a-z0-9 ]+) unit is destroyed just after removing the last model in that unit "
@@ -1669,10 +1698,21 @@ class Unit:
         r"from the wound roll(?: each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_END_TOUGHNESS_PENALTY_RE = re.compile(
+        r"at the end of your movement phase you can select one enemy unit within (?P<range>\d+) of this model "
+        r"until the start of your next movement phase (?:subtract (?P<pen>\d+) from the toughness characteristic of models in that unit|"
+        r"that unit is rotted while a unit is rotted subtract (?P<pen_alt>\d+) from the toughness characteristic of models in that unit)",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_BATTLESHOCK_REROLL_RE = re.compile(
         r"at the end of your movement phase you can select one enemy unit that is battle shocked and within (?P<range>\d+) of this model "
         r"until the end of the turn each time a (?P<keywords>[a-z0-9 ]+) model from your army makes an attack that targets that enemy unit "
         r"you can re roll the hit roll and you can re roll the wound roll",
+        re.IGNORECASE,
+    )
+    _MOVEMENT_PHASE_END_SHADOW_OF_CHAOS_TERRAIN_RE = re.compile(
+        r"at the end of your movement phase if this model is within one area terrain feature until the end of the battle "
+        r"that area terrain feature is considered to be within your army s shadow of chaos",
         re.IGNORECASE,
     )
     _START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE = re.compile(
@@ -2137,6 +2177,12 @@ class Unit:
         r"each\s+time\s+this\s+(?:model|unit|model'?s\s+unit)\s+makes?\s+a\s+charge\s+move.*?"
         r"until\s+the\s+end\s+of\s+(?:the\s+)?turn.*?"
         r"melee\s+weapons.*?devastating\s+wounds",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_WEAPON_KEYWORD_BONUS_RE = re.compile(
+        r"(?:while\s+this\s+model\s+is\s+leading\s+a\s+unit\s+)?each\s+time\s+(?:this|that)\s+unit\s+ends?\s+a\s+charge\s+move\s+"
+        r"until\s+the\s+end\s+of\s+the\s+turn\s+(?P<weapon>[a-z0-9 ]+?)\s+equipped\s+by\s+models\s+in\s+that\s+unit\s+"
+        r"have\s+the\s+(?P<keyword>[a-z0-9 \-]+)\s+ability",
         re.IGNORECASE,
     )
     _CHARGE_END_MORTAL_TABLE_RE = re.compile(
@@ -2783,6 +2829,34 @@ class Unit:
                     "description": desc or "",
                     "once_per_battle": "once per battle" in norm,
                     "ability_key": "opponent_turn_strategic_reserves",
+                }
+        return None
+
+    def _scan_end_of_fight_phase_destroyed_strategic_reserves_ability(self):
+        pattern = self._FIGHT_PHASE_END_DESTROYED_STRATEGIC_RESERVES_RE
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if pattern.fullmatch(norm):
+                return {
+                    "name": name or "Strategic Reserves",
+                    "description": desc or "",
+                    "ability_key": "fight_phase_destroyed_strategic_reserves",
                 }
         return None
 
@@ -17457,6 +17531,129 @@ class Unit:
 
         return applied
 
+    def unit_charge_end_weapon_keyword_bonus_specs(self) -> list[dict]:
+        """
+        Return specs for charge-end weapon keyword bonuses (e.g., granting DEVASTATING WOUNDS).
+
+        Each spec dict includes:
+            - weapon: str (weapon name)
+            - keyword: str (keyword, uppercased)
+            - source: str (ability name)
+            - attack_type: str ("melee" by default)
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "charge_end_weapon_keyword_bonus_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+
+        for leader in leaders:
+            if leader is None:
+                continue
+            try:
+                if not bool(getattr(leader, "is_attached_leader", False)):
+                    continue
+            except Exception:
+                continue
+            try:
+                alive = getattr(leader, "is_alive", None)
+                if callable(alive) and not alive():
+                    continue
+            except Exception:
+                pass
+            for name, desc in leader._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                text_src = self._strip_eligibility_prefix(text_src)
+                normalized = self._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = self._CHARGE_END_WEAPON_KEYWORD_BONUS_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                weapon = str(m.group("weapon") or "").strip()
+                keyword = str(m.group("keyword") or "").strip()
+                if not weapon or not keyword:
+                    continue
+                source = str(name or "Charge move ability").strip() or "Charge move ability"
+                key = (weapon.lower(), keyword.lower(), source.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "weapon": weapon,
+                        "keyword": keyword.upper(),
+                        "source": source,
+                        "attack_type": "melee",
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def _apply_charge_move_weapon_keyword_bonuses(self) -> bool:
+        """
+        Apply temporary weapon keyword bonuses when the unit completes a charge move.
+
+        Supports rules like:
+          "Each time that unit ends a Charge move, until the end of the turn,
+           <weapon> equipped by models in that unit have the [KEYWORD] ability."
+        """
+        specs = self.unit_charge_end_weapon_keyword_bonus_specs()
+        if not specs:
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return False
+
+        applied = False
+        for spec in specs:
+            weapon = str(spec.get("weapon", "") or "").strip()
+            keyword = str(spec.get("keyword", "") or "").strip()
+            if not weapon or not keyword:
+                continue
+            source = str(spec.get("source", "") or "Charge move ability").strip() or "Charge move ability"
+            attack_type = str(spec.get("attack_type", "") or "melee").strip().lower()
+            for model in models:
+                if model is None or not getattr(model, "is_alive", True):
+                    continue
+                model_id = get_entity_id(model) or ""
+                key = f"charge_end_weapon_keyword:{model_id}:{weapon}:{keyword}".lower()
+                if hasattr(model, "set_temporary_weapon_keyword_bonuses"):
+                    model.set_temporary_weapon_keyword_bonuses(
+                        key=key,
+                        weapon_name=weapon,
+                        keywords=[keyword],
+                        source=source,
+                        expires_phase="FIGHT_PHASE",
+                        attack_type=attack_type,
+                    )
+                    applied = True
+        return applied
+
     def fall_back(self, destination: Tuple[float, float, float], path: List[Tuple[float, float, float]], game_map: 'Map') -> bool:
         """Falls back from close combat.
         
@@ -22664,6 +22861,36 @@ class Unit:
         root._ability_cache[cache_key] = ability
         return ability
 
+    def get_end_of_fight_phase_destroyed_strategic_reserves_ability(self):
+        """
+        Return ability info dict for end-of-fight-phase Strategic Reserves removal after destroying enemy units.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "fight_phase_destroyed_strategic_reserves_ability"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        ability = None
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in members:
+            try:
+                ability = member._scan_end_of_fight_phase_destroyed_strategic_reserves_ability()
+            except Exception:
+                ability = None
+            if ability:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = ability
+        return ability
+
     def _transport_has_embarked_keyword(self, keyword: str) -> bool:
         kw = str(keyword or "").strip()
         if not kw:
@@ -26471,6 +26698,105 @@ class Unit:
             root._ability_cache = {}
         root._ability_cache[cache_key] = rule
         return rule
+
+    def get_beast_handler_heroic_intervention_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "While this model is leading a unit... once per battle, you can target that unit with the Heroic Intervention
+        Stratagem for 0CP, and can do so even if you have already used that Stratagem on a different unit this phase."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "beast_handler_heroic_intervention_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        try:
+            items = list(root._iter_attached_leader_leading_abilities())
+        except Exception:
+            items = []
+
+        for ab, leader in items:
+            try:
+                name = str(getattr(ab, "name", "") or "")
+                desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text = root._normalize_rules_text(root._strip_eligibility_prefix(text_src))
+            if not text:
+                continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if "heroic intervention" not in norm or "stratagem" not in norm:
+                continue
+            if "0cp" not in norm:
+                continue
+            if "once per battle" not in norm:
+                continue
+            if "leading" not in norm:
+                continue
+            source = str(name or "Beast Handler").strip() or "Beast Handler"
+            rule = {"source": source, "ability_key": "beast_handler_heroic_intervention"}
+            try:
+                leader_id = get_entity_id(leader)
+            except Exception:
+                leader_id = None
+            if leader_id:
+                rule["leader_id"] = str(leader_id)
+            break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_beast_handler_heroic_intervention(self, game=None) -> bool:
+        """Return True if Beast Handler can grant Heroic Intervention for 0CP (once per battle)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            rule = root.get_beast_handler_heroic_intervention_rule()
+        except Exception:
+            rule = None
+        if not rule:
+            return False
+        ability_key = str(rule.get("ability_key") or "beast_handler_heroic_intervention").strip().lower()
+        if ability_key and root.has_used_unit_once_per_battle(ability_key):
+            return False
+        leader_id = str(rule.get("leader_id", "") or "")
+        if leader_id:
+            try:
+                leaders = list(getattr(root, "attached_leaders", []) or [])
+            except Exception:
+                leaders = []
+            found = False
+            for leader in leaders:
+                try:
+                    if str(get_entity_id(leader) or "") != leader_id:
+                        continue
+                    if not bool(getattr(leader, "is_attached_leader", False)):
+                        continue
+                    alive = getattr(leader, "is_alive", None)
+                    if callable(alive) and not alive():
+                        continue
+                    found = True
+                    break
+                except Exception:
+                    continue
+            if not found:
+                return False
+        return True
 
     def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
         """
@@ -30977,6 +31303,106 @@ class Unit:
                     "limit_once_per_turn": bool(limit_once),
                 }
             )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_end_toughness_penalty_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, select an enemy within range; that unit suffers -1 Toughness
+        until the start of your next Movement phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+            - penalty: int (toughness penalty, negative)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_toughness_penalty:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_END_TOUGHNESS_PENALTY_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            raw_pen = m.group("pen") or m.group("pen_alt") or ""
+            try:
+                penalty = int(raw_pen or 0)
+            except Exception:
+                penalty = 0
+            if penalty <= 0:
+                continue
+            source = str(name or "Nurgle's Rot").strip() or "Nurgle's Rot"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "penalty": -int(penalty),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_end_shadow_of_chaos_terrain_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, if within Area Terrain, that terrain counts as Shadow of Chaos.
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_shadow_of_chaos_terrain:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._MOVEMENT_PHASE_END_SHADOW_OF_CHAOS_TERRAIN_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Seed the Garden of Nurgle").strip() or "Seed the Garden of Nurgle"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

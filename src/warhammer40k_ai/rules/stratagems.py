@@ -1637,6 +1637,17 @@ class StratagemManager:
             return True
         return False
 
+    def _unit_has_beast_handler_heroic_intervention(self, unit) -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_beast_handler_heroic_intervention", None)
+        if callable(fn):
+            try:
+                return bool(fn(self.game))
+            except Exception:
+                return False
+        return False
+
     def _unit_can_use_traitor_enforcer_overwatch(self, unit) -> bool:
         if unit is None:
             return False
@@ -1658,12 +1669,18 @@ class StratagemManager:
 
     def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
-            if not self._unit_has_faultless_opportunist(target_unit):
+            if not (
+                self._unit_has_faultless_opportunist(target_unit)
+                or self._unit_has_beast_handler_heroic_intervention(target_unit)
+            ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
             return bool(uid and uid not in self._heroic_intervention_units_this_phase)
         for cand in list(candidates or []):
-            if not self._unit_has_faultless_opportunist(cand):
+            if not (
+                self._unit_has_faultless_opportunist(cand)
+                or self._unit_has_beast_handler_heroic_intervention(cand)
+            ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
             if uid and uid not in self._heroic_intervention_units_this_phase:

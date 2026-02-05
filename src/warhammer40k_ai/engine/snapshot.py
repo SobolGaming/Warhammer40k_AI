@@ -557,6 +557,7 @@ def _serialize_terrain_feature(feature: TerrainFeature) -> dict:
             "max": [_to_fixed(v) for v in feature.bounding_box.get("max", (0, 0, 0))],
         },
         "traversal_rules": encode_refs(feature.traversal_rules or {}),
+        "shadow_of_chaos_owner_ids": sorted(str(v) for v in (getattr(feature, "shadow_of_chaos_owner_ids", []) or [])),
     }
     if isinstance(feature, RuinsTerrain):
         base["walls"] = [
@@ -698,6 +699,12 @@ def _deserialize_terrain_feature(data: dict) -> TerrainFeature:
         }
     if "traversal_rules" in data:
         feature.traversal_rules = dict(data.get("traversal_rules", {}) or {})
+    if "shadow_of_chaos_owner_ids" in data:
+        try:
+            owners = set(str(v) for v in (data.get("shadow_of_chaos_owner_ids") or []))
+        except Exception:
+            owners = set()
+        feature.shadow_of_chaos_owner_ids = owners
     return feature
 
 
