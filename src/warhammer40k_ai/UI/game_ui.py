@@ -3040,6 +3040,80 @@ class GameView:
                     self.dialog_manager.open(dlg, modal=True)
                 except Exception:
                     pass
+            return
+
+        try:
+            from ..engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+        except Exception:
+            DECISION_SELECT_TARGET_MODEL = ""
+
+        if decision_type == DECISION_SELECT_TARGET_MODEL:
+            ctx = dict(getattr(request, "context", {}) or {})
+            selection_kind = str(ctx.get("selection_kind", "") or "")
+            if selection_kind == "cankerblight_destroy":
+                player = self._resolve_player_by_id(getattr(request, "player_id", None))
+                if player is None:
+                    return
+                try:
+                    if not player.has_control():
+                        return
+                except Exception:
+                    return
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "cankerblight_model_dialog") or self.cankerblight_model_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.cankerblight_model_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.cankerblight_model_dialog = None
+                dlg = self.cankerblight_model_dialog
+                default_id = first_option_id(request)
+                if dlg is None:
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    return
+
+                ability_name = str(ctx.get("ability_name", "") or "Cankerblight").strip()
+                target_unit_name = "Target unit"
+                try:
+                    target_unit_id = str(ctx.get("target_unit_id", "") or "")
+                    if target_unit_id:
+                        unit = self._resolve_unit_by_id(target_unit_id)
+                        if unit is not None:
+                            target_unit_name = getattr(unit, "name", "") or target_unit_name
+                except Exception:
+                    pass
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title=ability_name,
+                    header=target_unit_name,
+                    subtitle="Select a model to be destroyed.",
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
                 return
 
             if decision_type == DECISION_SELECT_PRECISION_TARGET:
@@ -4919,6 +4993,184 @@ class GameView:
                     on_confirm=_on_confirm,
                     on_cancel=_on_cancel,
                     decision_request=request,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "symphony_of_pain":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                if not hasattr(self, "symphony_of_pain_dialog") or self.symphony_of_pain_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.symphony_of_pain_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.symphony_of_pain_dialog = None
+                dlg = self.symphony_of_pain_dialog
+                if dlg is None:
+                    return
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Symphony of Pain").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                header = str(ctx.get("model", "") or ctx.get("unit", "") or "Model")
+                subtitle = "Select a Battle-shocked enemy unit."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+                subtitle = f"{subtitle} Friendly SLAANESH LEGIONES DAEMONICA models re-roll hits and wounds."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "maggot_maws":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import first_option_id
+
+                if not hasattr(self, "maggot_maws_dialog") or self.maggot_maws_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.maggot_maws_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.maggot_maws_dialog = None
+                dlg = self.maggot_maws_dialog
+                if dlg is None:
+                    return
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    default_id = first_option_id(request)
+                    if default_id:
+                        resolve_decision_command(self.game, request, default_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Maggot Maws").strip()
+                try:
+                    range_value = int(ctx.get("range", 0) or 0)
+                except Exception:
+                    range_value = 0
+                header = str(ctx.get("model", "") or ctx.get("unit", "") or "Bearer")
+                subtitle = "Select an enemy unit to take a Battle-shock test."
+                if range_value:
+                    subtitle = f"{subtitle} (Range: {range_value}\")"
+                subtitle = f"{subtitle} Then roll D6; on 3+, it suffers D3 mortal wounds."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
+            if ability == "cankerblight":
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                if not hasattr(self, "cankerblight_dialog") or self.cankerblight_dialog is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.cankerblight_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                    except Exception:
+                        self.cankerblight_dialog = None
+                dlg = self.cankerblight_dialog
+                if dlg is None:
+                    return
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                ability_name = str(ctx.get("ability_name", "") or "Cankerblight").strip()
+                header = "Cankerblight"
+                subtitle = "Select the failed Battle-shock unit to destroy a model (or None to skip)."
+                subtitle = f"{subtitle} Skipping applies Daemonic Terror mortal wounds."
+
+                dlg.show(
+                    title=ability_name,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
                 )
                 try:
                     self.dialog_manager.open(dlg, modal=True)

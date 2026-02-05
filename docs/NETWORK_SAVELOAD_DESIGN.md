@@ -202,6 +202,7 @@ Movement:
 - movement_phase_wound_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_wound_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
 - movement_phase_hit_bonus_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="movement_phase_visible_hit_bonus"`, `unit_id`, `model_id`, `range`, `keyword`, `bonus`)
 - misfortune_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="misfortune"`, `source_unit_id`, `model_id`, `range`, `penalty`)
+- symphony_of_pain_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="symphony_of_pain"`, `source_unit_id`, `model_id`, `range`, `keywords`)
 - grenade_pack_flyover_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="grenade_pack_flyover"`, `unit_id`, `range`, `threshold`, `mortal_per_success`, `max_mortal`)
 - spirit_mark_friendly_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="spirit_mark_friendly"`, `source_unit_id`, `model_id`, `range`, `keyword`, `sustained_hits_value`)
 - spirit_mark_enemy_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_mark_enemy"`, `source_unit_id`, `model_id`, `friendly_unit_id`, `sustained_hits_value`, `keyword`)
@@ -219,6 +220,9 @@ Movement:
 - hazard_objective_select_dialog: PICK_OBJECTIVE {objective_id}
 - move_over_mortal_wounds_target_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `mortal_wounds_kind="move_over"`, `unit_id`, `model_id` optional, `ability_name`, `spec`)
 - cult_ambush_reinforcements_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cult_ambush_reinforcements"`, `marker_id`, `remaining_marker_ids`, `available_unit_ids`)
+Battle-shock:
+- cankerblight_dialog: CHOOSE_QUARRY {target_unit_id | skip} (context `ability="cankerblight"`, `target_unit_id`, `source_unit_id`, `source_model_id`)
+- cankerblight_model_dialog: SELECT_TARGET_MODEL {model_id} (context `selection_kind="cankerblight_destroy"`, `target_unit_id`, `source_unit_id`, `ability_name`)
 Note: Reactive enemy-move abilities (e.g., Loping Speed / Scuttling Horrors) use `CONFIRM_YES_NO` with
 `reactive_move_*` context, followed by `MOVE_UNIT` with `movement_type="loping_speed"` and `max_distance`
 (rolled or fixed).
@@ -248,6 +252,7 @@ Shooting:
 - hand_of_asuryan_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="hand_of_asuryan"`, `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - malefic_surge_diabolic_power_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="shooting"`)
 - malefic_surge_unnatural_fortitude_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_shooting"`)
+- maggot_maws_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="maggot_maws"`, `source_unit_id`, `model_id`, `range`)
 - aeldari_guiding_presence_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="aeldari_guiding_presence"`, `source_unit_id`, `model_id`, `range`, `bonus`)
 - unleash_hell_vehicle_dialog: SELECT_UNLEASH_HELL_VEHICLE {unit_id | skip} (context `ability="unleash_hell"`, `source_unit_id`, `bearer_model_id`, `range`, `allowed_unit_ids`, `exclude_monster_vehicle`)
 - post_shoot_battleshock_target_dialog: CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`)

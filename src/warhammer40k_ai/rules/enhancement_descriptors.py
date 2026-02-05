@@ -113,6 +113,33 @@ _DAEMONIC_INCURSION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DAEMONIC_INCURSION_DESCRIPTORS.values()
 }
 
+_PLAGUE_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009819002": EnhancementToolDescriptor(
+        enhancement_id="000009819002",
+        name="Cankerblight",
+        timing="on_enemy_battleshock_failed",
+        target="enemy_unit_within_range",
+        duration="instant",
+        effect="destroy_model_no_terror",
+        range_in=6.0,
+        effect_params={"exclude_monsters_vehicles": True, "suppresses_daemonic_terror": True},
+    ),
+    "000009819003": EnhancementToolDescriptor(
+        enhancement_id="000009819003",
+        name="Maggot Maws",
+        timing="shooting_phase",
+        target="enemy_unit_within_range",
+        duration="instant",
+        effect="battleshock_then_mortal_wounds",
+        range_in=6.0,
+        effect_params={"mortal_wound_roll": "D6>=3 -> D3", "suppresses_daemonic_terror": True},
+    ),
+}
+
+_PLAGUE_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _PLAGUE_LEGION_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -122,7 +149,10 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _DAEMONIC_INCURSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _PLAGUE_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
-    return _GORETRACK_ONSLAUGHT_BY_NAME.get(key) or _DAEMONIC_INCURSION_BY_NAME.get(key)
+    return _GORETRACK_ONSLAUGHT_BY_NAME.get(key) or _DAEMONIC_INCURSION_BY_NAME.get(key) or _PLAGUE_LEGION_BY_NAME.get(key)

@@ -1,10 +1,13 @@
 import unittest
+from unittest.mock import patch
 from types import SimpleNamespace
 
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.engine.decision_kinds import (
     DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
+    DECISION_CHOOSE_QUARRY,
     DECISION_SELECT_FIGHT_TARGETS,
+    DECISION_SELECT_TARGET_MODEL,
 )
 from warhammer40k_ai.engine.decision_dispatcher import dispatch_decision
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
@@ -17,6 +20,7 @@ from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.utility.aura_effects import get_aura_battleshock_test_reroll_sources
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.model_base import Base, BaseType
+from warhammer40k_ai.rules.shadow_of_chaos import ShadowBattleShockContext
 
 
 class DummyMap:
@@ -402,6 +406,224 @@ class TestChaosDaemonsBattleshockAbilities(unittest.TestCase):
         sources = get_aura_battleshock_test_reroll_sources(target_unit, game_map=dummy_map)
 
         self.assertIn("Shadow of Khorne (Aura)", sources)
+
+    def test_symphony_of_pain_queues_and_rerolls(self):
+        army = Army("Chaos", detachment_type="Other")
+        army.faction_id = "CD"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.turn = 1
+
+        ability_desc = (
+            "At the end of your Movement phase, you can select one enemy unit that is Battle-shocked and within 12\" of this model. "
+            "Until the end of the turn, each time a Slaanesh Legiones Daemonica model from your army makes an attack that targets that enemy unit, "
+            "you can re-roll the Hit roll and you can re-roll the Wound roll."
+        )
+        ability = Ability("Symphony of Pain (Psychic)", "CD", ability_desc, "Datasheet", "")
+
+        source_unit = self._make_unit("Tranceweaver", army, keywords=["LEGIONES DAEMONICA", "SLAANESH"])
+        source_model = self._make_model("Tranceweaver", source_unit, x=0.0, y=0.0)
+        source_model.abilities = {"Symphony of Pain (Psychic)": ability}
+        source_unit.models = [source_model]
+        source_unit.possible_abilities = [ability]
+
+        attacker_unit = self._make_unit("Daemonettes", army, keywords=["LEGIONES DAEMONICA", "SLAANESH"])
+        attacker_model = self._make_model("Daemonette", attacker_unit, x=0.0, y=0.0)
+        attacker_unit.models = [attacker_model]
+
+        target_unit = self._make_unit("Target", enemy_army, keywords=["INFANTRY"])
+        target_model = self._make_model("Target", target_unit, x=6.0, y=0.0)
+        target_unit.models = [target_model]
+        target_unit.status_effects = [BattleShockEffect(1)]
+
+        army.units = [source_unit, attacker_unit]
+        enemy_army.units = [target_unit]
+        game.rebuild_entity_registry()
+
+        game._on_phase_end_movement_phase_symphony_of_pain(player=player, phase=game.phase)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self.assertEqual(request.decision_type, DECISION_CHOOSE_QUARRY)
+
+        target_option = next(
+            o for o in request.options if (o.payload or {}).get("target_unit_id") == target_unit._id
+        )
+        resolve_decision_command(game, request, target_option.option_id, player_id=player.id)
+
+        hit_mods = attacker_unit.get_unit_hit_reroll_modifiers("ranged", target=target_unit)
+        wound_mods = attacker_unit.get_unit_wound_reroll_modifiers("ranged", target=target_unit)
+        self.assertTrue(hit_mods.get("reroll_hit_full"))
+        self.assertTrue(wound_mods.get("reroll_wound_full"))
+
+    def test_maggot_maws_applies_mortal_wounds(self):
+        army = Army("Chaos", detachment_type="Plague Legion")
+        army.faction_id = "CD"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.turn = 2
+
+        source_unit = self._make_unit("Bearer", army, keywords=["LEGIONES DAEMONICA", "NURGLE"])
+        source_model = self._make_model("Bearer", source_unit, x=0.0, y=0.0)
+        source_model._id = "MM1"
+        source_unit.models = [source_model]
+        source_unit.special_rules = {
+            "enhancement_maggot_maws": True,
+            "enhancement_bearer_model_id": source_model._id,
+        }
+
+        target_unit = self._make_unit("Target", enemy_army, keywords=["INFANTRY"])
+        target_model = self._make_model("Target", target_unit, x=3.0, y=0.0)
+        target_unit.models = [target_model]
+
+        calls = []
+
+        def _take(self, current_turn=1):
+            calls.append(int(current_turn))
+            game._on_battle_shock_test_resolved_maggot_maws(unit=self, passed=False)
+
+        target_unit.take_battle_shock_test = _take.__get__(target_unit, Unit)
+
+        applied = {}
+
+        def _apply(self, _unit, amount, game_map=None):
+            applied["mw"] = applied.get("mw", 0) + int(amount or 0)
+
+        target_unit._apply_mortal_wounds_to_unit = _apply.__get__(target_unit, Unit)
+
+        army.units = [source_unit]
+        enemy_army.units = [target_unit]
+        game.rebuild_entity_registry()
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[3, 2]):
+            game._on_phase_start_chaos_daemons_enhancements(player=player, phase=game.phase)
+            pending = game.decision_queue.list()
+            self.assertEqual(len(pending), 1)
+            request = pending[0]
+            target_option = next(
+                o for o in request.options if (o.payload or {}).get("target_unit_id") == target_unit._id
+            )
+            resolve_decision_command(game, request, target_option.option_id, player_id=player.id)
+
+        self.assertEqual(applied.get("mw", 0), 2)
+        self.assertEqual(calls, [2])
+        self.assertNotIn("maggot_maws_pending", target_unit.special_rules)
+
+    def test_cankerblight_skip_applies_daemonic_terror(self):
+        army = Army("Chaos", detachment_type="Plague Legion")
+        army.faction_id = "CD"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.turn = 1
+
+        bearer_unit = self._make_unit("Bearer", army, keywords=["LEGIONES DAEMONICA", "NURGLE"])
+        bearer_model = self._make_model("Bearer", bearer_unit, x=0.0, y=0.0)
+        bearer_model._id = "CB1"
+        bearer_unit.models = [bearer_model]
+        bearer_unit.special_rules = {
+            "enhancement_cankerblight": True,
+            "enhancement_bearer_model_id": bearer_model._id,
+        }
+
+        target_unit = self._make_unit("Target", enemy_army, keywords=["INFANTRY"])
+        target_model = self._make_model("Target", target_unit, x=3.0, y=0.0)
+        target_unit.models = [target_model]
+
+        army.units = [bearer_unit]
+        enemy_army.units = [target_unit]
+        game.rebuild_entity_registry()
+
+        shadow_ctx = ShadowBattleShockContext(modifier=0, manifestation_active=False, terror_active=True)
+
+        with patch("warhammer40k_ai.rules.shadow_of_chaos.ShadowOfChaosManager._apply_daemonic_terror") as terror:
+            queued = game._queue_cankerblight_trigger(unit=target_unit, passed=False, shadow_ctx=shadow_ctx, game=game)
+            self.assertTrue(queued)
+            pending = game.decision_queue.list()
+            self.assertEqual(len(pending), 1)
+            request = pending[0]
+            skip_option = next(o for o in request.options if (o.payload or {}).get("action") == "skip")
+            resolve_decision_command(game, request, skip_option.option_id, player_id=player.id)
+            self.assertTrue(terror.called)
+
+        self.assertNotIn("cankerblight_pending", target_unit.special_rules)
+
+    def test_cankerblight_use_destroys_model(self):
+        army = Army("Chaos", detachment_type="Plague Legion")
+        army.faction_id = "CD"
+        enemy_army = Army("Enemy", detachment_type="Other")
+        enemy_army.faction_id = "SM"
+
+        player = Player("Player", PlayerControl.REMOTE, army=army)
+        enemy_player = Player("Enemy", PlayerControl.REMOTE, army=enemy_army)
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[player, enemy_player])
+        game.turn = 1
+
+        bearer_unit = self._make_unit("Bearer", army, keywords=["LEGIONES DAEMONICA", "NURGLE"])
+        bearer_model = self._make_model("Bearer", bearer_unit, x=0.0, y=0.0)
+        bearer_model._id = "CB2"
+        bearer_unit.models = [bearer_model]
+        bearer_unit.special_rules = {
+            "enhancement_cankerblight": True,
+            "enhancement_bearer_model_id": bearer_model._id,
+        }
+
+        target_unit = self._make_unit("Target", enemy_army, keywords=["INFANTRY"])
+        target_model_a = self._make_model("Target A", target_unit, x=3.0, y=0.0)
+        target_model_b = self._make_model("Target B", target_unit, x=3.5, y=0.0)
+        target_model_a._id = "T1"
+        target_model_b._id = "T2"
+        target_unit.models = [target_model_a, target_model_b]
+
+        destroyed = {"model_id": None}
+
+        def _die(self, game_map=None):
+            destroyed["model_id"] = getattr(self, "_id", None)
+
+        target_model_a.die = _die.__get__(target_model_a, type(target_model_a))
+        target_model_b.die = _die.__get__(target_model_b, type(target_model_b))
+
+        army.units = [bearer_unit]
+        enemy_army.units = [target_unit]
+        game.rebuild_entity_registry()
+
+        shadow_ctx = ShadowBattleShockContext(modifier=0, manifestation_active=False, terror_active=True)
+        queued = game._queue_cankerblight_trigger(unit=target_unit, passed=False, shadow_ctx=shadow_ctx, game=game)
+        self.assertTrue(queued)
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        target_option = next(
+            o for o in request.options if (o.payload or {}).get("target_unit_id") == target_unit._id
+        )
+        resolve_decision_command(game, request, target_option.option_id, player_id=player.id)
+
+        pending = game.decision_queue.list()
+        self.assertEqual(len(pending), 1)
+        select_request = pending[0]
+        self.assertEqual(select_request.decision_type, DECISION_SELECT_TARGET_MODEL)
+        self.assertEqual(select_request.player_id, enemy_player.id)
+
+        model_option = next(
+            o for o in select_request.options if (o.payload or {}).get("model_id") == target_model_b._id
+        )
+        resolve_decision_command(game, select_request, model_option.option_id, player_id=enemy_player.id)
+
+        self.assertEqual(destroyed["model_id"], target_model_b._id)
 
 
 if __name__ == "__main__":

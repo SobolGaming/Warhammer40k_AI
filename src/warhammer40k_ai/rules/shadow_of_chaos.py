@@ -563,7 +563,17 @@ class ShadowOfChaosManager:
             return
         if context.manifestation_active and passed:
             cls._apply_daemonic_manifestation(unit, game=game)
-        if context.terror_active and (not passed):
+        suppress_terror = False
+        try:
+            sr = getattr(unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("suppress_daemonic_terror_once"):
+                suppress_terror = True
+                sr.pop("suppress_daemonic_terror_once", None)
+                sr.pop("suppress_daemonic_terror_source", None)
+                unit.special_rules = sr
+        except Exception:
+            suppress_terror = False
+        if context.terror_active and (not passed) and not suppress_terror:
             cls._apply_daemonic_terror(unit, game=game)
 
     @classmethod

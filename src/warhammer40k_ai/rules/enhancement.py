@@ -244,6 +244,10 @@ class Enhancement:
             is_daemonic_incursion = bool(cd_mgr and cd_mgr.is_daemonic_incursion_detachment())
         except Exception:
             is_daemonic_incursion = False
+        try:
+            is_plague_legion = bool(cd_mgr and cd_mgr.is_plague_legion_detachment())
+        except Exception:
+            is_plague_legion = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -482,6 +486,20 @@ class Enhancement:
             unit.special_rules["enhancement_bearer_ranged_range_bonus_shadow_extra"] = int(
                 unit.special_rules.get("enhancement_bearer_ranged_range_bonus_shadow_extra", 0) or 0
             ) + 3
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "cankerblight" or enh_id == "000009819002":
+            if not is_plague_legion:
+                return
+            unit.special_rules["enhancement_cankerblight"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "maggot maws" or enh_id == "000009819003":
+            if not is_plague_legion:
+                return
+            unit.special_rules["enhancement_maggot_maws"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

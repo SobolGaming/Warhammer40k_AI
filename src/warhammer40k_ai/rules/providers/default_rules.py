@@ -325,6 +325,18 @@ def build_default_rule_providers() -> List[RuleProvider]:
 
     providers.append(
         RuleProvider(
+            name="chaos_daemons_enhancements",
+            predicate=lambda ctxs, _g: any_faction(ctxs, "CD"),
+            subscriptions=[
+                ("phase_start", "_on_phase_start_chaos_daemons_enhancements"),
+                ("phase_end", "_on_phase_end_movement_phase_symphony_of_pain"),
+                ("battle_shock_test_resolved", "_on_battle_shock_test_resolved_maggot_maws"),
+            ],
+        )
+    )
+
+    providers.append(
+        RuleProvider(
             name="thousand_sons",
             predicate=lambda ctxs, _g: any_manager(ctxs, "cabal_of_sorcerers", ("_army_has_cabal",)),
             subscriptions=[

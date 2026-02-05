@@ -1528,11 +1528,116 @@ def _validate_choose_quarry(game: object, request: DecisionRequest, result: Deci
 
 def _apply_choose_quarry(game: object, request: DecisionRequest, result: DecisionResult):
     ctx = dict(getattr(request, "context", {}) or {})
-    if str(ctx.get("ability", "") or "") == "aeldari_guileful_strategist":
+    ability = str(ctx.get("ability", "") or "")
+    if ability == "aeldari_guileful_strategist":
         skipped = is_skip_choice(request, result)
         apply_fn = getattr(game, "_apply_redeploy_choice", None)
         if callable(apply_fn):
             apply_fn(request, result, skipped=skipped)
+        return None
+    if ability == "cankerblight":
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id")))
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        sr = getattr(target_unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending = sr.get("cankerblight_pending")
+        ability_name = str(ctx.get("ability_name", "") or "Cankerblight").strip() or "Cankerblight"
+        if is_skip_choice(request, result):
+            if isinstance(pending, dict) and pending.get("apply_terror_if_skipped"):
+                try:
+                    from ...rules.shadow_of_chaos import ShadowOfChaosManager
+                    ShadowOfChaosManager._apply_daemonic_terror(target_unit, game=game)
+                except Exception:
+                    pass
+            sr.pop("cankerblight_pending", None)
+            target_unit.special_rules = sr
+            try:
+                player = getattr(getattr(target_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: skipped on {getattr(target_unit, 'name', 'Unit')}.",
+                )
+            except Exception:
+                pass
+            return None
+
+        sr.pop("cankerblight_pending", None)
+        target_unit.special_rules = sr
+        try:
+            models = list(target_unit.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(target_unit, "models", []) or [])
+        models = [m for m in models if getattr(m, "is_alive", True)]
+        try:
+            models.sort(key=lambda m: str(get_entity_id(m)))
+        except Exception:
+            pass
+        if not models:
+            return None
+        if len(models) == 1:
+            try:
+                models[0].die(game_map=getattr(game, "map", None))
+            except Exception:
+                pass
+            try:
+                player = getattr(getattr(target_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            try:
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} loses {getattr(models[0], 'name', 'a model')}.",
+                )
+            except Exception:
+                pass
+            return None
+
+        from ...engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
+        from ...engine.decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_SELECT_TARGET_MODEL:
+                    continue
+                ctx_req = dict(getattr(req, "context", {}) or {})
+                if str(ctx_req.get("selection_kind", "")) == "cankerblight_destroy" and str(ctx_req.get("target_unit_id", "")) == str(get_entity_id(target_unit)):
+                    return None
+
+        options = []
+        for model in models:
+            label = str(getattr(model, "name", "Model") or "Model")
+            options.append(DecisionOption.create(label, payload={"model_id": get_entity_id(model)}))
+        if not options:
+            return None
+        try:
+            target_player = getattr(target_unit.get_parent_army(), "player", None)
+        except Exception:
+            target_player = None
+        ctx_request = {
+            "selection_kind": "cankerblight_destroy",
+            "target_unit_id": get_entity_id(target_unit),
+            "source_unit_id": ctx.get("source_unit_id"),
+            "ability_name": ability_name,
+        }
+        req = DecisionRequest.create(
+            DECISION_SELECT_TARGET_MODEL,
+            f"{ability_name}: select a model to destroy.",
+            player_id=getattr(target_player, "id", None),
+            options=options,
+            context=ctx_request,
+        )
+        if game is not None and hasattr(game, "request_decision"):
+            game.request_decision(req)
         return None
     if is_skip_choice(request, result):
         return None
@@ -1746,6 +1851,72 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     player,
                     f"{source}: {sname} selected {tname} (hit +{int(bonus)}).",
                 )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "symphony_of_pain":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            keywords = list(ctx.get("keywords", []) or [])
+            ability_name = str(ctx.get("ability_name", "") or "Symphony of Pain").strip() or "Symphony of Pain"
+            sr = getattr(chosen, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["symphony_of_pain_active"] = True
+            sr["symphony_of_pain_owner"] = owner_id
+            sr["symphony_of_pain_turn"] = int(turn or 0)
+            sr["symphony_of_pain_source"] = ability_name
+            sr["symphony_of_pain_keywords"] = list(keywords or [])
+            chosen.special_rules = sr
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname}.")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "maggot_maws":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if chosen is not None:
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Maggot Maws").strip() or "Maggot Maws"
+            sr = getattr(chosen, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["maggot_maws_pending"] = {
+                "owner_id": owner_id,
+                "source_unit_id": ctx.get("source_unit_id") or ctx.get("unit_id"),
+                "source_model_id": ctx.get("model_id"),
+                "turn": int(turn or 0),
+                "ability_name": ability_name,
+            }
+            sr["suppress_daemonic_terror_once"] = True
+            sr["suppress_daemonic_terror_source"] = ability_name
+            sr["battle_shock_allow_suppressed_test"] = True
+            chosen.special_rules = sr
+            try:
+                chosen.take_battle_shock_test(int(turn or 0))
+            except Exception:
+                pass
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(chosen, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} targeted {tname} for Battle-shock.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "grenade_pack_flyover":

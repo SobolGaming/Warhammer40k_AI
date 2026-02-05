@@ -602,6 +602,52 @@ class Game:
                         unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
                     return
 
+    def _on_battle_shock_test_resolved_maggot_maws(self, unit=None, passed: bool = False, **_kwargs) -> None:
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        pending = sr.get("maggot_maws_pending")
+        if not isinstance(pending, dict):
+            return
+        sr.pop("maggot_maws_pending", None)
+        unit.special_rules = sr
+
+        from ..utility.dice import get_roll
+        from ..utility.event_bus import append_action, append_dice
+
+        roll_d6 = int(get_roll("D6") or 0)
+        mortal = 0
+        roll_d3 = None
+        if roll_d6 >= 3:
+            roll_d3 = int(get_roll("D3") or 0)
+            mortal = int(roll_d3 or 0)
+        if mortal > 0:
+            unit._apply_mortal_wounds_to_unit(unit, mortal, game_map=getattr(self, "map", None))
+
+        ability_name = str(pending.get("ability_name", "") or "Maggot Maws").strip() or "Maggot Maws"
+        owner_id = str(pending.get("owner_id", "") or "")
+        player = self._resolve_player_by_id(owner_id) if owner_id else None
+        try:
+            if player is not None:
+                desc = f"{ability_name}: roll D6={roll_d6}"
+                if roll_d3 is not None:
+                    desc = f"{desc}, D3={int(roll_d3)}"
+                append_dice(player, f"{desc}.")
+                if mortal > 0:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds.",
+                    )
+                else:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers no mortal wounds.",
+                    )
+        except Exception:
+            pass
+
     def _apply_reanimation_protocols_end_command_phase(self, current_player) -> None:
         if current_player is None:
             raise RuntimeError("Reanimation protocols require a current player.")
@@ -3313,6 +3359,82 @@ class Game:
             sr["unleash_hell_prompt_phase"] = pname
             unit.special_rules = sr
 
+    def _on_phase_start_chaos_daemons_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Chaos Daemons Plague Legion enhancements that trigger at the start of the Shooting phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Chaos Daemons enhancement hooks require an army for {getattr(player, 'name', 'Player')}.")
+        mgr = getattr(army, "chaos_daemons_detachments", None)
+        if mgr is None or not mgr.is_plague_legion_detachment():
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Chaos Daemons enhancement hooks require a game map.")
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_maggot_maws"):
+                continue
+            bearer_id = sr.get("enhancement_bearer_model_id")
+            if not bearer_id:
+                continue
+            try:
+                models = list(unit.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(unit, "models", []) or [])
+            bearer_model = None
+            for model in models:
+                if str(getattr(model, "_id", "") or "") != str(bearer_id):
+                    continue
+                if not getattr(model, "is_alive", True):
+                    continue
+                bearer_model = model
+                break
+            if bearer_model is None:
+                continue
+            candidates = self._enemy_candidates_within_range_of_model(
+                model=bearer_model,
+                enemy_roots=enemy_roots,
+                range_value=6.0,
+            )
+            if not candidates:
+                continue
+            self._queue_maggot_maws(
+                player=player,
+                source_unit=unit,
+                model=bearer_model,
+                candidates=candidates,
+                spec={"source": "Maggot Maws", "range": 6},
+            )
+
     def _on_phase_end_gate_of_infinity(self, player=None, phase=None, **_kwargs) -> None:
         """Grey Knights: Gate of Infinity at the end of the opponent's Fight phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -3798,6 +3920,21 @@ class Game:
                             for k in (
                                 "tactical_acumen_no_charge_turn_owner",
                                 "tactical_acumen_no_charge_turn",
+                            ):
+                                sr.pop(k, None)
+                    owner = str(sr.get("symphony_of_pain_owner", "") or "")
+                    try:
+                        turn = int(sr.get("symphony_of_pain_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "symphony_of_pain_active",
+                                "symphony_of_pain_owner",
+                                "symphony_of_pain_turn",
+                                "symphony_of_pain_source",
+                                "symphony_of_pain_keywords",
                             ):
                                 sr.pop(k, None)
         for p in list(self.players or []):
@@ -4770,6 +4907,43 @@ class Game:
             candidates.append(enemy_root)
         return candidates
 
+    def _enemy_candidates_within_range_of_model(
+        self,
+        *,
+        model,
+        enemy_roots: list,
+        range_value: float,
+    ) -> list:
+        """Return enemy units within range of a source model (no line-of-sight check)."""
+        if model is None:
+            return []
+        try:
+            max_range = float(range_value or 0.0)
+        except Exception:
+            max_range = 0.0
+        if max_range <= 0:
+            return []
+        from ..utility.aura_utils import distance_between_models_bases_3d
+
+        candidates = []
+        for enemy_root in list(enemy_roots or []):
+            try:
+                target_models = list(enemy_root.get_models_for_collision() or [])
+            except Exception:
+                target_models = list(getattr(enemy_root, "models", []) or [])
+            target_models = [tm for tm in target_models if getattr(tm, "is_alive", True)]
+            if not target_models:
+                continue
+            for tm in target_models:
+                try:
+                    dist = float(distance_between_models_bases_3d(model, tm))
+                except Exception:
+                    continue
+                if dist <= max_range:
+                    candidates.append(enemy_root)
+                    break
+        return candidates
+
     def _collect_enemy_unit_roots(self, player) -> list:
         if player is None:
             return []
@@ -5114,6 +5288,84 @@ class Game:
         self.request_decision(request)
         return request
 
+    def _queue_symphony_of_pain(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "symphony_of_pain":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [DecisionOption.create("None", payload={"action": "skip"})]
+        for cand in sorted(list(candidates), key=_cand_sort_key):
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(cand)},
+                )
+            )
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Symphony of Pain").strip() or "Symphony of Pain"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        keywords = list(spec.get("keywords", []) or [])
+        ctx = {
+            "ability": "symphony_of_pain",
+            "ability_name": ability_name,
+            "phase": "Movement phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "keywords": keywords,
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_start_shooting_phase_visible_battleshock(
         self,
         *,
@@ -5186,6 +5438,82 @@ class Game:
         request = DecisionRequest.create(
             DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
             f"{ability_name}: select a unit to take a Battle-shock test.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_maggot_maws(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "maggot_maws":
+                    continue
+                if str(ctx.get("model_id", "")) == str(model_id):
+                    return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates), key=_cand_sort_key)
+        ]
+        if not options:
+            return None
+        ability_name = str(spec.get("source", "") or "Maggot Maws").strip() or "Maggot Maws"
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        ctx = {
+            "ability": "maggot_maws",
+            "ability_name": ability_name,
+            "phase": "Shooting phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a target.",
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
@@ -5277,6 +5605,158 @@ class Game:
         )
         self.request_decision(request)
         return request
+
+    def _queue_cankerblight_trigger(self, *, unit=None, passed: bool = False, shadow_ctx=None, game=None) -> bool:
+        if unit is None or passed:
+            return False
+        try:
+            if unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"):
+                return False
+        except Exception:
+            pass
+        try:
+            unit_army = unit.get_parent_army()
+        except Exception:
+            unit_army = getattr(unit, "parent_army", None)
+        if unit_army is None:
+            return False
+        game = game or self
+        target_id = ""
+        try:
+            target_id = str(get_entity_id(unit) or "")
+        except Exception:
+            target_id = str(getattr(unit, "_id", "") or "")
+        if not target_id:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        pending = sr.get("cankerblight_pending")
+        if isinstance(pending, dict):
+            try:
+                pending_turn = int(pending.get("turn", 0) or 0)
+            except Exception:
+                pending_turn = 0
+            if pending_turn == int(getattr(game, "turn", 0) or 0):
+                return True
+            sr.pop("cankerblight_pending", None)
+            unit.special_rules = sr
+
+        sources = []
+        players = list(getattr(game, "players", []) or [])
+        for player in players:
+            if player is None:
+                continue
+            try:
+                army = player.get_army()
+            except Exception:
+                army = getattr(player, "army", None)
+            if army is None or army is unit_army:
+                continue
+            for source_unit in list(getattr(army, "units", []) or []):
+                if source_unit is None:
+                    continue
+                if not getattr(source_unit, "is_alive", lambda: False)():
+                    continue
+                if not getattr(source_unit, "deployed", True):
+                    continue
+                try:
+                    if source_unit.is_in_reserves() or source_unit.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                source_rules = getattr(source_unit, "special_rules", None)
+                if not isinstance(source_rules, dict) or not source_rules.get("enhancement_cankerblight"):
+                    continue
+                bearer_id = source_rules.get("enhancement_bearer_model_id")
+                if not bearer_id:
+                    continue
+                try:
+                    models = list(source_unit.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(source_unit, "models", []) or [])
+                bearer_model = None
+                for model in models:
+                    if str(getattr(model, "_id", "") or "") != str(bearer_id):
+                        continue
+                    if not getattr(model, "is_alive", True):
+                        continue
+                    bearer_model = model
+                    break
+                if bearer_model is None:
+                    continue
+                if unit not in self._enemy_candidates_within_range_of_model(
+                    model=bearer_model,
+                    enemy_roots=[unit],
+                    range_value=6.0,
+                ):
+                    continue
+                sources.append((player, source_unit, bearer_model))
+
+        if not sources:
+            return False
+
+        def _source_sort_key(entry):
+            try:
+                src_id = str(get_entity_id(entry[1]) or "")
+            except Exception:
+                src_id = str(getattr(entry[1], "_id", "") or "")
+            try:
+                mdl_id = str(get_entity_id(entry[2]) or "")
+            except Exception:
+                mdl_id = str(getattr(entry[2], "_id", "") or "")
+            return (src_id, mdl_id)
+
+        sources.sort(key=_source_sort_key)
+        owner_player, source_unit, bearer_model = sources[0]
+        if owner_player is None:
+            return False
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "cankerblight":
+                    continue
+                if str(ctx.get("target_unit_id", "")) == str(target_id):
+                    return True
+
+        sr["cankerblight_pending"] = {
+            "owner_id": str(getattr(owner_player, "id", "") or ""),
+            "source_unit_id": str(get_entity_id(source_unit) or ""),
+            "source_model_id": str(get_entity_id(bearer_model) or ""),
+            "turn": int(getattr(game, "turn", 0) or 0),
+            "apply_terror_if_skipped": bool(getattr(shadow_ctx, "terror_active", False)),
+            "ability_name": "Cankerblight",
+        }
+        unit.special_rules = sr
+
+        options = [
+            DecisionOption.create("None", payload={"action": "skip"}),
+            DecisionOption.create(
+                str(getattr(unit, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": target_id},
+            ),
+        ]
+        ctx = {
+            "ability": "cankerblight",
+            "ability_name": "Cankerblight",
+            "phase": "Battle-shock",
+            "target_unit_id": target_id,
+            "source_unit_id": str(get_entity_id(source_unit) or ""),
+            "source_model_id": str(get_entity_id(bearer_model) or ""),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Cankerblight: select a unit to destroy a model.",
+            player_id=getattr(owner_player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return True
 
     def _queue_aeldari_guiding_presence(
         self,
@@ -10767,6 +11247,119 @@ class Game:
                     if not candidates:
                         continue
                     self._queue_movement_phase_end_misfortune(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
+    def _on_phase_end_movement_phase_symphony_of_pain(self, player=None, phase=None, **_kwargs) -> None:
+        """Movement phase end: select a Battle-shocked enemy within range for full hit/wound rerolls (Symphony of Pain)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ..utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_movement_phase_end_battleshock_reroll_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = []
+                    for enemy in list(enemy_roots or []):
+                        if enemy is None:
+                            continue
+                        try:
+                            if not enemy.is_battle_shocked():
+                                continue
+                        except Exception:
+                            continue
+                        try:
+                            sr = getattr(enemy, "special_rules", None)
+                        except Exception:
+                            sr = None
+                        if isinstance(sr, dict):
+                            if bool(sr.get("symphony_of_pain_active")):
+                                if str(sr.get("symphony_of_pain_owner", "") or "") == owner_id and int(sr.get("symphony_of_pain_turn", 0) or 0) == int(turn or 0):
+                                    continue
+                        if enemy in self._enemy_candidates_within_range_of_model(
+                            model=model,
+                            enemy_roots=[enemy],
+                            range_value=float(range_value),
+                        ):
+                            candidates.append(enemy)
+                    if not candidates:
+                        continue
+                    self._queue_symphony_of_pain(
                         player=player,
                         source_unit=source_unit,
                         model=model,

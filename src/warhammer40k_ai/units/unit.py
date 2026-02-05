@@ -1669,6 +1669,12 @@ class Unit:
         r"from the wound roll(?: each unit can only be selected for this ability once per turn)?",
         re.IGNORECASE,
     )
+    _MOVEMENT_PHASE_END_BATTLESHOCK_REROLL_RE = re.compile(
+        r"at the end of your movement phase you can select one enemy unit that is battle shocked and within (?P<range>\d+) of this model "
+        r"until the end of the turn each time a (?P<keywords>[a-z0-9 ]+) model from your army makes an attack that targets that enemy unit "
+        r"you can re roll the hit roll and you can re roll the wound roll",
+        re.IGNORECASE,
+    )
     _START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE = re.compile(
         r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
         r"that enemy unit must take a battle shock test",
@@ -13515,6 +13521,68 @@ class Unit:
         except Exception:
             pass
 
+        # Target buffs: Symphony of Pain (re-roll Hit rolls vs marked target).
+        try:
+            if target is not None:
+                t_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                sr = getattr(t_root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("symphony_of_pain_active"):
+                    owner_id = str(sr.get("symphony_of_pain_owner", "") or "")
+                    try:
+                        turn = int(sr.get("symphony_of_pain_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    game = None
+                    try:
+                        game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                    if game is not None and owner_id:
+                        try:
+                            current_id = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            current_id = ""
+                        try:
+                            if int(getattr(game, "turn", 0) or 0) != turn or (current_id and current_id != owner_id):
+                                for k in (
+                                    "symphony_of_pain_active",
+                                    "symphony_of_pain_owner",
+                                    "symphony_of_pain_turn",
+                                    "symphony_of_pain_source",
+                                    "symphony_of_pain_keywords",
+                                ):
+                                    sr.pop(k, None)
+                                t_root.special_rules = sr
+                                sr = None
+                        except Exception:
+                            pass
+                    if isinstance(sr, dict) and sr.get("symphony_of_pain_active"):
+                        applies = True
+                        if owner_id:
+                            try:
+                                army = root.get_parent_army()
+                                player = getattr(army, "player", None) if army is not None else None
+                            except Exception:
+                                player = None
+                            if player is not None and str(getattr(player, "id", "") or "") != owner_id:
+                                applies = False
+                        keywords = list(sr.get("symphony_of_pain_keywords", []) or [])
+                        if applies and keywords:
+                            for kw in keywords:
+                                try:
+                                    if not root.has_any_keyword(str(kw or "")):
+                                        applies = False
+                                        break
+                                except Exception:
+                                    applies = False
+                                    break
+                        if applies:
+                            source = str(sr.get("symphony_of_pain_source", "") or "Symphony of Pain").strip() or "Symphony of Pain"
+                            mods["reroll_hit_full"] = True
+                            reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
+        except Exception:
+            pass
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -13760,6 +13828,68 @@ class Unit:
                                             mods["reroll_wound_full"] = True
                                             source = str(tsr.get("post_shoot_disembark_wound_reroll_source", "") or "Fire Support").strip() or "Fire Support"
                                             reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+        except Exception:
+            pass
+
+        # Target buffs: Symphony of Pain (re-roll Wound rolls vs marked target).
+        try:
+            if target is not None:
+                t_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                sr = getattr(t_root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("symphony_of_pain_active"):
+                    owner_id = str(sr.get("symphony_of_pain_owner", "") or "")
+                    try:
+                        turn = int(sr.get("symphony_of_pain_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    game = None
+                    try:
+                        game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    except Exception:
+                        game = None
+                    if game is not None and owner_id:
+                        try:
+                            current_id = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            current_id = ""
+                        try:
+                            if int(getattr(game, "turn", 0) or 0) != turn or (current_id and current_id != owner_id):
+                                for k in (
+                                    "symphony_of_pain_active",
+                                    "symphony_of_pain_owner",
+                                    "symphony_of_pain_turn",
+                                    "symphony_of_pain_source",
+                                    "symphony_of_pain_keywords",
+                                ):
+                                    sr.pop(k, None)
+                                t_root.special_rules = sr
+                                sr = None
+                        except Exception:
+                            pass
+                    if isinstance(sr, dict) and sr.get("symphony_of_pain_active"):
+                        applies = True
+                        if owner_id:
+                            try:
+                                army = root.get_parent_army()
+                                player = getattr(army, "player", None) if army is not None else None
+                            except Exception:
+                                player = None
+                            if player is not None and str(getattr(player, "id", "") or "") != owner_id:
+                                applies = False
+                        keywords = list(sr.get("symphony_of_pain_keywords", []) or [])
+                        if applies and keywords:
+                            for kw in keywords:
+                                try:
+                                    if not root.has_any_keyword(str(kw or "")):
+                                        applies = False
+                                        break
+                                except Exception:
+                                    applies = False
+                                    break
+                        if applies:
+                            source = str(sr.get("symphony_of_pain_source", "") or "Symphony of Pain").strip() or "Symphony of Pain"
+                            mods["reroll_wound_full"] = True
+                            reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
         except Exception:
             pass
 
@@ -20131,8 +20261,20 @@ class Unit:
 
         if shadow_ctx is not None:
             try:
-                from ..rules.shadow_of_chaos import ShadowOfChaosManager
-                ShadowOfChaosManager.apply_battle_shock_outcome(self, passed=passed, context=shadow_ctx, game=game)
+                from ..rules.shadow_of_chaos import ShadowOfChaosManager, ShadowBattleShockContext
+
+                apply_ctx = shadow_ctx
+                defer_terror = False
+                queue_fn = getattr(game, "_queue_cankerblight_trigger", None)
+                if callable(queue_fn):
+                    defer_terror = bool(queue_fn(unit=self, passed=passed, shadow_ctx=shadow_ctx, game=game))
+                if defer_terror and (not passed) and bool(getattr(shadow_ctx, "terror_active", False)):
+                    apply_ctx = ShadowBattleShockContext(
+                        modifier=int(getattr(shadow_ctx, "modifier", 0) or 0),
+                        manifestation_active=bool(getattr(shadow_ctx, "manifestation_active", False)),
+                        terror_active=False,
+                    )
+                ShadowOfChaosManager.apply_battle_shock_outcome(self, passed=passed, context=apply_ctx, game=game)
             except Exception:
                 pass
 
@@ -30254,6 +30396,62 @@ class Unit:
                     "range": int(range_value),
                     "penalty": -int(penalty),
                     "limit_once_per_turn": bool(limit_once),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_movement_phase_end_battleshock_reroll_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, select a Battle-shocked enemy within range;
+        friendly keyword models can re-roll Hit and Wound rolls vs that target until end of turn.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range)
+            - keywords: list[str] (required attacker keywords)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_battleshock_reroll:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._MOVEMENT_PHASE_END_BATTLESHOCK_REROLL_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Symphony of Pain").strip() or "Symphony of Pain"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "keywords": ["SLAANESH", "LEGIONES DAEMONICA"],
                 }
             )
 

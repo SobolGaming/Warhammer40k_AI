@@ -352,7 +352,15 @@ def _apply_select_model(game: object, request: DecisionRequest, result: Decision
     model_val = payload.get("model_id", payload.get("model"))
     if model_val in (None, ""):
         return None
-    return resolve_model(game, model_val)
+    model = resolve_model(game, model_val)
+    ctx = dict(getattr(request, "context", {}) or {})
+    selection_kind = str(ctx.get("selection_kind", "") or "")
+    if selection_kind == "cankerblight_destroy" and model is not None:
+        try:
+            model.die(game_map=getattr(game, "map", None))
+        except Exception:
+            pass
+    return model
 
 
 def _validate_select_precision(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:

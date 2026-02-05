@@ -21,6 +21,11 @@ class ChaosDaemonsDetachmentManager(DetachmentManagerBase):
             return False
         return self.detachment_matches("Daemonic Incursion")
 
+    def is_plague_legion_detachment(self) -> bool:
+        if not self._army_faction_matches(self.faction_id):
+            return False
+        return self.detachment_matches("Plague Legion")
+
     def first_prince_of_chaos_active(self) -> bool:
         return self.is_shadow_legion_detachment()
 
