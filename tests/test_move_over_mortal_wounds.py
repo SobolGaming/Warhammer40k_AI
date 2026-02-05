@@ -438,3 +438,19 @@ def test_move_over_mortal_wounds_unit_level_and_reroll_rule():
 
     assert applied["amount"] == 2
     assert applied["target"] is enemy
+
+
+def test_move_over_mortal_wounds_unit_level_movement_phase_prefix():
+    ability = (
+        "In your Movement phase, after this unit ends a Normal move, you can select one enemy unit it moved over "
+        "during that move and roll one D6 for each model in this unit: for each 4+, that enemy unit suffers 1 mortal wound."
+    )
+    unit = _make_unit("Skimmer", ability_desc=ability, model_count=2, keywords=["Fly"])
+
+    specs = unit.unit_move_over_mortal_wounds_specs()
+    assert len(specs) == 1
+    spec = specs[0]
+    assert "move" in spec.get("move_types", [])
+    assert spec.get("threshold") == 4
+    assert spec.get("mortal_per_success") == 1
+    assert spec.get("dice_per_model") is True

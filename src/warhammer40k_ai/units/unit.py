@@ -1961,7 +1961,7 @@ class Unit:
         re.IGNORECASE,
     )
     _MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
-        r"each time (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
+        r"(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) (?:this model|the bearer) ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:if you do )?(?:and |then )?roll (?P<dice>\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 "
@@ -1970,7 +1970,7 @@ class Unit:
         re.IGNORECASE,
     )
     _UNIT_MOVE_OVER_MORTAL_WOUNDS_RE = re.compile(
-        r"(?:once per battle(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
+        r"(?:once per battle(?:,)?\s+)?(?:(?:in|during) your movement phase(?:,)?\s+)?(?:each time|after) this unit ends a (?P<moves>[a-z ]+) move "
         r"(?:you can )?(?:select|choose) one enemy unit(?: excluding monsters? and vehicles?(?: units)?)? "
         r"(?:that )?(?:it )?moved over during that move "
         r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
