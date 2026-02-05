@@ -41,7 +41,7 @@ from ..utility.entity_registry import EntityRegistry
 from ..utility.model_base import Base, BaseType
 from ..waha_helper import WahaHelper
 
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 POSITION_SCALE = 1000
 ANGLE_SCALE = 10000
 
@@ -1100,6 +1100,7 @@ def _serialize_game_state(game: Game) -> dict:
         "_pain_parasite_shooting_snapshot": encode_refs(getattr(game, "_pain_parasite_shooting_snapshot", {}) or {}),
         "_pain_parasite_fight_snapshot": encode_refs(getattr(game, "_pain_parasite_fight_snapshot", {}) or {}),
         "army_muster_requests": encode_refs(getattr(game, "army_muster_requests", {}) or {}),
+        "fates_in_flux": getattr(getattr(game, "fates_in_flux", None), "to_dict", lambda: {})(),
     }
 
 
@@ -1167,6 +1168,10 @@ def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
     game._pain_parasite_shooting_snapshot = decode_refs(data.get("_pain_parasite_shooting_snapshot", {}) or {}, registry)
     game._pain_parasite_fight_snapshot = decode_refs(data.get("_pain_parasite_fight_snapshot", {}) or {}, registry)
     game.army_muster_requests = decode_refs(data.get("army_muster_requests", {}) or {}, registry)
+    fates_payload = data.get("fates_in_flux", {}) or {}
+    if isinstance(fates_payload, dict):
+        from ..rules.fates_in_flux import FatesInFluxManager
+        game.fates_in_flux = FatesInFluxManager.from_dict(fates_payload, game=game)
 
 
 def snapshot_game(game: Game) -> dict:

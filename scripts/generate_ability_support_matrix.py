@@ -284,6 +284,16 @@ def _detachment_full_consumption_patterns() -> Dict[str, Tuple[str, ...]]:
         "Warp Rifts": (
             r"each time a legiones daemonica unit from your army is set up on the battlefield using the deep strike ability .* it can be set up anywhere that is more than 6 horizontally away from all enemy models instead of more than 9",
         ),
+        "Fates in Flux": (
+            r"you start the battle with three flux tokens we recommend using a dice to track how many flux tokens you have",
+            r"you can spend one flux token just after an advance roll hit roll wound roll damage roll saving throw or hazardous test is made for a legiones daemonica tzeentch model or legiones daemonica tzeentch unit from your army to reroll the result of that roll throw or test",
+            r"each time you spend a flux token reduce the number of flux tokens you have by one and your opponent gains one flux token",
+            r"whenever your opponent has one or more flux tokens they can spend one flux token after an advance roll hit roll wound roll or saving throw is made for a model or unit from their army to reroll the result of that roll or throw",
+            r"if they do they reduce the number of flux tokens they have by one and you gain one flux token",
+            r"this is ignored if your opponent has the fates in flux detachment rule",
+            r"in your command phase if your opponent has one or more flux tokens you gain one flux token",
+            r"when using fast dice rolling this rule can be used to spend any number of flux tokens up to the amount you have to reroll a number of dice up to the amount spent after rolling multiple rolls or saving throws at once",
+        ),
         "Combat Drugs": (
             r"at the start of your command phase select which combat drugs will be active for your army until the start of your next command phase",
             r"to do so either select one from the list below you cannot select the same combat drug more than once per battle or randomly select two by rolling two d6",
@@ -1559,6 +1569,10 @@ def _detachment_ability_support_by_name() -> Dict[str, Tuple[str, str]]:
         "Warp Rifts": (
             "Supported",
             "Daemonic Incursion: Deep Strike min distance reduced to 6\" when wholly within Shadow of Chaos zones or within 6\" of a matching Greater Daemon/Dark Master aura; cannot bootstrap off the arriving unit.",
+        ),
+        "Fates in Flux": (
+            "Supported",
+            "Scintillating Legion: Flux tokens tracked and transferable; TZEENTCH LEGIONES DAEMONICA units can spend tokens for Advance/Hit/Wound/Save/Damage/Hazardous re-rolls (multi-die selections supported), opponents can spend tokens on Advance/Hit/Wound/Save re-rolls unless they also have Fates in Flux, and Command phase token gain applies when the opponent has tokens.",
         ),
         "Martial Grace": ("Supported", "Warhost: +1 Battle Focus token; Swift as the Wind +1\" move; +1 to D6 Agile Manoeuvre rolls."),
         "Relentless Onslaught": ("Supported", "Starshatter Arsenal: +1 to hit vs targets within objective range; VEHICLE/MOUNTED (non-TITANIC) ranged weapons gain Assault."),

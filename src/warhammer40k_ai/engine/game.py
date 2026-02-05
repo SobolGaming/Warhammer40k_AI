@@ -115,6 +115,8 @@ class Game:
         self.ruleset_bundle = ruleset_bundle
         self.roll_manager = DiceRollManager()
         self.attack_manager = AttackResolutionManager()
+        from ..rules.fates_in_flux import FatesInFluxManager
+        self.fates_in_flux = FatesInFluxManager(self)
         # Headless/test default: auto-resolve dice roll decisions via headless agent.
         # Interactive UI or network server should disable this.
         self.auto_resolve_dice_rolls = True
@@ -16572,6 +16574,10 @@ class Game:
         army = self._get_player_army(current_player)
         if army is None:
             return
+
+        mgr = getattr(self, "fates_in_flux", None)
+        if mgr is not None:
+            mgr.on_command_phase_start(game=self, player=current_player)
 
         # Corrupt Realspace: check at the start of any turn.
         self._evaluate_corrupt_realspace_turn_boundary(timing="start", player=current_player)

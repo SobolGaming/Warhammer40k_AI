@@ -1016,12 +1016,18 @@ class AttackResolutionManager:
                     "allow_success": True,
                 }
             )
-        player_id = None
-        try:
-            player_id = self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player.id
-        except Exception:
-            player_id = None
+        attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
+        player = None
+        if attacker_unit is not None:
+            player = attacker_unit.get_parent_army().player
+        player_id = getattr(player, "id", None) if player is not None else None
         from .roll_utils import command_reroll_available
+        if attacker_unit is not None and player is not None:
+            mgr = getattr(game, "fates_in_flux", None)
+            if mgr is not None:
+                flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="hit")
+                if flux_rule:
+                    reroll_rules.append(flux_rule)
         spec = {
             "dice_count": int(count),
             "faces": 6,
@@ -1033,8 +1039,9 @@ class AttackResolutionManager:
             "handler_key": "attack_hits",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,
-            "command_reroll_allowed": command_reroll_available(game, self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player, roll_type="hit") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="hit") if player_id else False,
             "command_reroll_mode": "one",
+            "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
         }
         if not bool(getattr(game, "is_authoritative", True)):
             return
@@ -1199,12 +1206,18 @@ class AttackResolutionManager:
                     "allow_success": True,
                 }
             )
-        player_id = None
-        try:
-            player_id = self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player.id
-        except Exception:
-            player_id = None
+        attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
+        player = None
+        if attacker_unit is not None:
+            player = attacker_unit.get_parent_army().player
+        player_id = getattr(player, "id", None) if player is not None else None
         from .roll_utils import command_reroll_available
+        if attacker_unit is not None and player is not None:
+            mgr = getattr(game, "fates_in_flux", None)
+            if mgr is not None:
+                flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="wound")
+                if flux_rule:
+                    reroll_rules.append(flux_rule)
         spec = {
             "dice_count": int(count),
             "faces": 6,
@@ -1216,8 +1229,9 @@ class AttackResolutionManager:
             "handler_key": "attack_wounds",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
             "reroll_rules": reroll_rules,
-            "command_reroll_allowed": command_reroll_available(game, self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player, roll_type="wound") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="wound") if player_id else False,
             "command_reroll_mode": "one",
+            "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
         }
         if not bool(getattr(game, "is_authoritative", True)):
             return
@@ -1533,12 +1547,19 @@ class AttackResolutionManager:
                 except Exception:
                     pass
         needed = save_result.get("needed", None)
-        player_id = None
-        try:
-            player_id = self._resolve_unit(game, seq.target_unit_id).get_parent_army().player.id
-        except Exception:
-            player_id = None
+        target_unit = self._resolve_unit(game, seq.target_unit_id)
+        player = None
+        if target_unit is not None:
+            player = target_unit.get_parent_army().player
+        player_id = getattr(player, "id", None) if player is not None else None
         from .roll_utils import command_reroll_available
+        reroll_rules = []
+        if target_unit is not None and player is not None:
+            mgr = getattr(game, "fates_in_flux", None)
+            if mgr is not None:
+                flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=target_unit, roll_type="save")
+                if flux_rule:
+                    reroll_rules.append(flux_rule)
         spec = {
             "dice_count": 1,
             "faces": 6,
@@ -1548,8 +1569,10 @@ class AttackResolutionManager:
             "target_op": "gte",
             "handler_key": "attack_saves",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
-            "command_reroll_allowed": command_reroll_available(game, self._resolve_unit(game, seq.target_unit_id).get_parent_army().player, roll_type="save") if player_id else False,
+            "reroll_rules": reroll_rules,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="save") if player_id else False,
             "command_reroll_mode": "one",
+            "unit_id": get_entity_id(target_unit) if target_unit is not None else None,
         }
         if not bool(getattr(game, "is_authoritative", True)):
             return
@@ -1832,11 +1855,8 @@ class AttackResolutionManager:
         seq.context["hazardous_pain_melee_non_character"] = bool(pain_hazardous)
         seq.context["hazardous_target_melee_all"] = bool(target_melee_hazardous)
         seq.step = "hazardous_roll"
-        player_id = None
-        try:
-            player_id = attacker_unit.get_parent_army().player.id
-        except Exception:
-            player_id = None
+        player = attacker_unit.get_parent_army().player if attacker_unit is not None else None
+        player_id = getattr(player, "id", None) if player is not None else None
         from .roll_utils import command_reroll_available
         from ..utility.hazardous import hazardous_fail_on_values
         fail_on = hazardous_fail_on_values(profile)
@@ -1847,6 +1867,13 @@ class AttackResolutionManager:
         else:
             fail_on_desc = f"fail on {fail_on[0]}-{fail_on[-1]}"
         reason = f"Hazardous test for {getattr(attacker_unit, 'name', 'Unit')} ({len(test_model_ids)}D6, {fail_on_desc})"
+        reroll_rules = []
+        if attacker_unit is not None and player is not None:
+            mgr = getattr(game, "fates_in_flux", None)
+            if mgr is not None:
+                flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="hazardous")
+                if flux_rule:
+                    reroll_rules.append(flux_rule)
         roll_spec = {
             "dice_count": int(len(test_model_ids)),
             "faces": 6,
@@ -1855,8 +1882,10 @@ class AttackResolutionManager:
             "fail_on": list(fail_on),
             "handler_key": "attack_hazardous",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
-            "command_reroll_allowed": command_reroll_available(game, attacker_unit.get_parent_army().player, roll_type="hazardous") if player_id else False,
+            "reroll_rules": reroll_rules,
+            "command_reroll_allowed": command_reroll_available(game, player, roll_type="hazardous") if player_id else False,
             "command_reroll_mode": "one",
+            "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
         }
         if not bool(getattr(game, "is_authoritative", True)):
             return True
@@ -2070,12 +2099,19 @@ class AttackResolutionManager:
             # Roll damage (random) or apply fixed
             dmg = profile.damage
             if hasattr(dmg, "roll_detailed"):
-                player_id = None
-                try:
-                    player_id = self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player.id
-                except Exception:
-                    player_id = None
+                attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
+                player = None
+                if attacker_unit is not None:
+                    player = attacker_unit.get_parent_army().player
+                player_id = getattr(player, "id", None) if player is not None else None
                 from .roll_utils import command_reroll_available
+                reroll_rules = []
+                if attacker_unit is not None and player is not None:
+                    mgr = getattr(game, "fates_in_flux", None)
+                    if mgr is not None:
+                        flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=attacker_unit, roll_type="damage")
+                        if flux_rule:
+                            reroll_rules.append(flux_rule)
                 spec = {
                     "dice_count": int(getattr(dmg, "number", 1) or 1),
                     "faces": int(getattr(dmg, "die_faces", 6) or 6),
@@ -2085,8 +2121,10 @@ class AttackResolutionManager:
                     "sum_modifier": int(getattr(dmg, "modifier", 0) or 0),
                     "handler_key": "attack_damage",
                     "handler_payload": {"sequence_id": int(seq.sequence_id)},
-                    "command_reroll_allowed": command_reroll_available(game, self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player, roll_type="damage") if player_id else False,
+                    "reroll_rules": reroll_rules,
+                    "command_reroll_allowed": command_reroll_available(game, player, roll_type="damage") if player_id else False,
                     "command_reroll_mode": "whole",
+                    "unit_id": get_entity_id(attacker_unit) if attacker_unit is not None else None,
                 }
                 if not bool(getattr(game, "is_authoritative", True)):
                     return

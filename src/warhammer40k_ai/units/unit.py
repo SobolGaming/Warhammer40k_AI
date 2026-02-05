@@ -15928,6 +15928,11 @@ class Unit:
                     )
             except Exception:
                 pass
+            mgr = getattr(game, "fates_in_flux", None)
+            if mgr is not None:
+                flux_rule = mgr.build_reroll_rule(game=game, player=player, unit=self, roll_type="advance")
+                if flux_rule:
+                    reroll_rules.append(flux_rule)
             command_reroll_ok = False
             if fixed_source is None:
                 command_reroll_ok = command_reroll_available(game, player, roll_type="advance")

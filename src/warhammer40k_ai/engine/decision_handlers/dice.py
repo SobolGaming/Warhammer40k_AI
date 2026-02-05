@@ -5,7 +5,7 @@ from typing import Sequence
 from ..decision_dispatcher import register_decision_handler
 from ..decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
 from ..decisions import DecisionRequest, DecisionResult
-from ._helpers import find_option, resolve_player, validate_option_choice
+from ._helpers import find_option, resolve_player, resolve_unit, validate_option_choice
 
 
 def _roll_manager(game: object):
@@ -92,6 +92,22 @@ def _validate_select_reroll(game: object, request: DecisionRequest, result: Deci
                 return ("Too many dice selected for reroll.",)
         except Exception:
             pass
+    if action_id == "flux_reroll":
+        mgr_flux = getattr(game, "fates_in_flux", None)
+        if mgr_flux is None:
+            return ("Flux token manager missing.",)
+        player = resolve_player(game, getattr(result, "player_id", None))
+        if player is None:
+            return ("Flux re-roll requires a player.",)
+        unit = resolve_unit(game, state.spec.get("unit_id"))
+        roll_type = str(state.spec.get("roll_type", "") or "")
+        if not mgr_flux.can_use_flux_reroll(game=game, player=player, unit=unit, roll_type=roll_type):
+            return ("Flux re-roll not available for this roll.",)
+        selected_count = len(selected or [])
+        if selected_count <= 0:
+            return ("Flux re-roll requires selected dice.",)
+        if mgr_flux.tokens_for_player(player) < selected_count:
+            return ("Insufficient Flux tokens.",)
     # Command reroll validation (CP and phase usage)
     if bool(action.get("is_command", False)) or bool(action.get("consume_cp", False)):
         player = resolve_player(game, getattr(result, "player_id", None))
@@ -166,6 +182,19 @@ def _apply_select_reroll(game: object, request: DecisionRequest, result: Decisio
                 mgr_strat._used_stratagems_this_phase.add((strat.name or "").strip().upper())
             except Exception:
                 pass
+    if action_id == "flux_reroll":
+        mgr_flux = getattr(game, "fates_in_flux", None)
+        player = resolve_player(game, getattr(result, "player_id", None))
+        if mgr_flux is None or player is None:
+            raise RuntimeError("Flux token spend failed: manager or player missing.")
+        if selected is None:
+            selected_count = len(action.get("eligible_die_ids", []) or []) if action is not None else 0
+        else:
+            selected_count = len(selected or [])
+        if selected_count <= 0:
+            raise RuntimeError("Flux token spend failed: no dice selected.")
+        if not mgr_flux.spend_tokens(player, selected_count, reason="Re-roll"):
+            raise RuntimeError("Flux token spend failed: insufficient tokens.")
     # Client-side authoritative roll results (from server broadcast)
     if not bool(getattr(game, "is_authoritative", True)):
         payload = dict(getattr(result, "payload", {}) or {})
