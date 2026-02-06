@@ -238,6 +238,46 @@ def unit_within_range_of_unit(
     return False
 
 
+def model_within_range_of_unit(
+    source_model,
+    target_unit,
+    radius: float,
+    *,
+    use_attached_aggregate: bool = True,
+) -> bool:
+    """Model is 'within X' of a unit if ANY target model is within X of the source model."""
+    if source_model is None or target_unit is None:
+        return False
+    try:
+        r = float(radius)
+    except Exception:
+        return False
+    if r < 0:
+        return False
+    try:
+        if not getattr(source_model, "is_alive", True):
+            return False
+    except Exception:
+        return False
+
+    try:
+        if use_attached_aggregate:
+            t_models = target_unit.get_attached_unit_models()
+        else:
+            t_models = list(getattr(target_unit, "models", []) or [])
+    except Exception:
+        return False
+
+    t_alive = [m for m in t_models if getattr(m, "is_alive", True)]
+    if not t_alive:
+        return False
+
+    for tm in t_alive:
+        if distance_between_models_bases_3d(source_model, tm) <= r + 1e-6:
+            return True
+    return False
+
+
 def model_within_engagement_range_of_unit(model, target_unit) -> bool:
     """Check if a single model is within Engagement Range of a target unit."""
     if model is None or target_unit is None:
@@ -603,3 +643,115 @@ def _is_linked_fire_origin_eligible(bearer_unit, origin_unit, *, game_map=None) 
     if not unit_has_fire_prism_keyword(origin_unit):
         return False
     return linked_fire_origin_is_visible(bearer_unit, origin_unit, game_map=game_map)
+
+
+def _resolve_bearer_model(unit):
+    if unit is None:
+        return None
+    try:
+        get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+        if callable(get_bearer):
+            bearer = get_bearer()
+            if bearer is not None:
+                return bearer
+    except Exception:
+        pass
+    for model in list(getattr(unit, "models", []) or []):
+        try:
+            if not getattr(model, "is_alive", True):
+                continue
+        except Exception:
+            continue
+        return model
+    return None
+
+
+def _infernal_puppeteer_origin_eligible(
+    bearer_unit,
+    origin_unit,
+    *,
+    range_in: float = 9.0,
+) -> bool:
+    if bearer_unit is None or origin_unit is None:
+        return False
+    try:
+        from .entity_ids import get_entity_id
+        bearer_root = bearer_unit.get_attached_unit_root() if hasattr(bearer_unit, "get_attached_unit_root") else bearer_unit
+        origin_root = origin_unit.get_attached_unit_root() if hasattr(origin_unit, "get_attached_unit_root") else origin_unit
+        if get_entity_id(origin_root) == get_entity_id(bearer_root):
+            return False
+    except Exception:
+        if origin_unit is bearer_unit:
+            return False
+
+    try:
+        bearer_army = bearer_unit.get_parent_army()
+        origin_army = origin_unit.get_parent_army()
+        if bearer_army is None or origin_army is None or bearer_army is not origin_army:
+            return False
+    except Exception:
+        return False
+
+    try:
+        if hasattr(origin_unit, "is_active_for_rules"):
+            if not origin_unit.is_active_for_rules():
+                return False
+        else:
+            if not _unit_is_alive(origin_unit):
+                return False
+            if not bool(getattr(origin_unit, "deployed", False)):
+                return False
+    except Exception:
+        return False
+
+    try:
+        if not (origin_unit.has_any_keyword("LEGIONES DAEMONICA") and origin_unit.has_any_keyword("TZEENTCH")):
+            return False
+    except Exception:
+        return False
+
+    bearer_model = _resolve_bearer_model(bearer_unit)
+    if bearer_model is None:
+        return False
+    return model_within_range_of_unit(
+        bearer_model,
+        origin_unit,
+        float(range_in),
+        use_attached_aggregate=True,
+    )
+
+
+def get_eligible_infernal_puppeteer_origin_units(
+    bearer_unit,
+    *,
+    game_map=None,
+    range_in: float = 9.0,
+):
+    """
+    Find eligible origin units for Infernal Puppeteer (Scintillating Legion enhancement).
+
+    Returns friendly LEGIONES DAEMONICA TZEENTCH units within range of the bearer.
+    """
+    if bearer_unit is None:
+        return []
+    if game_map is None:
+        try:
+            army = bearer_unit.get_parent_army()
+            friendly_units = list(getattr(army, "units", []) or [])
+        except Exception:
+            friendly_units = []
+    else:
+        try:
+            friendly_units = list(game_map.get_friendly_units(bearer_unit))
+        except Exception:
+            friendly_units = []
+
+    eligible = []
+    for unit in friendly_units:
+        if _infernal_puppeteer_origin_eligible(
+            bearer_unit,
+            unit,
+            range_in=range_in,
+        ):
+            eligible.append(unit)
+    return eligible

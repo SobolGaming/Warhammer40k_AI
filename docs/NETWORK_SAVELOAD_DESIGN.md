@@ -240,7 +240,7 @@ Setup reactive shoot/charge uses `DECLARE_SHOTS` with `out_of_phase=true` and `f
 Shooting:
 - weapon_choice_dialog: SELECT_WEAPON {unit_id, weapon_id}
 - shooting_declaration_dialog: DECLARE_SHOTS {unit_id, declarations[]}
-- linked_fire_origin_dialog: DECLARE_SHOTS {unit_id, declarations[].linked_fire_origin_unit_id | None}
+- linked_fire_origin_dialog: DECLARE_SHOTS {unit_id, declarations[].linked_fire_origin_unit_id | None, declarations[].linked_fire_mode}
 - deathstrike_action_dialog: DEATHSTRIKE_ACTION {unit_id, action, position?}
 - post_shoot_crit_hit_threshold_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_crit_hit_threshold"`, `attacker_unit_id`, `model_id`, `keyword`, `threshold`)
 - firing_deck_dialog: DECLARE_FIRING_DECK {transport_id, declarations[]}
@@ -274,7 +274,7 @@ Other (any phase):
 - power_from_pain_option_dialog: CHOOSE_POWER_FROM_PAIN_OPTION {choice_key} (context `unit_id`, `choice_kind`, `pending_key`)
 - piratical_raiders_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="piratical_raiders"`, `source_unit_id`, `ability_name`)
 Notes:
-- DECLARE_SHOTS declarations include wargear_id, profile_name, model_ids, target_unit_id (optional for Plasma Warhead), linked_fire_origin_unit_id (optional for Linked Fire).
+- DECLARE_SHOTS declarations include wargear_id, profile_name, model_ids, target_unit_id (optional for Plasma Warhead), linked_fire_origin_unit_id (optional for Linked Fire / Infernal Puppeteer), linked_fire_mode ("linked_fire" | "infernal_puppeteer" when origin is provided).
 
 Charge:
 - charge_declaration_dialog: DECLARE_CHARGE {unit_id, target_unit_ids[]}

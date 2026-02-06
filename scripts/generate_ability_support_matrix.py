@@ -6814,6 +6814,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010304003": "Blasphemous Engine: +2 Wounds; Malefic Surge Leadership test can be re-rolled.",
         "000010304004": "Fleshmetal Fusion: +1 Toughness; while using Unnatural Fortitude, bearer gains +1 armor save vs Damage 1.",
         "000010304005": "Bestial Aspect: bearer ranged weapons gain [Assault]; while using Unholy Hunger, may ignore Move/Advance modifiers.",
+        "000009810002": "Inescapable Eye: Command phase +1 Flux token if opponent has any and bearer is on battlefield.",
+        "000009810003": "Infernal Puppeteer: when selected to shoot, optionally measure range/LOS from a friendly LEGIONES DAEMONICA TZEENTCH unit within 9\".",
+        "000009810004": "Neverblade: bearer melee weapons gain +2 Strength, +1 Attacks, +1 AP; +1 to hit with melee attacks.",
+        "000009810005": "Improbable Shield (Aura): friendly LEGIONES DAEMONICA TZEENTCH units within 6\" gain Feel No Pain 4+ vs Psychic attacks and mortal wounds.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])

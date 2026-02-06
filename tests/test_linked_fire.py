@@ -331,7 +331,8 @@ class TestLinkedFireAttacksOverride(unittest.TestCase):
             target,
             [bearer_model],
             game_map,
-            linked_fire_origin_unit=origin
+            linked_fire_origin_unit=origin,
+            linked_fire_mode="linked_fire",
         )
 
         # Verify attack was called with attacks_override=1

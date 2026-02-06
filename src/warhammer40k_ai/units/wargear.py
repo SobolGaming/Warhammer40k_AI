@@ -4285,6 +4285,14 @@ class WargearProfile:
                 _add_hit_mod(bonus, list(model_attack_mods.get("hit_reasons", ()) or ()))
         except Exception:
             pass
+        try:
+            if is_melee:
+                sr = self._unit_special_rules(attacker)
+                bonus = int(sr.get("enhancement_bearer_melee_hit_bonus", 0) or 0)
+                if bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                    _add_hit_mod(bonus, f"+{bonus} to hit from Enhancement bearer (melee)")
+        except Exception:
+            pass
         attacker_unit = getattr(attacker, "parent_unit", None)
         if attacker_unit is not None:
             from ..rules.psychic_guidance import psychic_guidance_hit_bonus_applies

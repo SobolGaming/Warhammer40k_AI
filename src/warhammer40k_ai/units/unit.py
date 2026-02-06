@@ -19659,6 +19659,7 @@ class Unit:
             models_with_weapon = declaration['models']
             weapon_instance = declaration.get('weapon_instance', None)
             linked_fire_origin_unit = declaration.get('linked_fire_origin_unit', None)
+            linked_fire_mode = declaration.get('linked_fire_mode', None)
             if target_unit is None and bool(getattr(weapon_profile, "is_plasma_warhead", lambda: False)()):
                 weapon_attacks = self._resolve_plasma_warhead_declaration(
                     weapon_profile,
@@ -19675,7 +19676,14 @@ class Unit:
                 continue
             try:
                 # Validate this declaration
-                validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map, linked_fire_origin_unit=linked_fire_origin_unit)
+                validation = self._validate_shooting_declaration(
+                    weapon_profile,
+                    target_unit,
+                    models_with_weapon,
+                    game_map,
+                    linked_fire_origin_unit=linked_fire_origin_unit,
+                    linked_fire_mode=linked_fire_mode,
+                )
                 if not validation['valid']:
                     print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
                     continue
@@ -19692,6 +19700,7 @@ class Unit:
                     attack_tracker=attack_tracker,
                     attack_context=attack_context,
                     linked_fire_origin_unit=linked_fire_origin_unit,
+                    linked_fire_mode=linked_fire_mode,
                 )
                 successful_attacks += weapon_attacks
             finally:
@@ -19780,7 +19789,7 @@ class Unit:
 
         return successful_attacks > 0
     
-    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None) -> dict:
+    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None, linked_fire_mode=None) -> dict:
         """Validate a shooting declaration"""
         # Check if target is an enemy unit
         if target_unit.get_parent_army() == self.get_parent_army():
@@ -19838,9 +19847,9 @@ class Unit:
                 # If anything goes wrong, do not block the shot.
                 pass
 
-            # Check range and line of sight (use origin unit for Linked Fire if provided)
-            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
-                models_in_range.append(model)
+        # Check range and line of sight (use origin unit for Linked Fire/Infernal Puppeteer if provided)
+        if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
+            models_in_range.append(model)
 
         if not models_in_range:
             return {"valid": False, "reason": "No models in range or line of sight"}
@@ -20500,13 +20509,14 @@ class Unit:
         attack_tracker: Optional[dict] = None,
         attack_context: Optional[dict] = None,
         linked_fire_origin_unit=None,
+        linked_fire_mode=None,
         skip_one_shot: bool = False,
         skip_target_checks: bool = False,
     ) -> int:
         """Execute attacks with a specific weapon profile
 
         Args:
-            linked_fire_origin_unit: Optional origin unit for Linked Fire (measure range/LOS from this unit, Attacks=1)
+            linked_fire_origin_unit: Optional origin unit for Linked Fire/Infernal Puppeteer (measure range/LOS from this unit)
         """
         successful_attacks = 0
 
@@ -20556,10 +20566,13 @@ class Unit:
 
                 # Linked Fire: apply Attacks=1 override when using origin unit
                 # This takes precedence over other overrides (applied first)
-                if linked_fire_origin_unit is not None:
+                mode = str(linked_fire_mode or "").strip().lower()
+                if linked_fire_origin_unit is not None and mode == "linked_fire":
                     attacks_override = 1
                     attacks_override_note = "Linked Fire"
                     print(f"{model.name} attacking with {weapon_display} (Linked Fire from {linked_fire_origin_unit.name})")
+                elif linked_fire_origin_unit is not None and mode == "infernal_puppeteer":
+                    print(f"{model.name} attacking with {weapon_display} (Infernal Puppeteer from {linked_fire_origin_unit.name})")
                 # Psychic Assassin: apply Attacks=6 override when targeting PSYKER
                 # Only applies if no other override is already set
                 elif active_profile.is_psychic_assassin() and target_unit.has_any_keyword("PSYKER"):
@@ -34133,6 +34146,83 @@ class Unit:
                     entry = (5, "against psychic attacks and mortal wounds")
                     if entry not in result:
                         result.append(entry)
+        except Exception:
+            pass
+        try:
+            # Improbable Shield (Aura): friendly LEGIONES DAEMONICA TZEENTCH within 6" gain FNP 4+ vs Psychic/mortal.
+            is_tzeentch = False
+            is_legiones = False
+            try:
+                is_tzeentch = bool(self.has_any_keyword("TZEENTCH"))
+                is_legiones = bool(self.has_any_keyword("LEGIONES DAEMONICA"))
+            except Exception:
+                is_tzeentch = False
+                is_legiones = False
+            if is_tzeentch and is_legiones:
+                from ..rules.enhancement_descriptors import get_enhancement_tool_descriptor
+                from ..utility.aura_utils import model_within_range_of_unit
+
+                desc = get_enhancement_tool_descriptor(
+                    enhancement_id="000009810005",
+                    name="Improbable Shield (Aura)",
+                )
+                try:
+                    rng = float(getattr(desc, "range_in", 6.0) or 6.0)
+                except Exception:
+                    rng = 6.0
+                try:
+                    params = getattr(desc, "effect_params", {}) if desc is not None else {}
+                except Exception:
+                    params = {}
+                try:
+                    fnp_val = int(params.get("fnp", 4) or 4)
+                except Exception:
+                    fnp_val = 4
+                condition = str(params.get("condition", "") or "against psychic attacks and mortal wounds").strip()
+
+                army = self.get_parent_army()
+                friendly_units = []
+                if army is not None:
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        game_map = getattr(game, "map", None) if game is not None else None
+                    except Exception:
+                        game_map = None
+                    if game_map is not None and hasattr(game_map, "get_friendly_units"):
+                        try:
+                            friendly_units = list(game_map.get_friendly_units(self))
+                        except Exception:
+                            friendly_units = []
+                    if not friendly_units:
+                        friendly_units = list(getattr(army, "units", []) or [])
+
+                if friendly_units:
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for source in list(friendly_units):
+                        sr = getattr(source, "special_rules", None)
+                        if not isinstance(sr, dict) or not sr.get("enhancement_improbable_shield"):
+                            continue
+                        try:
+                            if hasattr(source, "is_active_for_rules") and not source.is_active_for_rules():
+                                continue
+                        except Exception:
+                            continue
+                        bearer = None
+                        try:
+                            get_bearer = getattr(source, "_get_enhancement_bearer_model", None)
+                            if callable(get_bearer):
+                                bearer = get_bearer()
+                        except Exception:
+                            bearer = None
+                        if bearer is None:
+                            continue
+                        if not model_within_range_of_unit(bearer, self, rng, use_attached_aggregate=True):
+                            continue
+                        key = (int(fnp_val), str(condition or ""))
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((int(fnp_val), condition))
+                        break
         except Exception:
             pass
         return result
