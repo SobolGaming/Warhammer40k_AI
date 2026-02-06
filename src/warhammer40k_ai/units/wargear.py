@@ -488,6 +488,102 @@ class WargearProfile:
 
         return False
 
+    def _pyrogenesis_bonus(self, attacker: 'Model') -> Tuple[int, int, str]:
+        """Return (strength_bonus, ap_bonus, source) for Pyrogenesis if active."""
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            unit = None
+        if unit is None:
+            return (0, 0, "")
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return (0, 0, "")
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("pyrogenesis_active"):
+            return (0, 0, "")
+        game = None
+        try:
+            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        owner = str(sr.get("pyrogenesis_turn_owner", "") or "")
+        if owner:
+            try:
+                unit_owner = str(getattr(root.get_parent_army().player, "id", "") or "")
+            except Exception:
+                unit_owner = ""
+            if unit_owner and owner != unit_owner:
+                return (0, 0, "")
+        exp = str(sr.get("pyrogenesis_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            if phase_key and phase_key != exp:
+                return (0, 0, "")
+        turn = int(sr.get("pyrogenesis_turn", 0) or 0)
+        if turn and game is not None:
+            if int(getattr(game, "turn", 0) or 0) != turn:
+                return (0, 0, "")
+        try:
+            s_bonus = int(sr.get("pyrogenesis_strength_bonus", 0) or 0)
+        except Exception:
+            s_bonus = 0
+        try:
+            a_bonus = int(sr.get("pyrogenesis_ap_bonus", 0) or 0)
+        except Exception:
+            a_bonus = 0
+        source = str(sr.get("pyrogenesis_source", "") or "Pyrogenesis").strip() or "Pyrogenesis"
+        return (s_bonus, a_bonus, source)
+
+    def _flickering_reality_value(self, target: 'Unit', attacker: 'Model') -> Optional[int]:
+        """Return the Flickering Reality hit roll value if active for target."""
+        if target is None:
+            return None
+        try:
+            root = target.get_attached_unit_root()
+        except Exception:
+            root = target
+        if root is None:
+            return None
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("flickering_reality_active"):
+            return None
+        game = None
+        try:
+            unit = getattr(attacker, "parent_unit", None) if attacker is not None else None
+            game = getattr(getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None), "game", None)
+        except Exception:
+            game = None
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        owner = str(sr.get("flickering_reality_turn_owner", "") or "")
+        if owner:
+            try:
+                unit_owner = str(getattr(root.get_parent_army().player, "id", "") or "")
+            except Exception:
+                unit_owner = ""
+            if unit_owner and owner != unit_owner:
+                return None
+        exp = str(sr.get("flickering_reality_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            if phase_key and phase_key != exp:
+                return None
+        turn = int(sr.get("flickering_reality_turn", 0) or 0)
+        if turn and game is not None:
+            if int(getattr(game, "turn", 0) or 0) != turn:
+                return None
+        try:
+            return int(sr.get("flickering_reality_hit_roll", 0) or 0) or None
+        except Exception:
+            return None
+
     def _cabal_twist_of_fate_ap_bonus(self, attacker: 'Model', target: 'Unit') -> int:
         """Return the AP bonus from Cabal of Sorcerers: Twist of Fate, if applicable."""
         if attacker is None or target is None:
@@ -603,6 +699,12 @@ class WargearProfile:
         if self._plunging_fire_applies(attacker, target):
             # Improve AP by 1: AP -1 becomes -2, AP 0 becomes -1, etc.
             ap_val -= 1
+        try:
+            _s_bonus, py_ap_bonus, _source = self._pyrogenesis_bonus(attacker)
+            if py_ap_bonus:
+                ap_val -= int(py_ap_bonus)
+        except Exception:
+            pass
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
                 sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -3832,6 +3934,20 @@ class WargearProfile:
                 dice_roll = int(new_roll)
                 hit_result['roll'] = dice_roll
                 hit_result['special_effects'].append("Aspect Shrine Token: set roll to 6")
+            hit_result['unmodified_roll'] = dice_roll
+            flicker_val = None
+            try:
+                flicker_val = self._flickering_reality_value(target, attacker)
+            except Exception:
+                flicker_val = None
+            if flicker_val is not None and int(dice_roll) == int(flicker_val):
+                hit_result['hit'] = False
+                hit_result['special_effects'].append(
+                    f"Flickering Reality: unmodified {int(flicker_val)} ends attack"
+                )
+                if miracle_used:
+                    hit_result['special_effects'].append("Miracle die")
+                return hit_result
             if dice_roll == 6:
                 hit_result['hit'] = True
                 hit_result['special_effects'].append("Overwatch: 6 required to hit")
@@ -3894,7 +4010,15 @@ class WargearProfile:
         try:
             pu = attacker.parent_unit
             if is_ranged and getattr(pu, "_bgnt_locked_at_target_selection", False) and (pu.is_vehicle or pu.is_monster) and (not self.is_pistol()):
-                _add_hit_mod(-1, "-1 from Big Guns Never Tire (locked when selecting targets)")
+                skip_bgnt = False
+                try:
+                    if hasattr(pu, "_is_ficklefire_active"):
+                        game = getattr(getattr(pu.get_parent_army(), "player", None), "game", None)
+                        skip_bgnt = bool(pu._is_ficklefire_active(game=game))
+                except Exception:
+                    skip_bgnt = False
+                if not skip_bgnt:
+                    _add_hit_mod(-1, "-1 from Big Guns Never Tire (locked when selecting targets)")
         except Exception:
             pass
 
@@ -3908,10 +4032,29 @@ class WargearProfile:
                 except Exception:
                     game_map = None
                 if game_map is not None:
+                    skip_shooter = False
+                    shooter_root = pu
+                    try:
+                        if hasattr(pu, "_is_ficklefire_active"):
+                            game = getattr(getattr(pu.get_parent_army(), "player", None), "game", None)
+                            skip_shooter = bool(pu._is_ficklefire_active(game=game))
+                    except Exception:
+                        skip_shooter = False
+                    try:
+                        shooter_root = pu.get_attached_unit_root()
+                    except Exception:
+                        shooter_root = pu
                     engaged_with_friendly = any(
                         game_map.is_within_engagement_range(friendly, target)
                         for friendly in game_map.get_friendly_units(pu)
                         if friendly.is_alive() and getattr(friendly, "deployed", True)
+                        and (
+                            not skip_shooter
+                            or (
+                                (friendly.get_attached_unit_root() if hasattr(friendly, "get_attached_unit_root") else friendly)
+                                is not shooter_root
+                            )
+                        )
                     )
                     if engaged_with_friendly:
                         _add_hit_mod(-1, "-1 from Big Guns Never Tire (target engaged)")
@@ -5815,6 +5958,18 @@ class WargearProfile:
 
         # Store unmodified roll (after rerolls/roll replacement, before modifiers) for Conversion and other rules
         hit_result['unmodified_roll'] = dice_roll
+
+        flicker_val = None
+        try:
+            flicker_val = self._flickering_reality_value(target, attacker)
+        except Exception:
+            flicker_val = None
+        if flicker_val is not None and int(dice_roll) == int(flicker_val):
+            hit_result['hit'] = False
+            hit_result['special_effects'].append(
+                f"Flickering Reality: unmodified {int(flicker_val)} ends attack"
+            )
+            return hit_result
         
         # INDIRECT FIRE: if no target models were visible at selection time,
         # an unmodified hit roll of 1, 2, or 3 always fails.
@@ -6539,6 +6694,13 @@ class WargearProfile:
                 if set_val and isinstance(strength, int):
                     strength = int(set_val)
                     wound_result.setdefault("modifiers", []).append(f"Set Strength {set_val} from Power from Pain (melee)")
+        except Exception:
+            pass
+        try:
+            py_s_bonus, _py_ap_bonus, py_source = self._pyrogenesis_bonus(attacker)
+            if py_s_bonus and isinstance(strength, int):
+                strength = strength + int(py_s_bonus)
+                wound_result.setdefault("modifiers", []).append(f"+{int(py_s_bonus)}S from {py_source}")
         except Exception:
             pass
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).

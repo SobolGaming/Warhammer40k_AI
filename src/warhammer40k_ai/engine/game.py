@@ -178,6 +178,8 @@ class Game:
         self._phase_enemy_unit_destroyers: Dict[str, set[str]] = {}
         # Phase-scoped enemy model destruction tracking (for phase-end penalties like Daemonic Patrons).
         self._phase_enemy_model_destroyers: Dict[str, set[str]] = {}
+        # Temporary Shadow of Chaos zone overrides (e.g., Impossible Eclipse).
+        self._shadow_of_chaos_zone_overrides: Dict[str, set[str]] = {}
         # Corrupt Realspace: allow sticky break only at start/end of turn.
         self._corrupt_realspace_check: bool = False
         # Return-on-death pending returns (processed at end of the phase they were destroyed in)
@@ -18554,6 +18556,21 @@ class Game:
             zones.add("nml")
         if enemy_total and enemy_controlled >= int(math.ceil(enemy_total / 2.0)):
             zones.add("enemy")
+        try:
+            overrides = getattr(self, "_shadow_of_chaos_zone_overrides", None)
+        except Exception:
+            overrides = None
+        if isinstance(overrides, dict):
+            try:
+                pid = str(getattr(player, "id", "") or "")
+            except Exception:
+                pid = ""
+            extra = overrides.get(pid) if pid else None
+            if extra:
+                try:
+                    zones.update(str(z).strip().lower() for z in (extra or []) if str(z).strip())
+                except Exception:
+                    pass
         return zones
 
     def _unit_wholly_within_shadow_of_chaos(self, unit: Unit) -> bool:

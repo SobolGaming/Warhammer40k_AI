@@ -1117,6 +1117,10 @@ def _serialize_game_state(game: Game) -> dict:
         "_pain_parasite_fight_snapshot": encode_refs(getattr(game, "_pain_parasite_fight_snapshot", {}) or {}),
         "army_muster_requests": encode_refs(getattr(game, "army_muster_requests", {}) or {}),
         "fates_in_flux": getattr(getattr(game, "fates_in_flux", None), "to_dict", lambda: {})(),
+        "_shadow_of_chaos_zone_overrides": {
+            str(pid): sorted([str(z) for z in (zones or [])])
+            for pid, zones in (getattr(game, "_shadow_of_chaos_zone_overrides", {}) or {}).items()
+        },
     }
 
 
@@ -1188,6 +1192,15 @@ def _apply_game_state(game: Game, data: dict, registry: EntityRegistry) -> None:
     if isinstance(fates_payload, dict):
         from ..rules.fates_in_flux import FatesInFluxManager
         game.fates_in_flux = FatesInFluxManager.from_dict(fates_payload, game=game)
+    overrides_payload = data.get("_shadow_of_chaos_zone_overrides", {}) or {}
+    if isinstance(overrides_payload, dict):
+        overrides = {}
+        for pid, zones in overrides_payload.items():
+            try:
+                overrides[str(pid)] = set(str(z) for z in (zones or []) if str(z))
+            except Exception:
+                overrides[str(pid)] = set()
+        game._shadow_of_chaos_zone_overrides = overrides
 
 
 def snapshot_game(game: Game) -> dict:

@@ -1342,7 +1342,18 @@ class GameView:
             )
         self._request_corrupt_realspace_objective = _request_corrupt_realspace_objective
 
-        def _request_realm_of_chaos_units(player, game, candidates, on_chosen, *, outside_ids=None, max_units: int = 2):
+        def _request_realm_of_chaos_units(
+            player,
+            game,
+            candidates,
+            on_chosen,
+            *,
+            outside_ids=None,
+            max_units: int = 2,
+            title: Optional[str] = None,
+            subtitle: Optional[str] = None,
+            instruction: Optional[str] = None,
+        ):
             from ..engine.decision_kinds import DECISION_SELECT_REALM_OF_CHAOS_UNITS
             from ..engine.decisions import DecisionOption, DecisionRequest
             from ..utility.decision_utils import resolve_decision_value
@@ -1412,6 +1423,9 @@ class GameView:
                 on_confirm=_on_confirm,
                 outside_ids=outside_ids,
                 decision_request=req,
+                title=title,
+                subtitle=subtitle,
+                instruction=instruction,
             )
             try:
                 self.dialog_manager.open(dlg, modal=True)
@@ -16631,6 +16645,34 @@ class GameView:
                 )
             return
 
+        if name_u == "DELIRIUM UNMADE" and not (
+            "units" in context or "target_units" in context or "selected_units" in context
+        ):
+            if callable(getattr(self, "_request_realm_of_chaos_units", None)):
+                candidates = context.get("candidates") or []
+                max_units = int(context.get("max_units", 2) or 2)
+                flux_available = bool(context.get("flux_available"))
+                subtitle = f"Select up to {max_units} unit(s)"
+                instruction = "Choose units to enter Strategic Reserves, or select None to skip."
+                if flux_available:
+                    instruction = (
+                        "Choose up to two TZEENTCH units to enter Strategic Reserves. "
+                        "Selecting two units or an engaged unit requires 1 Flux token."
+                    )
+                else:
+                    instruction = "Choose a TZEENTCH unit (not in Engagement Range) to enter Strategic Reserves."
+                self._request_realm_of_chaos_units(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda units: self._finalize_delirium_unmade(player, name, context, units),
+                    max_units=max_units,
+                    title="Delirium Unmade",
+                    subtitle=subtitle,
+                    instruction=instruction,
+                )
+            return
+
         if name_u == "WARP SURGE" and "unit" not in context and "target_unit" not in context:
             if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
                 from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
@@ -16658,6 +16700,137 @@ class GameView:
                     title="Warp Surge",
                     subtitle="Unit can charge after advancing this phase.",
                     enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "FATEBORNE NIGHTMARES" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_scintillating_legion_tzeentch_unit_candidates"):
+                    try:
+                        candidates = manager._scintillating_legion_tzeentch_unit_candidates()
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a TZEENTCH LEGIONES DAEMONICA unit to move through terrain.",
+                    title="Fateborne Nightmares",
+                    subtitle="Models can move through terrain features this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "FICKLEFIRE" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_scintillating_legion_tzeentch_unit_candidates"):
+                    try:
+                        candidates = manager._scintillating_legion_tzeentch_unit_candidates(require_engaged=True)
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select an engaged TZEENTCH LEGIONES DAEMONICA unit.",
+                    title="Ficklefire",
+                    subtitle="Ignore engagement for ranged attacks this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "PYROGENESIS" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_scintillating_legion_tzeentch_unit_candidates"):
+                    try:
+                        candidates = manager._scintillating_legion_tzeentch_unit_candidates()
+                    except Exception:
+                        candidates = []
+                phase_label = (context.get("phase_name") or getattr(manager, "_current_phase_name", "") or "").strip().lower()
+                filtered = []
+                for unit in list(candidates or []):
+                    if unit is None:
+                        continue
+                    if phase_label == "shooting phase":
+                        if bool(getattr(getattr(unit, "round_state", None), "shot_this_round", False)):
+                            continue
+                    if phase_label == "fight phase":
+                        fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+                        fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
+                        if unit in fought or bool(getattr(getattr(unit, "round_state", None), "fought_this_round", False)):
+                            continue
+                    filtered.append(unit)
+                candidates = filtered or candidates
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a TZEENTCH LEGIONES DAEMONICA unit that has not acted this phase.",
+                    title="Pyrogenesis",
+                    subtitle="Improve Strength (and possibly AP) this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "IMPOSSIBLE ECLIPSE" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                if not candidates and hasattr(manager, "_scintillating_legion_tzeentch_unit_candidates"):
+                    try:
+                        candidates = manager._scintillating_legion_tzeentch_unit_candidates(require_monster=True)
+                    except Exception:
+                        candidates = []
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_impossible_eclipse(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a TZEENTCH LEGIONES DAEMONICA MONSTER unit.",
+                    title="Impossible Eclipse",
+                    subtitle="Extend Shadow of Chaos this phase.",
+                    enemy_unit=None,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+            return
+
+        if name_u == "FLICKERING REALITY" and "unit" not in context and "target_unit" not in context:
+            if callable(getattr(self, "_resolve_unit_selection_dialog", None)):
+                from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+                candidates = context.get("candidates") or []
+                enemy = context.get("attacking_unit") or context.get("enemy_unit")
+                self._resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=candidates,
+                    on_chosen=lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select a targeted TZEENTCH unit.",
+                    title="Flickering Reality",
+                    subtitle="Roll for attacks that end the sequence this phase.",
+                    enemy_unit=enemy,
                     dialog=self.overwatch_shooter_dialog,
                     allow_skip=True,
                 )
@@ -17360,6 +17533,84 @@ class GameView:
             print(f"Used stratagem: {name}")
         else:
             print(f"Could not use stratagem: {name}")
+
+    def _finalize_delirium_unmade(self, player, name: str, context: Dict[str, Any], units) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if units is None:
+            print("Delirium Unmade: no units selected")
+            return
+        if not isinstance(units, (list, tuple)):
+            units = [units]
+        units = [u for u in units if u is not None]
+        if not units:
+            print("Delirium Unmade: no units selected")
+            return
+        ctx = dict(context)
+        ctx["units"] = list(units)
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_impossible_eclipse(self, player, name: str, context: Dict[str, Any], unit) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None:
+            print("Impossible Eclipse: no unit selected")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["target_unit"] = unit
+
+        flux_tokens = 0
+        try:
+            if hasattr(manager, "_flux_tokens_available"):
+                flux_tokens = int(manager._flux_tokens_available() or 0)
+        except Exception:
+            flux_tokens = 0
+
+        from ..engine.decision_kinds import DECISION_CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE
+        from ..engine.decisions import DecisionOption
+
+        options = [
+            DecisionOption.create("No Man's Land", payload={"zone": "nml"}),
+            DecisionOption.create("Opponent deployment zone", payload={"zone": "enemy"}),
+        ]
+        if flux_tokens > 0:
+            options.append(DecisionOption.create("Both (spend 1 Flux)", payload={"zone": "both"}))
+
+        def _on_zone(zone_choice):
+            if not zone_choice:
+                print("Impossible Eclipse: no zone selected")
+                return
+            ctx2 = dict(ctx)
+            ctx2["zone"] = zone_choice
+            ok = manager.use(name, **ctx2)
+            if ok:
+                print(f"Used stratagem: {name}")
+            else:
+                print(f"Could not use stratagem: {name}")
+
+        self._resolve_option_selection_dialog(
+            player=player,
+            options=options,
+            on_chosen=_on_zone,
+            decision_type=DECISION_CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE,
+            prompt="Select the Shadow of Chaos area to extend.",
+            title="Impossible Eclipse",
+            header="Choose area",
+            subtitle="Selected zones count as your Shadow of Chaos until end of phase.",
+            context={
+                "ability": "impossible_eclipse",
+                "unit_id": get_entity_id(unit),
+                "ability_name": "Impossible Eclipse",
+            },
+            allow_skip=True,
+        )
 
     def _finalize_limb_from_limb(self, player, name: str, context: Dict[str, Any], unit, choice) -> None:
         manager = getattr(player, "stratagems", None)

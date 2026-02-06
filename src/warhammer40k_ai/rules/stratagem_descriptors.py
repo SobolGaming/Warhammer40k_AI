@@ -143,6 +143,72 @@ _DAEMONIC_INCURSION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009811007": StratagemToolDescriptor(
+        stratagem_id="000009811007",
+        name="Delirium Unmade",
+        timing="end_of_opponent_fight_phase",
+        target="tzeentch_legiones_daemonica_unit",
+        duration="immediate",
+        effect="enter_strategic_reserves",
+        cp_cost=1,
+        effect_params={"max_units": 2, "requires_flux_for_two": True, "allow_engaged_with_flux": True},
+    ),
+    "000009811005": StratagemToolDescriptor(
+        stratagem_id="000009811005",
+        name="Fateborne Nightmares",
+        timing="movement_or_charge_phase",
+        target="tzeentch_legiones_daemonica_unit",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+    ),
+    "000009811006": StratagemToolDescriptor(
+        stratagem_id="000009811006",
+        name="Ficklefire",
+        timing="shooting_phase",
+        target="tzeentch_legiones_daemonica_unit_engaged",
+        duration="until_end_of_phase",
+        effect="ignore_engagement_for_ranged_attacks",
+        cp_cost=1,
+        effect_params={"mortal_on_destroy_roll": 5},
+    ),
+    "000009811004": StratagemToolDescriptor(
+        stratagem_id="000009811004",
+        name="Flickering Reality",
+        timing="fight_phase_after_targets_selected",
+        target="tzeentch_legiones_daemonica_unit_targeted",
+        duration="until_end_of_phase",
+        effect="hit_roll_value_ends_attack",
+        cp_cost=1,
+        effect_params={"reroll_with_flux": True},
+    ),
+    "000009811002": StratagemToolDescriptor(
+        stratagem_id="000009811002",
+        name="Impossible Eclipse",
+        timing="any_phase",
+        target="tzeentch_legiones_daemonica_monster_unit",
+        duration="until_end_of_phase",
+        effect="shadow_of_chaos_zone_override",
+        cp_cost=1,
+        effect_params={"zones": ["nml", "enemy"], "flux_for_both": True},
+    ),
+    "000009811003": StratagemToolDescriptor(
+        stratagem_id="000009811003",
+        name="Pyrogenesis",
+        timing="shooting_or_fight_phase_on_select",
+        target="tzeentch_legiones_daemonica_unit_not_yet_acted",
+        duration="until_end_of_phase",
+        effect="strength_ap_bonus",
+        cp_cost=1,
+        effect_params={"strength_bonus": 2, "flux_strength_bonus": 3, "flux_ap_bonus": 1},
+    ),
+}
+
+_SCINTILLATING_LEGION_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -152,7 +218,14 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _DAEMONIC_INCURSION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
-    return _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key) or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
+    return (
+        _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
+        or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
+        or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
+    )

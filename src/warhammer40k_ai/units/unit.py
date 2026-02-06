@@ -19222,6 +19222,9 @@ class Unit:
         
         if not is_engaged:
             return True
+
+        if self._is_ficklefire_active():
+            return True
             
         # If engaged and no profile provided, assume cannot shoot
         if profile is None:
@@ -19240,6 +19243,8 @@ class Unit:
 
     def can_shoot_at_target_while_engaged(self, target, profile, game_map) -> bool:
         """Check if this unit can shoot at a specific target while engaged with other units."""
+        if self._is_ficklefire_active():
+            return True
         # If unit is not in engagement range, they can always shoot
         if not any(game_map.is_within_engagement_range(self, enemy)
                   for enemy in game_map.get_enemy_units(self) if enemy.is_alive()):
@@ -19266,6 +19271,47 @@ class Unit:
         if game is None or player is None:
             return False
         return bool(getattr(game, "is_shooting_phase", lambda: False)() and getattr(game, "get_current_player", lambda: None)() is player)
+
+    def _is_ficklefire_active(self, *, game=None, phase_name: Optional[str] = None) -> bool:
+        """Return True if this unit is under Ficklefire for the current phase."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("ficklefire_active"):
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        owner = str(sr.get("ficklefire_turn_owner", "") or "")
+        if owner:
+            try:
+                unit_owner = str(getattr(root.get_parent_army().player, "id", "") or "")
+            except Exception:
+                unit_owner = ""
+            if unit_owner and owner != unit_owner:
+                return False
+        exp = str(sr.get("ficklefire_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = ""
+            if phase_name:
+                phase_key = str(phase_name or "").strip().upper().replace(" ", "_")
+            if not phase_key and game is not None:
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_key and phase_key != exp:
+                return False
+        turn = int(sr.get("ficklefire_turn", 0) or 0)
+        if turn:
+            if game is None:
+                return False
+            if int(getattr(game, "turn", 0) or 0) != turn:
+                return False
+        return True
 
     def _is_locked_in_combat(self, game_map: 'Map') -> bool:
         """Return True if this unit is within Engagement Range of any enemy unit."""
@@ -19397,12 +19443,20 @@ class Unit:
             if not can_shoot_any_weapon:
                 print(f"{self.name} cannot shoot after falling back")
                 return False
-            
+
+        ficklefire_active = False
+        try:
+            ficklefire_active = bool(self._is_ficklefire_active())
+        except Exception:
+            ficklefire_active = False
+
         # BGNT hit modifier snapshot:
         # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
         # apply -1 to Hit (unless Pistols). Snapshot this now so casualties later don't change it mid-activation.
         try:
             bgnt_locked_at_selection = bool((self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase() and self._is_locked_in_combat(game_map))
+            if ficklefire_active:
+                bgnt_locked_at_selection = False
             setattr(self, "_bgnt_locked_at_target_selection", bgnt_locked_at_selection)
         except Exception:
             # Best-effort only; do not fail shooting if we can't snapshot.
@@ -19416,6 +19470,8 @@ class Unit:
             is_vehicle_or_monster = bool(self.is_vehicle or self.is_monster)
             # Determine if this unit is engaged with any enemy
             engaged = self._is_locked_in_combat(game_map)
+            if engaged and ficklefire_active:
+                engaged = False
 
             # Build per-model "has pistol decl" and "has other decl"
             by_model: dict[str, dict[str, bool]] = {}
@@ -19996,14 +20052,50 @@ class Unit:
         # - BGNT also allows a VEHICLE/MONSTER (in its controlling player's Shooting phase) to target enemy units
         #   it is within Engagement Range of (i.e., shoot into its own combat), subject to BLAST restriction.
         target_locked = Unit._is_unit_locked_in_combat(target_unit, game_map)
+        ficklefire_active = False
+        try:
+            if hasattr(self, "_is_ficklefire_active"):
+                ficklefire_active = bool(self._is_ficklefire_active())
+        except Exception:
+            ficklefire_active = False
         fortification_only = False
         if target_locked:
             try:
                 fortification_only = bool(target_unit.is_only_within_enemy_fortifications(game_map, enemy_unit=self))
             except Exception:
                 fortification_only = False
+        if target_locked and not fortification_only and ficklefire_active:
+            engaged_with_other = False
+            try:
+                shooter_root = self.get_attached_unit_root()
+            except Exception:
+                shooter_root = self
+            try:
+                for friendly in game_map.get_friendly_units(self):
+                    try:
+                        root = friendly.get_attached_unit_root()
+                    except Exception:
+                        root = friendly
+                    if root is None:
+                        continue
+                    if shooter_root is not None and root is shooter_root:
+                        continue
+                    try:
+                        if not root.is_alive() or not getattr(root, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    if game_map.is_within_engagement_range(root, target_unit):
+                        engaged_with_other = True
+                        break
+            except Exception:
+                engaged_with_other = True
+            if not engaged_with_other:
+                target_locked = False
         if target_locked and not fortification_only:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
+            if ficklefire_active:
+                shooter_in_er_of_target = False
             if weapon_profile.is_pistol():
                 if not shooter_in_er_of_target:
                     return False
@@ -20021,9 +20113,20 @@ class Unit:
         # BLAST restriction supersedes BGNT targeting:
         # Blast weapons cannot target a unit that is within Engagement Range of any friendly unit (relative to the shooter).
         if weapon_profile.is_blast():
+            try:
+                shooter_root = self.get_attached_unit_root()
+            except Exception:
+                shooter_root = self
             for friendly in game_map.get_friendly_units(self):
                 if not friendly.is_alive() or not getattr(friendly, "deployed", True):
                     continue
+                if ficklefire_active:
+                    try:
+                        friendly_root = friendly.get_attached_unit_root()
+                    except Exception:
+                        friendly_root = friendly
+                    if shooter_root is not None and friendly_root is shooter_root:
+                        continue
                 if game_map.is_within_engagement_range(friendly, target_unit):
                     return False
 
@@ -20466,6 +20569,14 @@ class Unit:
         
         if not is_engaged:
             return True
+
+        if self._is_ficklefire_active():
+            try:
+                parent = getattr(weapon_profile, "parent_wargear", None)
+                if parent is None or parent.is_ranged():
+                    return True
+            except Exception:
+                return True
             
         # If engaged, check weapon type and target
         # PISTOL (10e):
