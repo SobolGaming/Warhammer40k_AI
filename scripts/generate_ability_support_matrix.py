@@ -1661,6 +1661,31 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "End of each phase: each damaged Beasts of Nurgle model regains all lost wounds.",
         ),
+        ("CD", "Chance for Glory"): (
+            "Supported",
+            "Once per battle, start of Fight phase: improve S/A/AP/D of the bearer's melee weapons by 1 until end of phase.",
+        ),
+        ("CD", "Despoilers"): ("Supported", "After making a Dark Pact, unit re-rolls Hit rolls until end of phase."),
+        ("CD", "Unholy Bloodshed"): (
+            "Supported",
+            "Once per battle, when making a Dark Pact, unit weapons gain [DEVASTATING WOUNDS] until end of phase.",
+        ),
+        ("CD", "Malign Sacrifice"): (
+            "Supported",
+            "Start of Fight phase: select a Dark Disciple and an enemy within Engagement Range, roll D6 (2-5=1 MW, 6=D3 MW) and destroy the Disciple.",
+        ),
+        ("CD", "Sacrificial Dagger"): (
+            "Supported",
+            "Once per phase on being selected to shoot or fight: unit suffers 1 MW; bearer gains +1 to hit/wound with Psychic attacks until end of phase.",
+        ),
+        ("CD", "Gift of Chaos (Psychic)"): (
+            "Supported",
+            "After resolving attacks, select a unit hit by the bearer's Psychic attacks to take a Leadership test or suffer D3 MW.",
+        ),
+        ("CD", "Death Hex (Psychic)"): (
+            "Supported",
+            "Start of Shooting: select a visible enemy within 12\"; roll D6 (1: Psyker unit suffers D3 MW; 2+: attacks vs target improve AP by 1) until next Movement phase.",
+        ),
         ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
         ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
         ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),
