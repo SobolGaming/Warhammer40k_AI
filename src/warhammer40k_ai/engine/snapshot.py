@@ -286,6 +286,10 @@ def _serialize_model(model: Model) -> dict:
             str(k): str(v)
             for k, v in sorted(list((getattr(model, "_once_per_battle_last_phase", {}) or {}).items()))
         },
+        "once_per_battle_round_used": {
+            str(k): int(v)
+            for k, v in sorted(list((getattr(model, "_once_per_battle_round_used", {}) or {}).items()))
+        },
         "temporary_effects": encode_refs(getattr(model, "_temporary_effects", {}) or {}),
         "last_move_path": last_path,
         "shot_via_firing_deck_this_round": bool(getattr(model, "_shot_via_firing_deck_this_round", False)),
@@ -365,6 +369,11 @@ def _apply_model_state(model: Model, data: dict, unit: Unit) -> None:
     model._once_per_battle_last_phase = {
         str(k): str(v)
         for k, v in dict(data.get("once_per_battle_last_phase", {}) or {}).items()
+        if str(k)
+    }
+    model._once_per_battle_round_used = {
+        str(k): int(v)
+        for k, v in dict(data.get("once_per_battle_round_used", {}) or {}).items()
         if str(k)
     }
     model._temporary_effects = dict(data.get("temporary_effects", {}) or {})

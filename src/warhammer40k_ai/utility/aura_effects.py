@@ -711,6 +711,67 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
     return {"range": float(rng), "move": -abs(int(move)), "oc": -abs(int(oc))}
 
 
+def _parse_enemy_psychic_hazardous_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for enemy auras like:
+      "While an enemy PSYKER unit is within 12\" of this model, Psychic weapons equipped by models in that unit
+       have the [HAZARDOUS] ability."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    text = re.sub(r"[^a-zA-Z0-9]+", " ", desc).strip().lower()
+    if "enemy" not in text or "within" not in text:
+        return None
+    if "psychic weapons" not in text or "hazardous" not in text:
+        return None
+    m_range = re.search(r"within\s+(?P<rng>\d+)", text)
+    if not m_range:
+        return None
+    try:
+        rng = float(m_range.group("rng"))
+    except Exception:
+        return None
+    if rng <= 0:
+        return None
+    requires_psyker = "psyker unit" in text
+    return {"range": float(rng), "requires_psyker_unit": bool(requires_psyker)}
+
+
+def _parse_enemy_psychic_wound_penalty_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for enemy auras like:
+      "While an enemy unit is within 12\" of this model, each time a model in that unit makes a Psychic Attack,
+       subtract 1 from the Wound roll."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    text = re.sub(r"[^a-zA-Z0-9]+", " ", desc).strip().lower()
+    if "enemy unit" not in text:
+        return None
+    if "psychic attack" not in text:
+        return None
+    if "wound roll" not in text:
+        return None
+    m_range = re.search(r"within\s+(?P<rng>\d+)", text)
+    m_val = re.search(r"subtract\s+(?P<val>\d+)\s+from\s+the\s+wound\s+roll", text)
+    if not m_range or not m_val:
+        return None
+    try:
+        rng = float(m_range.group("rng"))
+        val = int(m_val.group("val"))
+    except Exception:
+        return None
+    if rng <= 0 or val <= 0:
+        return None
+    return {"range": float(rng), "amount": -abs(int(val))}
+
+
 def _nurgles_gift_contagion_range(battle_round: int) -> float:
     # 10e baseline: BR1=3", BR2=6", BR3+=9"
     br = int(battle_round or 0)
@@ -910,6 +971,86 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                 )
 
     return out
+
+
+def get_enemy_aura_psychic_hazardous(attacker_unit, weapon_profile, *, game_map=None) -> tuple[bool, tuple[str, ...]]:
+    """
+    Return (is_hazardous, reasons) for enemy auras that make Psychic weapons hazardous.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if attacker_unit is None or weapon_profile is None:
+        return False, ()
+    try:
+        if not weapon_profile.is_psychic():
+            return False, ()
+    except Exception:
+        return False, ()
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(attacker_unit)
+    if game_map is None:
+        return False, ()
+
+    reasons: list[str] = []
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_enemy_units(attacker_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_enemy_psychic_hazardous_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec.get("requires_psyker_unit"):
+                try:
+                    if not attacker_unit.has_any_keyword("PSYKER"):
+                        continue
+                except Exception:
+                    continue
+            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            reasons.append(f"Aura: {ab_name} (Psychic weapons hazardous)")
+    return bool(reasons), tuple(reasons)
+
+
+def get_enemy_aura_psychic_wound_penalties(attacker_unit, weapon_profile, *, game_map=None) -> list[tuple[int, str]]:
+    """
+    Return wound roll penalties from enemy auras that affect Psychic attacks.
+    Dedupe by Aura name (same aura never double-applies).
+    """
+    if attacker_unit is None or weapon_profile is None:
+        return []
+    try:
+        if not weapon_profile.is_psychic():
+            return []
+    except Exception:
+        return []
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(attacker_unit)
+    if game_map is None:
+        return []
+
+    penalties: list[tuple[int, str]] = []
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_enemy_units(attacker_unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_enemy_psychic_wound_penalty_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            amt = int(spec.get("amount", 0) or 0)
+            if amt:
+                penalties.append((amt, f"Aura: {ab_name}"))
+    return penalties
 
 
 def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:

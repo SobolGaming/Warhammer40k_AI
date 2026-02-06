@@ -2660,6 +2660,7 @@ class GameView:
                 self.game.map.aspect_shrine_provider = self._aspect_shrine_provider
                 self.game.map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game.map.model_unmodified_six_provider = self._model_unmodified_six_provider
+                self.game.map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
                 self.game.map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game.map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game.map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -2678,6 +2679,7 @@ class GameView:
                 self.game_map.aspect_shrine_provider = self._aspect_shrine_provider
                 self.game_map.leading_unmodified_six_provider = self._leading_unmodified_six_provider
                 self.game_map.model_unmodified_six_provider = self._model_unmodified_six_provider
+                self.game_map.model_allocated_damage_zero_provider = self._model_allocated_damage_zero_provider
                 self.game_map.hit_modifier_choice_provider = self._hit_modifier_choice_provider
                 self.game_map.skill_modifier_choice_provider = self._skill_modifier_choice_provider
                 self.game_map.move_modifier_choice_provider = self._move_modifier_choice_provider
@@ -13644,7 +13646,13 @@ class GameView:
         except Exception:
             pass
 
-        header = f"{mlabel} can change this {rt or 'roll'} to an unmodified 6 (once per battle)."
+        limit_label = "battle"
+        try:
+            if any(str(o.get("limit", "") or "").strip().lower() == "battle_round" for o in list(options or [])):
+                limit_label = "battle round"
+        except Exception:
+            limit_label = "battle"
+        header = f"{mlabel} can change this {rt or 'roll'} to an unmodified 6 (once per {limit_label})."
         subtitle = roll_text
         if weapon_name:
             subtitle = f"{roll_text} - {weapon_name}"
@@ -13739,6 +13747,108 @@ class GameView:
             except Exception:
                 try:
                     dlg.draw(self.screen)
+                    pygame.display.update()
+                except Exception:
+                    pass
+            clock.tick(60)
+
+        return str(choice_holder["choice"] or "skip")
+
+    def _model_allocated_damage_zero_provider(
+        self,
+        *,
+        player=None,
+        model=None,
+        ability_name: str = "",
+        ability_key: str = "",
+        attacker=None,
+        target=None,
+        weapon_name: Optional[str] = None,
+    ) -> str:
+        try:
+            if player is None or not getattr(player, "has_control", lambda: False)():
+                return "skip"
+        except Exception:
+            return "skip"
+
+        if getattr(self, "yes_no_dialog", None) is None:
+            return "skip"
+
+        from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.decision_utils import resolve_decision_value
+        from ..utility.entity_ids import get_entity_id
+
+        mlabel = getattr(model, "name", "Model")
+        ability_label = str(ability_name or "Damage set to 0").strip() or "Damage set to 0"
+        title = ability_label
+        message = f"{mlabel} can set this attack's Damage to 0 (once per battle). Use {ability_label}?"
+        if weapon_name:
+            message = f"{mlabel} can set {weapon_name}'s Damage to 0 (once per battle). Use {ability_label}?"
+
+        unit_id = ""
+        model_id = ""
+        try:
+            unit_id = get_entity_id(getattr(model, "parent_unit", None))
+        except Exception:
+            unit_id = ""
+        try:
+            model_id = get_entity_id(model)
+        except Exception:
+            model_id = ""
+
+        req = DecisionRequest.create(
+            DECISION_CONFIRM_YES_NO,
+            title,
+            player_id=getattr(player, "id", None),
+            options=[
+                DecisionOption.create("Use", payload={"choice": True}),
+                DecisionOption.create("Skip", payload={"choice": False}),
+            ],
+            context={
+                "ability": "model_allocated_damage_zero",
+                "ability_name": ability_label,
+                "unit_id": unit_id,
+                "model_id": model_id,
+                "ability_key": str(ability_key or ""),
+            },
+        )
+        if self.game is not None:
+            self.game.request_decision(req)
+
+        choice_holder = {"choice": "skip", "done": False}
+
+        def _on_choice(option_id: str):
+            value, apply_result = resolve_decision_value(self.game, req, option_id)
+            if apply_result is None or not getattr(apply_result, "ok", False):
+                value = None
+            if isinstance(value, dict) and bool(value.get("choice")):
+                choice_holder["choice"] = "use"
+            else:
+                choice_holder["choice"] = "skip"
+            choice_holder["done"] = True
+
+        self.yes_no_dialog.show(title, message, _on_choice, decision_request=req)
+        try:
+            self.dialog_manager.open(self.yes_no_dialog, modal=True)
+        except Exception:
+            pass
+
+        clock = pygame.time.Clock()
+        while self.yes_no_dialog.visible and not choice_holder["done"]:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    return "skip"
+                try:
+                    self.dialog_manager.handle_event(event)
+                except Exception:
+                    pass
+            try:
+                self.draw()
+            except Exception:
+                try:
+                    self.yes_no_dialog.draw(self.screen)
                     pygame.display.update()
                 except Exception:
                     pass

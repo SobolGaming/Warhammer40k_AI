@@ -1,0 +1,116 @@
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.units.unit import Unit
+
+
+class _MockDatasheet:
+    def __init__(self, name, *, abilities=None, wounds=3):
+        self.name = name
+        self.faction_data = {"name": "Test Faction"}
+        self.keywords = []
+        self.faction_keywords = []
+        self.datasheets_unit_composition = [{"description": "1 Test Model"}]
+        self.datasheets_models_cost = [{"description": "1 model", "cost": 100}]
+        self.datasheets_models = [
+            {
+                "M": "6",
+                "T": "4",
+                "Sv": "3",
+                "W": str(int(wounds)),
+                "Ld": "7",
+                "OC": "1",
+                "base_size": "32mm",
+                "inv_sv": "7",
+                "inv_sv_descr": "none",
+            }
+        ]
+        self.datasheets_wargear = []
+        self.datasheets_options = [{"description": "none"}]
+        self.datasheets_abilities = list(abilities or [])
+        self.loadout = "This model is equipped with: nothing"
+        self.transport = ""
+
+
+def _make_unit(name, *, abilities=None, wounds=3):
+    return Unit(_MockDatasheet(name, abilities=abilities, wounds=wounds))
+
+
+def _make_profile():
+    from warhammer40k_ai.units.wargear import WargearProfile
+
+    parent = SimpleNamespace(name="Test Blade", is_melee=lambda: True, is_ranged=lambda: False)
+    return WargearProfile(
+        profile_name="Melee",
+        wargear_data={
+            "range": "Melee",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "2",
+            "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+
+class TestModelAllocatedDamageZero(unittest.TestCase):
+    def test_chaos_familiar_sets_damage_zero_once_per_battle(self):
+        ability = {
+            "name": "Chaos Familiar",
+            "description": "Once per battle, when an attack is allocated to the bearer, you can change the Damage characteristic to 0.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        target_unit = _make_unit("Sorcerer", abilities=[ability], wounds=3)
+        attacker_unit = _make_unit("Attacker", wounds=3)
+
+        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army.faction_id = "ATK"
+        defender_army = Army("Defender", detachment_type="Other")
+        defender_army.faction_id = "DEF"
+        attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
+        defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[attacker, defender])
+        attacker_army.add_unit(attacker_unit)
+        defender_army.add_unit(target_unit)
+        game.map.units = [attacker_unit, target_unit]
+
+        defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
+
+        profile = _make_profile()
+        rolls = iter([6, 6, 1])
+
+        def _roll(_expr):
+            try:
+                return next(rolls)
+            except StopIteration:
+                return 1
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", _roll):
+            result = profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+
+        self.assertIsNotNone(result)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+
+        specs = target_unit.model_allocated_damage_zero_specs(target_unit.models[0])
+        key = specs[0]["key"]
+        self.assertTrue(target_unit.models[0].has_used_once_per_battle(key))
+
+        # Second attack should apply damage (ability already spent).
+        rolls = iter([6, 6, 1])
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", _roll):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+
+        self.assertEqual(target_unit.models[0].wounds, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

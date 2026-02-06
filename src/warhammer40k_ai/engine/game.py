@@ -1124,6 +1124,53 @@ class Game:
                                 instance_key=f"{model_id}:{key}",
                             )
 
+                    # Model-level: start-of-any-phase invulnerable save (once per battle).
+                    for model in list(models or []):
+                        if not getattr(model, "is_alive", False):
+                            continue
+                        specs = []
+                        try:
+                            specs = list(root.model_start_any_phase_invulnerable_save_specs(model) or [])
+                        except Exception:
+                            specs = []
+                        if not specs:
+                            continue
+                        for spec in specs:
+                            key = str(spec.get("key") or "start_any_phase_invulnerable_save").strip().lower()
+                            if not key:
+                                key = "start_any_phase_invulnerable_save"
+                            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                                continue
+                            unit_id = maybe_entity_id(root)
+                            model_id = maybe_entity_id(model)
+                            ability_name = str(spec.get("source", "") or "Start of phase invulnerable save").strip()
+                            invuln = int(spec.get("value", 0) or 0)
+                            if invuln <= 0:
+                                continue
+                            ctx = {
+                                "ability_name": ability_name,
+                                "unit": getattr(root, "name", "") or "",
+                                "model": getattr(model, "name", "") or "",
+                                "phase": pname.replace("_", " ").title(),
+                                "unit_id": unit_id,
+                                "model_id": model_id,
+                                "buff_key": key,
+                                "invuln": invuln,
+                            }
+                            message = (
+                                f"Activate {ability_name} for {getattr(model, 'name', 'Model')} "
+                                f"({getattr(root, 'name', 'Unit')})?"
+                            )
+                            self._queue_optional_ability_confirmation(
+                                player=p,
+                                ability_key="start_any_phase_invulnerable_save",
+                                ability_name=ability_name,
+                                message=message,
+                                context=ctx,
+                                payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key, "invuln": invuln},
+                                instance_key=f"{model_id}:{key}",
+                            )
+
                     # Unit-level: start-of-any-phase FNP (once per battle).
                     try:
                         specs = list(root.unit_start_any_phase_fnp_specs() or [])
@@ -1620,7 +1667,19 @@ class Game:
             if not list(bodyguard.models_lost or []):
                 continue
 
+            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
             amount = int(ability.get("amount", 0) or 0)
+            if amount_roll:
+                try:
+                    from ..utility.dice import get_roll
+                    rolled = int(get_roll(amount_roll) or 0)
+                except Exception:
+                    rolled = 0
+                if rolled <= 0:
+                    continue
+                amount = int(rolled)
+                ability = dict(ability or {})
+                ability["rolled_amount"] = int(rolled)
             if amount <= 0:
                 continue
             self._queue_bodyguard_return_decision(
@@ -7922,6 +7981,7 @@ class Game:
             "malefic_destruction",
             "sacrificial_dagger",
             "start_any_phase_damage_set_one",
+            "start_any_phase_invulnerable_save",
             "start_any_phase_fnp",
             "dark_ritual",
             "movement_phase_move_weapon_bonus",
@@ -8126,6 +8186,42 @@ class Game:
                 model.set_temporary_damage_taken_override(
                     key=key,
                     value=1,
+                    source=ability_name,
+                    expires_phase=phase_name,
+                )
+            model.mark_used_once_per_battle(key, ability_name=ability_name, source="datasheet")
+            return
+
+        if ability_key == "start_any_phase_invulnerable_save":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(payload.get("buff_key") or ctx.get("buff_key") or "start_any_phase_invulnerable_save").strip().lower()
+            if not key:
+                key = "start_any_phase_invulnerable_save"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Start of phase invulnerable save").strip()
+            try:
+                invuln = int(payload.get("invuln") or ctx.get("invuln") or 0)
+            except Exception:
+                invuln = 0
+            if invuln <= 0:
+                return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            if hasattr(model, "set_temporary_invulnerable_save"):
+                model.set_temporary_invulnerable_save(
+                    key=key,
+                    value=int(invuln),
                     source=ability_name,
                     expires_phase=phase_name,
                 )

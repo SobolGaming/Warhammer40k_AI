@@ -45,6 +45,8 @@ class Map:
         self.aspect_shrine_provider = None
         # Signature: provider(player, unit, roll_type, value, needed, options, ...) -> ability_key | "skip"
         self.leading_unmodified_six_provider = None
+        # Signature: provider(player, model, ability_name, ability_key, ...) -> "use" | "skip"
+        self.model_allocated_damage_zero_provider = None
         # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None
         self.hit_modifier_choice_provider = None
         # Signature: provider(player, attacker, target, weapon_profile, ability_name, choices) -> choice_key | None

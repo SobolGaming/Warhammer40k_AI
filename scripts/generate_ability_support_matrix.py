@@ -1798,6 +1798,38 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Fight: select a visible enemy within 24\"; NURGLE LEGIONES DAEMONICA attacks allocated to that unit gain +1 Damage until end of phase.",
         ),
+        ("CD", "Altered Reality (Psychic)"): (
+            "Supported",
+            "Once per battle round, after a hit/wound/save roll for this model, change the result to a 6.",
+        ),
+        ("CSM", "Altered Reality (Psychic)"): (
+            "Supported",
+            "Once per battle round, after a hit/wound/save roll for this model, change the result to a 6.",
+        ),
+        ("CD", "Chaos Familiar"): (
+            "Supported",
+            "Once per battle, when an attack is allocated to the bearer, change the Damage characteristic to 0.",
+        ),
+        ("CSM", "Chaos Familiar"): (
+            "Supported",
+            "Once per battle, when an attack is allocated to the bearer, change the Damage characteristic to 0.",
+        ),
+        ("CD", "Harmonic Alignment"): (
+            "Supported",
+            "Command phase while leading: return D3 destroyed Bodyguard models.",
+        ),
+        ("CD", "Discordant Disruption (Aura)"): (
+            "Supported",
+            "Enemy PSYKER units within 12\": Psychic weapons gain [HAZARDOUS].",
+        ),
+        ("CD", "P’tarix’s Sorcerous Syphon (Aura)"): (
+            "Supported",
+            "Enemy units within 12\": Psychic attacks suffer -1 to wound.",
+        ),
+        ("CD", "Unholy Vigour"): (
+            "Supported",
+            "Once per battle, start of any phase: bearer gains a 3+ invulnerable save until end of phase.",
+        ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CSM", "Chance for Glory"): (
             "Supported",

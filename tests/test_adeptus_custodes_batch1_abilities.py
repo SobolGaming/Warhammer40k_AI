@@ -176,6 +176,35 @@ class TestAdeptusCustodesBatch1Abilities(unittest.TestCase):
         ability_key = str(request.context.get("ability_key") or "")
         self.assertTrue(unit.has_used_unit_once_per_battle(ability_key))
 
+    def test_start_any_phase_invulnerable_save(self):
+        game, player, _enemy = self._make_game()
+        game.phase = BattleRoundPhases.MOVEMENT_PHASE
+        game.current_player_index = 0
+
+        ability_desc = (
+            "Once per battle, at the start of any phase, this model can use this ability. "
+            "If it does, until the end of the phase, this model has a 3+ invulnerable save."
+        )
+        ability = Ability("Unholy Vigour", "CD", ability_desc, "Datasheet", "")
+        unit = self._make_unit("Daemon Prince", player.army, abilities=[ability])
+        model = self._make_model("Daemon Prince", unit)
+        model.abilities = {"Unholy Vigour": ability}
+        unit.models = [model]
+        player.army.units = [unit]
+
+        game.rebuild_entity_registry()
+        game._on_phase_start_optional_abilities(phase=game.phase)
+
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_CONFIRM_YES_NO]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        self._resolve_yes(game, request, player)
+
+        invuln_value, _source = model.get_temporary_invulnerable_save()
+        self.assertEqual(invuln_value, 3)
+        buff_key = str(request.context.get("buff_key") or "")
+        self.assertTrue(model.has_used_once_per_battle(buff_key))
+
     def test_martial_inspiration_consumes_once_per_battle(self):
         game, player, enemy = self._make_game()
         game.current_player_index = 0

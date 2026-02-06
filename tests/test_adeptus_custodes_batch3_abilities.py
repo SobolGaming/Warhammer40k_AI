@@ -162,6 +162,62 @@ class TestAdeptusCustodesBatch3Abilities(unittest.TestCase):
 
         self.assertEqual(int(save_result.get("roll", 0)), 6)
 
+    def test_altered_reality_unmodified_six_once_per_battle_round(self):
+        ability = {
+            "name": "Altered Reality (Psychic)",
+            "description": (
+                "Once per battle round, after a Hit roll, a Wound roll or a saving throw is made for this model, "
+                "you can change the result of that roll to a 6."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        caster = _make_unit("Fluxmaster", abilities=[ability])
+        target = _make_unit("Target")
+
+        player = SimpleNamespace(name="P1", id="P1", has_control=lambda: True, game=None)
+        army = SimpleNamespace(player=player, units=[caster, target])
+        caster.set_parent_army(army)
+        target.set_parent_army(army)
+
+        def _provider(**kwargs):
+            return "use"
+
+        game = SimpleNamespace(
+            turn=1,
+            phase=SimpleNamespace(name="Shooting"),
+            get_current_player=lambda: player,
+            map=SimpleNamespace(model_unmodified_six_provider=_provider),
+        )
+        player.game = game
+
+        profile = _make_profile()
+
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=2):
+            first = profile._hit_target_with_tracking(
+                target,
+                caster.models[0],
+                {"_aura_attack_mods": _aura_stub()},
+            )
+            second = profile._hit_target_with_tracking(
+                target,
+                caster.models[0],
+                {"_aura_attack_mods": _aura_stub()},
+            )
+
+        self.assertEqual(int(first.get("roll", 0)), 6)
+        self.assertEqual(int(second.get("roll", 0)), 2)
+
+        game.turn = 2
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=3):
+            third = profile._hit_target_with_tracking(
+                target,
+                caster.models[0],
+                {"_aura_attack_mods": _aura_stub()},
+            )
+
+        self.assertEqual(int(third.get("roll", 0)), 6)
+
     def _make_game(self):
         battlefield = Battlefield(size=BattlefieldSize.STRIKE_FORCE)
         game = Game(battlefield)

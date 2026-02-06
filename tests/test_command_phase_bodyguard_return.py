@@ -123,6 +123,78 @@ class TestCommandPhaseBodyguardReturn(unittest.TestCase):
         self.assertEqual(len(bodyguard.models), 2)
         self.assertEqual(len(bodyguard.models_lost), 0)
 
+    def test_command_phase_returns_d3_bodyguard_models(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game
+        from warhammer40k_ai.engine.decision_kinds import DECISION_ALLOCATE_DAMAGE
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.decision_utils import resolve_decision_command
+        from unittest.mock import patch
+
+        ability = {
+            "name": "Harmonic Alignment",
+            "description": (
+                "While this model is leading a unit, in your Command phase, you can return D3 destroyed "
+                "Bodyguard models to that unit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+
+        bodyguard = _make_unit(name="Daemonettes", datasheet_id="bodyguard2", model_count=3)
+        leader = _make_unit(
+            name="Infernal Enrapturess",
+            datasheet_id="leader2",
+            abilities=[ability],
+            attached_to=["bodyguard2"],
+        )
+
+        army = Army("Test Faction", "Detachment")
+        army.faction_id = "TF"
+        army.add_unit(bodyguard)
+        army.add_unit(leader)
+
+        leader.attach_to_unit(bodyguard)
+
+        bodyguard.deployed = True
+        bodyguard.reserve_status = "deployed"
+        leader.deployed = True
+        leader.reserve_status = "deployed"
+
+        lost_model_1 = bodyguard.models[0]
+        lost_model_2 = bodyguard.models[1]
+        bodyguard.remove_model(lost_model_1)
+        bodyguard.remove_model(lost_model_2)
+        self.assertEqual(len(bodyguard.models), 1)
+        self.assertEqual(len(bodyguard.models_lost), 2)
+
+        player = Player("P1", control=PlayerControl.REMOTE, army=army)
+        game = Game(Battlefield(BattlefieldSize.STRIKE_FORCE), players=[player])
+
+        with patch("warhammer40k_ai.utility.dice.get_roll", return_value=2):
+            game.event_system.publish("phase_start", player=player, phase=BattleRoundPhases.COMMAND_PHASE)
+
+        # Resolve first return.
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_ALLOCATE_DAMAGE]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        first_option = next(
+            opt for opt in request.options if (opt.payload or {}).get("model_id") not in (None, "")
+        )
+        resolve_decision_command(game, request, first_option.option_id, player_id=player.id)
+
+        # Resolve second return.
+        pending = [req for req in game.decision_queue.list() if req.decision_type == DECISION_ALLOCATE_DAMAGE]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+        second_option = next(
+            opt for opt in request.options if (opt.payload or {}).get("model_id") not in (None, "")
+        )
+        resolve_decision_command(game, request, second_option.option_id, player_id=player.id)
+
+        self.assertEqual(len(bodyguard.models), 3)
+        self.assertEqual(len(bodyguard.models_lost), 0)
+
     def test_bodyguard_return_requires_attached_bodyguards(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, BattleRoundPhases, Game

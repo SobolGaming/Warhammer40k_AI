@@ -88,6 +88,7 @@ class Model:
         self._once_per_battle_use_count: dict[str, int] = {}
         self._once_per_battle_extra_uses: dict[str, int] = {}
         self._once_per_battle_last_phase: dict[str, str] = {}
+        self._once_per_battle_round_used: dict[str, int] = {}
         # Temporary effects keyed by effect id; each value is a small dict
         self._temporary_effects: dict[str, dict] = {}
         # Pending placement (e.g., reanimation/split) and model-specific tags
@@ -335,6 +336,58 @@ class Model:
             phase_name=phase_label,
             source=str(source or "").strip().lower() or "datasheet",
         )
+        return True
+
+    def _current_battle_round(self, battle_round: Optional[int] = None) -> int:
+        if battle_round is not None:
+            try:
+                return int(battle_round)
+            except Exception:
+                return int(battle_round or 0)
+        game = self._resolve_game()
+        if game is None:
+            return 0
+        try:
+            return int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            return 0
+
+    def has_used_once_per_battle_round(self, key: str, *, battle_round: Optional[int] = None) -> bool:
+        k = (key or "").strip().lower()
+        if not k:
+            return False
+        br = self._current_battle_round(battle_round)
+        if br <= 0:
+            return False
+        used = getattr(self, "_once_per_battle_round_used", None)
+        if not isinstance(used, dict):
+            return False
+        try:
+            return int(used.get(k, 0) or 0) == br
+        except Exception:
+            return False
+
+    def mark_used_once_per_battle_round(
+        self,
+        key: str,
+        *,
+        battle_round: Optional[int] = None,
+        ability_name: str = "",
+        source: str = "datasheet",
+    ) -> bool:
+        k = (key or "").strip().lower()
+        if not k:
+            return False
+        br = self._current_battle_round(battle_round)
+        if br <= 0:
+            return False
+        if self.has_used_once_per_battle_round(k, battle_round=br):
+            return False
+        used = getattr(self, "_once_per_battle_round_used", None)
+        if not isinstance(used, dict):
+            used = {}
+            self._once_per_battle_round_used = used
+        used[k] = int(br)
         return True
 
     def _activate_once_per_battle_melee_buff(

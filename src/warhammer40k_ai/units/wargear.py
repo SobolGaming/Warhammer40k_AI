@@ -1922,6 +1922,8 @@ class WargearProfile:
                 'target_toughness_override': kill_team_toughness,
                 'conversion_active': conversion_active,
                 'distance_to_target': closest_dist,
+                'attacker_model': attacker,
+                'target_unit': target,
             }
             if sonic_bonus:
                 attack_instance["sonic_destruction_bonus"] = int(sonic_bonus)
@@ -1961,6 +1963,8 @@ class WargearProfile:
                             'below_half_distance': attack_instance['below_half_distance'],
                             'damage': 0,
                             'target_toughness_override': kill_team_toughness,
+                            'attacker_model': attacker,
+                            'target_unit': target,
                         }
                         if sonic_bonus:
                             extra_instance["sonic_destruction_bonus"] = int(sonic_bonus)
@@ -2170,6 +2174,22 @@ class WargearProfile:
                 target_melee_hazardous = bool(fn())
         if target_melee_hazardous:
             hazardous_active = True
+        # Enemy psychic auras that make Psychic weapons hazardous (e.g., Discordant Disruption).
+        try:
+            from ..utility.aura_effects import get_enemy_aura_psychic_hazardous
+            enemy_hazardous, enemy_reasons = get_enemy_aura_psychic_hazardous(
+                getattr(attacker, "parent_unit", None),
+                self,
+                game_map=game_map,
+            )
+            if enemy_hazardous:
+                hazardous_active = True
+                try:
+                    attack_result.attacks_special_modifiers.extend(list(enemy_reasons or ()))
+                except Exception:
+                    pass
+        except Exception:
+            pass
         if hazardous_active:
             # Provide reroll callback for hazardous test
             def _reroll_hazard():
@@ -2641,9 +2661,14 @@ class WargearProfile:
             key = str(spec.get("key", "") or "").strip().lower()
             if not key:
                 continue
+            limit = str(spec.get("limit", "") or "battle").strip().lower()
             try:
-                if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
-                    continue
+                if limit == "battle_round":
+                    if getattr(model, "has_used_once_per_battle_round", lambda _k: False)(key):
+                        continue
+                else:
+                    if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                        continue
             except Exception:
                 continue
             available.append(spec)
@@ -2661,11 +2686,13 @@ class WargearProfile:
         option_entries = []
         for spec in available:
             source = str(spec.get("source", "") or "Ability").strip()
+            limit = str(spec.get("limit", "") or "battle").strip().lower()
             option_entries.append(
                 {
                     "ability_key": str(spec.get("key", "") or ""),
                     "label": source or "Ability",
                     "source": source or "Ability",
+                    "limit": limit or "battle",
                 }
             )
 
@@ -2817,7 +2844,11 @@ class WargearProfile:
 
         try:
             ability_name = str(spec.get("source", "") or "Ability").strip()
-            model.mark_used_once_per_battle(decision_key, ability_name=ability_name, source="datasheet")
+            limit = str(spec.get("limit", "") or "battle").strip().lower()
+            if limit == "battle_round":
+                model.mark_used_once_per_battle_round(decision_key, ability_name=ability_name, source="datasheet")
+            else:
+                model.mark_used_once_per_battle(decision_key, ability_name=ability_name, source="datasheet")
         except Exception:
             pass
 
@@ -2837,6 +2868,185 @@ class WargearProfile:
             pass
 
         return 6, decision_key
+
+    def _maybe_apply_model_allocated_damage_zero(
+        self,
+        target_model: 'Model',
+        attack_instance: Dict,
+        *,
+        attacker: Optional['Model'] = None,
+        target: Optional['Unit'] = None,
+    ) -> bool:
+        """
+        Model ability: once per battle, when an attack is allocated to this model, set Damage to 0.
+        Returns True if the effect was applied.
+        """
+        if target_model is None or not isinstance(attack_instance, dict):
+            return False
+        if bool(attack_instance.get("force_damage_zero")):
+            return False
+
+        unit = getattr(target_model, "parent_unit", None)
+        if unit is None:
+            return False
+        try:
+            specs = list(getattr(unit, "model_allocated_damage_zero_specs", lambda _m: [])(target_model) or [])
+        except Exception:
+            specs = []
+        if not specs:
+            return False
+
+        available: list[dict] = []
+        for spec in list(specs or []):
+            key = str(spec.get("key", "") or "").strip().lower()
+            if not key:
+                continue
+            try:
+                if getattr(target_model, "has_used_once_per_battle", lambda _k: False)(key):
+                    continue
+            except Exception:
+                continue
+            available.append(spec)
+        if not available:
+            return False
+
+        available = sorted(available, key=lambda s: str(s.get("key", "")))
+        spec = available[0]
+        ability_name = str(spec.get("source", "") or "Damage set to 0").strip() or "Damage set to 0"
+        ability_key = str(spec.get("key", "") or "model_allocated_damage_zero").strip().lower() or "model_allocated_damage_zero"
+
+        player = None
+        game_map = None
+        is_human = False
+        provider = None
+        game = None
+        try:
+            army = unit.get_parent_army()
+            player = getattr(army, "player", None)
+            game = getattr(player, "game", None) if player is not None else None
+            game_map = getattr(game, "map", None) if game is not None else None
+            is_human = bool(getattr(player, "has_control", lambda: False)())
+            provider = getattr(game_map, "model_allocated_damage_zero_provider", None) if game_map is not None else None
+        except Exception:
+            player = None
+            game_map = None
+            game = None
+            is_human = False
+            provider = None
+
+        decision = None
+        if is_human and callable(provider):
+            try:
+                decision = provider(
+                    player=player,
+                    model=target_model,
+                    ability_name=ability_name,
+                    ability_key=ability_key,
+                    attacker=attacker,
+                    target=target,
+                    weapon_name=getattr(getattr(self, "parent_wargear", None), "name", None)
+                    or getattr(self, "name", "Weapon"),
+                )
+            except Exception:
+                decision = None
+        else:
+            decision = None
+            if game is not None and player is not None:
+                try:
+                    from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest
+                    from warhammer40k_ai.utility.decision_utils import resolve_decision_value
+                    from warhammer40k_ai.utility.entity_ids import get_entity_id
+                except Exception:
+                    decision = None
+                else:
+                    unit_id = ""
+                    model_id = ""
+                    try:
+                        unit_id = get_entity_id(unit)
+                    except Exception:
+                        unit_id = ""
+                    try:
+                        model_id = get_entity_id(target_model)
+                    except Exception:
+                        model_id = ""
+                    req = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        ability_name or "Damage set to 0",
+                        player_id=getattr(player, "id", None),
+                        options=[
+                            DecisionOption.create("Use", payload={"choice": True}),
+                            DecisionOption.create("Skip", payload={"choice": False}),
+                        ],
+                        context={
+                            "ability": "model_allocated_damage_zero",
+                            "ability_name": ability_name,
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "ability_key": ability_key,
+                        },
+                    )
+                    if hasattr(game, "request_decision"):
+                        game.request_decision(req)
+
+                    use_now = False
+                    try:
+                        use_now = bool(getattr(player, "_should_use_optional_ability", lambda _k, _c: False)(
+                            "MODEL_ALLOCATED_DAMAGE_ZERO",
+                            {"ability_name": ability_name, "unit_id": unit_id, "model_id": model_id},
+                        ))
+                    except Exception:
+                        use_now = False
+
+                    option_id = None
+                    try:
+                        for opt in list(getattr(req, "options", []) or []):
+                            payload = dict(getattr(opt, "payload", {}) or {})
+                            if bool(payload.get("choice", False)) == bool(use_now):
+                                option_id = opt.option_id
+                                break
+                    except Exception:
+                        option_id = None
+                    if option_id:
+                        value, apply_result = resolve_decision_value(
+                            game,
+                            req,
+                            option_id,
+                            player_id=getattr(player, "id", None),
+                        )
+                        if apply_result is not None and getattr(apply_result, "ok", False):
+                            # CONFIRM_YES_NO doesn't return a payload value; use our chosen boolean.
+                            decision = {"choice": bool(use_now)}
+            if decision is None:
+                decision = {"choice": False}
+
+        use_it = False
+        if isinstance(decision, dict):
+            use_it = bool(decision.get("choice"))
+        else:
+            use_it = str(decision or "").strip().lower() in ("use", "yes", "true")
+
+        if not use_it:
+            return False
+
+        attack_instance["force_damage_zero"] = True
+        attack_instance["force_damage_zero_source"] = ability_name
+        try:
+            target_model.mark_used_once_per_battle(ability_key, ability_name=ability_name, source="datasheet")
+        except Exception:
+            pass
+
+        try:
+            from warhammer40k_ai.utility.event_bus import append_action
+            if player is not None:
+                append_action(
+                    player,
+                    f"{getattr(target_model, 'name', 'Model')}: {ability_name} used to set damage to 0.",
+                )
+        except Exception:
+            pass
+
+        return True
 
     def _maybe_apply_aspect_shrine_token(
         self,
@@ -6870,6 +7080,21 @@ class WargearProfile:
             dice_modifier += int(aura_mods.wound)
             wound_result['modifiers'].extend(list(getattr(aura_mods, "wound_reasons", ()) or ()))
 
+        # Enemy psychic auras that penalize wound rolls (e.g., P'tarix's Sorcerous Syphon).
+        try:
+            from ..utility.aura_effects import get_enemy_aura_psychic_wound_penalties
+            penalties = get_enemy_aura_psychic_wound_penalties(
+                getattr(attacker, "parent_unit", None),
+                self,
+            )
+            for amt, reason in list(penalties or []):
+                if not amt:
+                    continue
+                dice_modifier += int(amt)
+                wound_result['modifiers'].append(f"{int(amt):+d} to wound from {reason}")
+        except Exception:
+            pass
+
         # Attached leader leading bonuses (e.g., leading melee/ranged wound buffs)
         lead_mods = None
         unit_wound_mods = None
@@ -8703,7 +8928,18 @@ class WargearProfile:
             shadow_field_active = False
             shadow_field_broken = False
         shadow_field_block_invuln = bool(shadow_field_active and shadow_field_broken)
-        
+
+        # Once per battle: allocated attack can set Damage to 0 (e.g., Chaos Familiar, Ablative Plating).
+        try:
+            self._maybe_apply_model_allocated_damage_zero(
+                target_model,
+                attack_instance,
+                attacker=attack_instance.get("attacker_model") if isinstance(attack_instance, dict) else None,
+                target=attack_instance.get("target_unit") if isinstance(attack_instance, dict) else None,
+            )
+        except Exception:
+            pass
+
         # Stratagem / rule-driven defensive modifiers that need to be reflected in the attack_instance.
         # - GO TO GROUND: 6++ invulnerable + Benefit of Cover until end of phase.
         # - SMOKESCREEN: Benefit of Cover until end of phase (Stealth handled in hit modifier via Unit.has_stealth()).

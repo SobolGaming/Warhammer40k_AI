@@ -2016,6 +2016,11 @@ class Unit:
         r"each time an attack is allocated to this model change the damage characteristic of that attack to 1",
         re.IGNORECASE,
     )
+    _START_ANY_PHASE_MODEL_INVULN_RE = re.compile(
+        r"once per battle at the start of any phase this model can use this ability if it does until the end of the phase "
+        r"this model has a (?P<invuln>\d+) invulnerable save",
+        re.IGNORECASE,
+    )
     _START_ANY_PHASE_UNIT_FNP_RE = re.compile(
         r"once per battle at the start of any phase this unit can use this ability if it does until the end of the phase "
         r"models in this unit have the feel no pain (?P<val>\d+)(?: ability)?",
@@ -2076,8 +2081,20 @@ class Unit:
         re.IGNORECASE,
     )
     _MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE = re.compile(
-        r"once per battle after making a hit roll wound roll or (?:saving throw|save roll) for this model "
-        r"you can change the result of that roll to an unmodified 6",
+        r"once per battle after (?:making )?(?:a )?hit roll (?:a )?wound roll or (?:a )?"
+        r"(?:saving throw|save roll)(?: is made| made)? for this model you can change the result of that roll to "
+        r"(?:an unmodified |a )?6",
+        re.IGNORECASE,
+    )
+    _MODEL_ONCE_PER_BATTLE_ROUND_UNMODIFIED_SIX_RE = re.compile(
+        r"once (?:per|in each) battle round after (?:making )?(?:a )?hit roll (?:a )?wound roll or (?:a )?"
+        r"(?:saving throw|save roll)(?: is made| made)? for this model you can change the result of that roll to "
+        r"(?:an unmodified |a )?6",
+        re.IGNORECASE,
+    )
+    _MODEL_ONCE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE = re.compile(
+        r"once per battle when an attack is allocated to (?:the bearer|this model) you (?:can )?change "
+        r"(?:the )?damage characteristic(?: of that attack)? to 0",
         re.IGNORECASE,
     )
     _MASTER_OF_STANCES_RE = re.compile(
@@ -2820,20 +2837,28 @@ class Unit:
             if "can return" not in low:
                 continue
             m = re.search(
-                r"return\s+(?:up to\s+)?(one|a|\d+)\s+destroyed\s+bodyguard\s+models?",
+                r"return\s+(?:up to\s+)?(one|a|\d+|d3)\s+destroyed\s+bodyguard\s+models?",
                 low,
             )
             if not m:
                 continue
             token = m.group(1)
+            amount_roll = ""
             try:
                 amount = int(token)
             except Exception:
-                amount = 1 if token in ("one", "a") else 0
+                if token in ("one", "a"):
+                    amount = 1
+                elif token == "d3":
+                    amount = 3
+                    amount_roll = "D3"
+                else:
+                    amount = 0
             if amount <= 0:
                 continue
             return {
                 "amount": amount,
+                "amount_roll": amount_roll,
                 "name": name or "Bodyguard Return",
                 "description": desc or "",
             }
@@ -12827,11 +12852,13 @@ class Unit:
 
     def model_once_per_battle_unmodified_six_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
-        Model-specific rule: once per battle, after making a hit/wound/save roll, change it to an unmodified 6.
+        Model-specific rule: once per battle (or once per battle round), after making a hit/wound/save roll,
+        change it to an unmodified 6.
 
         Returns list of specs with keys:
             - source: ability name
-            - key: once-per-battle tracking key
+            - key: usage tracking key
+            - limit: "battle" | "battle_round"
         """
         if model is None:
             return []
@@ -12852,11 +12879,64 @@ class Unit:
             normalized = normalized.lower()
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
-            if not self._MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE.fullmatch(normalized):
+            limit = ""
+            if self._MODEL_ONCE_PER_BATTLE_ROUND_UNMODIFIED_SIX_RE.fullmatch(normalized):
+                limit = "battle_round"
+            elif self._MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE.fullmatch(normalized):
+                limit = "battle"
+            if not limit:
                 continue
             source = str(name or "Unmodified 6").strip() or "Unmodified 6"
             key_seed = self._normalize_keyword_phrase(source) or "model_unmodified_six"
-            key = f"model_unmodified_six:{key_seed}"
+            key = f"model_unmodified_six:{key_seed}:{limit}"
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "key": key,
+                    "limit": limit,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_allocated_damage_zero_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, when an attack is allocated to this model, change Damage to 0.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+        """
+        if model is None:
+            return []
+        cache_key = f"model_allocated_damage_zero_specs:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._MODEL_ONCE_PER_BATTLE_ALLOCATED_DAMAGE_ZERO_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Damage set to 0").strip() or "Damage set to 0"
+            key_seed = self._normalize_keyword_phrase(source) or "allocated_damage_zero"
+            key = f"model_allocated_damage_zero:{key_seed}"
             if key in seen:
                 continue
             seen.add(key)
@@ -31212,6 +31292,57 @@ class Unit:
                 continue
             seen.add(key)
             specs.append({"source": source, "key": key, "value": 1})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_any_phase_invulnerable_save_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle, at the start of any phase, gain an invulnerable save until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - key: once-per-battle tracking key
+            - value: int (invulnerable save)
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_any_phase_invuln:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_ANY_PHASE_MODEL_INVULN_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                invuln = int(m.group("invuln") or 0)
+            except Exception:
+                invuln = 0
+            if invuln <= 0:
+                continue
+            source = str(name or "Start of phase invulnerable save").strip() or "Start of phase invulnerable save"
+            key_seed = self._normalize_keyword_phrase(source) or "start_any_phase_invuln"
+            key = f"start_any_phase_invuln:{key_seed}"
+            key_tuple = (key, int(invuln))
+            if key_tuple in seen:
+                continue
+            seen.add(key_tuple)
+            specs.append({"source": source, "key": key, "value": int(invuln)})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
