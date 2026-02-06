@@ -1686,6 +1686,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Shooting: select a visible enemy within 12\"; roll D6 (1: Psyker unit suffers D3 MW; 2+: attacks vs target improve AP by 1) until next Movement phase.",
         ),
+        ("CD", "Demagogue"): (
+            "Supported",
+            "Once per battle, start of any phase: select a Battle-shocked friendly HERETIC ASTARTES unit within 12\" of a DARK APOSTLE model to clear Battle-shock.",
+        ),
+        ("CSM", "Demagogue"): (
+            "Supported",
+            "Once per battle, start of any phase: select a Battle-shocked friendly HERETIC ASTARTES unit within 12\" of a DARK APOSTLE model to clear Battle-shock.",
+        ),
+        ("CD", "Tally of Pestilence"): (
+            "Supported",
+            "Track enemy models destroyed by NURGLE LEGIONES DAEMONICA units; at the start of your Command phase if tally >= 7, gain 1CP and reset the tally.",
+        ),
         ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
         ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
         ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),

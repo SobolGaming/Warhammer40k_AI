@@ -14775,6 +14775,40 @@ class Game:
         tracked = self._phase_enemy_unit_destroyers.setdefault(pname, set())
         tracked.add(uid)
 
+    def _on_model_destroyed_tally_of_pestilence(
+        self,
+        attacker_model=None,
+        attacker_unit=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None and attacker_model is not None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None or target_unit is None:
+            return
+        if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+            return
+        army = attacker_unit.get_parent_army()
+        if army is None:
+            return
+        has_tally = getattr(army, "has_tally_of_pestilence", None)
+        if not callable(has_tally) or not has_tally():
+            return
+        has_any_kw = getattr(attacker_unit, "has_any_keyword", None)
+        if callable(has_any_kw):
+            if not (has_any_kw("NURGLE") and has_any_kw("LEGIONES DAEMONICA")):
+                return
+        else:
+            keywords = [
+                str(k).upper()
+                for k in list(getattr(attacker_unit, "keywords", []) or [])
+                + list(getattr(attacker_unit, "faction_keywords", []) or [])
+            ]
+            if "NURGLE" not in keywords or "LEGIONES DAEMONICA" not in keywords:
+                return
+        current = int(getattr(army, "tally_of_pestilence", 0) or 0)
+        army.tally_of_pestilence = current + 1
+
     def _on_model_destroyed_phase_kill_tracking(
         self,
         attacker_unit=None,

@@ -8278,6 +8278,8 @@ class Unit:
         mortal_wound_amount: int,
         game_map: Optional['Map'] = None,
         *,
+        attacker_unit: Optional['Unit'] = None,
+        attacker_model: Optional['Model'] = None,
         is_psychic_attack: bool = False,
         initial_model: Optional['Model'] = None,
         apply_fn: Optional[Callable[['Model'], None]] = None,
@@ -8327,6 +8329,14 @@ class Unit:
             "weapon_name": ctx.weapon_name,
             "attacker_name": ctx.attacker_name,
         }
+        source_unit = attacker_unit
+        if source_unit is None and self is not target_unit:
+            source_unit = self
+        source_model = attacker_model
+        if source_model is None and source_unit is not None:
+            candidate_models = [m for m in (getattr(source_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            if len(candidate_models) == 1:
+                source_model = candidate_models[0]
 
         # Apply mortal wounds one at a time to models in the unit
         while remaining > 0:
@@ -8431,6 +8441,22 @@ class Unit:
             # Check if the model was destroyed
             if not current_model.is_alive:
                 models_destroyed += 1
+                if apply_fn is None and source_unit is not None:
+                    if target_unit is not None:
+                        target_unit._last_destroyed_by_model = source_model
+                        target_unit._last_destroyed_by_unit = source_unit
+                        target_unit._last_destroyed_by_weapon_profile = None
+                    if game is not None and hasattr(game, "event_system"):
+                        game.event_system.publish(
+                            "model_destroyed",
+                            attacker_model=source_model,
+                            attacker_unit=source_unit,
+                            target_model=current_model,
+                            target_unit=target_unit,
+                            weapon_profile=None,
+                            is_mortal=True,
+                            game_map=game_map,
+                        )
                 current_model = None
 
         return models_destroyed
