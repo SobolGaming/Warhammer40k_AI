@@ -4475,6 +4475,14 @@ class Game:
                 if exp and exp == pname:
                     for k in ("dark_pacts_active", "dark_pacts_choice", "dark_pacts_expires_phase"):
                         sr.pop(k, None)
+                exp = str(sr.get("despoilers_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in ("despoilers_active", "despoilers_expires_phase", "despoilers_source"):
+                        sr.pop(k, None)
+                exp = str(sr.get("unholy_bloodshed_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in ("unholy_bloodshed_active", "unholy_bloodshed_expires_phase", "unholy_bloodshed_source"):
+                        sr.pop(k, None)
                 exp = str(sr.get("exquisite_swordsmanship_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in ("exquisite_swordsmanship_choice", "exquisite_swordsmanship_expires_phase"):
@@ -4558,6 +4566,15 @@ class Game:
                         "herald_of_ynnead_keyword",
                         "herald_of_ynnead_owner",
                         "herald_of_ynnead_turn",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("hysterical_frenzy_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "hysterical_frenzy_active",
+                        "hysterical_frenzy_expires_phase",
+                        "hysterical_frenzy_source",
+                        "hysterical_frenzy_threshold",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("fury_of_titan_expires_phase", "") or "").strip().upper()
@@ -7903,6 +7920,7 @@ class Game:
             "fight_phase_melee_ap_boost",
             "chance_for_glory",
             "malefic_destruction",
+            "sacrificial_dagger",
             "start_any_phase_damage_set_one",
             "start_any_phase_fnp",
             "dark_ritual",
@@ -8051,6 +8069,37 @@ class Game:
                 weapon_name=weapon_name,
                 attacks_bonus=int(attacks_bonus or 0),
             )
+            return
+
+        if ability_key == "sacrificial_dagger":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None or not getattr(model, "is_alive", True):
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id) if unit_id else getattr(model, "parent_unit", None)
+            if unit is None:
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Sacrificial Dagger").strip() or "Sacrificial Dagger"
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            # Apply mortal wound to the bearer's unit.
+            if hasattr(unit, "_apply_mortal_wounds_to_unit"):
+                unit._apply_mortal_wounds_to_unit(unit, 1, game_map=getattr(self, "map", None))
+            # Apply temporary Psychic hit/wound bonuses to the model.
+            if hasattr(model, "set_temporary_psychic_attack_bonus"):
+                model.set_temporary_psychic_attack_bonus(
+                    key="sacrificial_dagger",
+                    hit_bonus=1,
+                    wound_bonus=1,
+                    source=ability_name,
+                    expires_phase=phase_name,
+                )
             return
 
         if ability_key == "start_any_phase_damage_set_one":
@@ -11321,6 +11370,167 @@ class Game:
             )
             self.request_decision(request)
 
+    def _apply_gift_of_chaos(
+        self,
+        *,
+        source_unit,
+        model,
+        target_unit,
+        ability_name: str,
+        player,
+    ) -> None:
+        if source_unit is None or model is None or target_unit is None:
+            return
+        if not target_unit.is_alive():
+            return
+        passed = False
+        if hasattr(target_unit, "pass_leadership_check"):
+            passed = bool(target_unit.pass_leadership_check())
+        from ..utility.event_bus import append_action
+        if passed:
+            if player is not None:
+                append_action(player, f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} passed its Leadership test.")
+            return
+        from ..utility.dice import DiceCollection
+        roll_val, _dice = DiceCollection.from_string("D3").roll_detailed()
+        total_mw = int(roll_val or 0)
+        if total_mw > 0 and hasattr(source_unit, "_apply_mortal_wounds_to_unit"):
+            source_unit._apply_mortal_wounds_to_unit(
+                target_unit,
+                int(total_mw),
+                game_map=getattr(self, "map", None),
+                is_psychic_attack=True,
+            )
+        if player is not None:
+            append_action(
+                player,
+                f"{ability_name}: {getattr(target_unit, 'name', 'Unit')} failed its Leadership test and suffered {int(total_mw)} mortal wound(s).",
+            )
+
+    def _maybe_trigger_gift_of_chaos(
+        self,
+        attacker_unit=None,
+        hit_models_by_target_psychic=None,
+        *,
+        phase: str,
+    ) -> None:
+        if attacker_unit is None or not hit_models_by_target_psychic:
+            return
+        phase_key = str(phase or "").strip().lower()
+        if phase_key == "shooting":
+            if not self.is_shooting_phase():
+                return
+        elif phase_key == "fight":
+            if not self.is_fight_phase():
+                return
+        else:
+            return
+
+        root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+        if root is None:
+            return
+        attacker_player = root.get_parent_army().player
+        if attacker_player is None:
+            return
+        if phase_key == "shooting" and attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == root.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        triggers: list[tuple[Any, str, list[Any]]] = []
+        for entry in list(root.iter_gift_of_chaos_models() or []):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            candidates: list[Any] = []
+            seen_targets: set[str] = set()
+            for target_unit, models in (hit_models_by_target_psychic or {}).items():
+                if target_unit is None:
+                    continue
+                if not isinstance(models, (list, set, tuple)) or model not in models:
+                    continue
+                target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+                if not _is_enemy_unit(target_root):
+                    continue
+                tid = get_entity_id(target_root)
+                if tid in seen_targets:
+                    continue
+                seen_targets.add(tid)
+                candidates.append(target_root)
+            if candidates:
+                triggers.append(
+                    (
+                        model,
+                        str(entry.get("source", "") or "Gift of Chaos").strip() or "Gift of Chaos",
+                        candidates,
+                    )
+                )
+
+        if not triggers:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_GIFT_OF_CHAOS_TARGET
+        from .decisions import DecisionOption, DecisionRequest
+
+        for model, ability_name, candidates in triggers:
+            if len(candidates) == 1:
+                self._apply_gift_of_chaos(
+                    source_unit=root,
+                    model=model,
+                    target_unit=candidates[0],
+                    ability_name=ability_name,
+                    player=attacker_player,
+                )
+                continue
+            options = []
+            for cand in sorted(list(candidates), key=lambda u: str(get_entity_id(u))):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={
+                            "target_unit_id": get_entity_id(cand),
+                            "model_id": get_entity_id(model),
+                            "attacker_unit_id": get_entity_id(root),
+                        },
+                    )
+                )
+            if not options:
+                continue
+            # Avoid duplicate pending decisions for the same model in this phase.
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                pending = False
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_GIFT_OF_CHAOS_TARGET:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("model_id", "") or "") == str(get_entity_id(model) or ""):
+                        pending = True
+                        break
+                if pending:
+                    continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_GIFT_OF_CHAOS_TARGET,
+                f"{ability_name}: select a target.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "ability": "gift_of_chaos",
+                    "ability_name": ability_name,
+                    "model_id": get_entity_id(model),
+                    "attacker_unit_id": get_entity_id(root),
+                    "phase": "Shooting phase" if phase_key == "shooting" else "Fight phase",
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_daemonic_poisons(
         self,
         attacker_unit=None,
@@ -11332,6 +11542,18 @@ class Game:
             attacker_unit=attacker_unit,
             hits_by_target=hits_by_target,
             hit_models_by_target=hit_models_by_target,
+            phase="shooting",
+        )
+
+    def _on_unit_shooting_resolved_gift_of_chaos(
+        self,
+        attacker_unit=None,
+        hit_models_by_target_psychic=None,
+        **_kwargs,
+    ) -> None:
+        self._maybe_trigger_gift_of_chaos(
+            attacker_unit=attacker_unit,
+            hit_models_by_target_psychic=hit_models_by_target_psychic,
             phase="shooting",
         )
 
@@ -11350,6 +11572,25 @@ class Game:
         clear_fn = getattr(root, "clear_aspect_shrine_prompt_suppression", None)
         if callable(clear_fn):
             clear_fn()
+
+    def _on_fight_sequence_complete_gift_of_chaos(self, unit=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return
+        hit_map = getattr(root, "_gift_of_chaos_hit_models_by_target_psychic", None)
+        if not isinstance(hit_map, dict) or not hit_map:
+            hit_map = getattr(unit, "_gift_of_chaos_hit_models_by_target_psychic", None)
+        if isinstance(hit_map, dict) and hit_map:
+            self._maybe_trigger_gift_of_chaos(
+                attacker_unit=root,
+                hit_models_by_target_psychic=hit_map,
+                phase="fight",
+            )
+        for obj in (root, unit):
+            if obj is not None and hasattr(obj, "_gift_of_chaos_hit_models_by_target_psychic"):
+                delattr(obj, "_gift_of_chaos_hit_models_by_target_psychic")
 
     def _on_unit_move_ended_detachment_rules(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -15110,6 +15351,74 @@ class Game:
             )
             return
 
+    def _on_shooting_targets_selected_sacrificial_dagger(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        root = attacking_unit.get_attached_unit_root() if hasattr(attacking_unit, "get_attached_unit_root") else attacking_unit
+        if root is None or not root.is_alive():
+            return
+        if getattr(root, "is_in_reserves", lambda: False)() or getattr(root, "is_embarked", False):
+            return
+        player = root.get_parent_army().player if hasattr(root, "get_parent_army") else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "sacrificial_dagger":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        for entry in sorted(
+            list(root.iter_sacrificial_dagger_models() or []),
+            key=lambda e: str(get_entity_id(e.get("model")) or ""),
+        ):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            # Once per phase gating.
+            eff = getattr(model, "_temporary_effects", None)
+            if isinstance(eff, dict):
+                used = eff.get("sacrificial_dagger")
+                exp = str((used or {}).get("expires_phase", "") or "").strip().upper()
+                if exp == "SHOOTING_PHASE":
+                    continue
+            ability_name = str(entry.get("source", "") or "Sacrificial Dagger").strip() or "Sacrificial Dagger"
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "sacrificial_dagger",
+                "ability_name": ability_name,
+                "phase": "Shooting phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+            }
+            message = f"Use {ability_name} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="sacrificial_dagger",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id},
+                instance_key=f"{model_id}:sacrificial_dagger:shooting",
+            )
+
     def _on_shooting_targets_selected_harvester_of_souls(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -15628,6 +15937,77 @@ class Game:
             },
             instance_key=str(unit_id or ""),
         )
+
+    def _on_fight_unit_selected_sacrificial_dagger(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None or not root.is_alive():
+            return
+        if getattr(root, "is_in_reserves", lambda: False)() or getattr(root, "is_embarked", False):
+            return
+        player = root.get_parent_army().player if hasattr(root, "get_parent_army") else None
+        if player is None:
+            return
+        if selecting_player is not None and player is not selecting_player:
+            return
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "sacrificial_dagger":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        for entry in sorted(
+            list(root.iter_sacrificial_dagger_models() or []),
+            key=lambda e: str(get_entity_id(e.get("model")) or ""),
+        ):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            # Once per phase gating.
+            eff = getattr(model, "_temporary_effects", None)
+            if isinstance(eff, dict):
+                used = eff.get("sacrificial_dagger")
+                exp = str((used or {}).get("expires_phase", "") or "").strip().upper()
+                if exp == "FIGHT_PHASE":
+                    continue
+            ability_name = str(entry.get("source", "") or "Sacrificial Dagger").strip() or "Sacrificial Dagger"
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "sacrificial_dagger",
+                "ability_name": ability_name,
+                "phase": "Fight phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+            }
+            message = f"Use {ability_name} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="sacrificial_dagger",
+                ability_name=ability_name,
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id},
+                instance_key=f"{model_id}:sacrificial_dagger:fight",
+            )
 
     def _on_fight_unit_selected_harbinger_of_death(self, unit=None, **_kwargs) -> None:
         if unit is None:
@@ -16361,6 +16741,156 @@ class Game:
                 targets.append(root)
         if targets:
             self._frenzy_fight_targets[attacking_unit] = targets
+
+    def _on_fight_targets_selected_hysterical_frenzy(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_fight_phase():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        if self.map is None:
+            return
+
+        from .decision_kinds import DECISION_CHOOSE_HYSTERICAL_FRENZY_PSYKER
+        from .decisions import DecisionOption, DecisionRequest
+
+        pending_targets: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_HYSTERICAL_FRENZY_PSYKER:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                tid = str(ctx.get("target_unit_id", "") or "")
+                if tid:
+                    pending_targets.add(tid)
+
+        def _unit_sort_key(u):
+            return str(get_entity_id(u) or getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            return str(get_entity_id(m) or getattr(m, "name", "") or "")
+
+        def _model_used_this_phase(model, phase_key: str) -> bool:
+            eff = getattr(model, "_temporary_effects", None)
+            if not isinstance(eff, dict):
+                return False
+            entry = eff.get("hysterical_frenzy_used")
+            if not isinstance(entry, dict):
+                return False
+            exp = str(entry.get("expires_phase", "") or "").strip().upper()
+            return bool(exp and exp == phase_key)
+
+        attacker_army = None
+        get_army = getattr(attacking_unit, "get_parent_army", None)
+        if callable(get_army):
+            attacker_army = get_army()
+
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+            if target_root is None or not target_root.is_alive():
+                continue
+            if not getattr(target_root, "deployed", True):
+                continue
+            if getattr(target_root, "is_in_reserves", lambda: False)() or getattr(target_root, "is_embarked", False):
+                continue
+            if attacker_army is not None:
+                target_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+                if target_army is not None and target_army == attacker_army:
+                    continue
+            has_kw = getattr(target_root, "has_any_keyword", None)
+            if not callable(has_kw):
+                continue
+            if not (has_kw("SLAANESH") and has_kw("LEGIONES DAEMONICA")):
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in pending_targets:
+                continue
+            tsr = getattr(target_root, "special_rules", None)
+            if isinstance(tsr, dict) and tsr.get("hysterical_frenzy_active"):
+                exp = str(tsr.get("hysterical_frenzy_expires_phase", "") or "").strip().upper()
+                if exp == "FIGHT_PHASE":
+                    continue
+            defender_army = target_root.get_parent_army() if hasattr(target_root, "get_parent_army") else None
+            defender_player = getattr(defender_army, "player", None) if defender_army is not None else None
+            if defender_player is None:
+                continue
+            if defender_army is None:
+                defender_army = defender_player.get_army() if hasattr(defender_player, "get_army") else None
+            if defender_army is None:
+                continue
+
+            candidates = []
+            seen_models: set[str] = set()
+            for unit in sorted(list(defender_army.units or []), key=_unit_sort_key):
+                if unit is None or not unit.is_alive():
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                for entry in list(root.iter_hysterical_frenzy_models() or []):
+                    model = entry.get("model")
+                    if model is None or not getattr(model, "is_alive", False):
+                        continue
+                    mid = str(get_entity_id(model) or "")
+                    if not mid or mid in seen_models:
+                        continue
+                    if hasattr(model, "has_any_keyword") and not model.has_any_keyword("PSYKER"):
+                        continue
+                    if _model_used_this_phase(model, "FIGHT_PHASE"):
+                        continue
+                    range_value = int(entry.get("range", 6) or 6)
+                    in_range = True
+                    within_fn = getattr(root, "_model_within_range_of_unit", None)
+                    if callable(within_fn):
+                        in_range = bool(within_fn(model, target_root, float(range_value)))
+                    if not in_range:
+                        continue
+                    seen_models.add(mid)
+                    candidates.append(
+                        {
+                            "model": model,
+                            "model_id": mid,
+                            "range": int(range_value),
+                            "source": str(entry.get("source", "") or "Hysterical Frenzy").strip() or "Hysterical Frenzy",
+                            "source_unit_id": get_entity_id(root),
+                        }
+                    )
+
+            if not candidates:
+                continue
+            candidates = sorted(candidates, key=lambda c: str(c.get("model_id") or ""))
+            ability_name = str(candidates[0].get("source") or "Hysterical Frenzy").strip() or "Hysterical Frenzy"
+            options = [DecisionOption.create("Decline", payload={"action": "skip"})]
+            for cand in candidates:
+                model = cand.get("model")
+                label = str(getattr(model, "name", "") or "Psyker")
+                options.append(
+                    DecisionOption.create(
+                        label,
+                        payload={
+                            "model_id": cand.get("model_id"),
+                            "target_unit_id": target_id,
+                            "range": int(cand.get("range", 6) or 6),
+                            "source_unit_id": cand.get("source_unit_id"),
+                        },
+                    )
+                )
+            ctx = {
+                "ability": "hysterical_frenzy",
+                "ability_name": ability_name,
+                "target_unit_id": target_id,
+                "phase": "Fight phase",
+            }
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_HYSTERICAL_FRENZY_PSYKER,
+                f"{ability_name}: select a Psyker to use this ability (or decline).",
+                player_id=getattr(defender_player, "id", None),
+                options=options,
+                context=ctx,
+            )
+            self.request_decision(request)
 
     def _on_fight_attacks_resolved_frenzy(self, unit=None, target_unit=None, **_kwargs) -> None:
         attacker_unit = unit

@@ -269,6 +269,7 @@ Shooting:
 - post_shoot_disembark_wound_reroll_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="post_shoot_disembark_wound_reroll"`, `attacker_unit_id`, `model_id`, `ability_name`)
 - post_shoot_leadership_debuff_target_dialog: CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET {target_unit_id} (context `attacker_unit_id`, `ability_name`)
 - daemonic_poisons_target_dialog: CHOOSE_DAEMONIC_POISONS_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `phase`)
+- gift_of_chaos_target_dialog: CHOOSE_GIFT_OF_CHAOS_TARGET {target_unit_id} (context `ability="gift_of_chaos"`, `attacker_unit_id`, `model_id`, `ability_name`, `phase`)
 Other (any phase):
 - power_from_pain_option_dialog: CHOOSE_POWER_FROM_PAIN_OPTION {choice_key} (context `unit_id`, `choice_kind`, `pending_key`)
 - piratical_raiders_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="piratical_raiders"`, `source_unit_id`, `ability_name`)
@@ -297,11 +298,13 @@ Fight:
 - fight_phase_melee_ap_boost_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_melee_ap_boost"`, `unit_id`, `model_id`)
 - chance_for_glory_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="chance_for_glory"`, `unit_id`, `model_id`, `buff_key`, `bonus`)
 - malefic_destruction_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="malefic_destruction"`, `unit_id`, `model_id`, `buff_key`, `weapon_name`, `attacks_bonus`)
+- sacrificial_dagger_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sacrificial_dagger"`, `unit_id`, `model_id`, `ability_name`, `phase`)
 - sweeping_advance_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sweeping_advance"`, `unit_id`, `model_id`, `ability_key`)
 - daemonic_patrons_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="daemonic_patrons"`, `unit_id`)
 - daemonic_patrons_loss_dialog: ALLOCATE_DAMAGE {model_id} (context `selection_kind="daemonic_patrons_loss"`, `unit_id`, `ability_name`)
 - malefic_surge_diabolic_power_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="fight"`)
 - malefic_surge_unnatural_fortitude_fight_dialog: CHOOSE_MALEFIC_SURGE_ABILITY {choice | skip} (context `ability="malefic_surge"`, `unit_id`, `trigger="targeted_fight"`)
+- hysterical_frenzy_psyker_dialog: CHOOSE_HYSTERICAL_FRENZY_PSYKER {model_id | skip} (context `target_unit_id`, `ability_name`, `phase`, `range`, `source_unit_id`)
 - melee_weapon_declaration_dialog: DECLARE_MELEE_WEAPONS {unit_id, weapon_bundles[]}
 - melee_weapon_target_allocation_dialog: ALLOCATE_MELEE_TARGETS {bundle_id, target_unit_id}
 - melee_target_allocation_dialog: ALLOCATE_TARGETS {unit_id, target_unit_ids}

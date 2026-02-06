@@ -35,6 +35,8 @@ from ..decision_kinds import (
     DECISION_CHOOSE_PLAGUE,
     DECISION_CHOOSE_PLEDGE,
     DECISION_CHOOSE_QUARRY,
+    DECISION_CHOOSE_HYSTERICAL_FRENZY_PSYKER,
+    DECISION_CHOOSE_GIFT_OF_CHAOS_TARGET,
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_START_SHOOTING_BATTLESHOCK_TARGET,
     DECISION_CHOOSE_BATTLESHOCK_CLEAR_TARGET,
@@ -910,6 +912,141 @@ def _apply_choose_harbinger_of_death(game: object, request: DecisionRequest, res
     except Exception:
         pass
     return str(choice_key)
+
+
+def _validate_choose_hysterical_frenzy(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    model_id = payload.get("model_id") or request.context.get("model_id")
+    target_id = payload.get("target_unit_id") or request.context.get("target_unit_id")
+    if not model_id or not target_id:
+        return ("Hysterical Frenzy requires model_id and target_unit_id.",)
+    model = resolve_model(game, model_id)
+    if model is None:
+        return (f"Hysterical Frenzy model not found: {model_id}",)
+    target = resolve_unit(game, target_id)
+    if target is None:
+        return (f"Hysterical Frenzy target unit not found: {target_id}",)
+    if hasattr(model, "is_alive") and not model.is_alive:
+        return ("Selected Hysterical Frenzy Psyker is not alive.",)
+    if hasattr(target, "is_alive") and not target.is_alive():
+        return ("Selected Hysterical Frenzy target unit is not alive.",)
+    if hasattr(model, "has_any_keyword") and not model.has_any_keyword("PSYKER"):
+        return ("Selected model is not a Psyker.",)
+    if hasattr(target, "has_any_keyword"):
+        if not (target.has_any_keyword("SLAANESH") and target.has_any_keyword("LEGIONES DAEMONICA")):
+            return ("Target unit is not a SLAANESH LEGIONES DAEMONICA unit.",)
+    eff = getattr(model, "_temporary_effects", None)
+    if isinstance(eff, dict):
+        entry = eff.get("hysterical_frenzy_used")
+        exp = str((entry or {}).get("expires_phase", "") or "").strip().upper()
+        if exp == "FIGHT_PHASE":
+            return ("Selected Psyker has already used Hysterical Frenzy this phase.",)
+    try:
+        range_value = int(payload.get("range") or request.context.get("range") or 0)
+    except Exception:
+        range_value = 0
+    if range_value > 0:
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or request.context.get("source_unit_id"))
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        within_fn = getattr(source_unit, "_model_within_range_of_unit", None) if source_unit is not None else None
+        if callable(within_fn):
+            if not within_fn(model, target, float(range_value)):
+                return ("Selected Psyker is not within range of the target unit.",)
+    return ()
+
+
+def _apply_choose_hysterical_frenzy(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    model_id = payload.get("model_id") or request.context.get("model_id")
+    target_id = payload.get("target_unit_id") or request.context.get("target_unit_id")
+    model = resolve_model(game, model_id)
+    target = resolve_unit(game, target_id)
+    if model is None or target is None:
+        raise RuntimeError("Hysterical Frenzy requires a valid model and target unit.")
+    target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+    ability_name = str(payload.get("ability_name") or request.context.get("ability_name") or "Hysterical Frenzy").strip()
+    sr = getattr(target_root, "special_rules", None)
+    if not isinstance(sr, dict):
+        sr = {}
+    sr["hysterical_frenzy_active"] = True
+    sr["hysterical_frenzy_expires_phase"] = "FIGHT_PHASE"
+    sr["hysterical_frenzy_source"] = ability_name or "Hysterical Frenzy"
+    sr["hysterical_frenzy_threshold"] = 4
+    target_root.special_rules = sr
+    if not isinstance(getattr(model, "_temporary_effects", None), dict):
+        model._temporary_effects = {}
+    model._temporary_effects["hysterical_frenzy_used"] = {
+        "expires_phase": "FIGHT_PHASE",
+        "source": ability_name or "Hysterical Frenzy",
+    }
+    source_unit = getattr(model, "parent_unit", None)
+    root = source_unit.get_attached_unit_root() if source_unit is not None and hasattr(source_unit, "get_attached_unit_root") else source_unit
+    player = None
+    if root is not None:
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+    _log_action_for_players(
+        game,
+        player,
+        f"{ability_name}: {getattr(model, 'name', 'Psyker')} empowers {getattr(target_root, 'name', 'Unit')}.",
+    )
+    return {"model_id": model_id, "target_unit_id": target_id}
+
+
+def _validate_choose_gift_of_chaos_target(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    payload = _option_payload(request, result)
+    target_id = payload.get("target_unit_id") or request.context.get("target_unit_id")
+    if not target_id:
+        return ("Gift of Chaos requires target_unit_id.",)
+    target = resolve_unit(game, target_id)
+    if target is None:
+        return (f"Gift of Chaos target unit not found: {target_id}",)
+    if hasattr(target, "is_alive") and not target.is_alive():
+        return ("Gift of Chaos target unit is not alive.",)
+    model_id = payload.get("model_id") or request.context.get("model_id")
+    if not model_id:
+        return ("Gift of Chaos requires model_id.",)
+    model = resolve_model(game, model_id)
+    if model is None:
+        return (f"Gift of Chaos model not found: {model_id}",)
+    return ()
+
+
+def _apply_choose_gift_of_chaos_target(game: object, request: DecisionRequest, result: DecisionResult):
+    payload = _option_payload(request, result)
+    target_id = payload.get("target_unit_id") or request.context.get("target_unit_id")
+    attacker_id = payload.get("attacker_unit_id") or request.context.get("attacker_unit_id")
+    model_id = payload.get("model_id") or request.context.get("model_id")
+    target = resolve_unit(game, target_id)
+    attacker = resolve_unit(game, attacker_id)
+    model = resolve_model(game, model_id)
+    if target is None or attacker is None or model is None:
+        raise RuntimeError("Gift of Chaos requires valid attacker, model, and target.")
+    ability_name = str(payload.get("ability_name") or request.context.get("ability_name") or "Gift of Chaos").strip()
+    army = attacker.get_parent_army() if hasattr(attacker, "get_parent_army") else None
+    player = getattr(army, "player", None) if army is not None else None
+    apply_fn = getattr(game, "_apply_gift_of_chaos", None)
+    if not callable(apply_fn):
+        raise RuntimeError("Gift of Chaos resolution is unavailable.")
+    apply_fn(
+        source_unit=attacker,
+        model=model,
+        target_unit=target,
+        ability_name=ability_name or "Gift of Chaos",
+        player=player,
+    )
+    return {"model_id": model_id, "target_unit_id": target_id}
 
 
 def _validate_choose_dance_of_death(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
@@ -4743,6 +4880,16 @@ register_decision_handler(
 )
 register_decision_handler(DECISION_CHOOSE_PLEDGE, validate=_validate_choose_pledge, apply=_apply_choose_pledge)
 register_decision_handler(DECISION_CHOOSE_QUARRY, validate=_validate_choose_quarry, apply=_apply_choose_quarry)
+register_decision_handler(
+    DECISION_CHOOSE_HYSTERICAL_FRENZY_PSYKER,
+    validate=_validate_choose_hysterical_frenzy,
+    apply=_apply_choose_hysterical_frenzy,
+)
+register_decision_handler(
+    DECISION_CHOOSE_GIFT_OF_CHAOS_TARGET,
+    validate=_validate_choose_gift_of_chaos_target,
+    apply=_apply_choose_gift_of_chaos_target,
+)
 register_decision_handler(
     DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
     validate=_validate_post_shoot_battleshock_target,

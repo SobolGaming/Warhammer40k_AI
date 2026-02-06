@@ -1790,14 +1790,35 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Each time an enemy unit wishes to target The Changeling, it must take a Battle-shock test; on failure it cannot target The Changeling for the rest of the phase.",
         ),
+        ("CD", "Hysterical Frenzy (Psychic)"): (
+            "Supported",
+            "Fight phase: after a SLAANESH LEGIONES DAEMONICA unit is targeted, select a nearby Psyker to enable fight-on-death on a 4+ for destroyed models until end of phase.",
+        ),
+        ("CD", "Virulent Blessing (Psychic)"): (
+            "Supported",
+            "Start of Fight: select a visible enemy within 24\"; NURGLE LEGIONES DAEMONICA attacks allocated to that unit gain +1 Damage until end of phase.",
+        ),
         ("CSM", "Cruel Hunter"): ("Supported", "Leading: pile-in/consolidate up to 6\"."),
         ("CSM", "Chance for Glory"): (
             "Supported",
             "Once per battle, start of Fight phase: improve S/A/AP/D of the bearer's melee weapons by 1 until end of phase.",
         ),
+        ("CSM", "Despoilers"): ("Supported", "After making a Dark Pact, unit re-rolls Hit rolls until end of phase."),
+        ("CSM", "Unholy Bloodshed"): (
+            "Supported",
+            "Once per battle, when making a Dark Pact, unit weapons gain [DEVASTATING WOUNDS] until end of phase.",
+        ),
         ("CSM", "Malign Sacrifice"): (
             "Supported",
             "Start of Fight phase: select a Dark Disciple and an enemy within Engagement Range, roll D6 (2-5=1 MW, 6=D3 MW) and destroy the Disciple.",
+        ),
+        ("CSM", "Sacrificial Dagger"): (
+            "Supported",
+            "Once per phase on being selected to shoot or fight: unit suffers 1 MW; bearer gains +1 to hit/wound with Psychic attacks until end of phase.",
+        ),
+        ("CSM", "Gift of Chaos (Psychic)"): (
+            "Supported",
+            "After resolving attacks, select a unit hit by the bearer's Psychic attacks to take a Leadership test or suffer D3 MW.",
         ),
         ("CSM", "Death Hex (Psychic)"): (
             "Supported",

@@ -1095,6 +1095,81 @@ class Model:
                     rules.append({"attack_type": atype, "keyword": kw_text, "source": source or kw_text})
         return rules
 
+    def set_temporary_psychic_attack_bonus(
+        self,
+        *,
+        key: str,
+        hit_bonus: int = 0,
+        wound_bonus: int = 0,
+        source: str = "",
+        expires_phase: str = "",
+    ) -> None:
+        key_norm = str(key or "").strip().lower()
+        if not key_norm:
+            return
+        if not isinstance(getattr(self, "_temporary_effects", None), dict):
+            self._temporary_effects = {}
+        effects = self._temporary_effects
+        try:
+            hit_bonus = int(hit_bonus or 0)
+        except Exception:
+            hit_bonus = 0
+        try:
+            wound_bonus = int(wound_bonus or 0)
+        except Exception:
+            wound_bonus = 0
+        if hit_bonus == 0 and wound_bonus == 0:
+            effects.pop(key_norm, None)
+            return
+        entry = {"expires_phase": str(expires_phase or "").strip().upper()}
+        if hit_bonus:
+            entry["psychic_attack_hit_bonus"] = int(hit_bonus)
+        if wound_bonus:
+            entry["psychic_attack_wound_bonus"] = int(wound_bonus)
+        entry["psychic_attack_bonus_source"] = str(source or "").strip() or "Psychic attack bonus"
+        effects[key_norm] = entry
+
+    def get_temporary_psychic_attack_bonus(self, *, game: Optional[object] = None) -> tuple[int, int, list[str], list[str]]:
+        eff = getattr(self, "_temporary_effects", {}) or {}
+        if not isinstance(eff, dict) or not eff:
+            return 0, 0, [], []
+        if game is None:
+            game = self._resolve_game()
+        pname = ""
+        if game is not None:
+            try:
+                pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                pname = ""
+        total_hit = 0
+        total_wound = 0
+        hit_reasons: list[str] = []
+        wound_reasons: list[str] = []
+        for v in eff.values():
+            if not isinstance(v, dict):
+                continue
+            exp = str(v.get("expires_phase", "") or "").strip().upper()
+            if exp and pname and exp != pname:
+                continue
+            try:
+                h_bonus = int(v.get("psychic_attack_hit_bonus", 0) or 0)
+            except Exception:
+                h_bonus = 0
+            try:
+                w_bonus = int(v.get("psychic_attack_wound_bonus", 0) or 0)
+            except Exception:
+                w_bonus = 0
+            if h_bonus == 0 and w_bonus == 0:
+                continue
+            source = str(v.get("psychic_attack_bonus_source", "") or "Psychic attack bonus").strip()
+            if h_bonus:
+                total_hit += int(h_bonus)
+                hit_reasons.append(f"{source}: +{int(h_bonus)} to hit (Psychic)")
+            if w_bonus:
+                total_wound += int(w_bonus)
+                wound_reasons.append(f"{source}: +{int(w_bonus)} to wound (Psychic)")
+        return int(total_hit), int(total_wound), hit_reasons, wound_reasons
+
     def set_temporary_crit_on_successful_hit(
         self,
         *,

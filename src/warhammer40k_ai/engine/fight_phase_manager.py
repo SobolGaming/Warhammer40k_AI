@@ -472,6 +472,14 @@ class FightPhaseManager:
                 # Step 3: Resolve melee attacks
                 # Use attached view so leader models fight as part of the attached unit
                 attack_summary = self._resolve_melee_attacks(self._as_attached_view(fighting_unit), target_unit, weapon_declarations)
+                try:
+                    setattr(
+                        fighting_unit,
+                        "_gift_of_chaos_hit_models_by_target_psychic",
+                        dict(attack_summary.get("hit_models_by_target_psychic") or {}),
+                    )
+                except Exception:
+                    pass
                 self.game._maybe_trigger_daemonic_poisons(
                     attacker_unit=self._as_attached_view(fighting_unit),
                     hits_by_target=attack_summary.get("hits_by_target"),
@@ -484,6 +492,7 @@ class FightPhaseManager:
                             "fight_attacks_resolved",
                             unit=fighting_unit,
                             target_unit=target_unit,
+                            hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
                         )
                 except Exception:
                     pass
@@ -533,7 +542,9 @@ class FightPhaseManager:
             auto_decls = []
         hits_by_target_total = {}
         hit_models_by_target_total = {}
+        hit_models_by_target_psychic_total = {}
         for target_unit, attacking_models in target_declarations.items():
+            attack_summary = {}
             try:
                 decls = list(auto_decls or [])
                 if attacking_models:
@@ -548,6 +559,13 @@ class FightPhaseManager:
                         hit_models_by_target_total[unit].update(set(models or []))
                     except Exception:
                         pass
+                for unit, models in (attack_summary.get("hit_models_by_target_psychic") or {}).items():
+                    if unit not in hit_models_by_target_psychic_total:
+                        hit_models_by_target_psychic_total[unit] = set()
+                    try:
+                        hit_models_by_target_psychic_total[unit].update(set(models or []))
+                    except Exception:
+                        pass
             except Exception:
                 pass
             try:
@@ -556,6 +574,7 @@ class FightPhaseManager:
                         "fight_attacks_resolved",
                         unit=fighting_unit,
                         target_unit=target_unit,
+                        hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
                     )
             except Exception:
                 pass
@@ -566,6 +585,14 @@ class FightPhaseManager:
                 hit_models_by_target=hit_models_by_target_total,
                 phase="fight",
             )
+        try:
+            setattr(
+                fighting_unit,
+                "_gift_of_chaos_hit_models_by_target_psychic",
+                dict(hit_models_by_target_psychic_total or {}),
+            )
+        except Exception:
+            pass
         try:
             if hasattr(fighting_unit, "consolidate_towards_enemies"):
                 fighting_unit.consolidate_towards_enemies(getattr(self.game, "map", None))
@@ -593,6 +620,7 @@ class FightPhaseManager:
             auto_decls = self._auto_select_melee_weapons(self._as_attached_view(fighting_unit))
             hits_by_target_total = {}
             hit_models_by_target_total = {}
+            hit_models_by_target_psychic_total = {}
             for target_unit, attacking_models in target_declarations.items():
                 print(f"  {len(attacking_models)} models attacking {target_unit.name}")
                 decls = list(auto_decls or [])
@@ -608,6 +636,13 @@ class FightPhaseManager:
                         hit_models_by_target_total[unit].update(set(models or []))
                     except Exception:
                         pass
+                for unit, models in (attack_summary.get("hit_models_by_target_psychic") or {}).items():
+                    if unit not in hit_models_by_target_psychic_total:
+                        hit_models_by_target_psychic_total[unit] = set()
+                    try:
+                        hit_models_by_target_psychic_total[unit].update(set(models or []))
+                    except Exception:
+                        pass
             if hits_by_target_total:
                 self.game._maybe_trigger_daemonic_poisons(
                     attacker_unit=self._as_attached_view(fighting_unit),
@@ -616,11 +651,20 @@ class FightPhaseManager:
                     phase="fight",
                 )
             try:
+                setattr(
+                    fighting_unit,
+                    "_gift_of_chaos_hit_models_by_target_psychic",
+                    dict(hit_models_by_target_psychic_total or {}),
+                )
+            except Exception:
+                pass
+            try:
                 if hasattr(self.game, "event_system"):
                     self.game.event_system.publish(
                         "fight_attacks_resolved",
                         unit=fighting_unit,
                         target_unit=None,
+                        hit_models_by_target_psychic=hit_models_by_target_psychic_total,
                     )
             except Exception:
                 pass
@@ -758,11 +802,13 @@ class FightPhaseManager:
         game_map = getattr(self.game, "map", None)
         hit_tracker = {}
         hit_models_by_target = {}
+        hit_models_by_target_psychic = {}
         attack_context = {
             "pending_mortal_wounds": {},
             "defer_mortal_wounds": True,
             "hit_tracker": hit_tracker,
             "hit_models_by_target": hit_models_by_target,
+            "hit_models_by_target_psychic": hit_models_by_target_psychic,
         }
         base_provider = None
         if game_map is not None:
@@ -826,7 +872,11 @@ class FightPhaseManager:
             pass
         if hasattr(attacking_unit, "_resolve_pending_horrors_split"):
             attacking_unit._resolve_pending_horrors_split(game_map=game_map)
-        return {"hits_by_target": hit_tracker, "hit_models_by_target": hit_models_by_target}
+        return {
+            "hits_by_target": hit_tracker,
+            "hit_models_by_target": hit_models_by_target,
+            "hit_models_by_target_psychic": hit_models_by_target_psychic,
+        }
 
     def get_stage_info(self, current_player: Player, opponent_player: Player) -> Dict:
         """Get information about the current stage for UI display."""

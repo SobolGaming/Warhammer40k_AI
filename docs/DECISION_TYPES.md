@@ -110,6 +110,8 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `CHOOSE_PLAGUE` — Choose Plague.
 - `CHOOSE_PLEDGE` — Choose Pledge.
 - `CHOOSE_QUARRY` — Choose Quarry.
+- `CHOOSE_HYSTERICAL_FRENZY_PSYKER` — Choose a Psyker for Hysterical Frenzy.
+- `CHOOSE_GIFT_OF_CHAOS_TARGET` — Choose Gift of Chaos target unit.
 - `CHOOSE_MOMENT_SHACKLE` — Choose Moment Shackle option.
 - `CHOOSE_SHADOW_FORM` — Choose Shadow Form.
 - `CHOOSE_VOW` — Choose Vow.

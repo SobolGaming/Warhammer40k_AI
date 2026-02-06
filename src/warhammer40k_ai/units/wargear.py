@@ -2277,6 +2277,16 @@ class WargearProfile:
                         hit_models_by_target.setdefault(target, set()).add(attacker)
                     except Exception:
                         pass
+                try:
+                    if self.is_psychic():
+                        hit_models_by_target_psychic = attack_context.get("hit_models_by_target_psychic")
+                        if hit_models_by_target_psychic is None:
+                            hit_models_by_target_psychic = {}
+                            attack_context["hit_models_by_target_psychic"] = hit_models_by_target_psychic
+                        if isinstance(hit_models_by_target_psychic, dict):
+                            hit_models_by_target_psychic.setdefault(target, set()).add(attacker)
+                except Exception:
+                    pass
         
         return attack_result
 
@@ -4070,6 +4080,19 @@ class WargearProfile:
             from ..rules.psychic_guidance import psychic_guidance_hit_bonus_applies
             if psychic_guidance_hit_bonus_applies(attacker_unit):
                 _add_hit_mod(1, "+1 to hit from Psychic Guidance")
+        # Temporary Psychic attack bonuses (e.g., Sacrificial Dagger).
+        try:
+            if self.is_psychic():
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                hit_bonus, _wound_bonus, hit_reasons, _wound_reasons = getattr(
+                    attacker, "get_temporary_psychic_attack_bonus", lambda **_kw: (0, 0, [], [])
+                )(game=game)
+                if hit_bonus:
+                    _add_hit_mod(int(hit_bonus), list(hit_reasons or ()) or f"+{int(hit_bonus)} to hit from Psychic attack bonus")
+        except Exception:
+            pass
         # Movement phase selected target hit bonus (e.g., Aeldari).
         try:
             attacker_unit = getattr(attacker, "parent_unit", None)
@@ -6711,6 +6734,20 @@ class WargearProfile:
                 if bonus:
                     dice_modifier += bonus
                     wound_result['modifiers'].append(f"+{bonus} to wound from Psychic Maelstrom")
+        except Exception:
+            pass
+        # Temporary Psychic attack bonuses (e.g., Sacrificial Dagger).
+        try:
+            if self.is_psychic():
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                _hit_bonus, wound_bonus, _hit_reasons, wound_reasons = getattr(
+                    attacker, "get_temporary_psychic_attack_bonus", lambda **_kw: (0, 0, [], [])
+                )(game=game)
+                if wound_bonus:
+                    dice_modifier += int(wound_bonus)
+                    wound_result['modifiers'].extend(list(wound_reasons or ()))
         except Exception:
             pass
         # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).

@@ -1961,6 +1961,12 @@ class Unit:
         r"improve the strength armou?r penetration and damage characteristics of that attack by (?P<val>\d+)",
         re.IGNORECASE,
     )
+    _FIGHT_PHASE_TARGET_DAMAGE_BONUS_RE = re.compile(
+        r"at the start of the fight phase you can select one enemy unit within (?P<range>\d+)\s*\"?\s*(?:of\s*)?(?:and visible to\s*)?this model "
+        r"until the end of the phase each time an attack made by (?:a|an) (?P<keyword>[a-z0-9 ]+?) model is allocated to a model in that unit "
+        r"add (?P<val>\d+) to the damage characteristic of that attack",
+        re.IGNORECASE,
+    )
     _FIGHT_PHASE_TARGET_MELEE_WOUND_BONUS_RE = re.compile(
         r"at the start of the fight phase select one enemy unit within (?P<range>\d+)\s*\"?\s*of this model "
         r"until the end of the phase each time a friendly (?P<keyword>[a-z0-9 ]+?) model makes a melee attack that targets that enemy unit "
@@ -1981,6 +1987,28 @@ class Unit:
         r"you can select one of those models and one enemy unit within engagement range of this unit then roll one d6 "
         r"on a 2 5 that enemy unit suffers 1 mortal wound on a 6 that enemy unit suffers d3 mortal wounds "
         r"that (?P=model) model is then destroyed",
+        re.IGNORECASE,
+    )
+    _HYSTERICAL_FRENZY_RE = re.compile(
+        r"once per fight phase just after an enemy unit selects a slaanesh legiones daemonica unit from your army as a target "
+        r"one friendly psyker that is within (?P<range>\d+)\s*\"?\s*of that slaanesh unit and has this ability can use it "
+        r"if it does until the end of the phase each time a model in that slaanesh unit is destroyed roll one d6 on a 4 "
+        r"do not remove it from play that model can fight after the attacking model s unit has finished making its attacks and is then removed from play",
+        re.IGNORECASE,
+    )
+    _HYSTERICAL_FRENZY_PASSIVE_RE = re.compile(
+        r"each time a model in this model s unit is destroyed if that model has not fought this phase do not remove it from play "
+        r"the destroyed model can fight after the attacking unit has finished making its attacks and is then removed from play",
+        re.IGNORECASE,
+    )
+    _SACRIFICIAL_DAGGER_RE = re.compile(
+        r"once per phase when this model is selected to shoot or fight it can use this ability if it does this model s unit suffers 1 mortal wound "
+        r"and until the end of the phase each time this model makes a psychic attack add 1 to the hit roll and add 1 to the wound roll",
+        re.IGNORECASE,
+    )
+    _GIFT_OF_CHAOS_RE = re.compile(
+        r"each time this model is selected to shoot or fight after resolving its attacks select one enemy unit hit by one or more of those attacks "
+        r"that had the psychic ability that unit must take a leadership test if that test is failed that unit suffers d3 mortal wounds",
         re.IGNORECASE,
     )
     _START_ANY_PHASE_DAMAGE_SET_ONE_RE = re.compile(
@@ -7585,6 +7613,44 @@ class Unit:
             # Fail-safe: don't break death processing
             pass
 
+        # CHAOS DAEMONS: Hysterical Frenzy (Psychic) - fight on death after attacks.
+        if game_map is not None:
+            army = self.get_parent_army()
+            game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_name == "FIGHT_PHASE":
+                root = self.get_attached_unit_root() if hasattr(self, "get_attached_unit_root") else self
+                # Passive variant: no roll, requires not already fought this phase.
+                rule = root.get_hysterical_frenzy_fight_on_death_rule(model=model)
+                if rule is not None:
+                    if not bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
+                        pending = getattr(root, "_hysterical_frenzy_pending_models", None)
+                        if not isinstance(pending, list):
+                            pending = []
+                        if model not in pending:
+                            pending.append(model)
+                        root._hysterical_frenzy_pending_models = pending
+                        return
+                # Reactive variant: roll 4+ while active.
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("hysterical_frenzy_active"):
+                    exp = str(sr.get("hysterical_frenzy_expires_phase", "") or "").strip().upper()
+                    if not exp or exp == phase_name:
+                        threshold = int(sr.get("hysterical_frenzy_threshold", 4) or 4)
+                        roll = int(get_roll("D6"))
+                        from ..utility.event_bus import append_dice
+                        if army is not None and getattr(army, "player", None) is not None:
+                            label = str(sr.get("hysterical_frenzy_source", "") or "Hysterical Frenzy").strip()
+                            append_dice(army.player, f"{label} roll: {roll} for {self.name}")
+                        if roll >= int(threshold):
+                            pending = getattr(root, "_hysterical_frenzy_pending_models", None)
+                            if not isinstance(pending, list):
+                                pending = []
+                            if model not in pending:
+                                pending.append(model)
+                            root._hysterical_frenzy_pending_models = pending
+                            return
+
         # EMPEROR'S CHILDREN: Death Ecstasy (defer fight-on-death until attacker finishes attacks).
         try:
             if game_map is not None:
@@ -7944,10 +8010,12 @@ class Unit:
         print(f"{model.name} shoots on death into {best_target.name}")
         shots_executed = 0
         hit_models_by_target_weapon: dict = {}
+        hit_models_by_target_psychic: dict = {}
         attack_context = {
             "pending_mortal_wounds": {},
             "defer_mortal_wounds": True,
             "hit_models_by_target_weapon": hit_models_by_target_weapon,
+            "hit_models_by_target_psychic": hit_models_by_target_psychic,
         }
         for profile in ranged_profiles:
             try:
@@ -13929,6 +13997,23 @@ class Unit:
         except Exception:
             pass
 
+        # Despoilers: re-roll Hit rolls after making a Dark Pact (until end of phase).
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("despoilers_active"):
+            apply_bonus = True
+            exp = str(sr.get("despoilers_expires_phase", "") or "").strip().upper()
+            if exp:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None:
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if pname and pname != exp:
+                        apply_bonus = False
+            if apply_bonus:
+                source = str(sr.get("despoilers_source", "") or "Despoilers").strip() or "Despoilers"
+                mods["reroll_hit_full"] = True
+                reroll_hit_full_reasons.append(f"{source}: re-roll Hit roll")
+
         mods["reroll_hit_values"] = tuple(sorted(reroll_hit_values))
         mods["reroll_hit_ones"] = bool(1 in reroll_hit_values)
         mods["crit_hit_threshold"] = crit_hit_threshold
@@ -16107,13 +16192,31 @@ class Unit:
                 self._apply_mortal_wounds_to_unit(self, int(dmg_roll or 0), game_map=getattr(game, "map", None))
             except Exception:
                 pass
-        sr = getattr(self, "special_rules", None)
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
             sr = {}
+        phase_key = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
         sr["dark_pacts_active"] = True
         sr["dark_pacts_choice"] = choice_norm
-        sr["dark_pacts_expires_phase"] = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
-        self.special_rules = sr
+        sr["dark_pacts_expires_phase"] = phase_key
+        # Despoilers: re-roll Hit roll after making a Dark Pact.
+        if root.has_despoilers():
+            sr["despoilers_active"] = True
+            sr["despoilers_expires_phase"] = phase_key
+            sr["despoilers_source"] = "Despoilers"
+        # Unholy Bloodshed: once per battle, gain Devastating Wounds until end of phase.
+        if root.has_unholy_bloodshed():
+            once_key = "unholy_bloodshed"
+            if not root.has_used_unit_once_per_battle(once_key):
+                sr["unholy_bloodshed_active"] = True
+                sr["unholy_bloodshed_expires_phase"] = phase_key
+                sr["unholy_bloodshed_source"] = "Unholy Bloodshed"
+                root.mark_unit_once_per_battle_used(once_key, ability_name="Unholy Bloodshed")
+        root.special_rules = sr
         return True
 
     def maybe_trigger_dark_pacts(self, game, *, phase_name: str, trigger: str) -> None:
@@ -19320,6 +19423,7 @@ class Unit:
         hit_tracker = {}
         hit_models_by_target = {}
         hit_models_by_target_weapon: dict = {}
+        hit_models_by_target_psychic: dict = {}
         attack_tracker = {}
         touched_targets = []
         try:
@@ -19427,6 +19531,7 @@ class Unit:
             "pending_mortal_wounds": {},
             "defer_mortal_wounds": True,
             "hit_models_by_target_weapon": hit_models_by_target_weapon,
+            "hit_models_by_target_psychic": hit_models_by_target_psychic,
             "killing_models_by_target": killing_models_by_target,
         }
         remaining_by_target: dict[str, dict] = {}
@@ -19519,6 +19624,7 @@ class Unit:
                     hit_models_by_target=dict(hit_models_by_target),
                     killing_models_by_target=dict(killing_models_by_target),
                     hit_models_by_target_weapon=dict(hit_models_by_target_weapon),
+                    hit_models_by_target_psychic=dict(hit_models_by_target_psychic),
                 )
         except Exception:
             pass
@@ -22479,6 +22585,10 @@ class Unit:
             except Exception:
                 pass
             try:
+                root._resolve_hysterical_frenzy_queue(game_map=game_map)
+            except Exception:
+                pass
+            try:
                 root._resolve_deathless_duty_queue(game_map=game_map)
             except Exception:
                 pass
@@ -22519,6 +22629,10 @@ class Unit:
     def _resolve_death_ecstasy_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Death Ecstasy fights after an attacker finishes its attacks."""
         self._resolve_deferred_fight_on_death_queue("_death_ecstasy_pending_models", game_map=game_map)
+
+    def _resolve_hysterical_frenzy_queue(self, game_map: Optional['Map'] = None) -> None:
+        """Resolve deferred Hysterical Frenzy fights after an attacker finishes its attacks."""
+        self._resolve_deferred_fight_on_death_queue("_hysterical_frenzy_pending_models", game_map=game_map)
 
     def _resolve_deathless_duty_queue(self, game_map: Optional['Map'] = None) -> None:
         """Resolve deferred Deathless Duty fights after an attacker finishes its attacks."""
@@ -23280,6 +23394,131 @@ class Unit:
                 break
         return results
 
+    def iter_hysterical_frenzy_models(self) -> list[dict]:
+        """
+        Return Psyker models with the reactive Hysterical Frenzy (Psychic) ability
+        (once per Fight phase, within range of a targeted SLAANESH unit).
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                normalized = root._normalize_rules_text(text_src)
+                if not normalized:
+                    continue
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                name_low = str(name or text_src).lower()
+                if "hysterical frenzy" not in name_low:
+                    if not root._HYSTERICAL_FRENZY_RE.fullmatch(normalized):
+                        continue
+                if "once per fight phase" not in normalized:
+                    continue
+                range_value = 6
+                try:
+                    m = root._HYSTERICAL_FRENZY_RE.fullmatch(normalized)
+                    if m:
+                        range_value = int(m.group("range") or 6)
+                    else:
+                        m = re.search(r"within (\d+)", normalized)
+                        if m:
+                            range_value = int(m.group(1) or 6)
+                except Exception:
+                    range_value = 6
+                results.append(
+                    {
+                        "model": model,
+                        "range": int(range_value),
+                        "source": str(name or "Hysterical Frenzy").strip() or "Hysterical Frenzy",
+                    }
+                )
+                break
+        return results
+
+    def iter_sacrificial_dagger_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                name_low = str(name or text_src).lower()
+                normalized = root._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "sacrificial dagger" not in name_low:
+                    if not root._SACRIFICIAL_DAGGER_RE.fullmatch(normalized):
+                        continue
+                results.append(
+                    {
+                        "model": model,
+                        "source": str(name or "Sacrificial Dagger").strip() or "Sacrificial Dagger",
+                    }
+                )
+                break
+        return results
+
+    def iter_gift_of_chaos_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in root._iter_model_specific_ability_entries(model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                name_low = str(name or text_src).lower()
+                normalized = root._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "gift of chaos" not in name_low:
+                    if not root._GIFT_OF_CHAOS_RE.fullmatch(normalized):
+                        continue
+                results.append(
+                    {
+                        "model": model,
+                        "source": str(name or "Gift of Chaos").strip() or "Gift of Chaos",
+                    }
+                )
+                break
+        return results
+
     def get_cloudstrider_deep_strike_source(self) -> str:
         try:
             root = self.get_attached_unit_root()
@@ -23953,7 +24192,9 @@ class Unit:
                         val = int(sr.get("spirit_mark_sustained_hits_value", 1) or 1)
                         source = str(sr.get("spirit_mark_source", "") or "Spirit Mark").strip() or "Spirit Mark"
                         if val > 0:
-                            rules = list(rules or []) + [{"attack_type": "any", "keyword": f"SUSTAINED HITS {val}", "source": source}]
+                            rules = list(rules or []) + [
+                                {"attack_type": "any", "keyword": f"SUSTAINED HITS {val}", "source": source}
+                            ]
         except Exception:
             pass
         try:
@@ -24006,7 +24247,26 @@ class Unit:
 
         Supported keywords: Ignores Cover, Lethal Hits, Sustained Hits X, Devastating Wounds, Twin-linked.
         """
-        rules = self._get_attack_keyword_bonus_rules(model=model)
+        rules = list(self._get_attack_keyword_bonus_rules(model=model) or [])
+        # Unholy Bloodshed: temporary Devastating Wounds after Dark Pact.
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("unholy_bloodshed_active"):
+            apply_bonus = True
+            exp = str(sr.get("unholy_bloodshed_expires_phase", "") or "").strip().upper()
+            if exp:
+                army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None:
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if pname and pname != exp:
+                        apply_bonus = False
+            if apply_bonus:
+                source = str(sr.get("unholy_bloodshed_source", "") or "Unholy Bloodshed").strip() or "Unholy Bloodshed"
+                rules.append({"attack_type": "any", "keyword": "DEVASTATING WOUNDS", "source": source})
         if not rules:
             return {}
         if target is None:
@@ -26315,6 +26575,59 @@ class Unit:
             self._ability_cache = {}
         self._ability_cache['shoot_on_death'] = found
         return found
+
+    def has_despoilers(self) -> bool:
+        """Return True if this unit has the Despoilers ability."""
+        if "despoilers" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["despoilers"])
+        found, _ = self._find_ability_with_patterns(["despoilers"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["despoilers"] = bool(found)
+        return bool(found)
+
+    def has_unholy_bloodshed(self) -> bool:
+        """Return True if this unit has the Unholy Bloodshed ability."""
+        if "unholy_bloodshed" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["unholy_bloodshed"])
+        found, _ = self._find_ability_with_patterns(["unholy bloodshed"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["unholy_bloodshed"] = bool(found)
+        return bool(found)
+
+    def get_hysterical_frenzy_fight_on_death_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return rule info for passive Hysterical Frenzy (no roll):
+        "Each time a model in this model's unit is destroyed, if that model has not fought this phase,
+        do not remove it from play. The destroyed model can fight after the attacking unit has finished
+        making its attacks, and is then removed from play."
+        """
+        cache_key = f"hysterical_frenzy_passive:{get_entity_id(model) if model is not None else 'unit'}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
+                if not self._HYSTERICAL_FRENZY_PASSIVE_RE.fullmatch(low):
+                    continue
+                source = str(name or "Hysterical Frenzy").strip() or "Hysterical Frenzy"
+                rule = {"source": source}
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
 
     def has_blood_surge(self) -> bool:
         """Check if the unit has the Blood Surge datasheet ability."""
@@ -30770,6 +31083,43 @@ class Unit:
                         "attack_type": "any",
                         "strength_bonus": int(bonus),
                         "ap_bonus": int(bonus),
+                        "damage_bonus": int(bonus),
+                        "wound_bonus": 0,
+                        "enemy_melee_wound_penalty": 0,
+                    }
+                )
+                continue
+
+            m = self._FIGHT_PHASE_TARGET_DAMAGE_BONUS_RE.fullmatch(normalized)
+            if m:
+                try:
+                    range_value = int(m.group("range") or 0)
+                except Exception:
+                    range_value = 0
+                if range_value <= 0:
+                    continue
+                try:
+                    bonus = int(m.group("val") or 0)
+                except Exception:
+                    bonus = 0
+                if bonus <= 0:
+                    continue
+                keyword_raw = str(m.group("keyword") or "").strip()
+                keyword = self._normalize_keyword_phrase(keyword_raw) or keyword_raw.lower() or "friendly"
+                requires_visibility = "visible to this model" in normalized
+                key = (source.lower(), range_value, keyword, bonus, "damage")
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(range_value),
+                        "requires_visibility": bool(requires_visibility),
+                        "keyword": keyword,
+                        "attack_type": "any",
+                        "strength_bonus": 0,
+                        "ap_bonus": 0,
                         "damage_bonus": int(bonus),
                         "wound_bonus": 0,
                         "enemy_melee_wound_penalty": 0,
