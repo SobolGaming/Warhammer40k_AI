@@ -34,6 +34,9 @@ class ShootingDeclarationDialog(BaseDialog):
         # Weapon selection and targeting state
         self.selected_weapon = None  # The currently selected weapon profile
         self.is_targeting_mode = False
+        self._linked_fire_origin_unit_id = None
+        self._infernal_puppeteer_origin_unit_id = None
+        self._infernal_puppeteer_origin_chosen = False
         
         # Declarations storage
         self.weapon_declarations = []
@@ -85,6 +88,9 @@ class ShootingDeclarationDialog(BaseDialog):
         self.weapon_declarations = []
         self.selected_weapon = None
         self.is_targeting_mode = False
+        self._linked_fire_origin_unit_id = None
+        self._infernal_puppeteer_origin_unit_id = None
+        self._infernal_puppeteer_origin_chosen = False
         # No precomputed validation cache
         
         # Position dialog based on player
@@ -116,6 +122,9 @@ class ShootingDeclarationDialog(BaseDialog):
         print(f"INFO: ShootingDeclarationDialog shown for {unit.name}")
         print(f"INFO: Found {len(self.available_weapons)} available weapons")
         print(f"INFO: Found {len(self.available_targets)} available targets")
+
+        # Infernal Puppeteer: optional origin selection when selected to shoot.
+        self._maybe_prompt_infernal_puppeteer_origin()
 
     def _create_dialog_buttons(self):
         """Create the Execute and Cancel buttons using BaseDialog button system"""
@@ -1103,6 +1112,9 @@ class ShootingDeclarationDialog(BaseDialog):
             linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
             if linked_fire_origin_id is not None:
                 entry["linked_fire_origin_unit_id"] = str(linked_fire_origin_id)
+                linked_fire_mode = decl.get("linked_fire_mode")
+                if linked_fire_mode:
+                    entry["linked_fire_mode"] = str(linked_fire_mode)
             fd_models = list(decl.get("firing_deck_source_models") or [])
             if fd_models:
                 entry["firing_deck_source_model_ids"] = [get_entity_id(m) for m in fd_models if m is not None]
@@ -1444,9 +1456,10 @@ class ShootingDeclarationDialog(BaseDialog):
                     'models': [weapon_info['model']],  # Single model per declaration
                     'weapon_instance': weapon_info['weapon_instance']
                 }
-                # Linked Fire: add origin unit ID if present
-                if hasattr(self, '_linked_fire_origin_unit_id') and self._linked_fire_origin_unit_id is not None:
-                    decl['linked_fire_origin_unit_id'] = self._linked_fire_origin_unit_id
+                origin_id, origin_mode = self._current_origin_override()
+                if origin_id is not None:
+                    decl['linked_fire_origin_unit_id'] = origin_id
+                    decl['linked_fire_mode'] = origin_mode
                 # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
                 try:
                     sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
@@ -1477,9 +1490,10 @@ class ShootingDeclarationDialog(BaseDialog):
                 'models': assigned_model,
                 'weapon_instance': weapon_instance
             }
-            # Linked Fire: add origin unit ID if present
-            if hasattr(self, '_linked_fire_origin_unit_id') and self._linked_fire_origin_unit_id is not None:
-                decl['linked_fire_origin_unit_id'] = self._linked_fire_origin_unit_id
+            origin_id, origin_mode = self._current_origin_override()
+            if origin_id is not None:
+                decl['linked_fire_origin_unit_id'] = origin_id
+                decl['linked_fire_mode'] = origin_mode
             # Firing Deck: preserve source embarked model(s) for marking as shot during resolution.
             try:
                 sources = getattr(self.unit, "_firing_deck_virtual_sources", {}) or {}
@@ -1511,6 +1525,14 @@ class ShootingDeclarationDialog(BaseDialog):
             self._linked_fire_origin_unit_id = None  # Clear Linked Fire state
             self.visible = True  # Reopen dialog
 
+    def _current_origin_override(self):
+        """Return (origin_unit_id, mode) for current targeting selection."""
+        if getattr(self, "_linked_fire_origin_unit_id", None) is not None:
+            return self._linked_fire_origin_unit_id, "linked_fire"
+        if getattr(self, "_infernal_puppeteer_origin_unit_id", None) is not None:
+            return self._infernal_puppeteer_origin_unit_id, "infernal_puppeteer"
+        return None, None
+
     def _add_plasma_warhead_declaration(self, weapon_profile, *, weapon_instance=1):
         """Add a Plasma Warhead declaration without selecting a target."""
         assigned_model = self._get_model_for_weapon_instance(weapon_profile, weapon_instance)
@@ -1539,6 +1561,77 @@ class ShootingDeclarationDialog(BaseDialog):
             self.weapon_declarations.append(decl)
         print(f"INFO: {self.unit.name} declared Plasma Warhead group (x{weapon_group_info['count']})")
         self.visible = True
+
+    def _has_infernal_puppeteer(self) -> bool:
+        sr = getattr(self.unit, "special_rules", None)
+        return bool(isinstance(sr, dict) and sr.get("enhancement_infernal_puppeteer"))
+
+    def _maybe_prompt_infernal_puppeteer_origin(self) -> None:
+        if self.unit is None or self._infernal_puppeteer_origin_chosen:
+            return
+        if not self._has_infernal_puppeteer():
+            return
+        self._open_infernal_puppeteer_origin_dialog()
+
+    def _open_infernal_puppeteer_origin_dialog(self):
+        """Open dialog to select Infernal Puppeteer origin unit."""
+        if self.unit is None:
+            return
+        print(f"INFO: Opening Infernal Puppeteer origin selection for {self.unit.name}")
+
+        from ...rules.enhancement_descriptors import get_enhancement_tool_descriptor
+        desc = get_enhancement_tool_descriptor(enhancement_id="000009810003", name="Infernal Puppeteer")
+        try:
+            range_in = float(getattr(desc, "range_in", 9.0) or 9.0)
+        except Exception:
+            range_in = 9.0
+
+        from ...utility.aura_utils import get_eligible_infernal_puppeteer_origin_units
+        eligible_units = get_eligible_infernal_puppeteer_origin_units(self.unit, game_map=self.game_map, range_in=range_in)
+
+        if not eligible_units:
+            self._infernal_puppeteer_origin_chosen = True
+            self._infernal_puppeteer_origin_unit_id = None
+            return
+
+        def on_confirm(origin_unit_id):
+            """Handle Infernal Puppeteer origin selection."""
+            self._infernal_puppeteer_origin_unit_id = origin_unit_id
+            self._infernal_puppeteer_origin_chosen = True
+            if origin_unit_id is None:
+                print("INFO: Infernal Puppeteer: using bearer position")
+            else:
+                print(f"INFO: Infernal Puppeteer: using origin unit {origin_unit_id}")
+
+        def on_cancel():
+            """Treat cancel as skipping the optional selection."""
+            self._infernal_puppeteer_origin_unit_id = None
+            self._infernal_puppeteer_origin_chosen = True
+
+        from .linked_fire_origin_dialog import LinkedFireOriginDialog
+        if not hasattr(self, "_infernal_puppeteer_dialog"):
+            self._infernal_puppeteer_dialog = LinkedFireOriginDialog(self.screen_width, self.screen_height)
+
+        header = f"Select origin for {self.unit.name} (Infernal Puppeteer)"
+        subtitle = f"Choose a friendly TZEENTCH LEGIONES DAEMONICA unit within {int(range_in)}\"."
+        self._infernal_puppeteer_dialog.show(
+            title="Infernal Puppeteer Origin",
+            header=header,
+            subtitle=subtitle,
+            eligible_units=eligible_units,
+            none_label="None (use bearer)",
+            none_description="Do not use Infernal Puppeteer; measure from bearer.",
+            unit_description="Measure range/LOS from this unit.",
+            on_confirm=on_confirm,
+            on_cancel=on_cancel,
+        )
+
+        if hasattr(self, 'game_view') and self.game_view and hasattr(self.game_view, 'dialog_manager'):
+            try:
+                self.game_view.dialog_manager.open(self._infernal_puppeteer_dialog, modal=True)
+            except Exception as e:
+                print(f"ERROR: Failed to open Infernal Puppeteer dialog: {e}")
+                on_cancel()
 
     def _open_linked_fire_origin_dialog(self, weapon_profile, weapon_instance=1):
         """Open dialog to select Linked Fire origin unit."""

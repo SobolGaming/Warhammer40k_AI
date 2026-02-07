@@ -178,6 +178,8 @@ class Game:
         self._phase_enemy_unit_destroyers: Dict[str, set[str]] = {}
         # Phase-scoped enemy model destruction tracking (for phase-end penalties like Daemonic Patrons).
         self._phase_enemy_model_destroyers: Dict[str, set[str]] = {}
+        # Temporary Shadow of Chaos zone overrides (e.g., Impossible Eclipse).
+        self._shadow_of_chaos_zone_overrides: Dict[str, set[str]] = {}
         # Corrupt Realspace: allow sticky break only at start/end of turn.
         self._corrupt_realspace_check: bool = False
         # Return-on-death pending returns (processed at end of the phase they were destroyed in)
@@ -14775,6 +14777,40 @@ class Game:
         tracked = self._phase_enemy_unit_destroyers.setdefault(pname, set())
         tracked.add(uid)
 
+    def _on_model_destroyed_tally_of_pestilence(
+        self,
+        attacker_model=None,
+        attacker_unit=None,
+        target_unit=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None and attacker_model is not None:
+            attacker_unit = getattr(attacker_model, "parent_unit", None)
+        if attacker_unit is None or target_unit is None:
+            return
+        if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+            return
+        army = attacker_unit.get_parent_army()
+        if army is None:
+            return
+        has_tally = getattr(army, "has_tally_of_pestilence", None)
+        if not callable(has_tally) or not has_tally():
+            return
+        has_any_kw = getattr(attacker_unit, "has_any_keyword", None)
+        if callable(has_any_kw):
+            if not (has_any_kw("NURGLE") and has_any_kw("LEGIONES DAEMONICA")):
+                return
+        else:
+            keywords = [
+                str(k).upper()
+                for k in list(getattr(attacker_unit, "keywords", []) or [])
+                + list(getattr(attacker_unit, "faction_keywords", []) or [])
+            ]
+            if "NURGLE" not in keywords or "LEGIONES DAEMONICA" not in keywords:
+                return
+        current = int(getattr(army, "tally_of_pestilence", 0) or 0)
+        army.tally_of_pestilence = current + 1
+
     def _on_model_destroyed_phase_kill_tracking(
         self,
         attacker_unit=None,
@@ -18520,6 +18556,21 @@ class Game:
             zones.add("nml")
         if enemy_total and enemy_controlled >= int(math.ceil(enemy_total / 2.0)):
             zones.add("enemy")
+        try:
+            overrides = getattr(self, "_shadow_of_chaos_zone_overrides", None)
+        except Exception:
+            overrides = None
+        if isinstance(overrides, dict):
+            try:
+                pid = str(getattr(player, "id", "") or "")
+            except Exception:
+                pid = ""
+            extra = overrides.get(pid) if pid else None
+            if extra:
+                try:
+                    zones.update(str(z).strip().lower() for z in (extra or []) if str(z).strip())
+                except Exception:
+                    pass
         return zones
 
     def _unit_wholly_within_shadow_of_chaos(self, unit: Unit) -> bool:

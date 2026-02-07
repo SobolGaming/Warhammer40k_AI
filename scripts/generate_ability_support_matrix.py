@@ -1686,6 +1686,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Shooting: select a visible enemy within 12\"; roll D6 (1: Psyker unit suffers D3 MW; 2+: attacks vs target improve AP by 1) until next Movement phase.",
         ),
+        ("CD", "Demagogue"): (
+            "Supported",
+            "Once per battle, start of any phase: select a Battle-shocked friendly HERETIC ASTARTES unit within 12\" of a DARK APOSTLE model to clear Battle-shock.",
+        ),
+        ("CSM", "Demagogue"): (
+            "Supported",
+            "Once per battle, start of any phase: select a Battle-shocked friendly HERETIC ASTARTES unit within 12\" of a DARK APOSTLE model to clear Battle-shock.",
+        ),
+        ("CD", "Tally of Pestilence"): (
+            "Supported",
+            "Track enemy models destroyed by NURGLE LEGIONES DAEMONICA units; at the start of your Command phase if tally >= 7, gain 1CP and reset the tally.",
+        ),
         ("QT", "Dread Dominion (Aura)"): ("Supported", "WAR DOG models within 9\" improve Leadership by 1 and gain +1 OC."),
         ("QT", "Close-range Killers (Aura)"): ("Supported", "WAR DOG attacks vs closest enemy improve AP by 1 while within 9\"."),
         ("QT", "Infernal Aegis (Aura)"): ("Supported", "WAR DOG models within 6\" gain the Benefit of Cover."),
@@ -6802,6 +6814,10 @@ def _enhancement_support(name: str, enh_id: str, description: str) -> Tuple[str,
         "000010304003": "Blasphemous Engine: +2 Wounds; Malefic Surge Leadership test can be re-rolled.",
         "000010304004": "Fleshmetal Fusion: +1 Toughness; while using Unnatural Fortitude, bearer gains +1 armor save vs Damage 1.",
         "000010304005": "Bestial Aspect: bearer ranged weapons gain [Assault]; while using Unholy Hunger, may ignore Move/Advance modifiers.",
+        "000009810002": "Inescapable Eye: Command phase +1 Flux token if opponent has any and bearer is on battlefield.",
+        "000009810003": "Infernal Puppeteer: when selected to shoot, optionally measure range/LOS from a friendly LEGIONES DAEMONICA TZEENTCH unit within 9\".",
+        "000009810004": "Neverblade: bearer melee weapons gain +2 Strength, +1 Attacks, +1 AP; +1 to hit with melee attacks.",
+        "000009810005": "Improbable Shield (Aura): friendly LEGIONES DAEMONICA TZEENTCH units within 6\" gain Feel No Pain 4+ vs Psychic attacks and mortal wounds.",
     }
     if enh_id in explicit:
         return ("Supported", explicit[enh_id])
@@ -6881,8 +6897,14 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "\u2019ARD AS NAILS": "Opponent Shooting/Fight phase: targeted ORKS unit (excluding Grots/Monsters/Vehicles) suffers -1 to wound until end of phase.",
         "CORRUPT REALSPACE": "Command phase: corrupt a controlled objective; sticky until opponent controls it at start/end of any turn; 6\" area counts as Shadow of Chaos.",
         "DAEMONIC INVULNERABILITY": "Opponent Shooting phase: targeted LEGIONES DAEMONICA unit re-rolls invulnerable saves of 1 until end of phase.",
+        "DELIRIUM UNMADE": "End of opponent Fight phase: select up to two TZEENTCH LEGIONES DAEMONICA units; if selecting two units or any engaged unit, spend 1 Flux; units enter Strategic Reserves.",
         "DENIZENS OF THE WARP": "Movement phase: Deep Strike arrival can be set up more than 6\" horizontally from enemies this phase.",
         "DRAUGHT OF TERROR": "Shooting/Fight phase: LEGIONES DAEMONICA unit gains +1 AP and re-rolls Wound rolls vs Battle-shocked targets until end of phase.",
+        "FATEBORNE NIGHTMARES": "Movement/Charge phase: TZEENTCH LEGIONES DAEMONICA unit can move through terrain features this phase.",
+        "FICKLEFIRE": "Shooting phase: engaged TZEENTCH LEGIONES DAEMONICA unit ignores engagement for ranged attacks; 5+ backlash mortal wounds on destroyed engaged enemy models.",
+        "FLICKERING REALITY": "Fight phase: after enemy selects targets, roll D6 (optional Flux re-roll); unmodified hit rolls of that value end attacks against the target this phase.",
+        "IMPOSSIBLE ECLIPSE": "Any phase: TZEENTCH LEGIONES DAEMONICA MONSTER extends Shadow of Chaos into No Man's Land and/or opponent deployment until end of phase (both costs Flux).",
+        "PYROGENESIS": "Shooting/Fight phase: TZEENTCH LEGIONES DAEMONICA unit gains +2S (or spend Flux for +3S and +1 AP) until end of phase.",
         "THE REALM OF CHAOS": "End of opponent turn: up to two Shadow-of-Chaos units (or one other unit) enter Strategic Reserves and return next Movement phase via Deep Strike.",
         "WARP SURGE": "Charge phase: LEGIONES DAEMONICA unit within Shadow of Chaos can charge after advancing this phase.",
     }

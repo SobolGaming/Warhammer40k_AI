@@ -14,7 +14,7 @@ def _validate_confirm(game: object, request: DecisionRequest, result: DecisionRe
 def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResult) -> None:
     ctx = dict(getattr(request, "context", {}) or {})
     ability = str(ctx.get("ability", "") or "").strip().lower()
-    if ability != "hover_mode":
+    if ability not in ("hover_mode", "flickering_reality_reroll", "pyrogenesis_flux"):
         return None
 
     unit_id = str(ctx.get("unit_id", "") or "")
@@ -30,6 +30,12 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
             choice = bool(payload.get("choice"))
         if not unit_id:
             unit_id = str(payload.get("unit_id", "") or "")
+        if ability == "pyrogenesis_flux":
+            ctx.setdefault("strength_bonus", payload.get("strength_bonus"))
+            ctx.setdefault("ap_bonus", payload.get("ap_bonus"))
+            ctx.setdefault("base_strength_bonus", payload.get("base_strength_bonus"))
+            ctx.setdefault("flux_strength_bonus", payload.get("flux_strength_bonus"))
+            ctx.setdefault("flux_ap_bonus", payload.get("flux_ap_bonus"))
     if choice is None:
         if "choice" in result.payload:
             choice = bool(result.payload.get("choice"))
@@ -60,12 +66,121 @@ def _apply_confirm(game: object, request: DecisionRequest, result: DecisionResul
 
     if unit is None or choice is None:
         return None
-    setter = getattr(unit, "set_hover_mode", None)
-    if callable(setter):
-        setter(bool(choice))
-    else:
-        unit.hover_mode = bool(choice)
-    unit.hover_declared = True
+
+    if ability == "hover_mode":
+        setter = getattr(unit, "set_hover_mode", None)
+        if callable(setter):
+            setter(bool(choice))
+        else:
+            unit.hover_mode = bool(choice)
+        unit.hover_declared = True
+        return None
+
+    if ability == "flickering_reality_reroll":
+        try:
+            from ...utility.dice import get_roll
+        except Exception:
+            get_roll = None
+        try:
+            from ...utility.event_bus import append_dice
+        except Exception:
+            append_dice = None
+        try:
+            from ...utility.stratagem_effects import apply_flickering_reality_effect
+        except Exception:
+            apply_flickering_reality_effect = None
+        root = unit
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        base_roll = None
+        try:
+            base_roll = int(ctx.get("base_roll", 0) or 0)
+        except Exception:
+            base_roll = None
+        if base_roll is None or base_roll <= 0:
+            return None
+        roll = base_roll
+        player = None
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        mgr = getattr(game, "fates_in_flux", None)
+        if choice and mgr is not None and player is not None:
+            if mgr.spend_tokens(player, 1, reason="Flickering Reality re-roll"):
+                if callable(get_roll):
+                    roll = int(get_roll("D6"))
+                if append_dice is not None and player is not None:
+                    append_dice(player, f"Flickering Reality re-roll: {roll}")
+            else:
+                choice = False
+        if append_dice is not None and player is not None:
+            append_dice(player, f"Flickering Reality roll: {roll}")
+        if callable(apply_flickering_reality_effect):
+            apply_flickering_reality_effect(
+                root,
+                roll,
+                game=game,
+                player=player,
+                source=str(ctx.get("ability_name", "") or "Flickering Reality").strip() or "Flickering Reality",
+            )
+        return None
+
+    if ability == "pyrogenesis_flux":
+        try:
+            from ...utility.stratagem_effects import apply_pyrogenesis_effect
+        except Exception:
+            apply_pyrogenesis_effect = None
+        root = unit
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        player = None
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        strength_bonus = None
+        ap_bonus = None
+        try:
+            strength_bonus = int(ctx.get("base_strength_bonus", 2) or 2)
+        except Exception:
+            strength_bonus = 2
+        try:
+            ap_bonus = int(ctx.get("base_ap_bonus", 0) or 0)
+        except Exception:
+            ap_bonus = 0
+        flux_strength_bonus = int(ctx.get("flux_strength_bonus", 3) or 3)
+        flux_ap_bonus = int(ctx.get("flux_ap_bonus", 1) or 1)
+        mgr = getattr(game, "fates_in_flux", None)
+        if choice and mgr is not None and player is not None:
+            if mgr.spend_tokens(player, 1, reason="Pyrogenesis empowered"):
+                strength_bonus = flux_strength_bonus
+                ap_bonus = flux_ap_bonus
+            else:
+                choice = False
+        phase_name = str(ctx.get("phase_name", "") or "")
+        phase_key = phase_name.strip().upper()
+        if not phase_key:
+            try:
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            except Exception:
+                phase_key = ""
+        if phase_key not in ("SHOOTING_PHASE", "FIGHT_PHASE"):
+            phase_key = "SHOOTING_PHASE"
+        if callable(apply_pyrogenesis_effect):
+            apply_pyrogenesis_effect(
+                root,
+                int(strength_bonus or 0),
+                int(ap_bonus or 0),
+                phase_key=phase_key,
+                game=game,
+                player=player,
+                source=str(ctx.get("ability_name", "") or "Pyrogenesis").strip() or "Pyrogenesis",
+            )
     return None
 
 

@@ -24,6 +24,9 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         self._entry_by_button: Dict[str, dict] = {}
         self._confirm_option_id: str = ""
         self._skip_option_id: str = ""
+        self.title_text: str = "The Realm of Chaos"
+        self.subtitle_text: str = ""
+        self.instruction_text: str = "Choose units to place into Strategic Reserves, or select None to skip."
 
         # Scrolling
         self.scroll_offset = 0
@@ -37,6 +40,9 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         *,
         outside_ids: Optional[Iterable[str]] = None,
         decision_request=None,
+        title: Optional[str] = None,
+        subtitle: Optional[str] = None,
+        instruction: Optional[str] = None,
     ) -> None:
         self.units = list(units or [])
         self.max_units = max(1, int(max_units or 1))
@@ -45,6 +51,11 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         self.outside_ids = {str(v) for v in list(outside_ids or []) if v is not None}
         self.on_confirm = on_confirm
         self.decision_request = decision_request
+        self.title_text = str(title or "The Realm of Chaos")
+        self.subtitle_text = str(subtitle or "")
+        self.instruction_text = str(
+            instruction or "Choose units to place into Strategic Reserves, or select None to skip."
+        )
         self.scroll_offset = 0
         self._entries = []
         self._entry_by_button = {}
@@ -66,6 +77,9 @@ class RealmOfChaosUnitsDialog(BaseDialog):
         self._entry_by_button = {}
         self._confirm_option_id = ""
         self._skip_option_id = ""
+        self.title_text = "The Realm of Chaos"
+        self.subtitle_text = ""
+        self.instruction_text = "Choose units to place into Strategic Reserves, or select None to skip."
         self.scroll_offset = 0
         self.max_scroll = 0
 
@@ -204,10 +218,10 @@ class RealmOfChaosUnitsDialog(BaseDialog):
             return
 
         self.draw_dialog_background(screen)
-        subtitle = f"Select up to {self.max_units} unit(s)"
-        self.draw_title_bar(screen, "The Realm of Chaos", subtitle=subtitle)
+        subtitle = self.subtitle_text or f"Select up to {self.max_units} unit(s)"
+        self.draw_title_bar(screen, self.title_text or "The Realm of Chaos", subtitle=subtitle)
 
-        inst = "Choose units to place into Strategic Reserves, or select None to skip."
+        inst = self.instruction_text or "Choose units to place into Strategic Reserves, or select None to skip."
         inst_surface = self.font_small.render(inst, True, TEXT_SECONDARY)
         screen.blit(inst_surface, (self.x + 20, self.y + self.title_bar_height + 10))
 

@@ -248,6 +248,10 @@ class Enhancement:
             is_plague_legion = bool(cd_mgr and cd_mgr.is_plague_legion_detachment())
         except Exception:
             is_plague_legion = False
+        try:
+            is_scintillating_legion = bool(cd_mgr and cd_mgr.is_scintillating_legion_detachment())
+        except Exception:
+            is_scintillating_legion = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -500,6 +504,67 @@ class Enhancement:
             if not is_plague_legion:
                 return
             unit.special_rules["enhancement_maggot_maws"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "inescapable eye" or enh_id == "000009810002":
+            if not is_scintillating_legion:
+                return
+            unit.special_rules["enhancement_inescapable_eye"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "infernal puppeteer" or enh_id == "000009810003":
+            if not is_scintillating_legion:
+                return
+            unit.special_rules["enhancement_infernal_puppeteer"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "neverblade" or enh_id == "000009810004":
+            if not is_scintillating_legion:
+                return
+            unit.special_rules["enhancement_neverblade"] = True
+            desc = get_enhancement_tool_descriptor(enhancement_id=enh_id, name=name)
+            try:
+                params = getattr(desc, "effect_params", {}) if desc is not None else {}
+            except Exception:
+                params = {}
+            try:
+                s_bonus = int(params.get("strength_bonus", 2) or 2)
+            except Exception:
+                s_bonus = 2
+            try:
+                a_bonus = int(params.get("attacks_bonus", 1) or 1)
+            except Exception:
+                a_bonus = 1
+            try:
+                ap_bonus = int(params.get("ap_bonus", 1) or 1)
+            except Exception:
+                ap_bonus = 1
+            try:
+                hit_bonus = int(params.get("hit_bonus", 1) or 1)
+            except Exception:
+                hit_bonus = 1
+            unit.special_rules["enhancement_bearer_melee_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_strength_bonus", 0) or 0
+            ) + s_bonus
+            unit.special_rules["enhancement_bearer_melee_attacks_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_attacks_bonus", 0) or 0
+            ) + a_bonus
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + ap_bonus
+            unit.special_rules["enhancement_bearer_melee_hit_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_hit_bonus", 0) or 0
+            ) + hit_bonus
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "improbable shield (aura)" or enh_id == "000009810005":
+            if not is_scintillating_legion:
+                return
+            unit.special_rules["enhancement_improbable_shield"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

@@ -213,6 +213,39 @@ class FatesInFluxManager:
             self._command_phase_awarded_turn[pid] = turn
             return
         self.gain_tokens(player, 1, reason="Command phase")
+        try:
+            from .enhancement_descriptors import get_enhancement_tool_descriptor
+            desc = get_enhancement_tool_descriptor(enhancement_id="000009810002", name="Inescapable Eye")
+            try:
+                bonus = int(getattr(desc, "effect_params", {}).get("amount", 1) or 1)
+            except Exception:
+                bonus = 1
+        except Exception:
+            bonus = 1
+        try:
+            army = player.get_army() if hasattr(player, "get_army") else getattr(player, "army", None)
+        except Exception:
+            army = None
+        if army is not None:
+            for unit in list(getattr(army, "units", []) or []):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_inescapable_eye"):
+                    continue
+                try:
+                    if hasattr(unit, "is_active_for_rules") and not unit.is_active_for_rules():
+                        continue
+                except Exception:
+                    continue
+                bearer = None
+                try:
+                    get_bearer = getattr(unit, "_get_enhancement_bearer_model", None)
+                    if callable(get_bearer):
+                        bearer = get_bearer()
+                except Exception:
+                    bearer = None
+                if bearer is None:
+                    continue
+                self.gain_tokens(player, bonus, reason="Inescapable Eye")
         self._command_phase_awarded_turn[pid] = turn
 
     def resolve_rule_context(self, *, game, player_id: Optional[str], unit_id: Optional[str], roll_type: str) -> tuple[object | None, object | None, str]:

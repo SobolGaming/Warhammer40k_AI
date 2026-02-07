@@ -3,7 +3,11 @@ from __future__ import annotations
 from typing import Sequence
 
 from ..decision_dispatcher import register_decision_handler
-from ..decision_kinds import DECISION_USE_CAREEN, DECISION_USE_GILDED_CHAMPION
+from ..decision_kinds import (
+    DECISION_CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE,
+    DECISION_USE_CAREEN,
+    DECISION_USE_GILDED_CHAMPION,
+)
 from ..decisions import DecisionRequest, DecisionResult
 from ._helpers import (
     is_skip_choice,
@@ -167,4 +171,40 @@ register_decision_handler(
     DECISION_USE_CAREEN,
     validate=_validate_use_careen,
     apply=_apply_use_careen,
+)
+
+
+def _validate_choose_impossible_eclipse_zone(
+    game: object,
+    request: DecisionRequest,
+    result: DecisionResult,
+) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    zone = str(payload.get("zone", "") or payload.get("choice", "") or payload.get("selection", "") or "").strip().lower()
+    if zone not in {"nml", "enemy", "both"}:
+        return ("Impossible Eclipse requires selecting No Man's Land, opponent deployment, or both.",)
+    return ()
+
+
+def _apply_choose_impossible_eclipse_zone(
+    game: object,
+    request: DecisionRequest,
+    result: DecisionResult,
+):
+    if is_skip_choice(request, result):
+        return None
+    payload = _option_payload(request, result)
+    zone = str(payload.get("zone", "") or payload.get("choice", "") or payload.get("selection", "") or "").strip().lower()
+    return zone or None
+
+
+register_decision_handler(
+    DECISION_CHOOSE_IMPOSSIBLE_ECLIPSE_ZONE,
+    validate=_validate_choose_impossible_eclipse_zone,
+    apply=_apply_choose_impossible_eclipse_zone,
 )

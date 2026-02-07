@@ -154,9 +154,14 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
                 if not can_shoot:
                     return (str(reason or "Plasma Warhead cannot be fired."),)
 
-        # Validate Linked Fire origin unit if present
+        # Validate Linked Fire / Infernal Puppeteer origin unit if present
         linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+        linked_fire_mode = str(decl.get("linked_fire_mode", "") or "").strip().lower()
         if linked_fire_origin_id is not None:
+            if not linked_fire_mode:
+                return ("Linked Fire origin requires linked_fire_mode.",)
+            if linked_fire_mode not in ("linked_fire", "infernal_puppeteer"):
+                return ("Linked Fire origin has invalid mode.",)
             origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
             if origin_unit is None:
                 return ("Linked Fire origin unit not found.",)
@@ -187,25 +192,65 @@ def _validate_declare_shots(game: object, request: DecisionRequest, result: Deci
             if shooter_army is None or origin_army is None or shooter_army is not origin_army:
                 return ("Linked Fire origin must be friendly.",)
 
-            from ...utility.aura_utils import unit_has_fire_prism_keyword, linked_fire_origin_is_visible
+            if linked_fire_mode == "infernal_puppeteer":
+                sr = getattr(shooting_unit, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_infernal_puppeteer"):
+                    return ("Infernal Puppeteer origin requires the enhancement.",)
+                bearer = None
+                try:
+                    get_bearer = getattr(shooting_unit, "_get_enhancement_bearer_model", None)
+                    if callable(get_bearer):
+                        bearer = get_bearer()
+                except Exception:
+                    bearer = None
+                if bearer is None:
+                    return ("Infernal Puppeteer bearer must be on the battlefield.",)
+                from ...rules.enhancement_descriptors import get_enhancement_tool_descriptor
+                desc = get_enhancement_tool_descriptor(enhancement_id="000009810003", name="Infernal Puppeteer")
+                try:
+                    rng = float(getattr(desc, "range_in", 9.0) or 9.0)
+                except Exception:
+                    rng = 9.0
+                # Validate origin unit is alive/deployed and within range of bearer
+                try:
+                    if hasattr(origin_unit, "is_active_for_rules"):
+                        if not origin_unit.is_active_for_rules():
+                            return ("Infernal Puppeteer origin must be on the battlefield.",)
+                    else:
+                        if not getattr(origin_unit, "is_alive", lambda: False)():
+                            return ("Infernal Puppeteer origin must be alive.",)
+                        if not getattr(origin_unit, "deployed", False):
+                            return ("Infernal Puppeteer origin must be deployed.",)
+                except Exception:
+                    return ("Infernal Puppeteer origin must be on the battlefield.",)
+                try:
+                    if not (origin_unit.has_any_keyword("LEGIONES DAEMONICA") and origin_unit.has_any_keyword("TZEENTCH")):
+                        return ("Infernal Puppeteer origin must be a LEGIONES DAEMONICA TZEENTCH unit.",)
+                except Exception:
+                    return ("Infernal Puppeteer origin must be a LEGIONES DAEMONICA TZEENTCH unit.",)
+                from ...utility.aura_utils import model_within_range_of_unit
+                if not model_within_range_of_unit(bearer, origin_unit, rng, use_attached_aggregate=True):
+                    return ("Infernal Puppeteer origin must be within range of the bearer.",)
+            else:
+                from ...utility.aura_utils import unit_has_fire_prism_keyword, linked_fire_origin_is_visible
 
-            # Validate origin unit has FIRE PRISM keyword
-            if not unit_has_fire_prism_keyword(origin_unit):
-                return ("Linked Fire origin must have FIRE PRISM keyword.",)
+                # Validate origin unit has FIRE PRISM keyword
+                if not unit_has_fire_prism_keyword(origin_unit):
+                    return ("Linked Fire origin must have FIRE PRISM keyword.",)
 
-            # Validate origin unit is alive and deployed
-            try:
-                if not getattr(origin_unit, "is_alive", lambda: False)():
-                    return ("Linked Fire origin must be alive.",)
-                if not getattr(origin_unit, "deployed", False):
-                    return ("Linked Fire origin must be deployed.",)
-            except Exception:
-                return ("Linked Fire origin must be alive and deployed.",)
+                # Validate origin unit is alive and deployed
+                try:
+                    if not getattr(origin_unit, "is_alive", lambda: False)():
+                        return ("Linked Fire origin must be alive.",)
+                    if not getattr(origin_unit, "deployed", False):
+                        return ("Linked Fire origin must be deployed.",)
+                except Exception:
+                    return ("Linked Fire origin must be alive and deployed.",)
 
-            # Validate origin unit is visible to bearer (visibility is required)
-            game_map = getattr(game, "map", None)
-            if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
-                return ("Linked Fire origin must be visible to the bearer unit.",)
+                # Validate origin unit is visible to bearer (visibility is required)
+                game_map = getattr(game, "map", None)
+                if not linked_fire_origin_is_visible(shooting_unit, origin_unit, game_map=game_map):
+                    return ("Linked Fire origin must be visible to the bearer unit.",)
 
     return ()
 
@@ -247,10 +292,12 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
         entry = {"weapon_profile": profile, "target_unit": target_unit, "models": models}
         # Linked Fire: add origin unit if present
         linked_fire_origin_id = decl.get("linked_fire_origin_unit_id")
+        linked_fire_mode = str(decl.get("linked_fire_mode", "") or "").strip().lower()
         if linked_fire_origin_id is not None:
             origin_unit = get_unit(game, str(linked_fire_origin_id or ""))
             if origin_unit is not None:
                 entry["linked_fire_origin_unit"] = origin_unit
+                entry["linked_fire_mode"] = linked_fire_mode
         fd_ids = decl.get("firing_deck_source_model_ids")
         if isinstance(fd_ids, list) and fd_ids:
             fd_models = [m for m in (get_model(game, str(mid or "")) for mid in fd_ids) if m is not None]

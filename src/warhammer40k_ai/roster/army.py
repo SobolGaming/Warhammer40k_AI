@@ -229,6 +229,8 @@ class Army:
         self.enhancements = []  # List of Enhancements used in the army
         self.detachment_rules = {}  # Placeholder for detachment-specific rules
         self.player = None  # Reference to the owning player
+        self.tally_of_pestilence = 0
+        self._has_tally_of_pestilence: Optional[bool] = None
 
 
         self._rule_managers_configured = False
@@ -422,6 +424,7 @@ class Army:
         if callable(apply_fn):
             apply_fn()
         self.units.append(unit)
+        self._has_tally_of_pestilence = None
         we_mgr = getattr(self, "world_eaters_detachments", None)
         apply_fn = getattr(we_mgr, "apply_cult_of_blood_battleline_keywords", None) if we_mgr is not None else None
         if callable(apply_fn):
@@ -433,6 +436,35 @@ class Army:
         return True
 
     # ---------- Command phase CP gain hooks ----------
+    def has_tally_of_pestilence(self) -> bool:
+        cached = self._has_tally_of_pestilence
+        if cached is not None:
+            return bool(cached)
+        found = False
+        for unit in list(getattr(self, "units", []) or []):
+            if unit is None:
+                continue
+            iter_fn = getattr(unit, "_iter_ability_entries_for_rules", None)
+            if not callable(iter_fn):
+                continue
+            for name, _desc in iter_fn(model=None):
+                if str(name or "").strip().lower() == "tally of pestilence":
+                    found = True
+                    break
+            if found:
+                break
+        self._has_tally_of_pestilence = found
+        return found
+
+    def _consume_tally_of_pestilence_bonus(self) -> int:
+        if not self.has_tally_of_pestilence():
+            return 0
+        tally = int(getattr(self, "tally_of_pestilence", 0) or 0)
+        if tally >= 7:
+            self.tally_of_pestilence = 0
+            return 1
+        return 0
+
     def get_command_phase_bonus_cp_gain(self) -> int:
         """
         Return bonus CP gained during the owning player's own Command phase due to abilities.
@@ -458,6 +490,7 @@ class Army:
             b = int(sr.get("command_phase_bonus_cp", sr.get("command_phase_cp_bonus", 0)) or 0)
             if b > 0:
                 bonus += b
+        bonus += self._consume_tally_of_pestilence_bonus()
         return int(bonus)
 
     def get_total_points(self) -> int:

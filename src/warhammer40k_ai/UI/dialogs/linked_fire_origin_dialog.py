@@ -37,6 +37,9 @@ class LinkedFireOriginDialog(BaseDialog):
         self.header = ""
         self.eligible_units: List = []
         self.selected_idx: Optional[int] = None
+        self.none_label = "None (use bearer)"
+        self.none_description = "Use normal range/LOS from bearer. Attacks = normal."
+        self.unit_description = "Measure range/LOS from this unit. Attacks = 1."
         self._on_confirm: Optional[Callable[[Optional[str]], None]] = None
         self._on_cancel: Optional[Callable[[], None]] = None
         
@@ -50,6 +53,9 @@ class LinkedFireOriginDialog(BaseDialog):
         header: str = "",
         subtitle: str = "",
         eligible_units: List = None,
+        none_label: Optional[str] = None,
+        none_description: Optional[str] = None,
+        unit_description: Optional[str] = None,
         on_confirm: Callable[[Optional[str]], None],
         on_cancel: Optional[Callable[[], None]] = None,
     ):
@@ -70,6 +76,12 @@ class LinkedFireOriginDialog(BaseDialog):
         self.header = header or ""
         self.subtitle = subtitle or ""
         self.eligible_units = eligible_units or []
+        if none_label is not None:
+            self.none_label = none_label
+        if none_description is not None:
+            self.none_description = none_description
+        if unit_description is not None:
+            self.unit_description = unit_description
         self.selected_idx = 0  # Default to "None" option
         self._on_confirm = on_confirm
         self._on_cancel = on_cancel
@@ -80,6 +92,9 @@ class LinkedFireOriginDialog(BaseDialog):
         self.header = ""
         self.eligible_units = []
         self.selected_idx = None
+        self.none_label = "None (use bearer)"
+        self.none_description = "Use normal range/LOS from bearer. Attacks = normal."
+        self.unit_description = "Measure range/LOS from this unit. Attacks = 1."
         self._on_confirm = None
         self._on_cancel = None
     
@@ -164,8 +179,8 @@ class LinkedFireOriginDialog(BaseDialog):
         self._draw_list_item(
             screen,
             0,
-            "None (use bearer)",
-            "Use normal range/LOS from bearer. Attacks = normal.",
+            self.none_label,
+            self.none_description,
             list_start_y,
             list_item_height
         )
@@ -173,7 +188,7 @@ class LinkedFireOriginDialog(BaseDialog):
         # Options 1+: Eligible Fire Prism units
         for i, unit in enumerate(self.eligible_units):
             unit_name = getattr(unit, "name", "Unknown Unit")
-            description = "Measure range/LOS from this unit. Attacks = 1."
+            description = self.unit_description
             self._draw_list_item(
                 screen,
                 i + 1,
@@ -204,4 +219,3 @@ class LinkedFireOriginDialog(BaseDialog):
         # Description
         desc_surface = self.font_small.render(description, True, TEXT_SECONDARY)
         screen.blit(desc_surface, (self.x + 20, y_pos + 22))
-

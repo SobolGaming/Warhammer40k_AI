@@ -140,6 +140,51 @@ _PLAGUE_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _PLAGUE_LEGION_DESCRIPTORS.values()
 }
 
+_SCINTILLATING_LEGION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009810002": EnhancementToolDescriptor(
+        enhancement_id="000009810002",
+        name="Inescapable Eye",
+        timing="command_phase_start",
+        target="bearer",
+        duration="instant",
+        effect="gain_flux_token_if_opponent_has_tokens",
+        effect_params={"amount": 1, "requires_bearer_on_battlefield": True},
+    ),
+    "000009810003": EnhancementToolDescriptor(
+        enhancement_id="000009810003",
+        name="Infernal Puppeteer",
+        timing="selected_to_shoot",
+        target="friendly_tzeentch_legiones_unit_within_range",
+        duration="until_end_of_activation",
+        effect="origin_measurement_override",
+        range_in=9.0,
+        effect_params={"origin_mode": "infernal_puppeteer", "requires_bearer_on_battlefield": True},
+    ),
+    "000009810004": EnhancementToolDescriptor(
+        enhancement_id="000009810004",
+        name="Neverblade",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_melee_profile_bonus",
+        effect_params={"strength_bonus": 2, "attacks_bonus": 1, "ap_bonus": 1, "hit_bonus": 1},
+    ),
+    "000009810005": EnhancementToolDescriptor(
+        enhancement_id="000009810005",
+        name="Improbable Shield (Aura)",
+        timing="passive_aura",
+        target="friendly_tzeentch_legiones_within_range",
+        duration="constant",
+        effect="grant_fnp_vs_psychic_mortal",
+        range_in=6.0,
+        effect_params={"fnp": 4, "condition": "against psychic attacks and mortal wounds"},
+    ),
+}
+
+_SCINTILLATING_LEGION_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _SCINTILLATING_LEGION_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -152,7 +197,15 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _PLAGUE_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
-    return _GORETRACK_ONSLAUGHT_BY_NAME.get(key) or _DAEMONIC_INCURSION_BY_NAME.get(key) or _PLAGUE_LEGION_BY_NAME.get(key)
+    return (
+        _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
+        or _DAEMONIC_INCURSION_BY_NAME.get(key)
+        or _PLAGUE_LEGION_BY_NAME.get(key)
+        or _SCINTILLATING_LEGION_BY_NAME.get(key)
+    )

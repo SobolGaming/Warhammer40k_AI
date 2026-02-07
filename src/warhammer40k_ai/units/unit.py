@@ -8278,6 +8278,8 @@ class Unit:
         mortal_wound_amount: int,
         game_map: Optional['Map'] = None,
         *,
+        attacker_unit: Optional['Unit'] = None,
+        attacker_model: Optional['Model'] = None,
         is_psychic_attack: bool = False,
         initial_model: Optional['Model'] = None,
         apply_fn: Optional[Callable[['Model'], None]] = None,
@@ -8327,6 +8329,14 @@ class Unit:
             "weapon_name": ctx.weapon_name,
             "attacker_name": ctx.attacker_name,
         }
+        source_unit = attacker_unit
+        if source_unit is None and self is not target_unit:
+            source_unit = self
+        source_model = attacker_model
+        if source_model is None and source_unit is not None:
+            candidate_models = [m for m in (getattr(source_unit, "models", []) or []) if getattr(m, "is_alive", True)]
+            if len(candidate_models) == 1:
+                source_model = candidate_models[0]
 
         # Apply mortal wounds one at a time to models in the unit
         while remaining > 0:
@@ -8431,6 +8441,22 @@ class Unit:
             # Check if the model was destroyed
             if not current_model.is_alive:
                 models_destroyed += 1
+                if apply_fn is None and source_unit is not None:
+                    if target_unit is not None:
+                        target_unit._last_destroyed_by_model = source_model
+                        target_unit._last_destroyed_by_unit = source_unit
+                        target_unit._last_destroyed_by_weapon_profile = None
+                    if game is not None and hasattr(game, "event_system"):
+                        game.event_system.publish(
+                            "model_destroyed",
+                            attacker_model=source_model,
+                            attacker_unit=source_unit,
+                            target_model=current_model,
+                            target_unit=target_unit,
+                            weapon_profile=None,
+                            is_mortal=True,
+                            game_map=game_map,
+                        )
                 current_model = None
 
         return models_destroyed
@@ -19196,6 +19222,9 @@ class Unit:
         
         if not is_engaged:
             return True
+
+        if self._is_ficklefire_active():
+            return True
             
         # If engaged and no profile provided, assume cannot shoot
         if profile is None:
@@ -19214,6 +19243,8 @@ class Unit:
 
     def can_shoot_at_target_while_engaged(self, target, profile, game_map) -> bool:
         """Check if this unit can shoot at a specific target while engaged with other units."""
+        if self._is_ficklefire_active():
+            return True
         # If unit is not in engagement range, they can always shoot
         if not any(game_map.is_within_engagement_range(self, enemy)
                   for enemy in game_map.get_enemy_units(self) if enemy.is_alive()):
@@ -19240,6 +19271,47 @@ class Unit:
         if game is None or player is None:
             return False
         return bool(getattr(game, "is_shooting_phase", lambda: False)() and getattr(game, "get_current_player", lambda: None)() is player)
+
+    def _is_ficklefire_active(self, *, game=None, phase_name: Optional[str] = None) -> bool:
+        """Return True if this unit is under Ficklefire for the current phase."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("ficklefire_active"):
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        owner = str(sr.get("ficklefire_turn_owner", "") or "")
+        if owner:
+            try:
+                unit_owner = str(getattr(root.get_parent_army().player, "id", "") or "")
+            except Exception:
+                unit_owner = ""
+            if unit_owner and owner != unit_owner:
+                return False
+        exp = str(sr.get("ficklefire_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = ""
+            if phase_name:
+                phase_key = str(phase_name or "").strip().upper().replace(" ", "_")
+            if not phase_key and game is not None:
+                phase_key = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+            if phase_key and phase_key != exp:
+                return False
+        turn = int(sr.get("ficklefire_turn", 0) or 0)
+        if turn:
+            if game is None:
+                return False
+            if int(getattr(game, "turn", 0) or 0) != turn:
+                return False
+        return True
 
     def _is_locked_in_combat(self, game_map: 'Map') -> bool:
         """Return True if this unit is within Engagement Range of any enemy unit."""
@@ -19371,12 +19443,20 @@ class Unit:
             if not can_shoot_any_weapon:
                 print(f"{self.name} cannot shoot after falling back")
                 return False
-            
+
+        ficklefire_active = False
+        try:
+            ficklefire_active = bool(self._is_ficklefire_active())
+        except Exception:
+            ficklefire_active = False
+
         # BGNT hit modifier snapshot:
         # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
         # apply -1 to Hit (unless Pistols). Snapshot this now so casualties later don't change it mid-activation.
         try:
             bgnt_locked_at_selection = bool((self.is_vehicle or self.is_monster) and self._is_controlling_players_shooting_phase() and self._is_locked_in_combat(game_map))
+            if ficklefire_active:
+                bgnt_locked_at_selection = False
             setattr(self, "_bgnt_locked_at_target_selection", bgnt_locked_at_selection)
         except Exception:
             # Best-effort only; do not fail shooting if we can't snapshot.
@@ -19390,6 +19470,8 @@ class Unit:
             is_vehicle_or_monster = bool(self.is_vehicle or self.is_monster)
             # Determine if this unit is engaged with any enemy
             engaged = self._is_locked_in_combat(game_map)
+            if engaged and ficklefire_active:
+                engaged = False
 
             # Build per-model "has pistol decl" and "has other decl"
             by_model: dict[str, dict[str, bool]] = {}
@@ -19633,6 +19715,7 @@ class Unit:
             models_with_weapon = declaration['models']
             weapon_instance = declaration.get('weapon_instance', None)
             linked_fire_origin_unit = declaration.get('linked_fire_origin_unit', None)
+            linked_fire_mode = declaration.get('linked_fire_mode', None)
             if target_unit is None and bool(getattr(weapon_profile, "is_plasma_warhead", lambda: False)()):
                 weapon_attacks = self._resolve_plasma_warhead_declaration(
                     weapon_profile,
@@ -19649,7 +19732,14 @@ class Unit:
                 continue
             try:
                 # Validate this declaration
-                validation = self._validate_shooting_declaration(weapon_profile, target_unit, models_with_weapon, game_map, linked_fire_origin_unit=linked_fire_origin_unit)
+                validation = self._validate_shooting_declaration(
+                    weapon_profile,
+                    target_unit,
+                    models_with_weapon,
+                    game_map,
+                    linked_fire_origin_unit=linked_fire_origin_unit,
+                    linked_fire_mode=linked_fire_mode,
+                )
                 if not validation['valid']:
                     print(f"{self.name} - {weapon_profile.name}: {validation['reason']}")
                     continue
@@ -19666,6 +19756,7 @@ class Unit:
                     attack_tracker=attack_tracker,
                     attack_context=attack_context,
                     linked_fire_origin_unit=linked_fire_origin_unit,
+                    linked_fire_mode=linked_fire_mode,
                 )
                 successful_attacks += weapon_attacks
             finally:
@@ -19754,7 +19845,7 @@ class Unit:
 
         return successful_attacks > 0
     
-    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None) -> dict:
+    def _validate_shooting_declaration(self, weapon_profile, target_unit, models_with_weapon, game_map, *, linked_fire_origin_unit=None, linked_fire_mode=None) -> dict:
         """Validate a shooting declaration"""
         # Check if target is an enemy unit
         if target_unit.get_parent_army() == self.get_parent_army():
@@ -19812,9 +19903,9 @@ class Unit:
                 # If anything goes wrong, do not block the shot.
                 pass
 
-            # Check range and line of sight (use origin unit for Linked Fire if provided)
-            if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
-                models_in_range.append(model)
+        # Check range and line of sight (use origin unit for Linked Fire/Infernal Puppeteer if provided)
+        if self._can_model_shoot_weapon_at_target(model, weapon_profile, target_unit, game_map, origin_unit=linked_fire_origin_unit):
+            models_in_range.append(model)
 
         if not models_in_range:
             return {"valid": False, "reason": "No models in range or line of sight"}
@@ -19961,14 +20052,50 @@ class Unit:
         # - BGNT also allows a VEHICLE/MONSTER (in its controlling player's Shooting phase) to target enemy units
         #   it is within Engagement Range of (i.e., shoot into its own combat), subject to BLAST restriction.
         target_locked = Unit._is_unit_locked_in_combat(target_unit, game_map)
+        ficklefire_active = False
+        try:
+            if hasattr(self, "_is_ficklefire_active"):
+                ficklefire_active = bool(self._is_ficklefire_active())
+        except Exception:
+            ficklefire_active = False
         fortification_only = False
         if target_locked:
             try:
                 fortification_only = bool(target_unit.is_only_within_enemy_fortifications(game_map, enemy_unit=self))
             except Exception:
                 fortification_only = False
+        if target_locked and not fortification_only and ficklefire_active:
+            engaged_with_other = False
+            try:
+                shooter_root = self.get_attached_unit_root()
+            except Exception:
+                shooter_root = self
+            try:
+                for friendly in game_map.get_friendly_units(self):
+                    try:
+                        root = friendly.get_attached_unit_root()
+                    except Exception:
+                        root = friendly
+                    if root is None:
+                        continue
+                    if shooter_root is not None and root is shooter_root:
+                        continue
+                    try:
+                        if not root.is_alive() or not getattr(root, "deployed", True):
+                            continue
+                    except Exception:
+                        continue
+                    if game_map.is_within_engagement_range(root, target_unit):
+                        engaged_with_other = True
+                        break
+            except Exception:
+                engaged_with_other = True
+            if not engaged_with_other:
+                target_locked = False
         if target_locked and not fortification_only:
             shooter_in_er_of_target = game_map.is_within_engagement_range(self, target_unit)
+            if ficklefire_active:
+                shooter_in_er_of_target = False
             if weapon_profile.is_pistol():
                 if not shooter_in_er_of_target:
                     return False
@@ -19986,9 +20113,20 @@ class Unit:
         # BLAST restriction supersedes BGNT targeting:
         # Blast weapons cannot target a unit that is within Engagement Range of any friendly unit (relative to the shooter).
         if weapon_profile.is_blast():
+            try:
+                shooter_root = self.get_attached_unit_root()
+            except Exception:
+                shooter_root = self
             for friendly in game_map.get_friendly_units(self):
                 if not friendly.is_alive() or not getattr(friendly, "deployed", True):
                     continue
+                if ficklefire_active:
+                    try:
+                        friendly_root = friendly.get_attached_unit_root()
+                    except Exception:
+                        friendly_root = friendly
+                    if shooter_root is not None and friendly_root is shooter_root:
+                        continue
                 if game_map.is_within_engagement_range(friendly, target_unit):
                     return False
 
@@ -20431,6 +20569,14 @@ class Unit:
         
         if not is_engaged:
             return True
+
+        if self._is_ficklefire_active():
+            try:
+                parent = getattr(weapon_profile, "parent_wargear", None)
+                if parent is None or parent.is_ranged():
+                    return True
+            except Exception:
+                return True
             
         # If engaged, check weapon type and target
         # PISTOL (10e):
@@ -20474,13 +20620,14 @@ class Unit:
         attack_tracker: Optional[dict] = None,
         attack_context: Optional[dict] = None,
         linked_fire_origin_unit=None,
+        linked_fire_mode=None,
         skip_one_shot: bool = False,
         skip_target_checks: bool = False,
     ) -> int:
         """Execute attacks with a specific weapon profile
 
         Args:
-            linked_fire_origin_unit: Optional origin unit for Linked Fire (measure range/LOS from this unit, Attacks=1)
+            linked_fire_origin_unit: Optional origin unit for Linked Fire/Infernal Puppeteer (measure range/LOS from this unit)
         """
         successful_attacks = 0
 
@@ -20530,10 +20677,13 @@ class Unit:
 
                 # Linked Fire: apply Attacks=1 override when using origin unit
                 # This takes precedence over other overrides (applied first)
-                if linked_fire_origin_unit is not None:
+                mode = str(linked_fire_mode or "").strip().lower()
+                if linked_fire_origin_unit is not None and mode == "linked_fire":
                     attacks_override = 1
                     attacks_override_note = "Linked Fire"
                     print(f"{model.name} attacking with {weapon_display} (Linked Fire from {linked_fire_origin_unit.name})")
+                elif linked_fire_origin_unit is not None and mode == "infernal_puppeteer":
+                    print(f"{model.name} attacking with {weapon_display} (Infernal Puppeteer from {linked_fire_origin_unit.name})")
                 # Psychic Assassin: apply Attacks=6 override when targeting PSYKER
                 # Only applies if no other override is already set
                 elif active_profile.is_psychic_assassin() and target_unit.has_any_keyword("PSYKER"):
@@ -34107,6 +34257,83 @@ class Unit:
                     entry = (5, "against psychic attacks and mortal wounds")
                     if entry not in result:
                         result.append(entry)
+        except Exception:
+            pass
+        try:
+            # Improbable Shield (Aura): friendly LEGIONES DAEMONICA TZEENTCH within 6" gain FNP 4+ vs Psychic/mortal.
+            is_tzeentch = False
+            is_legiones = False
+            try:
+                is_tzeentch = bool(self.has_any_keyword("TZEENTCH"))
+                is_legiones = bool(self.has_any_keyword("LEGIONES DAEMONICA"))
+            except Exception:
+                is_tzeentch = False
+                is_legiones = False
+            if is_tzeentch and is_legiones:
+                from ..rules.enhancement_descriptors import get_enhancement_tool_descriptor
+                from ..utility.aura_utils import model_within_range_of_unit
+
+                desc = get_enhancement_tool_descriptor(
+                    enhancement_id="000009810005",
+                    name="Improbable Shield (Aura)",
+                )
+                try:
+                    rng = float(getattr(desc, "range_in", 6.0) or 6.0)
+                except Exception:
+                    rng = 6.0
+                try:
+                    params = getattr(desc, "effect_params", {}) if desc is not None else {}
+                except Exception:
+                    params = {}
+                try:
+                    fnp_val = int(params.get("fnp", 4) or 4)
+                except Exception:
+                    fnp_val = 4
+                condition = str(params.get("condition", "") or "against psychic attacks and mortal wounds").strip()
+
+                army = self.get_parent_army()
+                friendly_units = []
+                if army is not None:
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        game_map = getattr(game, "map", None) if game is not None else None
+                    except Exception:
+                        game_map = None
+                    if game_map is not None and hasattr(game_map, "get_friendly_units"):
+                        try:
+                            friendly_units = list(game_map.get_friendly_units(self))
+                        except Exception:
+                            friendly_units = []
+                    if not friendly_units:
+                        friendly_units = list(getattr(army, "units", []) or [])
+
+                if friendly_units:
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for source in list(friendly_units):
+                        sr = getattr(source, "special_rules", None)
+                        if not isinstance(sr, dict) or not sr.get("enhancement_improbable_shield"):
+                            continue
+                        try:
+                            if hasattr(source, "is_active_for_rules") and not source.is_active_for_rules():
+                                continue
+                        except Exception:
+                            continue
+                        bearer = None
+                        try:
+                            get_bearer = getattr(source, "_get_enhancement_bearer_model", None)
+                            if callable(get_bearer):
+                                bearer = get_bearer()
+                        except Exception:
+                            bearer = None
+                        if bearer is None:
+                            continue
+                        if not model_within_range_of_unit(bearer, self, rng, use_attached_aggregate=True):
+                            continue
+                        key = (int(fnp_val), str(condition or ""))
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((int(fnp_val), condition))
+                        break
         except Exception:
             pass
         return result

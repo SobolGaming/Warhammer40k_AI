@@ -78,6 +78,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DAEMONIC INVULNERABILITY",
     "DENIZENS OF THE WARP",
     "DRAUGHT OF TERROR",
+    "DELIRIUM UNMADE",
+    "FATEBORNE NIGHTMARES",
+    "FICKLEFIRE",
+    "FLICKERING REALITY",
+    "IMPOSSIBLE ECLIPSE",
+    "PYROGENESIS",
     "THE REALM OF CHAOS",
     "WARP SURGE",
 }
@@ -116,6 +122,8 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "SKYBORNE SANCTUARY",
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
+    "DELIRIUM UNMADE",
+    "FLICKERING REALITY",
     "THE REALM OF CHAOS",
     "SUMMONED BY SLAUGHTER",
     "THE FOE FORESEEN",
@@ -908,7 +916,7 @@ class StratagemManager:
         if names & {"A GRIM WARNING", "BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
             add("unit_destroyed", self._on_unit_destroyed)
 
-        if "SKULLS FOR THE SKULL THRONE!" in names:
+        if names & {"SKULLS FOR THE SKULL THRONE!", "FICKLEFIRE"}:
             add("model_destroyed", self._on_model_destroyed)
 
         if "SUMMONED BY SLAUGHTER" in names:
@@ -922,6 +930,8 @@ class StratagemManager:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
         if "UNLEASH BALEFIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
+        if "FICKLEFIRE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_ficklefire)
 
         if "UNLEASH BALEFIRE" in names and "INSANE BRAVERY" not in names:
             add("battle_shock_test_resolved", self._on_battle_shock_test_resolved)
@@ -977,6 +987,7 @@ class StratagemManager:
             "LIGHTNING-FAST REACTIONS",
             "UNYIELDING FORMS",
             "ORKS IS NEVER BEATEN",
+            "FLICKERING REALITY",
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
         }
@@ -1014,6 +1025,7 @@ class StratagemManager:
             add("fight_attacks_resolved", self._on_fight_attacks_resolved_armour_of_contempt_cleanup)
 
         phase_end_trigger_names = {
+            "DELIRIUM UNMADE",
             "MURDER-CALL",
             "NEW ORDERS",
             "RAPID INGRESS",
@@ -1040,6 +1052,11 @@ class StratagemManager:
             "UNLEASH BALEFIRE",
             "DAEMONIC INVULNERABILITY",
             "DRAUGHT OF TERROR",
+            "FATEBORNE NIGHTMARES",
+            "FICKLEFIRE",
+            "FLICKERING REALITY",
+            "IMPOSSIBLE ECLIPSE",
+            "PYROGENESIS",
             "DENIZENS OF THE WARP",
             "WARP SURGE",
         }
@@ -1734,7 +1751,11 @@ class StratagemManager:
                     return result
             except Exception:
                 raise
-        if not stratagem.is_phase_allowed(phase_name):
+        phase_ok = stratagem.is_phase_allowed(phase_name)
+        if name_u == "FLICKERING REALITY":
+            if phase_name and str(phase_name).strip().lower() == "fight phase":
+                phase_ok = True
+        if not phase_ok:
             result["reason"] = "Wrong phase"
             return result
         if not stratagem.is_turn_allowed(is_active_turn):
@@ -1863,6 +1884,12 @@ class StratagemManager:
             "DAEMONIC INVULNERABILITY": "Target: LEGIONES DAEMONICA unit (defensive reaction)",
             "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
             "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
+            "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
+            "FATEBORNE NIGHTMARES": "Target: TZEENTCH LEGIONES DAEMONICA unit",
+            "FICKLEFIRE": "Target: TZEENTCH LEGIONES DAEMONICA unit (engaged)",
+            "FLICKERING REALITY": "Target: TZEENTCH LEGIONES DAEMONICA unit (defensive reaction)",
+            "IMPOSSIBLE ECLIPSE": "Target: TZEENTCH LEGIONES DAEMONICA MONSTER unit",
+            "PYROGENESIS": "Target: TZEENTCH LEGIONES DAEMONICA unit (not yet shot/fought)",
             "THE REALM OF CHAOS": "Target: up to two LEGIONES DAEMONICA units (end of opponent turn)",
             "WARP SURGE": "Target: LEGIONES DAEMONICA unit (within Shadow of Chaos)",
         }
@@ -2146,6 +2173,142 @@ class StratagemManager:
         if not has_kw and faction_id != "CD":
             return False
         return True
+
+    def _is_scintillating_legion_detachment(self) -> bool:
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        if army is None:
+            return False
+        mgr = getattr(army, "chaos_daemons_detachments", None)
+        if mgr is not None and hasattr(mgr, "is_scintillating_legion_detachment"):
+            try:
+                return bool(mgr.is_scintillating_legion_detachment())
+            except Exception:
+                raise
+        det = " ".join(str(getattr(army, "detachment_type", "") or "").lower().split())
+        return det == "scintillating legion"
+
+    def _is_tzeentch_legiones_unit(self, unit) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        if not self._is_legiones_daemonica_unit(root):
+            return False
+        try:
+            return bool(root.has_any_keyword("TZEENTCH"))
+        except Exception:
+            return False
+
+    def _scintillating_legion_tzeentch_unit_candidates(
+        self,
+        *,
+        require_engaged: bool = False,
+        require_not_engaged: bool = False,
+        require_monster: bool = False,
+    ) -> List[Any]:
+        if self.player is None or self.game is None:
+            return []
+        try:
+            if not self._is_scintillating_legion_detachment():
+                return []
+        except Exception:
+            raise
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        if army is None:
+            return []
+        game_map = getattr(self.game, "map", None)
+        if (require_engaged or require_not_engaged) and game_map is None:
+            return []
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                continue
+            try:
+                uid = get_entity_id(root)
+            except Exception:
+                raise
+            if uid in seen:
+                continue
+            seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                raise
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    continue
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                raise
+            if not self._is_tzeentch_legiones_unit(root):
+                continue
+            if require_monster:
+                try:
+                    if not (bool(getattr(root, "is_monster", False)) or root.has_any_keyword("MONSTER")):
+                        continue
+                except Exception:
+                    raise
+            if require_engaged or require_not_engaged:
+                engaged = False
+                try:
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                        if game_map.is_within_engagement_range(root, enemy):
+                            engaged = True
+                            break
+                except Exception:
+                    raise
+                if require_engaged and not engaged:
+                    continue
+                if require_not_engaged and engaged:
+                    continue
+            candidates.append(root)
+        candidates.sort(key=lambda u: str(get_entity_id(u) or ""))
+        return candidates
+
+    def _flux_tokens_available(self) -> int:
+        if self.game is None or self.player is None:
+            return 0
+        mgr = getattr(self.game, "fates_in_flux", None)
+        if mgr is None:
+            return 0
+        try:
+            return int(mgr.tokens_for_player(self.player) or 0)
+        except Exception:
+            return 0
 
     def _daemon_incursion_battlefield_unit_candidates(self) -> List[Any]:
         if self.player is None:
@@ -2771,6 +2934,8 @@ class StratagemManager:
                 name_u = (entry.get("name", "") or "").strip().upper()
                 if name_u == "APOPLECTIC FRENZY":
                     entry["phase"] = "Movement phase"
+                if name_u == "FLICKERING REALITY":
+                    entry["phase"] = "Fight phase"
                 filtered.append(entry)
             except Exception:
                 raise
@@ -3677,6 +3842,33 @@ class StratagemManager:
                                 ):
                                     sr.pop(key, None)
                                 u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("ficklefire_active") is True:
+                            exp = str(sr.get("ficklefire_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "ficklefire_active",
+                                    "ficklefire_pending_mortal_wounds",
+                                    "ficklefire_expires_phase",
+                                    "ficklefire_turn_owner",
+                                    "ficklefire_turn",
+                                    "ficklefire_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
+                        if isinstance(sr, dict) and sr.get("pyrogenesis_active") is True:
+                            exp = str(sr.get("pyrogenesis_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "SHOOTING_PHASE":
+                                for key in (
+                                    "pyrogenesis_active",
+                                    "pyrogenesis_strength_bonus",
+                                    "pyrogenesis_ap_bonus",
+                                    "pyrogenesis_expires_phase",
+                                    "pyrogenesis_turn_owner",
+                                    "pyrogenesis_turn",
+                                    "pyrogenesis_source",
+                                ):
+                                    sr.pop(key, None)
+                                u.special_rules = sr
                     except Exception:
                         raise
         except Exception:
@@ -3726,6 +3918,31 @@ class StratagemManager:
                                     "draught_of_terror_turn_owner",
                                     "draught_of_terror_turn",
                                     "draught_of_terror_source",
+                                ):
+                                    sr.pop(key, None)
+                        if isinstance(sr, dict) and sr.get("flickering_reality_active") is True:
+                            exp = str(sr.get("flickering_reality_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                for key in (
+                                    "flickering_reality_active",
+                                    "flickering_reality_hit_roll",
+                                    "flickering_reality_expires_phase",
+                                    "flickering_reality_turn_owner",
+                                    "flickering_reality_turn",
+                                    "flickering_reality_source",
+                                ):
+                                    sr.pop(key, None)
+                        if isinstance(sr, dict) and sr.get("pyrogenesis_active") is True:
+                            exp = str(sr.get("pyrogenesis_expires_phase", "") or "").strip().upper()
+                            if not exp or exp == "FIGHT_PHASE":
+                                for key in (
+                                    "pyrogenesis_active",
+                                    "pyrogenesis_strength_bonus",
+                                    "pyrogenesis_ap_bonus",
+                                    "pyrogenesis_expires_phase",
+                                    "pyrogenesis_turn_owner",
+                                    "pyrogenesis_turn",
+                                    "pyrogenesis_source",
                                 ):
                                     sr.pop(key, None)
                         u.special_rules = sr
@@ -3823,6 +4040,52 @@ class StratagemManager:
                         root.special_rules = sr
         except Exception:
             raise
+        # Chaos Daemons: Fateborne Nightmares (expires at end of Movement/Charge phase).
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name in ("MOVEMENT_PHASE", "CHARGE_PHASE"):
+                units = list(getattr(self.player.get_army(), "units", []) or [])
+                seen = set()
+                for unit in units:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    exp = str(sr.get("fateborne_nightmares_expires_phase", "") or "").strip().upper()
+                    if sr.get("fateborne_nightmares_active") and (not exp or exp == phase_name):
+                        added = set(sr.get("fateborne_nightmares_added_phase_move_terrain_only_types") or [])
+                        if added:
+                            current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                            kept = [t for t in current if t not in added]
+                            if kept:
+                                sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                            else:
+                                sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                        for key in (
+                            "fateborne_nightmares_active",
+                            "fateborne_nightmares_expires_phase",
+                            "fateborne_nightmares_turn_owner",
+                            "fateborne_nightmares_turn",
+                            "fateborne_nightmares_source",
+                            "fateborne_nightmares_added_phase_move_terrain_only_types",
+                        ):
+                            sr.pop(key, None)
+                        root.special_rules = sr
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -3914,6 +4177,16 @@ class StratagemManager:
                         raise
         except Exception:
             raise
+        # Chaos Daemons: Impossible Eclipse (clear Shadow of Chaos overrides at phase end).
+        try:
+            overrides = getattr(self.game, "_shadow_of_chaos_zone_overrides", None) if self.game is not None else None
+        except Exception:
+            overrides = None
+        if isinstance(overrides, dict) and overrides:
+            try:
+                self.game._shadow_of_chaos_zone_overrides = {}
+            except Exception:
+                pass
         # Queue RAPID INGRESS at end of opponent's Movement phase
         try:
             # Event supplies the active player as `player`. We offer this to the NON-active player.
@@ -4158,6 +4431,52 @@ class StratagemManager:
                                 "stratagem": s.name,
                                 "cp_cost": s.cp_cost,
                                 "candidates": candidates,
+                            }, use_timer=False)
+        except Exception:
+            raise
+        # Scintillating Legion: DELIRIUM UNMADE (end of opponent's Fight phase)
+        try:
+            is_opponents_turn = player is not self.player
+            phase_name = getattr(phase, "name", None)
+            if is_opponents_turn and phase_name == "FIGHT_PHASE":
+                s = self.get_by_name("DELIRIUM UNMADE")
+                if not s:
+                    pass
+                elif not self._is_scintillating_legion_detachment():
+                    pass
+                elif self.player.command_points < s.cp_cost:
+                    pass
+                elif (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                elif not s.can_use(self.player, self.game, phase_name="Fight phase"):
+                    pass
+                else:
+                    flux_tokens = int(self._flux_tokens_available() or 0)
+                    allow_engaged = flux_tokens > 0
+                    max_units = 2 if allow_engaged else 1
+                    if allow_engaged:
+                        candidates = self._scintillating_legion_tzeentch_unit_candidates()
+                    else:
+                        candidates = self._scintillating_legion_tzeentch_unit_candidates(require_not_engaged=True)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == "Fight phase":
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            self._queue_reaction({
+                                "event": "phase_end",
+                                "phase": "Fight phase",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "candidates": candidates,
+                                "max_units": max_units,
+                                "flux_available": bool(allow_engaged),
                             }, use_timer=False)
         except Exception:
             raise
@@ -4951,6 +5270,50 @@ class StratagemManager:
             queue = getattr(self.game, "decision_queue", None)
             if queue is not None and hasattr(queue, "add"):
                 queue.add(req)
+
+    def _on_unit_shooting_resolved_ficklefire(self, attacker_unit=None, **_kwargs):
+        if attacker_unit is None or self.game is None:
+            return
+        if (self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        try:
+            if root.get_parent_army().player is not self.player:
+                return
+        except Exception:
+            raise
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("ficklefire_active"):
+            return
+        exp = str(sr.get("ficklefire_expires_phase", "") or "").strip().upper()
+        if exp and exp != "SHOOTING_PHASE":
+            return
+        owner = str(sr.get("ficklefire_turn_owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        pending = int(sr.get("ficklefire_pending_mortal_wounds", 0) or 0)
+        if pending <= 0:
+            return
+        try:
+            game_map = getattr(self.game, "map", None)
+        except Exception:
+            game_map = None
+        try:
+            root._apply_mortal_wounds_to_unit(root, int(pending), game_map=game_map)
+        except Exception:
+            raise
+        try:
+            from ..utility.event_bus import append_action
+            append_action(self.player, f"{root.name}: Ficklefire backlash ({int(pending)} mortal wounds).")
+        except Exception:
+            pass
+        sr["ficklefire_pending_mortal_wounds"] = 0
+        root.special_rules = sr
 
     def _on_unit_shooting_resolved_armour_of_contempt_cleanup(self, attacker_unit=None, **_kwargs) -> None:
         if attacker_unit is None:
@@ -6039,6 +6402,69 @@ class StratagemManager:
                                 continue
                         except Exception:
                             pass
+                        candidates.append(root)
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "fight_targets_selected" and r.get("stratagem") == s.name and r.get("attacking_unit") is attacking_unit:
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            payload = {
+                                "event": "fight_targets_selected",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "attacking_unit": attacking_unit,
+                                "target_units": list(target_units or []),
+                                "candidates": candidates,
+                            }
+                            if len(candidates) == 1:
+                                payload["target_unit"] = candidates[0]
+                            self._queue_reaction(payload)
+        except Exception:
+            raise
+        # Scintillating Legion: FLICKERING REALITY
+        try:
+            s = self.get_by_name("FLICKERING REALITY")
+            if s and self.player.command_points >= s.cp_cost and (s.name or "").strip().upper() not in self._used_stratagems_this_phase:
+                if self._is_scintillating_legion_detachment():
+                    candidates = []
+                    seen = set()
+                    for unit in list(target_units or []):
+                        try:
+                            root = unit.get_attached_unit_root()
+                        except Exception:
+                            raise
+                        if root is None:
+                            continue
+                        try:
+                            uid = get_entity_id(root)
+                        except Exception:
+                            raise
+                        if uid in seen:
+                            continue
+                        seen.add(uid)
+                        try:
+                            if not root.is_alive():
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if root.get_parent_army().player is not self.player:
+                                continue
+                        except Exception:
+                            raise
+                        try:
+                            if _unit_cannot_be_target_of_stratagem(root):
+                                continue
+                        except Exception:
+                            raise
+                        if not self._is_tzeentch_legiones_unit(root):
+                            continue
                         candidates.append(root)
                     if candidates:
                         already = False
@@ -7194,7 +7620,7 @@ class StratagemManager:
         _handle_skulls_for_the_skull_throne()
 
         # WORLD EATERS: A WORTHY SKULL (track eligible kills for later prompt).
-        try:
+        def _handle_worthy_skull():
             if attacker_unit is None or target_unit is None:
                 return
             if (self._current_phase_name or "").strip().lower() != "fight phase":
@@ -7232,8 +7658,79 @@ class StratagemManager:
             except Exception:
                 raise
             self._worthy_skull_kills[root] = True
+        try:
+            _handle_worthy_skull()
         except Exception:
             raise
+
+        # SCINTILLATING LEGION: FICKLEFIRE backlash rolls
+        try:
+            s2 = self.get_by_name("FICKLEFIRE")
+        except Exception:
+            raise
+        if s2 is None:
+            return
+        if attacker_unit is None or target_unit is None:
+            return
+        try:
+            if attacker_unit.get_parent_army().player is not self.player:
+                return
+        except Exception:
+            raise
+        try:
+            if attacker_unit.get_parent_army() == target_unit.get_parent_army():
+                return
+        except Exception:
+            raise
+        if (self._current_phase_name or "").strip().lower() != "shooting phase":
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        if not self._is_tzeentch_legiones_unit(root):
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("ficklefire_active"):
+            return
+        exp = str(sr.get("ficklefire_expires_phase", "") or "").strip().upper()
+        if exp and exp != "SHOOTING_PHASE":
+            return
+        owner = str(sr.get("ficklefire_turn_owner", "") or "")
+        if owner and owner != str(getattr(self.player, "id", "") or ""):
+            return
+        try:
+            parent = getattr(weapon_profile, "parent_wargear", None)
+            if parent is not None and not parent.is_ranged():
+                return
+        except Exception:
+            pass
+        game_map = kwargs.get("game_map") or getattr(self.game, "map", None)
+        if game_map is None:
+            return
+        try:
+            if not game_map.is_within_engagement_range(root, target_unit):
+                return
+        except Exception:
+            return
+        try:
+            roll = int(dice_module.get_roll("D6"))
+        except Exception:
+            roll = 0
+        try:
+            from ..utility.event_bus import append_dice
+            append_dice(self.player, f"Ficklefire backlash roll: {roll} for {root.name}")
+        except Exception:
+            pass
+        if roll >= 5:
+            try:
+                sr["ficklefire_pending_mortal_wounds"] = int(sr.get("ficklefire_pending_mortal_wounds", 0) or 0) + 1
+                root.special_rules = sr
+            except Exception:
+                raise
+
     def _on_model_destroyed_before_removal(self, unit=None, model=None, **_kwargs) -> None:
         """
         Faction stratagem reactions that trigger before the destroyed model is removed.
@@ -13899,6 +14396,747 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: WARP SURGE: {getattr(root, 'name', 'Unit')} can charge after advancing this phase.")
+            return True
+
+        # Chaos Daemons: DELIRIUM UNMADE (end of opponent Fight phase)
+        if s.name.upper() == "DELIRIUM UNMADE":
+            selected = (
+                kwargs.get("units")
+                or kwargs.get("target_units")
+                or kwargs.get("selected_units")
+                or kwargs.get("unit")
+                or kwargs.get("target_unit")
+            )
+            if selected is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "DELIRIUM UNMADE":
+                        selected = (
+                            r.get("units")
+                            or r.get("target_units")
+                            or r.get("selected_units")
+                            or r.get("unit")
+                            or r.get("target_unit")
+                        )
+                        break
+            if selected is None:
+                print("ERROR: Delirium Unmade: no target units provided")
+                return False
+            if not isinstance(selected, (list, tuple)):
+                selected = [selected]
+            resolved = []
+            for entry in list(selected or []):
+                if entry is None:
+                    continue
+                if isinstance(entry, str):
+                    try:
+                        resolver = getattr(self.game, "_resolve_unit_by_id", None) if self.game is not None else None
+                        unit = resolver(entry) if callable(resolver) else None
+                    except Exception:
+                        unit = None
+                else:
+                    unit = entry
+                if unit is not None:
+                    resolved.append(unit)
+            if not resolved:
+                print("ERROR: Delirium Unmade: no valid target units")
+                return False
+            if len(resolved) > 2:
+                print("ERROR: Delirium Unmade: cannot target more than two units")
+                return False
+            if not self._is_scintillating_legion_detachment():
+                print("ERROR: Delirium Unmade: wrong detachment")
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: Delirium Unmade: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: Delirium Unmade: not opponent's Fight phase")
+                return False
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                return False
+            engaged_units = []
+            for unit in resolved:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    return False
+                if not self._is_tzeentch_legiones_unit(root):
+                    return False
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        print("ERROR: Delirium Unmade: target cannot be selected")
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if not root.is_alive():
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if not getattr(root, "deployed", False):
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        return False
+                except Exception:
+                    raise
+                try:
+                    if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                        return False
+                except Exception:
+                    raise
+                try:
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if not getattr(enemy, "is_alive", lambda: True)():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                        if game_map.is_within_engagement_range(root, enemy):
+                            engaged_units.append(root)
+                            break
+                except Exception:
+                    raise
+            requires_flux = len(resolved) > 1 or bool(engaged_units)
+            flux_mgr = getattr(self.game, "fates_in_flux", None)
+            if requires_flux:
+                if flux_mgr is None or int(flux_mgr.tokens_for_player(self.player) or 0) < 1:
+                    print("ERROR: Delirium Unmade: Flux token required to select two units or engaged units")
+                    return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=resolved[0]).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            if requires_flux and flux_mgr is not None:
+                if not flux_mgr.spend_tokens(self.player, 1, reason="Delirium Unmade"):
+                    return False
+            for unit in resolved:
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                try:
+                    root.enter_strategic_reserves_midgame(game=self.game, game_map=getattr(self.game, "map", None), reason=s.name)
+                except Exception:
+                    raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print("INFO: DELIRIUM UNMADE: units placed into Strategic Reserves.")
+            return True
+
+        # Chaos Daemons: FATEBORNE NIGHTMARES (move through terrain)
+        if s.name.upper() == "FATEBORNE NIGHTMARES":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Fateborne Nightmares: no target unit provided")
+                return False
+            if not self._is_scintillating_legion_detachment():
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_tzeentch_legiones_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            phase_key = str(phase_name or "").strip().lower()
+            if phase_key not in ("movement phase", "charge phase"):
+                print("ERROR: Fateborne Nightmares: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Fateborne Nightmares: not your phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Fateborne Nightmares: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            move_types = {"charge"} if phase_key == "charge phase" else {"move", "advance", "fall_back"}
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                current = set(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                added = set()
+                for mt in move_types:
+                    if mt not in current:
+                        current.add(mt)
+                        added.add(mt)
+                if current:
+                    sr["bearer_unit_phase_move_terrain_only_types"] = sorted(current)
+                if added:
+                    sr["fateborne_nightmares_added_phase_move_terrain_only_types"] = sorted(added)
+                sr["fateborne_nightmares_active"] = True
+                sr["fateborne_nightmares_expires_phase"] = "CHARGE_PHASE" if phase_key == "charge phase" else "MOVEMENT_PHASE"
+                sr["fateborne_nightmares_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["fateborne_nightmares_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["fateborne_nightmares_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: FATEBORNE NIGHTMARES: {getattr(root, 'name', 'Unit')} can move through terrain this phase.")
+            return True
+
+        # Chaos Daemons: FICKLEFIRE (ignore engagement for ranged attacks)
+        if s.name.upper() == "FICKLEFIRE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Ficklefire: no target unit provided")
+                return False
+            if not self._is_scintillating_legion_detachment():
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_tzeentch_legiones_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: Ficklefire: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Ficklefire: not your Shooting phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Ficklefire: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    return False
+            except Exception:
+                raise
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                return False
+            engaged = False
+            try:
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+            except Exception:
+                raise
+            if not engaged:
+                print("ERROR: Ficklefire: unit is not within Engagement Range")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["ficklefire_active"] = True
+                sr["ficklefire_pending_mortal_wounds"] = 0
+                sr["ficklefire_expires_phase"] = "SHOOTING_PHASE"
+                sr["ficklefire_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["ficklefire_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["ficklefire_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: FICKLEFIRE: {getattr(root, 'name', 'Unit')} ignores engagement for ranged attacks this phase.")
+            return True
+
+        # Chaos Daemons: FLICKERING REALITY (attacks of a hit roll value end)
+        if s.name.upper() == "FLICKERING REALITY":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or kwargs.get("target_units") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Flickering Reality: no target unit provided")
+                return False
+            if not self._is_scintillating_legion_detachment():
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_tzeentch_legiones_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("ERROR: Flickering Reality: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: Flickering Reality: not opponent's Fight phase")
+                return False
+            attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
+            if attacking_unit is not None:
+                try:
+                    if attacking_unit.get_parent_army().player is self.player:
+                        print("ERROR: Flickering Reality: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: Flickering Reality: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Flickering Reality: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                from ..utility.stratagem_effects import apply_flickering_reality_effect
+            except Exception:
+                apply_flickering_reality_effect = None
+            roll = int(dice_module.get_roll("D6") or 0)
+            try:
+                from ..utility.event_bus import append_dice
+                append_dice(self.player, f"Flickering Reality roll: {roll}")
+            except Exception:
+                pass
+            flux_tokens = int(self._flux_tokens_available() or 0)
+            if flux_tokens > 0:
+                try:
+                    from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from ..engine.decisions import DecisionOption, DecisionRequest
+                except Exception:
+                    DECISION_CONFIRM_YES_NO = None
+                    DecisionOption = None
+                    DecisionRequest = None
+                if DECISION_CONFIRM_YES_NO and DecisionOption and DecisionRequest:
+                    unit_id = str(get_entity_id(root))
+                    options = [
+                        DecisionOption.create(
+                            "Spend 1 Flux token to re-roll",
+                            payload={"choice": True, "unit_id": unit_id},
+                        ),
+                        DecisionOption.create(
+                            "Keep the roll",
+                            payload={"choice": False, "unit_id": unit_id},
+                        ),
+                    ]
+                    ctx = {
+                        "ability": "flickering_reality_reroll",
+                        "unit_id": unit_id,
+                        "base_roll": int(roll),
+                        "ability_name": s.name,
+                        "phase_name": phase_name,
+                    }
+                    req = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        "Flickering Reality: spend 1 Flux token to re-roll?",
+                        player_id=getattr(self.player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    try:
+                        self.game.request_decision(req)
+                    except Exception:
+                        queue = getattr(self.game, "decision_queue", None)
+                        if queue is not None and hasattr(queue, "add"):
+                            queue.add(req)
+                else:
+                    if callable(apply_flickering_reality_effect):
+                        apply_flickering_reality_effect(root, roll, game=self.game, player=self.player, source=s.name)
+            else:
+                if callable(apply_flickering_reality_effect):
+                    apply_flickering_reality_effect(root, roll, game=self.game, player=self.player, source=s.name)
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            return True
+
+        # Chaos Daemons: IMPOSSIBLE ECLIPSE (Shadow of Chaos zones override)
+        if s.name.upper() == "IMPOSSIBLE ECLIPSE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Impossible Eclipse: no target unit provided")
+                return False
+            if not self._is_scintillating_legion_detachment():
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_tzeentch_legiones_unit(root):
+                return False
+            try:
+                if not (bool(getattr(root, "is_monster", False)) or root.has_any_keyword("MONSTER")):
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Impossible Eclipse: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    return False
+            except Exception:
+                raise
+            zone_choice = str(
+                kwargs.get("zone")
+                or kwargs.get("choice")
+                or kwargs.get("selection")
+                or kwargs.get("zone_choice")
+                or ""
+            ).strip().lower()
+            if zone_choice not in ("nml", "enemy", "both"):
+                print("ERROR: Impossible Eclipse: must select No Man's Land, enemy deployment, or both")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            zones = set()
+            if zone_choice == "both":
+                flux_mgr = getattr(self.game, "fates_in_flux", None)
+                if flux_mgr is None or int(flux_mgr.tokens_for_player(self.player) or 0) < 1:
+                    print("ERROR: Impossible Eclipse: Flux token required to select both zones")
+                    return False
+                if not flux_mgr.spend_tokens(self.player, 1, reason="Impossible Eclipse"):
+                    return False
+                zones.update({"nml", "enemy"})
+            else:
+                zones.add(zone_choice)
+            try:
+                overrides = getattr(self.game, "_shadow_of_chaos_zone_overrides", None)
+            except Exception:
+                overrides = None
+            if overrides is None or not isinstance(overrides, dict):
+                overrides = {}
+            pid = str(getattr(self.player, "id", "") or "")
+            current = set(overrides.get(pid) or [])
+            current.update(zones)
+            overrides[pid] = current
+            try:
+                self.game._shadow_of_chaos_zone_overrides = overrides
+            except Exception:
+                pass
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print("INFO: IMPOSSIBLE ECLIPSE: Shadow of Chaos zones extended until end of phase.")
+            return True
+
+        # Chaos Daemons: PYROGENESIS (Strength/AP bonus)
+        if s.name.upper() == "PYROGENESIS":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Pyrogenesis: no target unit provided")
+                return False
+            if not self._is_scintillating_legion_detachment():
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_tzeentch_legiones_unit(root):
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            phase_key = str(phase_name or "").strip().lower()
+            if phase_key not in ("shooting phase", "fight phase"):
+                print("ERROR: Pyrogenesis: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if phase_key == "shooting phase" and active_player is not self.player:
+                print("ERROR: Pyrogenesis: not your Shooting phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Pyrogenesis: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    return False
+            except Exception:
+                raise
+            try:
+                if phase_key == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
+                    print("ERROR: Pyrogenesis: target already shot this phase")
+                    return False
+                if phase_key == "fight phase":
+                    fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
+                    fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
+                    if root in fought or bool(getattr(getattr(root, "round_state", None), "fought_this_round", False)):
+                        print("ERROR: Pyrogenesis: target already fought this phase")
+                        return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            base_strength_bonus = 2
+            base_ap_bonus = 0
+            flux_strength_bonus = 3
+            flux_ap_bonus = 1
+            flux_tokens = int(self._flux_tokens_available() or 0)
+            phase_key_up = "SHOOTING_PHASE" if phase_key == "shooting phase" else "FIGHT_PHASE"
+            if flux_tokens > 0:
+                try:
+                    from ..engine.decision_kinds import DECISION_CONFIRM_YES_NO
+                    from ..engine.decisions import DecisionOption, DecisionRequest
+                except Exception:
+                    DECISION_CONFIRM_YES_NO = None
+                    DecisionOption = None
+                    DecisionRequest = None
+                if DECISION_CONFIRM_YES_NO and DecisionOption and DecisionRequest:
+                    unit_id = str(get_entity_id(root))
+                    options = [
+                        DecisionOption.create(
+                            "Spend 1 Flux token (+3S, AP improved by 1)",
+                            payload={
+                                "choice": True,
+                                "unit_id": unit_id,
+                                "base_strength_bonus": base_strength_bonus,
+                                "base_ap_bonus": base_ap_bonus,
+                                "flux_strength_bonus": flux_strength_bonus,
+                                "flux_ap_bonus": flux_ap_bonus,
+                            },
+                        ),
+                        DecisionOption.create(
+                            "Do not spend (base +2S)",
+                            payload={
+                                "choice": False,
+                                "unit_id": unit_id,
+                                "base_strength_bonus": base_strength_bonus,
+                                "base_ap_bonus": base_ap_bonus,
+                                "flux_strength_bonus": flux_strength_bonus,
+                                "flux_ap_bonus": flux_ap_bonus,
+                            },
+                        ),
+                    ]
+                    ctx = {
+                        "ability": "pyrogenesis_flux",
+                        "unit_id": unit_id,
+                        "phase_name": phase_name,
+                        "base_strength_bonus": base_strength_bonus,
+                        "base_ap_bonus": base_ap_bonus,
+                        "flux_strength_bonus": flux_strength_bonus,
+                        "flux_ap_bonus": flux_ap_bonus,
+                        "ability_name": s.name,
+                    }
+                    req = DecisionRequest.create(
+                        DECISION_CONFIRM_YES_NO,
+                        "Pyrogenesis: spend 1 Flux token to empower?",
+                        player_id=getattr(self.player, "id", None),
+                        options=options,
+                        context=ctx,
+                    )
+                    try:
+                        self.game.request_decision(req)
+                    except Exception:
+                        queue = getattr(self.game, "decision_queue", None)
+                        if queue is not None and hasattr(queue, "add"):
+                            queue.add(req)
+                else:
+                    try:
+                        from ..utility.stratagem_effects import apply_pyrogenesis_effect
+                    except Exception:
+                        apply_pyrogenesis_effect = None
+                    if callable(apply_pyrogenesis_effect):
+                        apply_pyrogenesis_effect(
+                            root,
+                            base_strength_bonus,
+                            base_ap_bonus,
+                            phase_key=phase_key_up,
+                            game=self.game,
+                            player=self.player,
+                            source=s.name,
+                        )
+            else:
+                try:
+                    from ..utility.stratagem_effects import apply_pyrogenesis_effect
+                except Exception:
+                    apply_pyrogenesis_effect = None
+                if callable(apply_pyrogenesis_effect):
+                    apply_pyrogenesis_effect(
+                        root,
+                        base_strength_bonus,
+                        base_ap_bonus,
+                        phase_key=phase_key_up,
+                        game=self.game,
+                        player=self.player,
+                        source=s.name,
+                    )
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
             return True
 
         # Provide phase_name for timing checks
