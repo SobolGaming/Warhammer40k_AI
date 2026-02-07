@@ -2158,6 +2158,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CD", "Pack Leader"): ("Supported", "Leading: re-roll Advance and Charge rolls for the unit."),
         ("CSM", "Warpsmith"): ("Supported", "Conditional Lone Operative within 3\" of friendly HERETIC ASTARTES VEHICLE units."),
         ("CSM", "Indentured Daemon Engines"): ("Supported", "Conditional Lone Operative within 3\" of friendly DAEMON VEHICLE units."),
+        ("CSM", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
         ("CSM", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CSM", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("EC", "Daemon Primarch of Slaanesh"): ("Supported", "Opponent Command phase selection of Beguiling Form, Daemonic Speed, or Enthralling Hypnosis until the next opponent Command phase."),
