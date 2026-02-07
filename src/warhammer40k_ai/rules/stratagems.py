@@ -1,11 +1,15 @@
 import time
 import copy
 import html
+import logging
 import re
 from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
+from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
 from .stratagem_descriptors import get_stratagem_tool_descriptor
+
+logger = logging.getLogger(__name__)
 
 
 IMPLEMENTED_STRATAGEM_NAMES = {
@@ -526,10 +530,7 @@ def parse_consolidate_move_stratagem(name: str, description: str) -> Optional[Di
     )
     if not m:
         return None
-    try:
-        max_dist = int(m.group(2))
-    except Exception:
-        raise
+    max_dist = int(m.group(2))
     tail = rest[m.end() :].strip().rstrip(".")
     if tail.startswith(","):
         tail = tail[1:].strip()
@@ -732,7 +733,7 @@ class Stratagem:
         if self.effect is not None:
             self.effect(player, game, **kwargs)
         else:
-            print(f"INFO: No effect implemented for Stratagem: {self.name}")
+            logger.info("No effect implemented for Stratagem: %s", self.name)
         return True
 
     def __str__(self) -> str:
@@ -836,18 +837,12 @@ class StratagemManager:
 
     def refresh_available(self) -> None:
         """Refresh stratagem list and subscriptions after army changes."""
-        try:
-            self.game = getattr(self.player, "game", None)
-        except Exception:
-            raise
+        self.game = getattr(self.player, "game", None)
         if not isinstance(getattr(self, "_gilded_champion_used_models", None), set):
             self._gilded_champion_used_models = set(getattr(self, "_gilded_champion_used_models", []) or [])
-        try:
-            self._defensive_reaction_cache.clear()
-            self._charge_melee_ap_cache.clear()
-            self._consolidate_move_cache.clear()
-        except Exception:
-            raise
+        self._defensive_reaction_cache.clear()
+        self._charge_melee_ap_cache.clear()
+        self._consolidate_move_cache.clear()
         self._build_available()
         if self._subscriptions_enabled:
             self._unsubscribe_events()
@@ -955,10 +950,7 @@ class StratagemManager:
         defensive_attacker_phases: set[str] = set()
         defensive_duration_phase = False
         for s in list(self.available or []):
-            try:
-                spec = self._get_defensive_reaction_spec(s)
-            except Exception:
-                raise
+            spec = self._get_defensive_reaction_spec(s)
             if spec:
                 phases = set(spec.get("phases") or [])
                 defensive_phases.update(phases)
@@ -968,15 +960,9 @@ class StratagemManager:
                 if duration == "phase":
                     defensive_duration_phase = True
             if not has_consolidate_spec:
-                try:
-                    has_consolidate_spec = bool(self._get_consolidate_move_spec(s))
-                except Exception:
-                    raise
+                has_consolidate_spec = bool(self._get_consolidate_move_spec(s))
             if not has_charge_melee_ap_spec:
-                try:
-                    has_charge_melee_ap_spec = bool(self._get_charge_melee_ap_spec(s))
-                except Exception:
-                    raise
+                has_charge_melee_ap_spec = bool(self._get_charge_melee_ap_spec(s))
         shooting_reaction_names = {
             "GO TO GROUND",
             "SMOKESCREEN",
@@ -1090,27 +1076,24 @@ class StratagemManager:
 
     def _dequeue_reaction_by_name(self, stratagem_name: str) -> None:
         """Remove the first pending reaction matching this stratagem name."""
-        try:
-            target = (stratagem_name or "").strip().lower()
-            if not target:
+        target = (stratagem_name or "").strip().lower()
+        if not target:
+            return
+        for i, r in enumerate(list(self._pending_reactions)):
+            if str(r.get("stratagem", "")).strip().lower() == target:
+                self._pending_reactions.pop(i)
                 return
-            for i, r in enumerate(list(self._pending_reactions)):
-                if str(r.get("stratagem", "")).strip().lower() == target:
-                    self._pending_reactions.pop(i)
-                    return
-        except Exception:
-            raise
+
     def _now(self) -> float:
         return float(time.monotonic())
 
     def _attacker_unit_key(self, unit: Any) -> Optional[str]:
         if unit is None:
             return None
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            raise
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
         return get_entity_id(root)
+
     @staticmethod
     def _phase_key_from_name(phase_name: str) -> str:
         return str(phase_name or "").strip().upper().replace(" ", "_")
@@ -1165,18 +1148,13 @@ class StratagemManager:
         def _match_keyword(kw: str) -> bool:
             if not kw:
                 return False
-            try:
-                if unit.has_any_keyword(kw):
-                    return True
-            except Exception:
-                raise
+            has_any_keyword = getattr(unit, "has_any_keyword", None)
+            if callable(has_any_keyword) and has_any_keyword(kw):
+                return True
             if " " in kw:
                 parts = [p for p in kw.split(" ") if p]
-                if parts:
-                    try:
-                        return all(unit.has_any_keyword(p) for p in parts)
-                    except Exception:
-                        raise
+                if parts and callable(has_any_keyword):
+                    return all(has_any_keyword(p) for p in parts)
             return False
 
         if mode == "any":
@@ -1189,41 +1167,47 @@ class StratagemManager:
         game_map = getattr(self.game, "map", None) if self.game is not None else None
         if game_map is None:
             return True
-        try:
-            enemy_units = list(game_map.get_enemy_units(unit) or [])
-        except Exception:
-            try:
-                enemy_units = [u for u in list(getattr(game_map, "units", []) or []) if u is not None and getattr(u, "faction", None) != getattr(unit, "faction", None)]
-            except Exception:
-                enemy_units = []
+        get_enemy_units = getattr(game_map, "get_enemy_units", None)
+        if callable(get_enemy_units):
+            enemy_units = list(get_enemy_units(unit) or [])
+        else:
+            enemy_units = [
+                u
+                for u in list(getattr(game_map, "units", []) or [])
+                if u is not None and getattr(u, "faction", None) != getattr(unit, "faction", None)
+            ]
         if not enemy_units:
             return False
-        try:
-            from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
-        except Exception:
-            ENGAGEMENT_RANGE_HORIZONTAL = 1.0
-        try:
-            for enemy in enemy_units:
-                if enemy is None:
+        is_within_engagement = getattr(game_map, "is_within_engagement_range", None)
+        for enemy in enemy_units:
+            if enemy is None:
+                continue
+            alive_fn = getattr(enemy, "is_alive", None)
+            if callable(alive_fn):
+                if not alive_fn():
                     continue
-                if not getattr(enemy, "is_alive", lambda: True)():
-                    continue
-                if getattr(enemy, "deployed", True) is False:
-                    continue
-                if hasattr(game_map, "is_within_engagement_range") and game_map.is_within_engagement_range(unit, enemy):
-                    return True
-        except Exception:
-            pass
+            elif getattr(enemy, "is_alive", True) is False:
+                continue
+            if getattr(enemy, "deployed", True) is False:
+                continue
+            if callable(is_within_engagement) and is_within_engagement(unit, enemy):
+                return True
+        get_distance_between_units = getattr(game_map, "get_distance_between_units", None)
+        if not callable(get_distance_between_units):
+            return False
         min_dist = None
         for enemy in enemy_units:
-            try:
-                if enemy is None or not enemy.is_alive():
+            if enemy is None:
+                continue
+            alive_fn = getattr(enemy, "is_alive", None)
+            if callable(alive_fn):
+                if not alive_fn():
                     continue
-            except Exception:
+            elif getattr(enemy, "is_alive", True) is False:
                 continue
             try:
-                dist = float(game_map.get_distance_between_units(unit, enemy))
-            except Exception:
+                dist = float(get_distance_between_units(unit, enemy))
+            except (TypeError, ValueError):
                 continue
             if min_dist is None or dist < min_dist:
                 min_dist = dist
@@ -1232,20 +1216,16 @@ class StratagemManager:
         return float(min_dist) <= float(max_distance or 0) + float(ENGAGEMENT_RANGE_HORIZONTAL or 1.0)
 
     def _record_ec_last_turn_flags(self) -> None:
-        try:
-            army = self.player.get_army()
-        except Exception:
-            army = None
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else None
         mgr = getattr(army, "emperors_children", None) if army is not None else None
         if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
             self._ec_units_destroyed_enemy_in_fight.clear()
             return
         seen = set()
         for unit in list(getattr(army, "units", []) or []):
-            try:
-                root = unit.get_attached_unit_root()
-            except Exception:
-                root = unit
+            get_root = getattr(unit, "get_attached_unit_root", None)
+            root = get_root() if callable(get_root) else unit
             if root is None:
                 continue
             rid = get_entity_id(root)
@@ -1255,32 +1235,27 @@ class StratagemManager:
             sr = getattr(root, "special_rules", None)
             if not isinstance(sr, dict):
                 sr = {}
-            try:
-                charged_owner = str(getattr(getattr(root, "round_state", None), "charged_turn_owner", "") or "")
-                sr["ec_last_turn_charged"] = bool(
-                    getattr(getattr(root, "round_state", None), "charged_this_round", False)
-                    and charged_owner
-                    and charged_owner == str(getattr(self.player, "id", "") or "")
-                )
-            except Exception:
-                sr["ec_last_turn_charged"] = False
+            round_state = getattr(root, "round_state", None)
+            charged_owner = str(getattr(round_state, "charged_turn_owner", "") or "")
+            sr["ec_last_turn_charged"] = bool(
+                getattr(round_state, "charged_this_round", False)
+                and charged_owner
+                and charged_owner == str(getattr(self.player, "id", "") or "")
+            )
             sr["ec_last_turn_destroyed_enemy_in_fight"] = rid in self._ec_units_destroyed_enemy_in_fight
             root.special_rules = sr
         self._ec_units_destroyed_enemy_in_fight.clear()
 
     def _append_defensive_effect(self, unit: Any, key: str, entry: Dict[str, Any]) -> None:
-        try:
-            sr = getattr(unit, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            items = sr.get(key)
-            if not isinstance(items, list):
-                items = []
-            items.append(dict(entry))
-            sr[key] = items
-            unit.special_rules = sr
-        except Exception:
-            raise
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        items = sr.get(key)
+        if not isinstance(items, list):
+            items = []
+        items.append(dict(entry))
+        sr[key] = items
+        unit.special_rules = sr
     def _apply_generic_defensive_effect(
         self,
         unit: Any,

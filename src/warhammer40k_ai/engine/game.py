@@ -123,7 +123,7 @@ class Game:
         try:
             from .headless_decision_agent import HeadlessDecisionAgent
             self._headless_decision_agent = HeadlessDecisionAgent(self)
-        except Exception:
+        except ImportError:
             self._headless_decision_agent = None
         self.ability_lifecycle = AbilityLifecycle(self)
         self.event_system.lifecycle = self.ability_lifecycle
@@ -140,10 +140,7 @@ class Game:
         # Install default rules subscribers (e.g. on-kill rewards)
         self._install_default_event_subscribers()
         # Server-authoritative decision hooks
-        try:
-            self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_monarch_of_the_hunt)
-        except Exception:
-            pass
+        self.event_system.subscribe("unit_destroyed", self._on_unit_destroyed_monarch_of_the_hunt)
 
         # Setup phase tracking
         self.setup_phase = SetupPhase.MUSTER_ARMIES  # Start with first setup phase
@@ -247,84 +244,93 @@ class Game:
     def _on_unit_destroyed_monarch_of_the_hunt(self, unit=None, **_kwargs) -> None:
         if unit is None or not bool(getattr(self, "is_authoritative", True)):
             return
-        try:
-            destroyed_owner = unit.get_parent_army().player
-        except Exception:
-            destroyed_owner = None
+
+        def _resolve_player_army(player):
+            if player is None:
+                return None
+            getter = getattr(player, "get_army", None)
+            if callable(getter):
+                return getter()
+            return getattr(player, "army", None)
+
+        def _resolve_unit_parent_army(source_unit):
+            if source_unit is None:
+                return None
+            getter = getattr(source_unit, "get_parent_army", None)
+            if callable(getter):
+                return getter()
+            return getattr(source_unit, "parent_army", None)
+
+        def _unit_is_alive_or_unknown(source_unit) -> bool:
+            if source_unit is None:
+                return False
+            alive_fn = getattr(source_unit, "is_alive", None)
+            if callable(alive_fn):
+                return bool(alive_fn())
+            alive_attr = getattr(source_unit, "is_alive", None)
+            if alive_attr is None:
+                return True
+            return bool(alive_attr)
+
+        destroyed_army = _resolve_unit_parent_army(unit)
+        destroyed_owner = getattr(destroyed_army, "player", None)
 
         def _handle_quarry_repick(rule_getter, attr_name: str, request_builder) -> None:
             for player in list(getattr(self, "players", []) or []):
-                try:
-                    army = player.get_army()
-                except Exception:
-                    army = None
+                army = _resolve_player_army(player)
                 if army is None:
                     continue
                 for source_unit in list(getattr(army, "units", []) or []):
-                    try:
-                        rule = rule_getter(source_unit)
-                    except Exception:
-                        rule = None
+                    rule = rule_getter(source_unit)
                     if not rule:
                         continue
                     quarry_ids = getattr(source_unit, attr_name, None)
                     if not quarry_ids:
                         continue
-                    try:
-                        if getattr(unit, "_id", None) not in quarry_ids:
-                            continue
-                    except Exception:
+                    unit_id = getattr(unit, "_id", None)
+                    if unit_id is None or unit_id not in quarry_ids:
                         continue
 
                     alive_ids = set()
-                    enemy_army = None
-                    try:
-                        enemy_army = destroyed_owner.get_army() if destroyed_owner is not None else None
-                    except Exception:
-                        enemy_army = None
+                    enemy_army = _resolve_player_army(destroyed_owner)
                     if enemy_army is not None:
                         by_id = {getattr(u2, "_id", None): u2 for u2 in list(getattr(enemy_army, "units", []) or [])}
                         for qid in list(quarry_ids):
                             u2 = by_id.get(qid)
                             if u2 is None:
                                 continue
-                            try:
-                                if u2.is_alive():
-                                    alive_ids.add(qid)
-                            except Exception:
-                                continue
+                            if _unit_is_alive_or_unknown(u2):
+                                alive_ids.add(qid)
                     setattr(source_unit, attr_name, alive_ids)
 
                     if not alive_ids:
-                        try:
-                            req = request_builder(
-                                game=self,
-                                source_unit=source_unit,
-                                enemy_units=list(self.get_enemy_units(player)),
-                                ability_name=str(rule.get("source", "") or "") or None,
-                            )
-                        except Exception:
-                            req = None
-                        if req is not None and hasattr(self, "request_decision"):
-                            self.request_decision(req)
+                        req = request_builder(
+                            game=self,
+                            source_unit=source_unit,
+                            enemy_units=list(self.get_enemy_units(player)),
+                            ability_name=str(rule.get("source", "") or "") or None,
+                        )
+                        request_decision = getattr(self, "request_decision", None)
+                        if req is not None and callable(request_decision):
+                            request_decision(req)
 
         def _monarch_rule(u):
-            try:
-                found, _ = u._find_ability_with_patterns(["monarch of the hunt"])
-            except Exception:
-                found = False
+            finder = getattr(u, "_find_ability_with_patterns", None)
+            if not callable(finder):
+                return None
+            found, _ = finder(["monarch of the hunt"])
             if not found:
                 return None
             return {"source": "Monarch of the Hunt"}
 
         def _monarch_request_builder(game, source_unit, enemy_units, ability_name=None):
-            try:
-                army = source_unit.get_parent_army()
-            except Exception:
-                army = None
+            army = _resolve_unit_parent_army(source_unit)
             if army is None:
                 return None
-            return army._build_monarch_of_the_hunt_request(
+            build_request = getattr(army, "_build_monarch_of_the_hunt_request", None)
+            if not callable(build_request):
+                return None
+            return build_request(
                 game=game,
                 source_unit=source_unit,
                 enemy_units=enemy_units,
@@ -334,19 +340,17 @@ class Game:
         _handle_quarry_repick(_monarch_rule, "_monarch_of_the_hunt_quarry_ids", _monarch_request_builder)
 
         def _methodical_rule(u):
-            try:
-                return u.get_victim_selection_rule()
-            except Exception:
-                return None
+            getter = getattr(u, "get_victim_selection_rule", None)
+            return getter() if callable(getter) else None
 
         def _methodical_request_builder(game, source_unit, enemy_units, ability_name=None):
-            try:
-                army = source_unit.get_parent_army()
-            except Exception:
-                army = None
+            army = _resolve_unit_parent_army(source_unit)
             if army is None:
                 return None
-            return army._build_methodical_destruction_request(
+            build_request = getattr(army, "_build_methodical_destruction_request", None)
+            if not callable(build_request):
+                return None
+            return build_request(
                 game=game,
                 source_unit=source_unit,
                 enemy_units=enemy_units,
@@ -356,10 +360,8 @@ class Game:
         _handle_quarry_repick(_methodical_rule, "_methodical_destruction_victim_ids", _methodical_request_builder)
 
         def _prey_rule(u):
-            try:
-                rule = u.get_prey_selection_rule()
-            except Exception:
-                rule = None
+            getter = getattr(u, "get_prey_selection_rule", None)
+            rule = getter() if callable(getter) else None
             if not rule:
                 return None
             if not bool(rule.get("repick_on_destroyed", False)):
@@ -367,17 +369,15 @@ class Game:
             return rule
 
         def _prey_request_builder(game, source_unit, enemy_units, ability_name=None):
-            try:
-                army = source_unit.get_parent_army()
-            except Exception:
-                army = None
+            army = _resolve_unit_parent_army(source_unit)
             if army is None:
                 return None
-            try:
-                rule = source_unit.get_prey_selection_rule()
-            except Exception:
-                rule = None
-            return army._build_prey_selection_request(
+            get_rule = getattr(source_unit, "get_prey_selection_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            build_request = getattr(army, "_build_prey_selection_request", None)
+            if not callable(build_request):
+                return None
+            return build_request(
                 game=game,
                 source_unit=source_unit,
                 enemy_units=enemy_units,
@@ -530,15 +530,13 @@ class Game:
         if callable(fn):
             try:
                 is_below_starting = bool(fn())
-            except Exception:
+            except TypeError:
                 is_below_starting = True
         if not is_below_starting:
             return
 
-        try:
-            unit_army = unit.get_parent_army()
-        except Exception:
-            unit_army = None
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        unit_army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
 
         for player in list(getattr(self, "players", []) or []):
             army = _get_army(player)
@@ -559,7 +557,7 @@ class Game:
         if callable(fn):
             try:
                 is_below_half = bool(fn())
-            except Exception:
+            except TypeError:
                 is_below_half = False
         if not is_below_half:
             return
@@ -579,11 +577,8 @@ class Game:
                 return getter()
             return getattr(player, "army", None)
 
-        unit_army = None
-        try:
-            unit_army = unit.get_parent_army()
-        except Exception:
-            unit_army = None
+        get_parent_army = getattr(unit, "get_parent_army", None)
+        unit_army = get_parent_army() if callable(get_parent_army) else getattr(unit, "parent_army", None)
 
         for player in list(getattr(self, "players", []) or []):
             army = _get_army(player)
@@ -633,24 +628,21 @@ class Game:
         ability_name = str(pending.get("ability_name", "") or "Maggot Maws").strip() or "Maggot Maws"
         owner_id = str(pending.get("owner_id", "") or "")
         player = self._resolve_player_by_id(owner_id) if owner_id else None
-        try:
-            if player is not None:
-                desc = f"{ability_name}: roll D6={roll_d6}"
-                if roll_d3 is not None:
-                    desc = f"{desc}, D3={int(roll_d3)}"
-                append_dice(player, f"{desc}.")
-                if mortal > 0:
-                    append_action(
-                        player,
-                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds.",
-                    )
-                else:
-                    append_action(
-                        player,
-                        f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers no mortal wounds.",
-                    )
-        except Exception:
-            pass
+        if player is not None:
+            desc = f"{ability_name}: roll D6={roll_d6}"
+            if roll_d3 is not None:
+                desc = f"{desc}, D3={int(roll_d3)}"
+            append_dice(player, f"{desc}.")
+            if mortal > 0:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers {int(mortal)} mortal wounds.",
+                )
+            else:
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(unit, 'name', 'Unit')} suffers no mortal wounds.",
+                )
 
     def _apply_reanimation_protocols_end_command_phase(self, current_player) -> None:
         if current_player is None:
@@ -790,15 +782,14 @@ class Game:
             if mgr is None:
                 continue
             mgr.on_opponent_command_phase_start(current_player, game=self)
-            try:
-                self.event_system.publish(
+            publish = getattr(self.event_system, "publish", None)
+            if callable(publish):
+                publish(
                     "daemon_primarch_slaanesh_prompt",
                     player=player,
                     opponent_player=current_player,
                     game=self,
                 )
-            except Exception:
-                pass
 
     def _maybe_prompt_waaagh(self) -> None:
         player = self.get_current_player()
@@ -842,12 +833,9 @@ class Game:
         options = list(getattr(mgr, "get_available_doctrines", lambda: [])() or [])
         if not options:
             return
-        try:
-            from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DOCTRINE
-            from ..engine.decisions import DecisionOption, DecisionRequest
-            from ..utility.entity_ids import get_entity_id
-        except Exception:
-            return
+        from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DOCTRINE
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
         army_id = get_entity_id(army)
         battle_round = int(getattr(self, "turn", 0) or 0)
         queue = getattr(self, "decision_queue", None)
@@ -903,12 +891,9 @@ class Game:
         options = list(getattr(mgr, "get_available_grand_coven_abilities", lambda: [])() or [])
         if not options:
             return
-        try:
-            from ..engine.decision_kinds import DECISION_CHOOSE_GRAND_COVEN
-            from ..engine.decisions import DecisionOption, DecisionRequest
-            from ..utility.entity_ids import get_entity_id
-        except Exception:
-            return
+        from ..engine.decision_kinds import DECISION_CHOOSE_GRAND_COVEN
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
         army_id = get_entity_id(army)
         battle_round = int(getattr(self, "turn", 0) or 0)
         queue = getattr(self, "decision_queue", None)
@@ -961,17 +946,10 @@ class Game:
             return
         if not bool(getattr(self, "is_authoritative", True)):
             return
-        options = []
-        try:
-            options = list(getattr(mgr, "get_available_combat_drugs", lambda: [])() or [])
-        except Exception:
-            options = []
-        try:
-            from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DRUGS
-            from ..engine.decisions import DecisionOption, DecisionRequest
-            from ..utility.entity_ids import get_entity_id
-        except Exception:
-            return
+        options = list(getattr(mgr, "get_available_combat_drugs", lambda: [])() or [])
+        from ..engine.decision_kinds import DECISION_CHOOSE_COMBAT_DRUGS
+        from ..engine.decisions import DecisionOption, DecisionRequest
+        from ..utility.entity_ids import get_entity_id
         army_id = get_entity_id(army)
         battle_round = int(getattr(self, "turn", 0) or 0)
         queue = getattr(self, "decision_queue", None)
