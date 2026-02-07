@@ -12,6 +12,7 @@ from ..utility.constants import (
     RUINS_WALL_THICKNESS,
 )
 from shapely.geometry import Polygon, Point, LineString, box
+from shapely.errors import GEOSException
 from shapely.ops import unary_union
 from shapely.affinity import scale, translate
 
@@ -88,11 +89,15 @@ class Map:
     def get_objectives(self, is_secret: bool = False) -> List['Objective']:
         return [objective for objective in self.objectives if objective.category == ObjectiveCategory.SECRET]
 
+    @staticmethod
+    def _unit_collision_models(unit: Unit) -> List[Model]:
+        getter = getattr(unit, "get_models_for_collision", None)
+        if callable(getter):
+            return list(getter() or [])
+        return list(getattr(unit, "models", []) or [])
+
     def place_unit(self, unit: Unit) -> bool:
-        try:
-            models = unit.get_models_for_collision()
-        except Exception:
-            models = unit.models
+        models = self._unit_collision_models(unit)
         for model in models:
             if not self.is_within_boundary(model):
                 return False
@@ -110,10 +115,7 @@ class Map:
             units = self.units
         all_models = []
         for unit in units:
-            try:
-                all_models.extend(unit.get_models_for_collision())
-            except Exception:
-                all_models.extend(unit.models)
+            all_models.extend(self._unit_collision_models(unit))
         return all_models
 
     def get_enemy_units(self, unit: Unit) -> List[Unit]:
@@ -126,10 +128,7 @@ class Map:
     def get_enemy_models(self, unit: Unit) -> List[Model]:
         enemy_models = []
         for test_unit in self.get_enemy_units(unit):
-            try:
-                enemy_models.extend(test_unit.get_models_for_collision())
-            except Exception:
-                enemy_models.extend(test_unit.models)
+            enemy_models.extend(self._unit_collision_models(test_unit))
         return enemy_models
 
     def get_friendly_units(self, unit: Unit) -> List[Unit]:
@@ -142,10 +141,7 @@ class Map:
     def get_friendly_models(self, unit: Unit) -> List[Model]:
         friendly_models = []
         for test_unit in self.get_friendly_units(unit):
-            try:
-                friendly_models.extend(test_unit.get_models_for_collision())
-            except Exception:
-                friendly_models.extend(test_unit.models)
+            friendly_models.extend(self._unit_collision_models(test_unit))
         return friendly_models
 
     def is_within_boundary(self, model: Model, destination: Tuple[float, float] = None) -> bool:
@@ -229,10 +225,7 @@ class Map:
             test_base = model.parent_unit._create_potential_base(destination[0], destination[1], test_base.z, test_base.facing)
         for unit in self.get_friendly_units(model.parent_unit):
             if unit != model.parent_unit:  #  inter-unit collisions check done elsewhere
-                try:
-                    other_models = list(unit.get_models_for_collision() or [])
-                except Exception:
-                    other_models = list(getattr(unit, "models", []) or [])
+                other_models = self._unit_collision_models(unit)
                 for other_model in other_models:
                     #print(f"Friendly Unit Check :: {model.parent_unit.name} checking collision with friendly units :: {other_model.parent_unit.name}")
                     if test_base.collides_with(other_model.model_base):
@@ -245,10 +238,7 @@ class Map:
             test_base = model.parent_unit._create_potential_base(destination[0], destination[1], test_base.z, test_base.facing)
         
         for unit in self.get_enemy_units(model.parent_unit):
-            try:
-                other_models = list(unit.get_models_for_collision() or [])
-            except Exception:
-                other_models = list(getattr(unit, "models", []) or [])
+            other_models = self._unit_collision_models(unit)
             for other_model in other_models:
                 #print(f"Enemy Unit Check :: {model.parent_unit.name} checking collision with enemy units :: {other_model.parent_unit.name}")
                 if test_base.collides_with(other_model.model_base):
@@ -317,15 +307,9 @@ class Map:
             shooter_inside_any = footprint.intersects(shooter_shape)
             target_inside_any = footprint.intersects(target_shape)
             shooter_wholly_within = footprint.covers(shooter_shape)
-            shooter_is_aircraft = False
-            target_is_aircraft = False
-            shooter_is_towering = False
-            try:
-                shooter_is_aircraft = bool(getattr(shooter_model.parent_unit, "is_aircraft", False))
-                target_is_aircraft = bool(getattr(target_model.parent_unit, "is_aircraft", False))
-                shooter_is_towering = bool(getattr(shooter_model.parent_unit, "is_towering", False))
-            except Exception:
-                pass
+            shooter_is_aircraft = bool(getattr(shooter_model.parent_unit, "is_aircraft", False))
+            target_is_aircraft = bool(getattr(target_model.parent_unit, "is_aircraft", False))
+            shooter_is_towering = bool(getattr(shooter_model.parent_unit, "is_towering", False))
 
             # Aircraft always use normal LOS: skip blanket ruins blocking.
             if not (shooter_is_aircraft or target_is_aircraft):
@@ -409,7 +393,7 @@ class Map:
             try:
                 min_z = float(terrain.bounding_box.get('min', (0, 0, 0))[2])
                 max_z = float(terrain.bounding_box.get('max', (0, 0, 0))[2])
-            except Exception:
+            except (TypeError, ValueError, IndexError):
                 min_z, max_z = 0.0, 2.0
         else:
             max_z = 2.0
@@ -438,11 +422,10 @@ class Map:
         Returns True if there exists at least one sampled point on the target that is not blocked
         from at least one sampled point on the shooter by any terrain feature.
         """
-        try:
-            shooter_points = self._sample_model_points_3d(shooter_model, perimeter_points=6, z_levels=2)
-            target_points = self._sample_model_points_3d(target_model, perimeter_points=6, z_levels=2)
-        except Exception:
-            return True
+        shooter_points = self._sample_model_points_3d(shooter_model, perimeter_points=6, z_levels=2)
+        target_points = self._sample_model_points_3d(target_model, perimeter_points=6, z_levels=2)
+        if not shooter_points or not target_points:
+            return False
 
         terrain_features = list(getattr(self, "terrain_features", []) or [])
         for tp in target_points:
@@ -453,8 +436,9 @@ class Map:
                         if self._segment_blocked_by_terrain_feature(sp, tp, terrain, shooter_model, target_model):
                             blocked = True
                             break
-                    except Exception:
-                        continue
+                    except (GEOSException, TypeError, ValueError):
+                        blocked = True
+                        break
                 if not blocked:
                     return True
         return False
@@ -482,13 +466,11 @@ class Map:
         }
 
         # If weapon ignores cover, it cancels Benefit of Cover.
-        try:
-            if weapon_profile is not None:
-                parent_wg = getattr(weapon_profile, "parent_wargear", None)
-                if parent_wg is not None and hasattr(parent_wg, "is_ignores_cover") and parent_wg.is_ignores_cover():
-                    return result
-        except Exception:
-            pass
+        if weapon_profile is not None:
+            parent_wg = getattr(weapon_profile, "parent_wargear", None)
+            ignores_cover = getattr(parent_wg, "is_ignores_cover", None)
+            if callable(ignores_cover) and ignores_cover():
+                return result
 
         # Evaluate per terrain feature. Multiple instances are not cumulative, so we early-return on first match.
         for terrain in getattr(self, "terrain_features", []):
@@ -501,24 +483,18 @@ class Map:
                 continue
 
             # Wholly within (2D footprint-based: base wholly within footprint)
-            try:
-                base_shape = target_model.model_base.get_base_shape()
-                if footprint.covers(base_shape):
-                    result["has_benefit_of_cover"] = True
-                    result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
-                    result["reason"] = "Target model wholly within terrain feature"
-                    return result
-            except Exception:
-                pass
+            base_shape = target_model.model_base.get_base_shape()
+            if footprint.covers(base_shape):
+                result["has_benefit_of_cover"] = True
+                result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
+                result["reason"] = "Target model wholly within terrain feature"
+                return result
 
             # Not fully visible to every model in the attacking unit because of this terrain feature.
             for attacker_model in getattr(attacking_unit, "models", []):
                 if not getattr(attacker_model, "is_alive", False):
                     continue
-                try:
-                    fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, terrain)
-                except Exception:
-                    fully_visible = True
+                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, terrain)
                 if not fully_visible:
                     result["has_benefit_of_cover"] = True
                     result["source_terrain_type"] = getattr(ttype, "name", str(ttype))
@@ -545,28 +521,26 @@ class Map:
             return result
 
         # If weapon ignores cover, it cancels Benefit of Cover.
-        try:
-            if weapon_profile is not None:
-                parent_wg = getattr(weapon_profile, "parent_wargear", None)
-                if parent_wg is not None and hasattr(parent_wg, "is_ignores_cover") and parent_wg.is_ignores_cover():
-                    return result
-        except Exception:
-            pass
+        if weapon_profile is not None:
+            parent_wg = getattr(weapon_profile, "parent_wargear", None)
+            ignores_cover = getattr(parent_wg, "is_ignores_cover", None)
+            if callable(ignores_cover) and ignores_cover():
+                return result
 
         if not fortification_units:
             return result
 
         def _unit_root(unit):
-            try:
-                return unit.get_attached_unit_root()
-            except Exception:
-                return unit
+            getter = getattr(unit, "get_attached_unit_root", None)
+            if callable(getter):
+                return getter()
+            return unit
 
         def _footprint_for_unit(unit):
-            models = []
-            try:
-                models = list(unit.get_attached_unit_models() or [])
-            except Exception:
+            get_models = getattr(unit, "get_attached_unit_models", None)
+            if callable(get_models):
+                models = list(get_models() or [])
+            else:
                 models = list(getattr(unit, "models", []) or [])
             shapes = []
             max_z = 0.0
@@ -576,20 +550,17 @@ class Map:
                 base = getattr(m, "model_base", None)
                 if base is None:
                     continue
-                try:
-                    shape = base.get_base_shape()
-                except Exception:
-                    shape = None
+                shape = base.get_base_shape()
                 if shape is None:
                     continue
                 shapes.append(shape)
                 try:
                     z_here = float(getattr(base, "z", 0.0) or 0.0)
-                except Exception:
+                except (TypeError, ValueError):
                     z_here = 0.0
                 try:
                     height = float(getattr(base, "model_height", 0.0) or 0.0)
-                except Exception:
+                except (TypeError, ValueError):
                     height = 0.0
                 max_z = max(max_z, z_here + height)
             if not shapes:
@@ -597,11 +568,11 @@ class Map:
             try:
                 from shapely.ops import unary_union
                 footprint = unary_union(shapes)
-            except Exception:
+            except GEOSException:
                 footprint = shapes[0]
             try:
                 bounds = footprint.bounds
-            except Exception:
+            except (TypeError, ValueError):
                 return None, None
             bounding_box = {
                 "min": (bounds[0], bounds[1], 0.0),
@@ -614,33 +585,23 @@ class Map:
         for fort in list(fortification_units or []):
             if fort is None:
                 continue
-            try:
-                root = _unit_root(fort)
-            except Exception:
-                root = fort
+            root = _unit_root(fort)
             if root is None:
                 continue
             if target_root is not None and root is target_root:
                 continue
-            try:
-                if not getattr(root, "is_alive", lambda: True)():
-                    continue
-            except Exception:
+            is_alive = getattr(root, "is_alive", None)
+            if callable(is_alive) and not is_alive():
                 continue
-            try:
-                if not getattr(root, "deployed", True):
-                    continue
-            except Exception:
-                pass
-            try:
-                if root.is_in_reserves() or root.is_embarked:
-                    continue
-            except Exception:
-                pass
-            try:
-                rule = root.get_fortification_cover_rule()
-            except Exception:
-                rule = None
+            if not getattr(root, "deployed", True):
+                continue
+            in_reserves = getattr(root, "is_in_reserves", None)
+            if callable(in_reserves) and in_reserves():
+                continue
+            if bool(getattr(root, "is_embarked", False)):
+                continue
+            get_rule = getattr(root, "get_fortification_cover_rule", None)
+            rule = get_rule() if callable(get_rule) else None
             if not rule:
                 continue
             footprint, bbox = _footprint_for_unit(root)
@@ -652,10 +613,7 @@ class Map:
             for attacker_model in list(getattr(attacking_unit, "models", []) or []):
                 if not getattr(attacker_model, "is_alive", False):
                     continue
-                try:
-                    fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
-                except Exception:
-                    fully_visible = True
+                fully_visible = self._is_fully_visible_due_to_terrain(attacker_model, target_model, proxy)
                 if not fully_visible:
                     result["has_benefit_of_cover"] = True
                     result["source_unit"] = root
@@ -701,7 +659,7 @@ class Map:
                             # Inside RUINS footprint but no explicit floor polygon match; assume ground floor top thickness
                             max_height = max(max_height, RUINS_FLOOR_THICKNESS)
                             continue
-                    except Exception:
+                    except (TypeError, ValueError, KeyError, GEOSException):
                         # Fall through to generic handling if something goes wrong
                         pass
 
@@ -741,20 +699,14 @@ class Map:
         """
         # Get the positions from first alive model in each unit
         unit_pos = None
-        try:
-            unit_models = unit.get_models_for_collision()
-        except Exception:
-            unit_models = unit.models
+        unit_models = self._unit_collision_models(unit)
         for model in unit_models:
             if model.is_alive:
                 unit_pos = model.get_location()
                 break
 
         target_pos = None
-        try:
-            target_models = target.get_models_for_collision()
-        except Exception:
-            target_models = target.models
+        target_models = self._unit_collision_models(target)
         for model in target_models:
             if model.is_alive:
                 target_pos = model.get_location()
@@ -981,7 +933,7 @@ class RuinsTerrain(TerrainFeature):
             fn = getattr(unit, "counts_as_infantry_for_terrain", None)
             if callable(fn) and fn():
                 return "infantry"
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         if getattr(unit, 'is_infantry', False):
             return "infantry"
@@ -1815,14 +1767,14 @@ class TerrainFactory:
         v4 = TerrainFactory.create_preset_ruin_rect_12x6_variant4()
         try:
             from shapely.affinity import scale as _sh_scale
-        except Exception:
+        except ImportError:
             return v4
 
         def _mirror_geom(g):
             try:
                 # Mirror top/bottom within 0..6 by flipping y about y=3
                 return _sh_scale(g, xfact=1.0, yfact=-1.0, origin=(0.0, 3.0))
-            except Exception:
+            except (GEOSException, TypeError, ValueError):
                 return g
 
         footprint = _mirror_geom(v4.footprint)
@@ -2277,7 +2229,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
         if moving_model is not None:
             try:
                 test_base = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))
-            except Exception:
+            except (AttributeError, TypeError, ValueError, GEOSException):
                 test_base = None
             if test_base is None or not test_base.intersects(terrain.footprint):
                 continue
@@ -2291,7 +2243,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                 mx, my = mpos[0], mpos[1]
                 try:
                     m_base = m.model_base.get_base_shape_at(mx, my, getattr(m.model_base, 'facing', 0.0))
-                except Exception:
+                except (AttributeError, TypeError, ValueError, GEOSException):
                     m_base = None
                 if m_base is not None and m_base.intersects(terrain.footprint):
                     any_intersection = True
@@ -2310,7 +2262,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
             base_geom = None
             try:
                 base_geom = model.model_base.get_base_shape_at(mx, my, getattr(model.model_base, 'facing', 0.0))
-            except Exception:
+            except (AttributeError, TypeError, ValueError, GEOSException):
                 return 'Failed to get model base geometry for wall check'
             for wall in getattr(terrain, 'walls', []) or []:
                 # Only consider walls that occupy this Z slice
@@ -2318,7 +2270,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     try:
                         if base_geom.intersects(wall.get('polygon')):
                             return 'Model base overlaps a RUINS wall'
-                    except Exception:
+                    except (TypeError, ValueError, GEOSException):
                         # If intersection fails, be conservative and reject
                         return 'Error during wall intersection check'
             return None
@@ -2339,7 +2291,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     continue
                 try:
                     overlaps_xy = base_geom.intersects(fl_poly)
-                except Exception:
+                except (TypeError, ValueError, GEOSException):
                     overlaps_xy = False
                 if not overlaps_xy:
                     continue
@@ -2366,7 +2318,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                 # Vertical clearance: if base is under any upper-floor polygon, ensure model height fits the gap
                 try:
                     base_geom_gf = moving_model.model_base.get_base_shape_at(x, y, getattr(moving_model.model_base, 'facing', 0.0))
-                except Exception:
+                except (AttributeError, TypeError, ValueError, GEOSException):
                     base_geom_gf = None
                 if base_geom_gf is not None:
                     # Find the nearest upper floor above this ground floor whose polygon overlaps the base
@@ -2381,7 +2333,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                             continue
                         try:
                             overlaps_xy = base_geom_gf.intersects(fl_poly)
-                        except Exception:
+                        except (TypeError, ValueError, GEOSException):
                             overlaps_xy = False
                         if not overlaps_xy:
                             continue
@@ -2405,10 +2357,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
             else:
                 # Validate all models in the unit at their current positions (deployment-time).
                 # Use collision models so attached leaders are validated as part of the unit.
-                try:
-                    models = unit.get_models_for_collision()
-                except Exception:
-                    models = unit.models
+                models = self._unit_collision_models(unit)
                 for model in models:
                     model_pos = model.get_location()
                     if not model_pos:
@@ -2420,7 +2369,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     # Vertical clearance: if base is under any upper-floor polygon, ensure model height fits the gap
                     try:
                         base_geom_gf = model.model_base.get_base_shape_at(mx, my, getattr(model.model_base, 'facing', 0.0))
-                    except Exception:
+                    except (AttributeError, TypeError, ValueError, GEOSException):
                         base_geom_gf = None
                     if base_geom_gf is not None:
                         nearest_upper_floor = None
@@ -2434,7 +2383,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                                 continue
                             try:
                                 overlaps_xy = base_geom_gf.intersects(fl_poly)
-                            except Exception:
+                            except (TypeError, ValueError, GEOSException):
                                 overlaps_xy = False
                             if not overlaps_xy:
                                 continue
@@ -2476,7 +2425,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                         ok = floor_poly.covers(base_geom)
                     else:
                         ok = floor_poly.contains(base_geom)
-                except Exception:
+                except (TypeError, ValueError, GEOSException):
                     ok = False
                 if not ok:
                     return {
@@ -2493,10 +2442,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                     }
             else:
                 # Deployment-time check for all models (positions assumed to be already set on models)
-                try:
-                    models = unit.get_models_for_collision()
-                except Exception:
-                    models = unit.models
+                models = self._unit_collision_models(unit)
                 for model in models:
                     model_pos = model.get_location()
                     if model_pos:
@@ -2508,7 +2454,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                                 ok = floor_poly.covers(base_geom)
                             else:
                                 ok = floor_poly.contains(base_geom)
-                        except Exception:
+                        except (TypeError, ValueError, GEOSException):
                             ok = False
                         if not ok:
                             return {
@@ -2531,10 +2477,7 @@ def validate_ruins_placement(unit: 'Unit', position: Tuple[float, float, float],
                 if wall_reason:
                     return {'valid': False, 'reason': wall_reason, 'floor_level': floor_level}
             else:
-                try:
-                    models = unit.get_models_for_collision()
-                except Exception:
-                    models = unit.models
+                models = self._unit_collision_models(unit)
                 for model in models:
                     model_pos = model.get_location()
                     if not model_pos:
@@ -2608,17 +2551,15 @@ class ObjectivePoint:
                 continue
             for unit in player.army.units:
                 # Avoid double-counting: attached leaders are counted as part of their bodyguard unit.
-                try:
-                    if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
-                        continue
-                except Exception:
-                    pass
+                if bool(getattr(unit, "is_leader", False)) and getattr(unit, "attached_to", None) is not None:
+                    continue
                 if not unit.deployed or not unit.is_alive():
                     continue
-                try:
-                    models = unit.get_models_for_collision()
-                except Exception:
-                    models = unit.models
+                get_models = getattr(unit, "get_models_for_collision", None)
+                if callable(get_models):
+                    models = list(get_models() or [])
+                else:
+                    models = list(getattr(unit, "models", []) or [])
                 for model in models:
                     if not model.is_alive:
                         continue
@@ -2629,7 +2570,7 @@ class ObjectivePoint:
                         if model_base_shape.intersects(objective_area):
                             player_oc[player] += model.objective_control
                             print(f"INFO: {model.name} (OC: {model.objective_control}) overlaps objective at ({self.x:.1f}, {self.y:.1f})")
-                    except Exception as e:
+                    except (AttributeError, TypeError, ValueError, GEOSException):
                         # Fallback to distance check if base shape fails
                         distance = get_dist(self.x - model.model_base.x, self.y - model.model_base.y)
                         model_base_radius = getattr(model.model_base, 'get_radius', lambda: 1.0)()
@@ -2654,7 +2595,7 @@ class ObjectivePoint:
         if sticky_owner is not None and sticky_owner in player_oc:
             try:
                 sticky_oc = int(player_oc.get(sticky_owner, 0) or 0)
-            except Exception:
+            except (TypeError, ValueError):
                 sticky_oc = 0
             opponent_max = 0
             for player, oc in player_oc.items():
@@ -2662,7 +2603,7 @@ class ObjectivePoint:
                     continue
                 try:
                     opponent_max = max(opponent_max, int(oc or 0))
-                except Exception:
+                except (TypeError, ValueError):
                     continue
             sticky_source = getattr(self, "sticky_source", None)
             allow_break = True

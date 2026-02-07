@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..utility.entity_ids import get_entity_id
+from ..utility.entity_ids import get_entity_id, maybe_entity_id
 from .decision_kinds import (
     DECISION_ALLOCATE_DAMAGE,
     DECISION_CHOOSE_HIT_MODIFIER_IGNORES,
@@ -105,7 +105,7 @@ class AttackResolutionManager:
         for item in list(data.get("sequences", []) or []):
             try:
                 seq = AttackSequence.from_dict(item)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
             mgr.sequences[seq.sequence_id] = seq
         return mgr
@@ -114,28 +114,19 @@ class AttackResolutionManager:
         registry = getattr(game, "entity_registry", None)
         if registry is None:
             return None
-        try:
-            return registry.get(str(unit_id), kind="unit")
-        except Exception:
-            return None
+        return registry.get(str(unit_id), kind="unit")
 
     def _resolve_model(self, game: object, model_id: str):
         registry = getattr(game, "entity_registry", None)
         if registry is None:
             return None
-        try:
-            return registry.get(str(model_id), kind="model")
-        except Exception:
-            return None
+        return registry.get(str(model_id), kind="model")
 
     def _resolve_wargear(self, game: object, wargear_id: str):
         registry = getattr(game, "entity_registry", None)
         if registry is None:
             return None
-        try:
-            return registry.get(str(wargear_id), kind="wargear")
-        except Exception:
-            return None
+        return registry.get(str(wargear_id), kind="wargear")
 
     def _resolve_profile(self, game: object, wargear_id: str, profile_name: str):
         wargear = self._resolve_wargear(game, wargear_id)
@@ -158,42 +149,29 @@ class AttackResolutionManager:
 
     def _sorted_models(self, models: list) -> list:
         ordered = [m for m in list(models or []) if m is not None]
-        try:
-            ordered.sort(key=lambda m: str(get_entity_id(m)))
-        except Exception:
-            return ordered
+        ordered.sort(key=lambda m: str(maybe_entity_id(m) or ""))
         return ordered
 
     def _maybe_clear_selected_to_shoot_rerolls(self, game: object, unit_id: str) -> None:
         if not unit_id:
             return
-        try:
-            for seq in list(self.sequences.values()):
-                if str(getattr(seq, "attacker_unit_id", "") or "") == str(unit_id):
-                    if str(getattr(seq, "step", "") or "") != "done":
-                        return
-        except Exception:
-            return
+        for seq in list(self.sequences.values()):
+            if str(getattr(seq, "attacker_unit_id", "") or "") == str(unit_id):
+                if str(getattr(seq, "step", "") or "") != "done":
+                    return
         unit = self._resolve_unit(game, unit_id)
         if unit is None:
             return
-        try:
-            if hasattr(unit, "clear_selected_to_shoot_rerolls"):
-                unit.clear_selected_to_shoot_rerolls()
-        except Exception:
-            pass
-        try:
-            if hasattr(unit, "clear_selected_to_action_reroll_choice"):
-                unit.clear_selected_to_action_reroll_choice(action="shoot")
-        except Exception:
-            pass
+        clear_shoot = getattr(unit, "clear_selected_to_shoot_rerolls", None)
+        if callable(clear_shoot):
+            clear_shoot()
+        clear_action = getattr(unit, "clear_selected_to_action_reroll_choice", None)
+        if callable(clear_action):
+            clear_action(action="shoot")
 
     def _mark_sequence_done(self, game: object, seq: AttackSequence) -> None:
         seq.step = "done"
-        try:
-            self._maybe_clear_selected_to_shoot_rerolls(game, seq.attacker_unit_id)
-        except Exception:
-            pass
+        self._maybe_clear_selected_to_shoot_rerolls(game, seq.attacker_unit_id)
 
     def queue_attack_declarations(self, game: object, declarations: list[dict], *, out_of_phase: bool = False) -> bool:
         if not declarations:
@@ -248,7 +226,7 @@ class AttackResolutionManager:
         if attacks_override is not None:
             try:
                 seq.context["attacks_override"] = int(attacks_override)
-            except Exception:
+            except (TypeError, ValueError):
                 seq.context["attacks_override"] = attacks_override
         if attacks_override_modifiers is not None:
             seq.context["attacks_override_modifiers"] = list(attacks_override_modifiers or [])
@@ -1660,7 +1638,7 @@ class AttackResolutionManager:
             return False
         try:
             start_idx = int(seq.context.get("mortal_queue_index", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             start_idx = 0
         idx = max(0, start_idx)
         game_map = getattr(game, "map", None)
@@ -1789,26 +1767,25 @@ class AttackResolutionManager:
         attack_instance = dict(entry.get("attack_instance", {}) or {})
         game_map = getattr(game, "map", None)
         if profile is not None and attacker is not None:
-            try:
-                profile._apply_single_mortal_wound_with_tracking(
+            apply_with_tracking = getattr(profile, "_apply_single_mortal_wound_with_tracking", None)
+            if callable(apply_with_tracking):
+                apply_with_tracking(
                     target_model,
                     attacker,
                     attack_instance,
                     game_map=game_map,
                 )
                 return
-            except Exception:
-                pass
-        try:
-            target_model.take_damage(
-                1,
-                is_mortal=True,
-                weapon_profile=profile,
-                game_map=game_map,
-                damage_source="mortal",
-            )
-        except Exception:
-            pass
+        take_damage = getattr(target_model, "take_damage", None)
+        if not callable(take_damage):
+            raise AttributeError("Target model does not implement take_damage for mortal wound resolution.")
+        take_damage(
+            1,
+            is_mortal=True,
+            weapon_profile=profile,
+            game_map=game_map,
+            damage_source="mortal",
+        )
 
     def resume_after_mortal_allocation(self, game: object, seq: AttackSequence, entry_index: int, model_id: str | None) -> None:
         if seq is None:
@@ -1818,7 +1795,7 @@ class AttackResolutionManager:
             return
         try:
             idx = int(entry_index)
-        except Exception:
+        except (TypeError, ValueError):
             idx = None
         if idx is None or idx < 0 or idx >= len(queue):
             return
@@ -1849,7 +1826,7 @@ class AttackResolutionManager:
         hazardous_active = False
         try:
             hazardous_active = bool(profile.is_hazardous())
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             hazardous_active = False
         target_melee_hazardous = False
         target_unit = self._resolve_unit(game, seq.target_unit_id)
@@ -1867,7 +1844,7 @@ class AttackResolutionManager:
                 parent = getattr(profile, "parent_wargear", None)
                 if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
                     pain_hazardous = True
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pain_hazardous = False
         test_model_ids: list[str] = []
         if hazardous_active or pain_hazardous or target_melee_hazardous:
@@ -1880,11 +1857,8 @@ class AttackResolutionManager:
                 elif target_melee_hazardous:
                     test_model_ids.append(model_id)
                 else:
-                    try:
-                        if not bool(getattr(model, "is_character", False)):
-                            test_model_ids.append(model_id)
-                    except Exception:
-                        continue
+                    if not bool(getattr(model, "is_character", False)):
+                        test_model_ids.append(model_id)
         if not test_model_ids:
             return False
         seq.context["hazardous_test_model_ids"] = list(test_model_ids)
@@ -1991,7 +1965,7 @@ class AttackResolutionManager:
                     include_melee_non_character=pain_hazardous,
                     include_melee_all=target_melee_all,
                 )
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 eligible = []
             if not eligible:
                 for model_id in list(seq.model_ids or []):
@@ -2004,16 +1978,16 @@ class AttackResolutionManager:
                 break
             choice = hazardous_allocation_choice(eligible)
             if choice.forced_model is not None:
-                try:
-                    choice.forced_model.take_damage(
-                        3,
-                        is_mortal=True,
-                        weapon_profile=profile,
-                        game_map=game_map,
-                        damage_source="hazardous",
-                    )
-                except Exception:
-                    pass
+                forced_take_damage = getattr(choice.forced_model, "take_damage", None)
+                if not callable(forced_take_damage):
+                    raise AttributeError("Forced hazardous model does not implement take_damage.")
+                forced_take_damage(
+                    3,
+                    is_mortal=True,
+                    weapon_profile=profile,
+                    game_map=game_map,
+                    damage_source="hazardous",
+                )
                 remaining -= 1
                 continue
             if choice.choice_models:
@@ -2077,16 +2051,16 @@ class AttackResolutionManager:
             return
         model = self._resolve_model(game, model_id) if model_id else None
         if model is not None:
-            try:
-                model.take_damage(
-                    3,
-                    is_mortal=True,
-                    weapon_profile=profile,
-                    game_map=game_map,
-                    damage_source="hazardous",
-                )
-            except Exception:
-                pass
+            take_damage = getattr(model, "take_damage", None)
+            if not callable(take_damage):
+                raise AttributeError("Hazardous allocation model does not implement take_damage.")
+            take_damage(
+                3,
+                is_mortal=True,
+                weapon_profile=profile,
+                game_map=game_map,
+                damage_source="hazardous",
+            )
             remaining -= 1
             seq.context["hazardous_failures_remaining"] = int(max(0, remaining))
         if self._process_hazardous_failures(game, seq):

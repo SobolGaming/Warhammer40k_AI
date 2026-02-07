@@ -137,7 +137,7 @@ def validate_model_positions(game: object, unit: object, model_positions: object
             members = None
             try:
                 members = set(unit.get_attached_unit_members() or [])
-            except Exception:
+            except (AttributeError, TypeError):
                 members = None
             if not members or parent_unit not in members:
                 return ("Model does not belong to the selected unit.",)
