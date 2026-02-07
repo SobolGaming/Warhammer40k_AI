@@ -104,6 +104,11 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 - Heavy `Unit` behavior is split into focused mixins under `src/warhammer40k_ai/units/unit_mixins/` for easier maintenance and safer code review.
 - External imports remain stable (`from warhammer40k_ai.units.unit import Unit`), while internal behavior is specialized by phase/domain.
 
+### Stratagem Architecture
+- `src/warhammer40k_ai/rules/stratagems.py` remains the `StratagemManager` facade and orchestration layer.
+- Faction/detachment-specific target-selection helpers are progressively split into focused modules (for example `stratagems_world_eaters.py`, `stratagems_chaos_knights.py`, `stratagems_chaos_daemons.py`) to keep stratagem logic maintainable as detachments expand.
+- Shared stratagem targetability rules stay centralized (`_unit_cannot_be_target_of_stratagem`) and are reused by specialized modules.
+
 ### User Interface
 - Battlefield view: zoomable map with units, terrain, objectives, and deployment zones
 - Roster panes: interactive unit lists showing health, equipment, and deployment status
@@ -194,6 +199,9 @@ Warhammer40k_AI/
 |   |   |-- player.py
 |   |-- rules/
 |   |   |-- stratagems.py
+|   |   |-- stratagems_world_eaters.py
+|   |   |-- stratagems_chaos_knights.py
+|   |   |-- stratagems_chaos_daemons.py
 |   |   |-- enhancement.py
 |   |   |-- detachment_registry.py
 |   |   |-- <faction>_detachments.py
