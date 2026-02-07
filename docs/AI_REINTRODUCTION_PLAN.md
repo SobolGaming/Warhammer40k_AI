@@ -768,9 +768,9 @@ Time management is a concrete subsystem, not an open question.
 
 ## Engineering Roadmap (Incremental PRs)
 
-Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and replayable without any ML stack installed.
+Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and replayable without any ML stack installed.
 
-1. ✅ Ruleset/version plumbing + deterministic replay
+1. [done] Ruleset/version plumbing + deterministic replay
    - Goal: make the engine replayable and patch-versioned before any AI logic lands.
    - Ruleset identity:
      - Plumb ruleset_id, dataslate_id, points_id into game state snapshots, event log records, and decision contexts.
@@ -783,6 +783,9 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Sort entity IDs before enumerating candidates or events.
    - Replay primitive:
      - Create a replayer that can replay a game from event log or decision log.
+   - CI determinism gates:
+     - Run deterministic replay/hash checks on Windows and Linux against pinned Python versions.
+     - Fail if event log hash or end-state hash diverges in the OS matrix.
    - Tests:
      - Same seed -> identical event log hash.
      - Replay produces identical end state.
@@ -790,7 +793,7 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Document the canonical source of ruleset IDs and where they are stored.
    - Policy: no ML libs.
 
-2. ✅ Unified Decision API + action masking
+2. [done] Unified Decision API + action masking
    - Goal: every human/AI choice becomes the same deterministic Decision -> chosen CandidateAction interface.
    - Decision objects:
      - Every choice in all phases emits a Decision with decision_id, decision_type, context, candidates[], mask[].
@@ -801,6 +804,8 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Provide legality mask + optional mask_reasons[] (useful for UI and debugging).
    - Controller boundary:
      - Introduce a controller interface used by human UI, remote/network, and heuristic AI (no ML).
+   - Contract drift guards:
+     - Add CI checks that fail when `src/warhammer40k_ai/engine/decision_kinds.py`, `docs/DECISION_TYPES.md`, and UI mapping entries in `docs/NETWORK_SAVELOAD_DESIGN.md` diverge.
    - Tests:
      - Decision candidate set matches golden snapshot.
      - Mask length == candidates length.
@@ -809,24 +814,19 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Add or refresh a Decision types catalog (even if partial initially).
    - Policy: no ML libs.
 
-3. DecisionRecord logging + dual-view observation + HumanActionCandidate injection + deterministic replayer
-   - Goal: make human games a first-class dataset source aligned to candidate-based RL later.
+3. DecisionRecord core logging + schema enforcement + HumanActionCandidate injection
+   - Goal: land telemetry core before dual-view/stateblob and replay strictness.
    - DecisionRecord writer:
-     - Emit DecisionRecord for every decision: include global_seed, decision_seed, full candidates, mask, timing, outcome.
-   - Dual view observation:
-     - Store omniscient_state snapshot/delta and player_obs_state[player_id] snapshot/delta.
+     - Emit DecisionRecord for every decision: include global_seed, decision_seed, full candidates, mask, timing, and outcome.
    - Schema enforcement:
      - Validate every record against DECISION_RECORD_SCHEMA.json in debug/test builds.
      - Add schema version bump rules if fields change.
    - HumanActionCandidate injection:
-     - For freeform UI actions (movement especially): validate, compute required witnesses, append candidate if not present, select it.
+     - For freeform UI actions (movement especially): validate, compute required witnesses, append candidate if not present, and select it.
    - Invalid attempt telemetry (optional but high value):
      - When UI rejects a human action, log valid=false with invalid_attempt + rejection_reason.
-   - Deterministic replay:
-     - Add a replayer mode: replay by DecisionRecords.
-     - Assert candidate sets match recorded candidates (or fail loudly).
    - Tests:
-     - Round-trip: play -> log -> replay -> identical end state.
+     - chosen_action_id is always present in candidates for valid decisions.
      - HumanActionCandidate injection yields chosen_action_id present in candidates.
    - Docs:
      - Add a telemetry contract appendix pointing to the JSON schema.
@@ -849,7 +849,21 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - StateBlob schema description (even if not JSON-schema yet).
    - Policy: no ML libs.
 
-5. Tier 1 Plan schema integrated into decision contexts
+5. DecisionRecord dual-view observation + deterministic DecisionRecord replayer
+   - Goal: complete replay-grade telemetry once StateBlob and perspective contracts are in place.
+   - Dual view observation:
+     - Store omniscient_state snapshot/delta and player_obs_state[player_id] snapshot/delta.
+   - Deterministic replay:
+     - Add a replayer mode that replays by DecisionRecords.
+     - Strict mode asserts candidate sets match recorded candidates and fails loudly on mismatch.
+   - Tests:
+     - Round-trip: play -> log -> replay -> identical end state.
+     - Replay strict mode fails on candidate mismatch.
+   - Docs:
+     - Document strict replay guarantees and expected failure modes.
+   - Policy: no ML libs.
+
+6. Tier 1 Plan schema integrated into decision contexts
    - Goal: make the Plan real and plumb it end-to-end, even if heuristic initially.
    - Plan schema:
      - Implement Plan object exactly as documented: primary/deny, secondary posture, risk, CP posture, unit tiers.
@@ -864,7 +878,7 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Plan schema + example.
    - Policy: no ML libs.
 
-6. Compute Budget / Time Manager
+7. Compute Budget / Time Manager
    - Goal: make tournament-speed a hard contract now, not a later optimization.
    - Time manager:
      - Per decision type caps + tier multipliers (P0/P1/P2).
@@ -874,14 +888,19 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Record time_budget_ms and wall_clock_ms in DecisionRecord.
    - Performance harness:
      - Benchmarks for candidate generation time and movement solve time.
+   - Initial numeric SLOs (tunable after benchmark baselining):
+     - MOVE_UNIT p95 wall_clock_ms <= 300 in the standard benchmark pack.
+     - Non-movement decision p95 wall_clock_ms <= 150 in the standard benchmark pack.
+     - Timeout/fallback rate < 1% across the standard benchmark pack.
    - Tests:
      - Hard cap respected (no runaway solve).
+     - SLO checks run in performance CI job.
    - Docs:
      - Time manager policies and timeout behavior.
    - Policy: no ML libs.
 
-7. MovementIntent schema + solver hooks
-   - Goal: encode intent and let the solver generate legal candidates.
+8. MovementIntent schema + solver hooks + minimum PathWitness emission
+   - Goal: encode intent and let the solver generate legal candidates with replay-grade path references from day one.
    - MovementIntent implementation:
      - Objective targets, deny regions, weights, anchors (0-3), constraint toggles.
    - Intent -> solver objective weights:
@@ -889,15 +908,17 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
        coherency robustness scoring, threat exposure penalty.
    - Candidate generation:
      - Produce top-K candidates with metadata (solver_ms, screen coverage, threat score, etc).
+     - Emit path_witness_ref for each non-noop move candidate.
+     - Require continuous path legality validation before candidate is marked legal.
    - Tests:
      - Same intent + same seed -> same candidates.
-     - Candidate metadata present.
+     - Candidate metadata and path_witness_ref are present.
    - Docs:
      - MovementIntent examples and expected candidate metrics.
    - Policy: no ML libs.
 
-8. PathWitness artifacts + continuous validation
-   - Goal: enforce path legality and support deterministic replay/training.
+9. PathWitness artifacts + continuous validation hardening
+   - Goal: enforce path legality invariants and compact replay/training storage.
    - Witness formats:
      - CorridorWitness per base profile group.
      - ModelPathWitness per model (translate, pivot, floor_transition).
@@ -914,7 +935,7 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - PathWitness contract (ensure implementation matches).
    - Policy: no ML libs.
 
-9. Tight clearance detection + pivot/orientation constraints
+10. Tight clearance detection + pivot/orientation constraints
    - Goal: make oval bases and hull footprints behave credibly in tight gaps.
    - Clearance profiling:
      - Compute local clearance along corridor.
@@ -929,7 +950,7 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Regression scenarios for threading cases (major does not fit, minor does).
    - Policy: no ML libs.
 
-10. Tier 2 orchestration scaffolding
+11. Tier 2 orchestration scaffolding
    - Goal: turn Plan into per-unit tasks and intents, with compute tiers.
    - Task schema:
      - SCORE / SCREEN / STAGE / TRADE / DENY / PROTECT / BAIT.
@@ -942,18 +963,22 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Compute tiers map to time manager multipliers.
    - Policy: no ML libs.
 
-11. Training harness with league self-play (no ML)
+12. Training harness with league self-play (no ML)
    - Goal: build the harness in two sub-phases so ML can be delayed.
-   - 11A) Harness and league skeleton (no ML):
+   - 12A) Harness and league skeleton (no ML):
      - Headless match runner for human, heuristic, and random controllers.
      - League manager (minimal) with opponent snapshots (heuristics/configs first).
      - Dataset generator: write DecisionRecords to disk for every match.
      - Offline evaluation: VP delta, decision counts by type, time usage vs budget.
+   - 12B) Dataset contract and validation:
+     - Write a manifest per dataset run with schema_version, ruleset_id/dataslate_id/points_id, seed policy, record counts, invalid-attempt counts, and generation timestamp.
+     - Add a dataset validator CLI and CI checks for manifest + schema integrity.
    - Tests:
      - 10 game batch completes and produces valid DecisionRecords.
+     - Dataset manifest validator passes on generated sample datasets.
    - Policy: no ML libs.
 
-12. Army muster generator + evaluator prototype
+13. Army muster generator + evaluator prototype (parallel track)
    - Goal: provide a meta-game roster search loop without ML dependencies initially.
    - Roster generator:
      - Legal 2000-point rosters from in-repo structured data.
@@ -961,6 +986,8 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
      - Heuristic scoring (robustness, OC mass, threat mix, scoring tools).
    - Integration:
      - Output playbook prior inputs to Tier 1/2 (risk posture defaults, CP posture defaults).
+   - Sequencing:
+     - Run as a non-blocking parallel track relative to PR 14/15 unless roster AI is an explicit near-term milestone.
    - Tests:
      - Generates legal rosters deterministically with the same seed.
    - Docs:
@@ -969,14 +996,14 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
 
 ## Add-on PRs to explicitly delay PyTorch
 
-13. Optional ML dependency boundary (no training yet)
+14. Optional ML dependency boundary (no training yet)
    - Strict dependency rule: core engine must import without torch installed.
    - Create warhammer40k_ai/ml/ package guarded behind optional extras.
    - Implement DecisionRecord dataset loader (pure Python).
    - Feature extraction pipeline (pure Python; outputs numpy arrays or JSON).
    - Add a tiny null model interface for inference that returns uniform scores.
 
-14. First learned component: Tier 3 candidate ranker (offline supervised)
+15. First learned component: Tier 3 candidate ranker (offline supervised)
    - Only now bring in PyTorch (and later TorchRL/PyG if needed).
    - Train on DecisionRecords from human games and heuristic self-play:
      - Learning-to-rank or classification over candidates.
@@ -985,7 +1012,7 @@ Note: PRs 1-12 explicitly avoid ML libraries. Keep the engine importable and rep
 
 ## ML Framework Recommendation
 
-Note: PyTorch and supporting ML libraries are intentionally deferred until the optional ML boundary and first learned component milestones (PR 13/14). Do not add ML dependencies to core before then.
+Note: PyTorch and supporting ML libraries are intentionally deferred until the optional ML boundary and first learned component milestones (PR 14/15). Do not add ML dependencies to core before then.
 
 ### Primary Framework
 
@@ -1061,8 +1088,18 @@ Note: PyTorch and supporting ML libraries are intentionally deferred until the o
 - Painted bonus always applies. Reward normalization assumes 90 effective VP.
 - Every engine decision must route through the unified Decision API with deterministic request/response mapping. Gaps must be corrected.
 
-### Open
+### ML Gate Criteria (Must Be Closed Before PR 15)
 
-- Training data specification: define heuristic demo formats, storage, and minimum dataset sizes for Tier 3 pretraining.
-- Movement solver worst-case limits: specify maximum allowed runtime and fallback behavior when dense terrain causes solver escalation.
-- Ruleset/version tagging schema: define exact fields and where they are stored in logs and snapshots for reproducible training/evaluation.
+- Training data specification:
+  - Owner: TBD
+  - Due: before PR 15 branch cut
+  - Exit criteria: documented demo formats, storage layout, and minimum dataset sizes for Tier 3 pretraining.
+- Movement solver worst-case limits:
+  - Owner: TBD
+  - Due: before PR 15 branch cut
+  - Exit criteria: maximum runtime budget and fallback behavior documented and enforced by tests.
+- Ruleset/version tagging schema finalization:
+  - Owner: TBD
+  - Due: before PR 15 branch cut
+  - Exit criteria: exact tagging fields and storage locations finalized in logs/snapshots, with replay reproducibility tests.
+
