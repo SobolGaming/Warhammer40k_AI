@@ -1041,35 +1041,30 @@ class Game:
                 for unit in list(army.units):
                     if unit is None:
                         continue
-                    try:
-                        root = unit.get_attached_unit_root()
-                    except Exception:
-                        root = unit
+                    get_root = getattr(unit, "get_attached_unit_root", None)
+                    root = get_root() if callable(get_root) else unit
                     if root is None or root is not unit:
                         continue
                     if not root.is_alive():
                         continue
-                    try:
-                        if not getattr(root, "deployed", True):
-                            continue
-                        if root.is_in_reserves() or root.is_embarked:
-                            continue
-                    except Exception:
-                        pass
+                    if not getattr(root, "deployed", True):
+                        continue
+                    in_reserves_fn = getattr(root, "is_in_reserves", None)
+                    in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+                        str(getattr(root, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+                    )
+                    is_embarked = bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None))
+                    if in_reserves or is_embarked:
+                        continue
 
                     # Model-level: start-of-any-phase damage set to 1 (once per battle).
-                    try:
-                        models = list(root.get_attached_unit_models() or [])
-                    except Exception:
-                        models = list(getattr(root, "models", []) or [])
+                    get_models = getattr(root, "get_attached_unit_models", None)
+                    models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
                     for model in list(models or []):
                         if not getattr(model, "is_alive", False):
                             continue
-                        specs = []
-                        try:
-                            specs = list(root.model_start_any_phase_damage_set_one_specs(model) or [])
-                        except Exception:
-                            specs = []
+                        get_specs = getattr(root, "model_start_any_phase_damage_set_one_specs", None)
+                        specs = list(get_specs(model) or []) if callable(get_specs) else []
                         if not specs:
                             continue
                         for spec in specs:
@@ -1108,11 +1103,8 @@ class Game:
                     for model in list(models or []):
                         if not getattr(model, "is_alive", False):
                             continue
-                        specs = []
-                        try:
-                            specs = list(root.model_start_any_phase_invulnerable_save_specs(model) or [])
-                        except Exception:
-                            specs = []
+                        get_specs = getattr(root, "model_start_any_phase_invulnerable_save_specs", None)
+                        specs = list(get_specs(model) or []) if callable(get_specs) else []
                         if not specs:
                             continue
                         for spec in specs:
@@ -1152,10 +1144,8 @@ class Game:
                             )
 
                     # Unit-level: start-of-any-phase FNP (once per battle).
-                    try:
-                        specs = list(root.unit_start_any_phase_fnp_specs() or [])
-                    except Exception:
-                        specs = []
+                    get_fnp_specs = getattr(root, "unit_start_any_phase_fnp_specs", None)
+                    specs = list(get_fnp_specs() or []) if callable(get_fnp_specs) else []
                     for spec in specs:
                         ability_key = str(spec.get("ability_key") or "start_any_phase_fnp").strip().lower()
                         if not ability_key:
@@ -1184,10 +1174,8 @@ class Game:
                         )
 
                     # Unit-level: start-of-any-phase Battle-shock clear (once per battle).
-                    try:
-                        specs = list(root.unit_start_any_phase_clear_battleshock_specs() or [])
-                    except Exception:
-                        specs = []
+                    get_clear_specs = getattr(root, "unit_start_any_phase_clear_battleshock_specs", None)
+                    specs = list(get_clear_specs() or []) if callable(get_clear_specs) else []
                     for spec in specs:
                         ability_key = str(spec.get("ability_key") or "start_any_phase_clear_battleshock").strip().lower()
                         if not ability_key:
@@ -1197,25 +1185,21 @@ class Game:
                         model_name = str(spec.get("model_name", "") or "").strip()
                         anchor_model = None
                         if model_name:
-                            try:
-                                anchor_model = root._find_model_named(model_name)
-                            except Exception:
-                                anchor_model = None
+                            find_model = getattr(root, "_find_model_named", None)
+                            if callable(find_model):
+                                anchor_model = find_model(model_name)
                         if anchor_model is None:
-                            try:
-                                anchor_model = next(
-                                    (m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", False)),
-                                    None,
-                                )
-                            except Exception:
-                                anchor_model = None
+                            anchor_model = next(
+                                (m for m in list(getattr(root, "models", []) or []) if getattr(m, "is_alive", False)),
+                                None,
+                            )
                         if anchor_model is None:
                             continue
 
                         keyword = str(spec.get("keyword", "") or "").strip()
                         try:
                             range_value = int(spec.get("range", 0) or 0)
-                        except Exception:
+                        except (TypeError, ValueError):
                             range_value = 0
                         if range_value <= 0 or not keyword:
                             continue
@@ -1224,40 +1208,37 @@ class Game:
                         for other in list(getattr(army, "units", []) or []):
                             if other is None:
                                 continue
-                            try:
-                                other_root = other.get_attached_unit_root()
-                            except Exception:
-                                other_root = other
+                            get_other_root = getattr(other, "get_attached_unit_root", None)
+                            other_root = get_other_root() if callable(get_other_root) else other
                             if other_root is None:
                                 continue
                             oid = str(get_entity_id(other_root))
                             if not oid or oid in seen_candidates:
                                 continue
                             seen_candidates.add(oid)
-                            try:
-                                if not other_root.is_alive() or not getattr(other_root, "deployed", True):
+                            is_alive_fn = getattr(other_root, "is_alive", None)
+                            if callable(is_alive_fn):
+                                if not is_alive_fn():
                                     continue
-                            except Exception:
+                            elif getattr(other_root, "is_alive", True) is False:
                                 continue
-                            try:
-                                if other_root.is_in_reserves() or other_root.is_embarked:
-                                    continue
-                            except Exception:
-                                pass
-                            try:
-                                if not other_root.is_battle_shocked():
-                                    continue
-                            except Exception:
+                            if not getattr(other_root, "deployed", True):
                                 continue
-                            try:
-                                if not root._unit_matches_keyword_phrase(other_root, keyword):
-                                    continue
-                            except Exception:
+                            in_reserves_fn = getattr(other_root, "is_in_reserves", None)
+                            in_reserves = bool(in_reserves_fn()) if callable(in_reserves_fn) else (
+                                str(getattr(other_root, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+                            )
+                            is_embarked = bool(getattr(other_root, "is_embarked", False)) or bool(getattr(other_root, "embarked_in", None))
+                            if in_reserves or is_embarked:
                                 continue
-                            try:
-                                if not root._model_within_range_of_unit(anchor_model, other_root, float(range_value)):
-                                    continue
-                            except Exception:
+                            is_battle_shocked_fn = getattr(other_root, "is_battle_shocked", None)
+                            if not callable(is_battle_shocked_fn) or not is_battle_shocked_fn():
+                                continue
+                            matches_keyword = getattr(root, "_unit_matches_keyword_phrase", None)
+                            if not callable(matches_keyword) or not matches_keyword(other_root, keyword):
+                                continue
+                            in_range = getattr(root, "_model_within_range_of_unit", None)
+                            if not callable(in_range) or not in_range(anchor_model, other_root, float(range_value)):
                                 continue
                             candidates.append(other_root)
 
@@ -1381,11 +1362,8 @@ class Game:
                 for m in models:
                     if not getattr(m, "is_alive", True):
                         continue
-                    specs = []
-                    try:
-                        specs = list(unit.model_start_fight_phase_melee_full_characteristic_boost_specs(m) or [])
-                    except Exception:
-                        specs = []
+                    get_specs = getattr(unit, "model_start_fight_phase_melee_full_characteristic_boost_specs", None)
+                    specs = list(get_specs(m) or []) if callable(get_specs) else []
                     if not specs:
                         continue
                     for spec in specs:
@@ -1428,11 +1406,8 @@ class Game:
                 for m in models:
                     if not getattr(m, "is_alive", True):
                         continue
-                    specs = []
-                    try:
-                        specs = list(unit.model_start_fight_phase_hellforged_attacks_bonus_specs(m) or [])
-                    except Exception:
-                        specs = []
+                    get_specs = getattr(unit, "model_start_fight_phase_hellforged_attacks_bonus_specs", None)
+                    specs = list(get_specs(m) or []) if callable(get_specs) else []
                     if not specs:
                         continue
                     for spec in specs:
@@ -1518,25 +1493,22 @@ class Game:
             for unit in list(army.units):
                 if not unit.is_alive():
                     continue
-                try:
-                    if not getattr(unit, "deployed", True):
-                        continue
-                    if unit.is_in_reserves() or unit.is_embarked:
-                        continue
-                except Exception:
-                    pass
-                try:
-                    models = list(unit.get_attached_unit_models() or [])
-                except Exception:
-                    models = list(getattr(unit, "models", []) or [])
+                if not getattr(unit, "deployed", True):
+                    continue
+                is_in_reserves_fn = getattr(unit, "is_in_reserves", None)
+                in_reserves = bool(is_in_reserves_fn()) if callable(is_in_reserves_fn) else (
+                    str(getattr(unit, "reserve_status", "deployed")) in ("reserves", "strategic_reserves")
+                )
+                is_embarked = bool(getattr(unit, "is_embarked", False)) or bool(getattr(unit, "embarked_in", None))
+                if in_reserves or is_embarked:
+                    continue
+                get_models = getattr(unit, "get_attached_unit_models", None)
+                models = list(get_models() or []) if callable(get_models) else list(getattr(unit, "models", []) or [])
                 for model in list(models or []):
                     if not getattr(model, "is_alive", False):
                         continue
-                    spec = None
-                    try:
-                        spec = unit.model_moment_shackle_spec(model)
-                    except Exception:
-                        spec = None
+                    get_spec = getattr(unit, "model_moment_shackle_spec", None)
+                    spec = get_spec(model) if callable(get_spec) else None
                     if not spec:
                         continue
                     ability_key = str(spec.get("ability_key") or "moment_shackle").strip().lower() or "moment_shackle"
@@ -1550,11 +1522,11 @@ class Game:
                     weapon_name = str(spec.get("weapon_name") or "Watcher's Axe").strip() or "Watcher's Axe"
                     try:
                         attacks = int(spec.get("attacks", 12) or 12)
-                    except Exception:
+                    except (TypeError, ValueError):
                         attacks = 12
                     try:
                         invuln = int(spec.get("invuln", 2) or 2)
-                    except Exception:
+                    except (TypeError, ValueError):
                         invuln = 2
                     ctx = {
                         "ability_name": ability_name,

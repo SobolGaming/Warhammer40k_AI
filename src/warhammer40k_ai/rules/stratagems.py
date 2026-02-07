@@ -1309,65 +1309,59 @@ class StratagemManager:
         key = self._attacker_unit_key(attacker_unit)
         if key is None:
             return
-        try:
-            units = list(getattr(self.player.get_army(), "units", []) or [])
-        except Exception:
-            raise
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        units = list(getattr(army, "units", []) or [])
         for unit in units:
-            try:
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for k in (
+                "defensive_hit_mods",
+                "defensive_wound_mods",
+                "defensive_damage_reductions",
+                "defensive_invuln_overrides",
+                "defensive_fnp_overrides",
+                "defensive_ap_worsen_phase",
+            ):
+                items = sr.get(k)
+                if not isinstance(items, list):
                     continue
-                for k in (
-                    "defensive_hit_mods",
-                    "defensive_wound_mods",
-                    "defensive_damage_reductions",
-                    "defensive_invuln_overrides",
-                    "defensive_fnp_overrides",
-                    "defensive_ap_worsen_phase",
-                ):
-                    items = sr.get(k)
-                    if not isinstance(items, list):
-                        continue
-                    kept = [e for e in items if str(e.get("attacker_key", "")) != str(key)]
-                    if kept:
-                        sr[k] = kept
-                    else:
-                        sr.pop(k, None)
-                unit.special_rules = sr
-            except Exception:
-                raise
+                kept = [e for e in items if str(e.get("attacker_key", "")) != str(key)]
+                if kept:
+                    sr[k] = kept
+                else:
+                    sr.pop(k, None)
+            unit.special_rules = sr
+
     def _clear_defensive_effects_for_phase(self, phase_name: str) -> None:
         phase_key = self._phase_key_from_name(phase_name)
         if not phase_key:
             return
-        try:
-            units = list(getattr(self.player.get_army(), "units", []) or [])
-        except Exception:
-            raise
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        units = list(getattr(army, "units", []) or [])
         for unit in units:
-            try:
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            for k in (
+                "defensive_hit_mods",
+                "defensive_wound_mods",
+                "defensive_damage_reductions",
+                "defensive_invuln_overrides",
+                "defensive_fnp_overrides",
+            ):
+                items = sr.get(k)
+                if not isinstance(items, list):
                     continue
-                for k in (
-                    "defensive_hit_mods",
-                    "defensive_wound_mods",
-                    "defensive_damage_reductions",
-                    "defensive_invuln_overrides",
-                    "defensive_fnp_overrides",
-                ):
-                    items = sr.get(k)
-                    if not isinstance(items, list):
-                        continue
-                    kept = [e for e in items if str(e.get("expires_phase", "")) != str(phase_key)]
-                    if kept:
-                        sr[k] = kept
-                    else:
-                        sr.pop(k, None)
-                unit.special_rules = sr
-            except Exception:
-                raise
+                kept = [e for e in items if str(e.get("expires_phase", "")) != str(phase_key)]
+                if kept:
+                    sr[k] = kept
+                else:
+                    sr.pop(k, None)
+            unit.special_rules = sr
+
     def _queue_generic_defensive_reactions(
         self,
         attacking_unit: Any,
@@ -1397,32 +1391,35 @@ class StratagemManager:
                 continue
             candidates = []
             for u in list(target_units or []):
-                try:
-                    if u is None or not u.is_alive():
+                if u is None:
+                    continue
+                is_alive = getattr(u, "is_alive", None)
+                if callable(is_alive):
+                    if not is_alive():
                         continue
-                    if u.get_parent_army().player is not self.player:
-                        continue
-                    if _unit_cannot_be_target_of_stratagem(u):
-                        continue
-                    if not self._unit_matches_defensive_target_spec(u, spec):
-                        continue
-                    candidates.append(u)
-                except Exception:
-                    raise
+                elif getattr(u, "is_alive", True) is False:
+                    continue
+                get_parent_army = getattr(u, "get_parent_army", None)
+                parent_army = get_parent_army() if callable(get_parent_army) else getattr(u, "parent_army", None)
+                owner = getattr(parent_army, "player", None)
+                if owner is not self.player:
+                    continue
+                if _unit_cannot_be_target_of_stratagem(u):
+                    continue
+                if not self._unit_matches_defensive_target_spec(u, spec):
+                    continue
+                candidates.append(u)
             if not candidates:
                 continue
             already = False
             for r in self._pending_reactions:
-                try:
-                    if (
-                        r.get("event") in ("shooting_targets_selected", "fight_targets_selected")
-                        and r.get("stratagem") == s.name
-                        and r.get("attacking_unit") is attacking_unit
-                    ):
-                        already = True
-                        break
-                except Exception:
-                    raise
+                if (
+                    r.get("event") in ("shooting_targets_selected", "fight_targets_selected")
+                    and r.get("stratagem") == s.name
+                    and r.get("attacking_unit") is attacking_unit
+                ):
+                    already = True
+                    break
             if already:
                 continue
             payload = {
@@ -1441,48 +1438,41 @@ class StratagemManager:
     def _apply_armour_of_contempt(self, target_unit: Any, attacker_unit: Any, *, amount: int = 1) -> bool:
         if target_unit is None or attacker_unit is None:
             return False
-        try:
-            root = target_unit.get_attached_unit_root()
-        except Exception:
-            raise
+        get_root = getattr(target_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else target_unit
         key = self._attacker_unit_key(attacker_unit)
         if key is None:
             return False
-        try:
-            sr = getattr(root, "special_rules", None)
-            if not isinstance(sr, dict):
-                sr = {}
-            spec = sr.get("armour_of_contempt_ap_worsen")
-            if not isinstance(spec, dict):
-                spec = {}
-            spec[str(key)] = int(amount)
-            sr["armour_of_contempt_ap_worsen"] = spec
-            root.special_rules = sr
-            return True
-        except Exception:
-            raise
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        spec = sr.get("armour_of_contempt_ap_worsen")
+        if not isinstance(spec, dict):
+            spec = {}
+        spec[str(key)] = int(amount)
+        sr["armour_of_contempt_ap_worsen"] = spec
+        root.special_rules = sr
+        return True
+
     def _clear_armour_of_contempt_for_attacker(self, attacker_unit: Any) -> None:
         key = self._attacker_unit_key(attacker_unit)
         if key is None:
             return
-        try:
-            units = list(getattr(self.player.get_army(), "units", []) or [])
-        except Exception:
-            raise
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
+        units = list(getattr(army, "units", []) or [])
         for unit in units:
-            try:
-                sr = getattr(unit, "special_rules", None)
-                if not isinstance(sr, dict):
-                    continue
-                spec = sr.get("armour_of_contempt_ap_worsen")
-                if not isinstance(spec, dict) or str(key) not in spec:
-                    continue
-                spec.pop(str(key), None)
-                if not spec:
-                    sr.pop("armour_of_contempt_ap_worsen", None)
-                unit.special_rules = sr
-            except Exception:
-                raise
+            sr = getattr(unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            spec = sr.get("armour_of_contempt_ap_worsen")
+            if not isinstance(spec, dict) or str(key) not in spec:
+                continue
+            spec.pop(str(key), None)
+            if not spec:
+                sr.pop("armour_of_contempt_ap_worsen", None)
+            unit.special_rules = sr
+
     def _queue_reaction(self, payload: Dict[str, Any], use_timer: bool = True) -> None:
         if not isinstance(payload, dict):
             return
@@ -1495,12 +1485,9 @@ class StratagemManager:
         ts = self._now() if now is None else float(now)
         kept = []
         for r in list(self._pending_reactions):
-            try:
-                expires_at = r.get("expires_at", None)
-                if expires_at is not None and ts >= float(expires_at):
-                    continue
-            except Exception:
-                raise
+            expires_at = r.get("expires_at", None)
+            if expires_at is not None and ts >= float(expires_at):
+                continue
             kept.append(r)
         self._pending_reactions = kept
 
@@ -1510,10 +1497,7 @@ class StratagemManager:
             return
         kept = []
         for r in list(self._pending_reactions):
-            try:
-                reaction_phase = r.get("phase_name") or r.get("phase")
-            except Exception:
-                raise
+            reaction_phase = r.get("phase_name") or r.get("phase")
             if reaction_phase:
                 if str(reaction_phase).strip().lower() != current:
                     continue
@@ -1521,114 +1505,88 @@ class StratagemManager:
         self._pending_reactions = kept
 
     def _reaction_time_left(self, reaction: Dict[str, Any], now: Optional[float] = None) -> Optional[float]:
-        try:
-            expires_at = reaction.get("expires_at", None)
-            if expires_at is None:
-                return None
-            ts = self._now() if now is None else float(now)
-            return max(0.0, float(expires_at) - ts)
-        except Exception:
-            raise
+        expires_at = reaction.get("expires_at", None)
+        if expires_at is None:
+            return None
+        ts = self._now() if now is None else float(now)
+        return max(0.0, float(expires_at) - ts)
     def _is_implemented_stratagem(self, stratagem: Stratagem) -> bool:
-        try:
-            name_u = (stratagem.name or "").strip().upper()
-            if name_u in IMPLEMENTED_STRATAGEM_NAMES:
-                return True
-            if self._get_defensive_reaction_spec(stratagem) is not None:
-                return True
-            if self._get_charge_melee_ap_spec(stratagem) is not None:
-                return True
-            return self._get_consolidate_move_spec(stratagem) is not None
-        except Exception:
-            raise
+        name_u = (stratagem.name or "").strip().upper()
+        if name_u in IMPLEMENTED_STRATAGEM_NAMES:
+            return True
+        if self._get_defensive_reaction_spec(stratagem) is not None:
+            return True
+        if self._get_charge_melee_ap_spec(stratagem) is not None:
+            return True
+        return self._get_consolidate_move_spec(stratagem) is not None
+
     @staticmethod
     def _normalize_timing_text(text: str) -> str:
-        try:
-            t = str(text or "").strip().lower()
-        except Exception:
-            raise
+        t = str(text or "").strip().lower()
         return t.replace("\u2019", "'")
 
     @staticmethod
     def _is_bloodletters_unit(unit) -> bool:
         if unit is None:
             return False
-        try:
-            if hasattr(unit, "has_any_keyword") and unit.has_any_keyword("BLOODLETTERS"):
-                return True
-        except Exception:
-            raise
-        try:
-            if hasattr(unit, "has_keyword") and unit.has_keyword("BLOODLETTERS"):
-                return True
-        except Exception:
-            raise
-        try:
-            name = str(getattr(unit, "name", "") or "").strip().lower()
-            if "bloodletters" in name:
-                return True
-        except Exception:
-            raise
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        if callable(has_any_keyword) and has_any_keyword("BLOODLETTERS"):
+            return True
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword) and has_keyword("BLOODLETTERS"):
+            return True
+        name = str(getattr(unit, "name", "") or "").strip().lower()
+        if "bloodletters" in name:
+            return True
         return False
 
     def _turn_category(self, stratagem: Stratagem) -> str:
-        try:
-            phase = self._normalize_timing_text(getattr(stratagem, "phase", ""))
-            turn = self._normalize_timing_text(getattr(stratagem, "turn", ""))
+        phase = self._normalize_timing_text(getattr(stratagem, "phase", ""))
+        turn = self._normalize_timing_text(getattr(stratagem, "turn", ""))
 
-            if phase:
-                if "opponent" in phase:
-                    return "opponent"
-                if "your " in phase:
-                    return "your"
-                if "any phase" in phase:
-                    return "either"
-                if "phase" in phase:
-                    return "either"
+        if phase:
+            if "opponent" in phase:
+                return "opponent"
+            if "your " in phase:
+                return "your"
+            if "any phase" in phase:
+                return "either"
+            if "phase" in phase:
+                return "either"
 
-            if turn:
-                if "opponent" in turn:
-                    return "opponent"
-                if "your" in turn:
-                    return "your"
-                if "either" in turn or "any" in turn:
-                    return "either"
+        if turn:
+            if "opponent" in turn:
+                return "opponent"
+            if "your" in turn:
+                return "your"
+            if "either" in turn or "any" in turn:
+                return "either"
 
-            return "either"
-        except Exception:
-            raise
+        return "either"
+
     def _effective_cp_cost(self, stratagem: Stratagem, context: Dict[str, Any]) -> int:
         target_unit = context.get("target_unit") or context.get("unit")
         cost = int(getattr(stratagem, "cp_cost", 0) or 0)
-        try:
-            if hasattr(self.player, "preview_stratagem_cp_cost"):
-                prev = self.player.preview_stratagem_cp_cost(stratagem, target_unit=target_unit)
-                return int(prev.get("cost", cost))
-        except Exception:
-            raise
+        preview_cost = getattr(self.player, "preview_stratagem_cp_cost", None)
+        if callable(preview_cost):
+            prev = preview_cost(stratagem, target_unit=target_unit)
+            return int((prev or {}).get("cost", cost))
         return cost
 
     @staticmethod
     def _heroic_intervention_target_id(unit) -> Optional[str]:
         if unit is None:
             return None
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
-        try:
-            return get_entity_id(root) or getattr(root, "_id", None)
-        except Exception:
-            return getattr(root, "_id", None)
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        return get_entity_id(root) or getattr(root, "_id", None)
 
     @staticmethod
     def _unit_has_faultless_opportunist(unit) -> bool:
         if unit is None:
             return False
-        try:
-            members = list(unit.get_attached_unit_members() or [])
-        except Exception:
-            members = []
+        get_members = getattr(unit, "get_attached_unit_members", None)
+        members = list(get_members() or []) if callable(get_members) else []
         if not members:
             members = [unit]
         for u in members:
@@ -1637,10 +1595,11 @@ class StratagemManager:
                 continue
             if not sr.get("enhancement_faultless_opportunist", False):
                 continue
-            try:
-                if callable(getattr(u, "is_alive", None)) and not u.is_alive():
+            is_alive = getattr(u, "is_alive", None)
+            if callable(is_alive):
+                if not is_alive():
                     continue
-            except Exception:
+            elif getattr(u, "is_alive", True) is False:
                 continue
             return True
         return False
@@ -1650,10 +1609,7 @@ class StratagemManager:
             return False
         fn = getattr(unit, "can_use_beast_handler_heroic_intervention", None)
         if callable(fn):
-            try:
-                return bool(fn(self.game))
-            except Exception:
-                return False
+            return bool(fn(self.game))
         return False
 
     def _unit_can_use_traitor_enforcer_overwatch(self, unit) -> bool:
@@ -1661,10 +1617,7 @@ class StratagemManager:
             return False
         fn = getattr(unit, "can_use_traitor_enforcer_overwatch", None)
         if callable(fn):
-            try:
-                return bool(fn(self.game))
-            except Exception:
-                return False
+            return bool(fn(self.game))
         return False
 
     def _overwatch_brutal_example_available(self, *, target_unit=None, candidates=None) -> bool:
@@ -1736,12 +1689,10 @@ class StratagemManager:
                     result["reason"] = "Already used this turn"
                     return result
             enemy_unit = context.get("enemy_unit")
-            try:
-                if enemy_unit is not None and hasattr(enemy_unit, "has_first_prince_slaanesh_no_overwatch") and enemy_unit.has_first_prince_slaanesh_no_overwatch():
-                    result["reason"] = "Target cannot be overwatched"
-                    return result
-            except Exception:
-                raise
+            no_overwatch = getattr(enemy_unit, "has_first_prince_slaanesh_no_overwatch", None)
+            if callable(no_overwatch) and no_overwatch():
+                result["reason"] = "Target cannot be overwatched"
+                return result
         phase_ok = stratagem.is_phase_allowed(phase_name)
         if name_u == "FLICKERING REALITY":
             if phase_name and str(phase_name).strip().lower() == "fight phase":
@@ -1795,57 +1746,48 @@ class StratagemManager:
                 return result
 
         # Last pass: delegate to stratagem conditions
-        try:
-            if name_u in ("BLOOD OFFERING", "A GRIM WARNING"):
-                if context.get("objective_candidates"):
-                    result["available"] = True
-                    result["reason"] = None
-                    return result
-            if name_u == "BLITZING FIREPOWER":
-                if self._blitzing_firepower_candidates():
-                    result["available"] = True
-                    result["reason"] = None
-                    return result
-            if name_u == "MERCILESS RECLAMATION":
-                if self._starshatter_merciless_reclamation_candidates(phase_name):
-                    result["available"] = True
-                    result["reason"] = None
-                    return result
-            if name_u == "DIMENSIONAL TUNNEL":
-                if self._starshatter_dimensional_tunnel_candidates():
-                    result["available"] = True
-                    result["reason"] = None
-                    return result
-            if name_u == "CHRONOSHIFT":
-                if self._starshatter_chronoshift_candidates():
-                    result["available"] = True
-                    result["reason"] = None
-                    return result
-            if stratagem.can_use(self.player, self.game, **context):
+        if name_u in ("BLOOD OFFERING", "A GRIM WARNING"):
+            if context.get("objective_candidates"):
                 result["available"] = True
                 result["reason"] = None
                 return result
-        except Exception:
-            raise
+        if name_u == "BLITZING FIREPOWER":
+            if self._blitzing_firepower_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "MERCILESS RECLAMATION":
+            if self._starshatter_merciless_reclamation_candidates(phase_name):
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "DIMENSIONAL TUNNEL":
+            if self._starshatter_dimensional_tunnel_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if name_u == "CHRONOSHIFT":
+            if self._starshatter_chronoshift_candidates():
+                result["available"] = True
+                result["reason"] = None
+                return result
+        if stratagem.can_use(self.player, self.game, **context):
+            result["available"] = True
+            result["reason"] = None
+            return result
         result["reason"] = "Requires valid trigger or target"
         return result
 
     def _reaction_target_label(self, reaction: Dict[str, Any]) -> str:
-        try:
-            if reaction.get("enemy_unit") is not None:
-                return f"Vs {getattr(reaction['enemy_unit'], 'name', 'Enemy')}"
-            if reaction.get("target_unit") is not None:
-                return f"Target: {getattr(reaction['target_unit'], 'name', 'Unit')}"
-            if reaction.get("unit") is not None:
-                return f"Target: {getattr(reaction['unit'], 'name', 'Unit')}"
-            if reaction.get("target_model") is not None:
-                return f"Target model: {getattr(reaction['target_model'], 'name', 'Model')}"
-        except Exception:
-            raise
-        try:
-            hint = self._stratagem_target_hint(reaction.get("stratagem", ""))
-        except Exception:
-            raise
+        if reaction.get("enemy_unit") is not None:
+            return f"Vs {getattr(reaction['enemy_unit'], 'name', 'Enemy')}"
+        if reaction.get("target_unit") is not None:
+            return f"Target: {getattr(reaction['target_unit'], 'name', 'Unit')}"
+        if reaction.get("unit") is not None:
+            return f"Target: {getattr(reaction['unit'], 'name', 'Unit')}"
+        if reaction.get("target_model") is not None:
+            return f"Target model: {getattr(reaction['target_model'], 'name', 'Model')}"
+        hint = self._stratagem_target_hint(reaction.get("stratagem", ""))
         if hint:
             return hint
         return ""
@@ -1893,47 +1835,34 @@ class StratagemManager:
         return hints.get(name_u, "")
 
     def _is_warhost_detachment(self) -> bool:
-        try:
-            army = self.player.get_army()
-        except Exception:
-            raise
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
         if mgr is None:
             return False
-        try:
-            return bool(mgr.is_warhost_detachment())
-        except Exception:
-            raise
+        return bool(mgr.is_warhost_detachment())
 
     def _is_war_horde_detachment(self) -> bool:
-        try:
-            army = self.player.get_army()
-        except Exception:
-            raise
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         mgr = getattr(army, "orks_detachments", None) if army is not None else None
         if mgr is None:
             return False
-        try:
-            return bool(mgr.is_war_horde())
-        except Exception:
-            raise
+        return bool(mgr.is_war_horde())
 
     def _is_orks_unit(self, unit: Any) -> bool:
         if unit is None:
             return False
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
         if root is None:
             return False
         army = getattr(self.player, "army", None)
         if army is None:
             return False
-        try:
-            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
-                return False
-        except Exception:
+        get_parent_army = getattr(root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if parent_army is not None and parent_army is not army:
             return False
         has_any_kw = getattr(root, "has_any_keyword", None)
         has_orks_kw = bool(has_any_kw("ORKS")) if callable(has_any_kw) else False
@@ -1946,12 +1875,10 @@ class StratagemManager:
     def _unit_is_grots(unit: Any) -> bool:
         if unit is None:
             return False
-        try:
-            if hasattr(unit, "has_any_keyword"):
-                if unit.has_any_keyword("Grots") or unit.has_any_keyword("Grot") or unit.has_any_keyword("Gretchin"):
-                    return True
-        except Exception:
-            return False
+        has_any_keyword = getattr(unit, "has_any_keyword", None)
+        if callable(has_any_keyword):
+            if has_any_keyword("Grots") or has_any_keyword("Grot") or has_any_keyword("Gretchin"):
+                return True
         return False
 
     def _chaos_knights_detachment_manager(self):
@@ -1961,29 +1888,23 @@ class StratagemManager:
         mgr = getattr(army, "chaos_knights_detachments", None)
         if mgr is None or not hasattr(mgr, "is_infernal_lance"):
             return None
-        try:
-            if not mgr.is_infernal_lance():
-                return None
-        except Exception:
+        if not mgr.is_infernal_lance():
             return None
         return mgr
 
     def _is_chaos_knights_unit(self, unit: Any) -> bool:
         if unit is None:
             return False
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
         if root is None:
             return False
         army = getattr(self.player, "army", None)
         if army is None:
             return False
-        try:
-            if hasattr(root, "get_parent_army") and root.get_parent_army() is not army:
-                return False
-        except Exception:
+        get_parent_army = getattr(root, "get_parent_army", None)
+        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
+        if parent_army is not None and parent_army is not army:
             return False
         has_any_kw = getattr(root, "has_any_keyword", None)
         if callable(has_any_kw) and has_any_kw("CHAOS KNIGHTS"):
@@ -1996,62 +1917,45 @@ class StratagemManager:
     def _is_chaos_knights_character_unit(self, unit: Any) -> bool:
         if not self._is_chaos_knights_unit(unit):
             return False
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
         if root is None:
             return False
-        try:
-            has_any_kw = getattr(root, "has_any_keyword", None)
-            if callable(has_any_kw) and has_any_kw("CHARACTER"):
+        has_any_kw = getattr(root, "has_any_keyword", None)
+        if callable(has_any_kw) and has_any_kw("CHARACTER"):
+            return True
+        get_models = getattr(root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(root, "models", []) or [])
+        for model in models:
+            if bool(getattr(model, "is_character", False)):
                 return True
-        except Exception:
-            pass
-        try:
-            for model in list(getattr(root, "get_attached_unit_models", lambda: [])() or []):
-                if bool(getattr(model, "is_character", False)):
-                    return True
-        except Exception:
-            pass
         return False
 
     def _get_world_eaters_mgr(self):
-        try:
-            army = self.player.get_army()
-        except Exception:
-            raise
+        get_army = getattr(self.player, "get_army", None)
+        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
         return getattr(army, "world_eaters_detachments", None) if army is not None else None
 
     def _is_goretrack_onslaught(self) -> bool:
         mgr = self._get_world_eaters_mgr()
         if mgr is None:
             return False
-        try:
-            return bool(mgr.is_goretrack_onslaught())
-        except Exception:
-            raise
+        return bool(mgr.is_goretrack_onslaught())
 
     def _is_world_eaters_unit(self, unit: Any, mgr=None) -> bool:
         if unit is None:
             return False
-        try:
-            root = unit.get_attached_unit_root()
-        except Exception:
-            root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
         if root is None:
             return False
         if mgr is None:
             mgr = self._get_world_eaters_mgr()
-        if mgr is not None and hasattr(mgr, "unit_is_world_eaters"):
-            try:
-                return bool(mgr.unit_is_world_eaters(root))
-            except Exception:
-                return False
-        try:
-            return bool(root.has_any_keyword("WORLD EATERS"))
-        except Exception:
-            return False
+        unit_is_we = getattr(mgr, "unit_is_world_eaters", None) if mgr is not None else None
+        if callable(unit_is_we):
+            return bool(unit_is_we(root))
+        has_any_keyword = getattr(root, "has_any_keyword", None)
+        return bool(has_any_keyword("WORLD EATERS")) if callable(has_any_keyword) else False
 
     def _goretrack_embarked_units(
         self,

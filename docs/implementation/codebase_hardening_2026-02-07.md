@@ -59,3 +59,33 @@
 ### Snapshot impact
 - `stratagems.py` scan count moved from `excepts=1429, prints=583` to `excepts=1409, prints=582`.
 - `game.py` scan count moved from `excepts=718, prints=98` to `excepts=692, prints=98`.
+
+## Follow-up Phase 2 (option 1)
+- Additional hardening pass in:
+  - `src/warhammer40k_ai/rules/stratagems.py`
+  - `src/warhammer40k_ai/engine/game.py`
+
+### `stratagems.py`
+- Removed another cluster of broad exception wrappers in defensive/reaction helper paths:
+  - defensive effect clear/apply helpers
+  - reaction queue prune and availability helpers
+  - detachment/unit classification helpers
+  - Overwatch availability checks and target-label generation
+- Replaced broad exception wrappers with explicit callable/attribute checks and typed numeric parsing where needed.
+
+### `game.py`
+- Removed broad exception swallowing in optional-ability setup flows at phase start:
+  - attached root/model/spec resolution now uses explicit callable checks
+  - reserve/embark/keyword/range checks are now explicit and deterministic
+  - integer parsing narrowed to `TypeError`/`ValueError`
+- Kept the same rules behavior while surfacing real failures instead of hiding them.
+
+### Snapshot impact
+- `stratagems.py` scan count moved from `excepts=1409, prints=582` to `excepts=1361, prints=582`.
+- `game.py` scan count moved from `excepts=692, prints=98` to `excepts=669, prints=98`.
+
+### Validation (Phase 2)
+- `python -m pytest tests/test_monarch_of_the_hunt_rerolls.py tests/test_methodical_destruction.py tests/test_prey_selection.py tests/test_shadow_form.py tests/test_harbingers_of_dread.py tests/test_drukhari_combat_drugs.py tests/test_space_marines_combat_doctrines.py tests/test_grand_coven_detachment.py tests/test_stratagem_phase_pruning.py tests/test_targeted_stratagem_cp_discount.py tests/test_stratagem_cp_increase.py`
+  - `53 passed`
+- `python -m pytest tests/`
+  - `1397 passed`
