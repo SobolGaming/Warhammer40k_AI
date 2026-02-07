@@ -7,9 +7,12 @@ from typing import Callable, Optional, Dict, Any, List
 from ..utility import dice as dice_module
 from ..utility.constants import ENGAGEMENT_RANGE_HORIZONTAL
 from ..utility.entity_ids import get_entity_id
+from .stratagems_aeldari import AeldariStratagemMixin
 from .stratagems_chaos_daemons import ChaosDaemonsStratagemMixin
 from .stratagem_descriptors import get_stratagem_tool_descriptor
 from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
+from .stratagems_necrons import NecronsStratagemMixin
+from .stratagems_orks import OrksStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
 
 logger = logging.getLogger(__name__)
@@ -788,7 +791,14 @@ class Stratagem:
         return True
 
 
-class StratagemManager(WorldEatersStratagemMixin, ChaosKnightsStratagemMixin, ChaosDaemonsStratagemMixin):
+class StratagemManager(
+    WorldEatersStratagemMixin,
+    ChaosKnightsStratagemMixin,
+    ChaosDaemonsStratagemMixin,
+    NecronsStratagemMixin,
+    AeldariStratagemMixin,
+    OrksStratagemMixin,
+):
     def __init__(self, player) -> None:
         # Lazy import to avoid cycles
         from warhammer40k_ai.waha_helper import WahaHelper
@@ -1840,53 +1850,6 @@ class StratagemManager(WorldEatersStratagemMixin, ChaosKnightsStratagemMixin, Ch
         }
         return hints.get(name_u, "")
 
-    def _is_warhost_detachment(self) -> bool:
-        get_army = getattr(self.player, "get_army", None)
-        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
-        mgr = getattr(army, "aeldari_detachments", None) if army is not None else None
-        if mgr is None:
-            return False
-        return bool(mgr.is_warhost_detachment())
-
-    def _is_war_horde_detachment(self) -> bool:
-        get_army = getattr(self.player, "get_army", None)
-        army = get_army() if callable(get_army) else getattr(self.player, "army", None)
-        mgr = getattr(army, "orks_detachments", None) if army is not None else None
-        if mgr is None:
-            return False
-        return bool(mgr.is_war_horde())
-
-    def _is_orks_unit(self, unit: Any) -> bool:
-        if unit is None:
-            return False
-        get_root = getattr(unit, "get_attached_unit_root", None)
-        root = get_root() if callable(get_root) else unit
-        if root is None:
-            return False
-        army = getattr(self.player, "army", None)
-        if army is None:
-            return False
-        get_parent_army = getattr(root, "get_parent_army", None)
-        parent_army = get_parent_army() if callable(get_parent_army) else getattr(root, "parent_army", None)
-        if parent_army is not None and parent_army is not army:
-            return False
-        has_any_kw = getattr(root, "has_any_keyword", None)
-        has_orks_kw = bool(has_any_kw("ORKS")) if callable(has_any_kw) else False
-        root_faction_id = str(getattr(root, "faction_id", "") or "").strip().upper()
-        if not has_orks_kw and root_faction_id != "ORK":
-            return False
-        return True
-
-    @staticmethod
-    def _unit_is_grots(unit: Any) -> bool:
-        if unit is None:
-            return False
-        has_any_keyword = getattr(unit, "has_any_keyword", None)
-        if callable(has_any_keyword):
-            if has_any_keyword("Grots") or has_any_keyword("Grot") or has_any_keyword("Gretchin"):
-                return True
-        return False
-
     def queue_realm_of_chaos_end_of_turn(self, *, turn_ending_player=None) -> None:
         if self.game is None or self.player is None or turn_ending_player is None:
             return
@@ -1951,184 +1914,6 @@ class StratagemManager(WorldEatersStratagemMixin, ChaosKnightsStratagemMixin, Ch
             },
             use_timer=False,
         )
-
-    def _get_necrons_mgr(self):
-        try:
-            army = self.player.get_army()
-        except Exception:
-            raise
-        return getattr(army, "necrons_detachments", None) if army is not None else None
-
-    def _is_starshatter_arsenal(self) -> bool:
-        mgr = self._get_necrons_mgr()
-        if mgr is None:
-            return False
-        try:
-            return bool(mgr.is_starshatter_arsenal())
-        except Exception:
-            raise
-    def _blitzing_firepower_candidates(self) -> List[Any]:
-        if not self._is_warhost_detachment():
-            return []
-        try:
-            army = self.player.get_army()
-        except Exception:
-            raise
-        units = list(getattr(army, "units", []) or []) if army is not None else []
-        candidates: List[Any] = []
-        seen = set()
-        for unit in units:
-            if unit is None:
-                continue
-            try:
-                root = unit.get_attached_unit_root()
-            except Exception:
-                raise
-            try:
-                uid = get_entity_id(root)
-            except Exception:
-                raise
-            if uid in seen:
-                continue
-            seen.add(uid)
-            try:
-                if not root.is_alive():
-                    continue
-            except Exception:
-                raise
-            try:
-                if not getattr(root, "deployed", False):
-                    continue
-            except Exception:
-                raise
-            try:
-                if getattr(root, "is_in_reserves", lambda: False)():
-                    continue
-            except Exception:
-                raise
-            try:
-                if _unit_cannot_be_target_of_stratagem(root):
-                    continue
-            except Exception:
-                raise
-            try:
-                if not root.has_any_keyword("ASURYANI"):
-                    continue
-            except Exception:
-                raise
-            try:
-                if getattr(getattr(root, "round_state", None), "shot_this_round", False):
-                    continue
-            except Exception:
-                raise
-            candidates.append(root)
-        return candidates
-
-    def _starshatter_candidates(
-        self,
-        *,
-        require_vehicle_or_mounted: bool = False,
-        require_not_moved: bool = False,
-        require_not_shot: bool = False,
-        require_not_fought: bool = False,
-    ) -> List[Any]:
-        if not self._is_starshatter_arsenal():
-            return []
-        mgr = self._get_necrons_mgr()
-        if mgr is None:
-            return []
-        try:
-            army = self.player.get_army()
-        except Exception:
-            raise
-        units = list(getattr(army, "units", []) or []) if army is not None else []
-        candidates: List[Any] = []
-        seen = set()
-        for unit in units:
-            if unit is None:
-                continue
-            try:
-                root = unit.get_attached_unit_root()
-            except Exception:
-                raise
-            if root is None:
-                continue
-            try:
-                uid = get_entity_id(root)
-            except Exception:
-                raise
-            if uid in seen:
-                continue
-            seen.add(uid)
-            try:
-                if not root.is_alive():
-                    continue
-            except Exception:
-                raise
-            try:
-                if not getattr(root, "deployed", False):
-                    continue
-            except Exception:
-                raise
-            try:
-                if getattr(root, "is_in_reserves", lambda: False)():
-                    continue
-            except Exception:
-                raise
-            try:
-                if _unit_cannot_be_target_of_stratagem(root):
-                    continue
-            except Exception:
-                raise
-            try:
-                if not mgr.unit_is_necrons(root):
-                    continue
-                if mgr.unit_is_titanic(root):
-                    continue
-            except Exception:
-                raise
-            if require_vehicle_or_mounted:
-                try:
-                    if not mgr.unit_is_vehicle_or_mounted(root):
-                        continue
-                except Exception:
-                    raise
-            if require_not_moved:
-                try:
-                    if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
-                        continue
-                except Exception:
-                    raise
-            if require_not_shot:
-                try:
-                    if bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
-                        continue
-                except Exception:
-                    raise
-            if require_not_fought:
-                try:
-                    if bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
-                        continue
-                except Exception:
-                    raise
-            candidates.append(root)
-        return candidates
-
-    def _starshatter_merciless_reclamation_candidates(self, phase_name: str | None = None) -> List[Any]:
-        phase_key = str(phase_name or "").strip().lower()
-        require_not_shot = "shooting" in phase_key
-        require_not_fought = "fight" in phase_key
-        return self._starshatter_candidates(
-            require_vehicle_or_mounted=False,
-            require_not_shot=require_not_shot,
-            require_not_fought=require_not_fought,
-        )
-
-    def _starshatter_dimensional_tunnel_candidates(self) -> List[Any]:
-        return self._starshatter_candidates(require_vehicle_or_mounted=True)
-
-    def _starshatter_chronoshift_candidates(self) -> List[Any]:
-        return self._starshatter_candidates(require_vehicle_or_mounted=True, require_not_moved=True)
 
     def _unit_wholly_within_battlefield_edge_distance(self, unit, distance: float) -> bool:
         if unit is None:

@@ -213,7 +213,7 @@ When submitting changes, record:
 
 ### Stratagem module specialization (mandatory)
 - Keep `src/warhammer40k_ai/rules/stratagems.py` as the public facade/orchestrator for `StratagemManager`.
-- Add new faction/detachment-specific stratagem candidate/targeting helpers to specialized modules under `src/warhammer40k_ai/rules/` (for example: `stratagems_world_eaters.py`, `stratagems_chaos_knights.py`, `stratagems_chaos_daemons.py`) instead of re-expanding `stratagems.py`.
+- Add new faction/detachment-specific stratagem candidate/targeting helpers to specialized modules under `src/warhammer40k_ai/rules/` (for example: `stratagems_world_eaters.py`, `stratagems_chaos_knights.py`, `stratagems_chaos_daemons.py`, `stratagems_necrons.py`, `stratagems_aeldari.py`, `stratagems_orks.py`) instead of re-expanding `stratagems.py`.
 - Preserve stable external imports and patch points:
   - `from warhammer40k_ai.rules.stratagems import StratagemManager`
 - Keep shared eligibility helpers (such as battle-shock/embarked stratagem target checks) centralized to avoid duplication across mixins.

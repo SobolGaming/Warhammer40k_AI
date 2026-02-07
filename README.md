@@ -106,7 +106,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 
 ### Stratagem Architecture
 - `src/warhammer40k_ai/rules/stratagems.py` remains the `StratagemManager` facade and orchestration layer.
-- Faction/detachment-specific target-selection helpers are progressively split into focused modules (for example `stratagems_world_eaters.py`, `stratagems_chaos_knights.py`, `stratagems_chaos_daemons.py`) to keep stratagem logic maintainable as detachments expand.
+- Faction/detachment-specific target-selection helpers are progressively split into focused modules (for example `stratagems_world_eaters.py`, `stratagems_chaos_knights.py`, `stratagems_chaos_daemons.py`, `stratagems_necrons.py`, `stratagems_aeldari.py`, `stratagems_orks.py`) to keep stratagem logic maintainable as detachments expand.
 - Shared stratagem targetability rules stay centralized (`_unit_cannot_be_target_of_stratagem`) and are reused by specialized modules.
 
 ### User Interface
@@ -202,6 +202,9 @@ Warhammer40k_AI/
 |   |   |-- stratagems_world_eaters.py
 |   |   |-- stratagems_chaos_knights.py
 |   |   |-- stratagems_chaos_daemons.py
+|   |   |-- stratagems_necrons.py
+|   |   |-- stratagems_aeldari.py
+|   |   |-- stratagems_orks.py
 |   |   |-- enhancement.py
 |   |   |-- detachment_registry.py
 |   |   |-- <faction>_detachments.py
