@@ -219,6 +219,21 @@ When submitting changes, record:
 - Keep shared eligibility helpers (such as battle-shock/embarked stratagem target checks) centralized to avoid duplication across mixins.
 - Prefer deterministic, sorted candidate output in every specialized helper (stable by canonical entity id).
 
+### AI foundation module specialization (mandatory)
+- Keep AI reintroduction foundations modular; do not collapse them back into `game.py`.
+- Maintain dedicated modules for:
+  - Decision telemetry: `src/warhammer40k_ai/engine/decision_record.py`
+  - State views: `src/warhammer40k_ai/engine/state_blob.py`
+  - Replay: `src/warhammer40k_ai/engine/replay.py`
+  - Time budgets: `src/warhammer40k_ai/engine/time_manager.py`
+  - Tier 1 planning: `src/warhammer40k_ai/engine/tier1_plan.py`
+  - Tier 2 tasking: `src/warhammer40k_ai/engine/tier2_orchestrator.py`
+  - Movement intent/solver/witness: `src/warhammer40k_ai/engine/movement_intent.py`, `src/warhammer40k_ai/engine/movement_solver.py`, `src/warhammer40k_ai/engine/path_witness.py`
+- If behavior changes, update the corresponding docs in `docs/`:
+  - `DECISION_RECORD_TELEMETRY.md`, `DECISION_RECORD_REPLAY.md`, `STATE_BLOB_SCHEMA.md`,
+    `TIER1_PLAN_SCHEMA.md`, `TIER2_ORCHESTRATION.md`, `TIME_MANAGER_POLICY.md`,
+    `MOVEMENT_INTENT.md`, `PATH_WITNESS_CONTRACT.md`, `TIGHT_CLEARANCE_POLICY.md`.
+
 ---
 
 ## Architecture requirements for future multiplayer support (WebSockets)

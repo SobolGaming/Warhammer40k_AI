@@ -22,7 +22,7 @@ from .command_kinds import (
     CMD_SELECT_MISSION,
     CMD_SET_DEPLOYMENT_WAITING,
 )
-from .decisions import DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
+from .decisions import CandidateAction, DecisionOption, DecisionQueue, DecisionRequest, DecisionResult
 from .decision_kinds import (
     DECISION_CHOOSE_MISSION,
     DECISION_CHOOSE_PLEDGE,
@@ -42,7 +42,14 @@ from .decision_kinds import (
 )
 from .random_source import RandomSource
 from .decision_controller import DecisionController, DecisionControllerHub
+from .decision_record import DecisionRecordStore
 from .ruleset import RulesetBundle
+from .tier1_plan import Tier1Plan, build_heuristic_tier1_plan
+from .tier2_orchestrator import Tier2TaskBundle, build_tier2_task_bundle
+from .time_manager import TimeManager
+from .movement_intent import MovementIntent
+from .movement_solver import generate_move_unit_candidates
+from .path_witness import PathWitnessStore
 from .dice_rolls import DiceRollManager
 from .attack_resolution import AttackResolutionManager
 from .ref_codec import encode_refs
@@ -88,6 +95,11 @@ class Game:
         self.event_log.attach(self)
         self.decision_controller_hub = DecisionControllerHub(self)
         self.decision_controller_hub.attach()
+        self.decision_record_store = DecisionRecordStore(self)
+        self._tier1_turn_plans: dict[tuple[int, str], Tier1Plan] = {}
+        self._tier2_task_bundles: dict[tuple[int, str], Tier2TaskBundle] = {}
+        self.time_manager = TimeManager()
+        self.path_witness_store = PathWitnessStore()
         self.objectives = []
         self.commands = []
         self.command_queue: list[GameCommand] = []
@@ -234,6 +246,44 @@ class Game:
             "dataslate_id": getattr(bundle, "dataslate_id", None),
             "points_id": getattr(bundle, "points_id", None),
         }
+
+    def _current_battle_round(self) -> int:
+        getter = getattr(self, "get_battle_round", None)
+        if callable(getter):
+            return int(getter() or 0)
+        return int(getattr(self, "turn", 0) or 0)
+
+    def _tier1_plan_key(self, player_id: str) -> tuple[int, str]:
+        return (self._current_battle_round(), str(player_id or ""))
+
+    def get_or_create_tier1_plan(self, player_id: str) -> Tier1Plan:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Tier1 plan requires player_id.")
+        if not hasattr(self, "_tier1_turn_plans") or not isinstance(self._tier1_turn_plans, dict):
+            self._tier1_turn_plans = {}
+        key = self._tier1_plan_key(pid)
+        existing = self._tier1_turn_plans.get(key)
+        if existing is not None:
+            return existing
+        plan = build_heuristic_tier1_plan(self, pid)
+        self._tier1_turn_plans[key] = plan
+        return plan
+
+    def get_or_create_tier2_task_bundle(self, player_id: str) -> Tier2TaskBundle:
+        pid = str(player_id or "")
+        if not pid:
+            raise ValueError("Tier2 task bundle requires player_id.")
+        if not hasattr(self, "_tier2_task_bundles") or not isinstance(self._tier2_task_bundles, dict):
+            self._tier2_task_bundles = {}
+        key = self._tier1_plan_key(pid)
+        existing = self._tier2_task_bundles.get(key)
+        if existing is not None:
+            return existing
+        plan = self.get_or_create_tier1_plan(pid)
+        bundle = build_tier2_task_bundle(self, plan)
+        self._tier2_task_bundles[key] = bundle
+        return bundle
 
     def _install_default_event_subscribers(self) -> None:
         """Install non-UI rule subscribers that operate off the event system."""
@@ -17498,6 +17548,60 @@ class Game:
                 ctx[key] = value
             elif ctx.get(key) != value:
                 raise ValueError(f"Decision context ruleset mismatch for {key}: {ctx.get(key)} != {value}")
+        plan_player_id = str(getattr(request, "player_id", "") or "")
+        if not plan_player_id:
+            current_player = self.get_current_player() if self.players else None
+            plan_player_id = str(getattr(current_player, "id", "") or "")
+        if plan_player_id:
+            plan = self.get_or_create_tier1_plan(plan_player_id)
+            tier2_bundle = self.get_or_create_tier2_task_bundle(plan_player_id)
+            if "plan_id" not in ctx:
+                ctx["plan_id"] = plan.plan_id
+            if "turn_plan" not in ctx:
+                ctx["turn_plan"] = plan.to_dict()
+            if "cp_reserve_policy" not in ctx:
+                ctx["cp_reserve_policy"] = dict(tier2_bundle.cp_reserve_policy or {})
+            unit_id = str(ctx.get("unit_id", "") or "")
+            task = tier2_bundle.tasks_by_unit_id.get(unit_id) if unit_id else None
+            if task is not None:
+                if "tier2_task" not in ctx:
+                    ctx["tier2_task"] = task.to_dict()
+                if "movement_intent" not in ctx:
+                    ctx["movement_intent"] = task.movement_intent.to_dict()
+                if "compute_tier" not in ctx:
+                    ctx["compute_tier"] = str(task.compute_tier)
+            if "compute_tier" not in ctx:
+                ctx["compute_tier"] = "P1"
+        time_manager = getattr(self, "time_manager", None)
+        if time_manager is None:
+            time_manager = TimeManager()
+            self.time_manager = time_manager
+        ctx = time_manager.decorate_context(request.decision_type, ctx)
+        if request.decision_type == DECISION_MOVE_UNIT:
+            if getattr(self, "path_witness_store", None) is None:
+                self.path_witness_store = PathWitnessStore()
+            intent = MovementIntent.from_context(ctx)
+            ctx["movement_intent"] = intent.to_dict()
+            request.context = ctx
+            move_candidates, move_mask, solver_ms, fallback_mode = generate_move_unit_candidates(self, request, intent)
+            if move_candidates:
+                normalized_candidates: list[CandidateAction] = []
+                for candidate in list(move_candidates or []):
+                    metadata = dict(candidate.metadata or {})
+                    metadata["solver_ms"] = int(max(0, solver_ms))
+                    metadata["fallback_mode"] = bool(fallback_mode or metadata.get("fallback_mode", False))
+                    normalized_candidates.append(
+                        CandidateAction(
+                            action_id=str(candidate.action_id),
+                            params=dict(candidate.params or {}),
+                            metadata=metadata,
+                        )
+                    )
+                request.candidates = normalized_candidates
+                request.mask = [bool(value) for value in list(move_mask or [])]
+                if len(request.mask) != len(request.candidates):
+                    request.mask = [True] * len(request.candidates)
+                request.mask_reasons = [None if val else "masked_as_illegal" for val in request.mask]
         request.context = ctx
         self.decision_queue.add(request)
         self.event_system.publish("decision_requested", request=request, game=self)
@@ -17674,6 +17778,13 @@ class Game:
         from .decision_dispatcher import dispatch_decision
         with game_context(self):
             apply_result = dispatch_decision(self, request, result)
+        self.decision_record_store.record_resolution(
+            request,
+            result,
+            ok=bool(getattr(apply_result, "ok", False)),
+            errors=list(getattr(apply_result, "errors", ()) or ()),
+            value=getattr(apply_result, "value", None),
+        )
         if apply_result.ok:
             self.decision_queue.pop(result.decision_id)
             self.event_system.publish("decision_resolved", result=result, request=request, game=self)
@@ -18755,6 +18866,9 @@ class Game:
         current_player = self.get_current_player()
         if current_player is None:
             return
+        current_player_id = getattr(current_player, "id", "")
+        self.get_or_create_tier1_plan(current_player_id)
+        self.get_or_create_tier2_task_bundle(current_player_id)
         army = self._get_player_army(current_player)
         if army is None:
             return

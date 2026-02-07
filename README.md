@@ -109,6 +109,15 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 - Faction/detachment-specific target-selection helpers are progressively split into focused modules (for example `stratagems_world_eaters.py`, `stratagems_chaos_knights.py`, `stratagems_chaos_daemons.py`, `stratagems_necrons.py`, `stratagems_aeldari.py`, `stratagems_orks.py`) to keep stratagem logic maintainable as detachments expand.
 - Shared stratagem targetability rules stay centralized (`_unit_cannot_be_target_of_stratagem`) and are reused by specialized modules.
 
+### AI Reintroduction Foundations
+- `src/warhammer40k_ai/engine/decision_record.py`: DecisionRecord emission, schema checks, invalid-attempt logging, and HumanActionCandidate injection.
+- `src/warhammer40k_ai/engine/state_blob.py`: deterministic omniscient and per-player observation state blobs.
+- `src/warhammer40k_ai/engine/replay.py`: DecisionRecord replay path with strict candidate/mask drift checks.
+- `src/warhammer40k_ai/engine/time_manager.py`: per-decision budget policy with compute-tier multipliers.
+- `src/warhammer40k_ai/engine/tier1_plan.py`: deterministic Tier-1 strategic plan schema and baseline heuristic planner.
+- `src/warhammer40k_ai/engine/tier2_orchestrator.py`: deterministic Tier-2 per-unit task scaffolding with movement-intent emission.
+- `src/warhammer40k_ai/engine/movement_intent.py`, `src/warhammer40k_ai/engine/movement_solver.py`, and `src/warhammer40k_ai/engine/path_witness.py`: movement-intent driven candidates, PathWitness refs, and continuous path/tight-clearance validation.
+
 ### User Interface
 - Battlefield view: zoomable map with units, terrain, objectives, and deployment zones
 - Roster panes: interactive unit lists showing health, equipment, and deployment status
@@ -124,6 +133,15 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 - **AI planning and telemetry**
   - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
   - [DecisionRecord schema](docs/DECISION_RECORD_SCHEMA.json): telemetry contract for human/AI decisions and replay.
+  - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.
+  - [DecisionRecord replay](docs/DECISION_RECORD_REPLAY.md): strict replay guarantees and failure modes.
+  - [StateBlob schema](docs/STATE_BLOB_SCHEMA.md): canonical omniscient/player observation payload contract.
+  - [Tier 1 plan schema](docs/TIER1_PLAN_SCHEMA.md): strategic plan payload and baseline behavior.
+  - [Tier 2 orchestration](docs/TIER2_ORCHESTRATION.md): per-unit task bundle scaffolding and context wiring.
+  - [Time manager policy](docs/TIME_MANAGER_POLICY.md): decision budgets, compute-tier multipliers, and fallback behavior.
+  - [MovementIntent](docs/MOVEMENT_INTENT.md): movement-intent schema and candidate metrics.
+  - [PathWitness contract](docs/PATH_WITNESS_CONTRACT.md): witness fields and validation invariants.
+  - [Tight clearance policy](docs/TIGHT_CLEARANCE_POLICY.md): clearance profiling and orientation constraints.
 - **Support matrices**
   - [Ability Support Matrix](docs/ABILITY_SUPPORT_MATRIX.md): engine support status for abilities and stratagems.
   - [Wargear Keyword Support Matrix](docs/WARGEAR_KEYWORD_SUPPORT_MATRIX.md): wargear keyword behavior coverage.

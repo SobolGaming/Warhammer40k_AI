@@ -14,6 +14,12 @@ from ..decision_kinds import (
     DECISION_SELECT_MOVEMENT_ACTION,
 )
 from ..decisions import DecisionRequest, DecisionResult
+from ..path_witness import (
+    current_model_positions,
+    detect_normal_move_engagement_crossing,
+    detect_tight_clearance_orientation_violations,
+    validate_witness_contiguity,
+)
 from ._helpers import (
     apply_model_positions,
     find_option,
@@ -259,6 +265,75 @@ def _validate_move_unit(game: object, request: DecisionRequest, result: Decision
         )
         if placement_errors:
             return placement_errors
+    movement_type = str(payload.get("movement_type", "") or ctx.get("movement_type", "") or "move").strip().lower()
+    path_witness_ref = str(result.payload.get("path_witness_ref", "") or payload.get("path_witness_ref", "") or "")
+    if path_witness_ref:
+        store = getattr(game, "path_witness_store", None)
+        if store is None:
+            return ("Move unit: path witness store missing.",)
+        witness = store.get(path_witness_ref)
+        if witness is None:
+            return ("Move unit: path witness_ref not found.",)
+        witness_errors = validate_witness_contiguity(witness, list(model_positions or []))
+        if witness_errors:
+            return tuple(witness_errors)
+    if movement_type == "move":
+        start_positions = current_model_positions(unit)
+        end_positions: list[dict] = []
+        for entry in list(model_positions or []):
+            enriched = dict(entry or {})
+            model = get_model(game, str(enriched.get("model_id", "") or ""))
+            base = getattr(model, "model_base", None) if model is not None else None
+            radius = list(getattr(base, "radius", []) or [])
+            if len(radius) < 2:
+                r = float(getattr(base, "get_radius", lambda: 0.0)()) if base is not None else 0.0
+                radius = [r, r]
+            base_type = str(getattr(getattr(base, "base_type", None), "name", "CIRCULAR"))
+            enriched["radius"] = [float(radius[0]), float(radius[1])]
+            enriched["base_type"] = base_type
+            end_positions.append(enriched)
+        game_map = getattr(game, "map", None)
+        enemy_bases: list[dict] = []
+        own_army_getter = getattr(unit, "get_parent_army", None)
+        own_army = own_army_getter() if callable(own_army_getter) else getattr(unit, "parent_army", None)
+        for other_unit in list(getattr(game_map, "units", []) or []):
+            if other_unit is unit:
+                continue
+            other_army_getter = getattr(other_unit, "get_parent_army", None)
+            other_army = other_army_getter() if callable(other_army_getter) else getattr(other_unit, "parent_army", None)
+            if own_army is not None and other_army is own_army:
+                continue
+            for other_model in list(getattr(other_unit, "models", []) or []):
+                other_alive_value = getattr(other_model, "is_alive", True)
+                other_alive = bool(other_alive_value() if callable(other_alive_value) else other_alive_value)
+                if not other_alive:
+                    continue
+                other_base = getattr(other_model, "model_base", None)
+                if other_base is None:
+                    continue
+                enemy_bases.append(
+                    {
+                        "x": float(getattr(other_base, "x", 0.0)),
+                        "y": float(getattr(other_base, "y", 0.0)),
+                        "z": float(getattr(other_base, "z", 0.0)),
+                        "radius": float(getattr(other_base, "get_radius", lambda: 0.0)()),
+                    }
+                )
+        crossing_errors = detect_normal_move_engagement_crossing(
+            start_positions=start_positions,
+            end_positions=end_positions,
+            enemy_bases=enemy_bases,
+        )
+        if crossing_errors:
+            return tuple(crossing_errors)
+        tight_errors, _profiles = detect_tight_clearance_orientation_violations(
+            start_positions=start_positions,
+            end_positions=end_positions,
+            enemy_bases=enemy_bases,
+            yaw_band_deg=15.0,
+        )
+        if tight_errors:
+            return tuple(tight_errors)
     return ()
 
 
