@@ -233,12 +233,10 @@ class AttackResolutionManager:
         if attacks_override_note is not None:
             seq.context["attacks_override_note"] = str(attacks_override_note or "")
         # Torrent cannot be used via Indirect Fire when no target models are visible.
-        try:
-            if seq.context.get("indirect_fire_no_visible") and weapon_profile.is_torrent():
-                seq.attack_instances = []
-                return seq
-        except Exception:
-            pass
+        is_torrent = getattr(weapon_profile, "is_torrent", None)
+        if seq.context.get("indirect_fire_no_visible") and callable(is_torrent) and is_torrent():
+            seq.attack_instances = []
+            return seq
         # If attack count is dice-based, roll counts before building instances.
         attack_count_spec = None
         alive_models = [m for m in list(models or []) if getattr(m, "is_alive", False)]
@@ -252,7 +250,7 @@ class AttackResolutionManager:
                     "faces": int(getattr(dice, "die_faces", 6) or 6),
                     "modifier": int(getattr(dice, "modifier", 0) or 0),
                 }
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             attack_count_spec = None
         if attack_count_spec and alive_models:
             seq.context["attack_count_spec"] = attack_count_spec
@@ -279,7 +277,7 @@ class AttackResolutionManager:
         closest_dist = 0.0
         try:
             _closest, closest_dist = attacker_unit.return_closest_model_in_unit(target_unit)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             closest_dist = 0.0
         ctx["closest_dist"] = float(closest_dist)
         try:
@@ -287,7 +285,7 @@ class AttackResolutionManager:
                 ctx["half_range"] = float(getattr(weapon_profile.range, "max", 0.0) or 0.0) / 2.0
             else:
                 ctx["half_range"] = 0.0
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             ctx["half_range"] = 0.0
         ctx["indirect_fire_no_visible"] = False
         try:
@@ -296,7 +294,7 @@ class AttackResolutionManager:
                     ctx["indirect_fire_no_visible"] = not attacker_unit._attacking_unit_has_any_los_to_target_unit(
                         target_unit, game.map
                     )
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             ctx["indirect_fire_no_visible"] = False
         # Conversion
         ctx["conversion_active"] = False
@@ -306,7 +304,7 @@ class AttackResolutionManager:
                 threshold = float(weapon_profile.get_conversion_distance(attacker_unit))
                 ctx["conversion_distance_threshold"] = threshold
                 ctx["conversion_active"] = float(closest_dist) > float(threshold)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         # Kill team toughness override
         ctx["kill_team_toughness"] = None
@@ -316,7 +314,7 @@ class AttackResolutionManager:
                 kt = root.get_kill_team_majority_toughness()
                 if kt is not None:
                     ctx["kill_team_toughness"] = int(kt)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             ctx["kill_team_toughness"] = None
         # Furious Onslaught (best-effort)
         ctx["furious_onslaught_applies"] = False
@@ -329,7 +327,7 @@ class AttackResolutionManager:
                         ctx["furious_onslaught_applies"] = bool(
                             attacker_unit.is_target_closest_eligible(attacker_unit, weapon_profile, target_unit, gm, max_distance=18.0)
                         )
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             ctx["furious_onslaught_applies"] = False
         # Closest enemy reroll rules (best-effort)
         ctx["closest_enemy_hit_reroll_rule"] = None
@@ -338,22 +336,21 @@ class AttackResolutionManager:
             rules = getattr(attacker_unit, "model_closest_enemy_reroll_rules", lambda *_a, **_k: [])(
                 attacker_unit, weapon_profile, target_unit, game_map=getattr(game, "map", None)
             )
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             rules = []
         if rules:
             for rule in rules:
-                try:
-                    if rule.get("reroll_hit"):
-                        ctx["closest_enemy_hit_reroll_rule"] = rule
-                    if rule.get("reroll_hit_monster_vehicle"):
-                        ctx["closest_monster_vehicle_reroll_rule"] = rule
-                except Exception:
+                if not isinstance(rule, dict):
                     continue
+                if rule.get("reroll_hit"):
+                    ctx["closest_enemy_hit_reroll_rule"] = rule
+                if rule.get("reroll_hit_monster_vehicle"):
+                    ctx["closest_monster_vehicle_reroll_rule"] = rule
         ctx["attacker_key"] = None
         try:
             root = attacker_unit.get_attached_unit_root() if hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
             ctx["attacker_key"] = get_entity_id(root)
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             ctx["attacker_key"] = None
         return ctx
 
@@ -442,7 +439,7 @@ class AttackResolutionManager:
                     publish_roll_event=False,
                 )
                 num_attacks = int(getattr(count_info, "num_attacks", 0) or 0)
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 num_attacks = int(getattr(weapon_profile, "attacks", 0) or 0)
             if num_attacks <= 0:
                 continue
@@ -467,28 +464,21 @@ class AttackResolutionManager:
             options_for_signed_pairs,
         )
         for idx, attack_instance in enumerate(list(seq.attack_instances or [])):
-            try:
-                hit_choice_set = attack_instance.get("hit_modifier_choice") is not None
-                skill_choice_set = attack_instance.get("skill_modifier_choice") is not None
-            except Exception:
-                hit_choice_set = False
-                skill_choice_set = False
+            if not isinstance(attack_instance, dict):
+                continue
+            hit_choice_set = attack_instance.get("hit_modifier_choice") is not None
+            skill_choice_set = attack_instance.get("skill_modifier_choice") is not None
             attacker = self._resolve_model(game, attack_instance.get("attacker_model_id"))
             if attacker is None:
                 continue
             try:
                 ignore_rule = profile._ignore_hit_modifier_rule(attacker)
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 ignore_rule = None
             attacker_unit = getattr(attacker, "parent_unit", None)
-            try:
-                is_melee = bool(getattr(profile, "parent_wargear", None) and profile.parent_wargear.is_melee())
-            except Exception:
-                is_melee = False
-            try:
-                is_ranged = bool(getattr(profile, "parent_wargear", None) and profile.parent_wargear.is_ranged())
-            except Exception:
-                is_ranged = False
+            parent_wargear = getattr(profile, "parent_wargear", None)
+            is_melee = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_melee", None)) and parent_wargear.is_melee())
+            is_ranged = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_ranged", None)) and parent_wargear.is_ranged())
             if ignore_rule:
                 rule_attack_type = str(ignore_rule.get("attack_type") or "any").strip().lower()
                 if rule_attack_type == "ranged" and not is_ranged:
@@ -503,7 +493,7 @@ class AttackResolutionManager:
                     driven_by_ultimate_rage = driven_by_ultimate_rage_applies(attacker_unit, game_map=getattr(game, "map", None))
                     if driven_by_ultimate_rage:
                         driven_rule_name = DRIVEN_BY_ULTIMATE_RAGE_NAME
-                except Exception:
+                except (ImportError, AttributeError, TypeError, ValueError):
                     driven_by_ultimate_rage = False
                     driven_rule_name = ""
             if not ignore_rule and not driven_by_ultimate_rage:
@@ -525,11 +515,7 @@ class AttackResolutionManager:
             skill_mods = list(preview.get("skill_mods", []) or [])
             hit_mods = list(preview.get("hit_mods", []) or [])
 
-            player = None
-            try:
-                player = attacker.parent_unit.get_parent_army().player
-            except Exception:
-                player = None
+            player = getattr(getattr(getattr(attacker, "parent_unit", None), "get_parent_army", lambda: None)(), "player", None)
             game_map = getattr(game, "map", None)
             provider = getattr(game_map, "hit_modifier_choice_provider", None) if game_map is not None else None
 
@@ -570,7 +556,7 @@ class AttackResolutionManager:
                                     ability_name=f"{rule_name} ({skill_label})",
                                     choices=skill_opts,
                                 )
-                            except Exception:
+                            except (AttributeError, TypeError, ValueError):
                                 choice = None
                             if choice not in skill_opts:
                                 choice = CHOICE_KEEP_ALL
@@ -598,10 +584,7 @@ class AttackResolutionManager:
                             options=req_options,
                             context=ctx,
                         )
-                        try:
-                            seq.step = "skill_modifier_choice"
-                        except Exception:
-                            pass
+                        seq.step = "skill_modifier_choice"
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
                         return True
@@ -621,7 +604,7 @@ class AttackResolutionManager:
                                     ability_name=f"{rule_name} (Hit roll)",
                                     choices=hit_opts,
                                 )
-                            except Exception:
+                            except (AttributeError, TypeError, ValueError):
                                 choice = None
                             if choice not in hit_opts:
                                 choice = CHOICE_KEEP_ALL
@@ -649,10 +632,7 @@ class AttackResolutionManager:
                             options=req_options,
                             context=ctx,
                         )
-                        try:
-                            seq.step = "hit_modifier_choice"
-                        except Exception:
-                            pass
+                        seq.step = "hit_modifier_choice"
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
                         return True
@@ -676,7 +656,7 @@ class AttackResolutionManager:
                                     ability_name=f"{driven_rule_name} (Weapon Skill)",
                                     choices=skill_opts,
                                 )
-                            except Exception:
+                            except (AttributeError, TypeError, ValueError):
                                 choice = None
                             if choice not in skill_opts:
                                 choice = CHOICE_KEEP_ALL
@@ -704,10 +684,7 @@ class AttackResolutionManager:
                             options=req_options,
                             context=ctx,
                         )
-                        try:
-                            seq.step = "skill_modifier_choice"
-                        except Exception:
-                            pass
+                        seq.step = "skill_modifier_choice"
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
                         return True
@@ -727,7 +704,7 @@ class AttackResolutionManager:
                                     ability_name=f"{driven_rule_name} (Hit roll)",
                                     choices=hit_opts,
                                 )
-                            except Exception:
+                            except (AttributeError, TypeError, ValueError):
                                 choice = None
                             if choice not in hit_opts:
                                 choice = CHOICE_KEEP_ALL
@@ -755,10 +732,7 @@ class AttackResolutionManager:
                             options=req_options,
                             context=ctx,
                         )
-                        try:
-                            seq.step = "hit_modifier_choice"
-                        except Exception:
-                            pass
+                        seq.step = "hit_modifier_choice"
                         if hasattr(game, "request_decision"):
                             game.request_decision(request)
                         return True
@@ -784,7 +758,7 @@ class AttackResolutionManager:
             return
         try:
             idx = int(save_index)
-        except Exception:
+        except (TypeError, ValueError):
             return
         choices = dict(seq.context.get("precision_choice_by_save_index", {}) or {})
         choices[idx] = str(model_id) if model_id not in (None, "") else None
@@ -792,13 +766,10 @@ class AttackResolutionManager:
         if model_id not in (None, "") and 0 <= idx < len(seq.wound_instances or []):
             try:
                 seq.wound_instances[idx]["_allocated_model_id"] = str(model_id)
-            except Exception:
+            except (TypeError, IndexError, KeyError):
                 pass
-        try:
-            seq.step = "save_roll"
-            seq.save_index = idx
-        except Exception:
-            pass
+        seq.step = "save_roll"
+        seq.save_index = idx
         self._request_next_save_roll(game, seq)
 
     def resume_after_damage_allocation(self, game: object, seq: AttackSequence, save_index: int, model_id: Optional[str]) -> None:
@@ -806,18 +777,15 @@ class AttackResolutionManager:
             return
         try:
             idx = int(save_index)
-        except Exception:
+        except (TypeError, ValueError):
             return
         if model_id not in (None, "") and 0 <= idx < len(seq.wound_instances or []):
             try:
                 seq.wound_instances[idx]["_allocated_model_id"] = str(model_id)
-            except Exception:
+            except (TypeError, IndexError, KeyError):
                 pass
-        try:
-            seq.step = "save_roll"
-            seq.save_index = idx
-        except Exception:
-            pass
+        seq.step = "save_roll"
+        seq.save_index = idx
         self._request_next_save_roll(game, seq)
 
     def _begin_hits(self, game: object, seq: AttackSequence) -> None:
@@ -883,10 +851,12 @@ class AttackResolutionManager:
             return
         dice_count = int(dice_per_model) * len(model_ids)
         from .roll_utils import command_reroll_available
+        attacker_unit = None
         player_id = None
         try:
-            player_id = self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player.id
-        except Exception:
+            attacker_unit = self._resolve_unit(game, seq.attacker_unit_id)
+            player_id = attacker_unit.get_parent_army().player.id if attacker_unit is not None else None
+        except AttributeError:
             player_id = None
         mod_text = f"+{modifier}" if modifier > 0 else f"{modifier}" if modifier < 0 else ""
         reason = f"Attacks roll ({dice_per_model}D{faces}{mod_text} per model)"
@@ -897,7 +867,7 @@ class AttackResolutionManager:
             "roll_type": "attacks",
             "handler_key": "attack_counts",
             "handler_payload": {"sequence_id": int(seq.sequence_id)},
-            "command_reroll_allowed": command_reroll_available(game, self._resolve_unit(game, seq.attacker_unit_id).get_parent_army().player, roll_type="attacks") if player_id else False,
+            "command_reroll_allowed": command_reroll_available(game, attacker_unit.get_parent_army().player, roll_type="attacks") if player_id else False,
             "command_reroll_mode": "whole",
         }
         if not bool(getattr(game, "is_authoritative", True)):
@@ -951,7 +921,7 @@ class AttackResolutionManager:
                     roll_values=list(rolls or []),
                 )
                 num_attacks = int(getattr(count_info, "num_attacks", 0) or 0)
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 num_attacks = int(roll_value or 0)
             if num_attacks <= 0:
                 continue
@@ -1056,7 +1026,7 @@ class AttackResolutionManager:
                 # Sustained hits generate extra hits (derived)
                 try:
                     extra = int(attack_instance.get("sustained_hit", 0) or 0)
-                except Exception:
+                except (TypeError, ValueError):
                     extra = 0
                 if extra > 0:
                     for _ in range(extra):
@@ -1087,7 +1057,7 @@ class AttackResolutionManager:
             try:
                 if bool(getattr(game, "is_authoritative", True)):
                     game.roll_manager.add_derived_dice(int(roll_state.roll_id), derived)
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 pass
         seq.hit_group_index += 1
         self._request_next_hit_roll(game, seq)
@@ -1289,7 +1259,7 @@ class AttackResolutionManager:
                         parent = getattr(profile, "parent_wargear", None)
                         if parent is not None and callable(getattr(parent, "is_melee", None)) and parent.is_melee():
                             precision_from_epic_challenge = True
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     precision_from_epic_challenge = False
 
                 precision_from_templar_vows = False
@@ -1300,13 +1270,13 @@ class AttackResolutionManager:
                         mgr = getattr(army, "templar_vows", None) if army is not None else None
                         if mgr is not None and mgr.melee_precision_against(attacker.parent_unit, target):
                             precision_from_templar_vows = True
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     precision_from_templar_vows = False
 
                 precision_from_assassins = False
                 try:
                     precision_from_assassins = bool(profile._assassins_poisons_applies(attacker))
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     precision_from_assassins = False
 
                 bonus_precision = bool(wound_instance.get("bonus_precision"))
@@ -1318,32 +1288,22 @@ class AttackResolutionManager:
                     or bonus_precision
                 )
                 if precision_allowed and game_map is not None:
-                    try:
-                        root = target.get_attached_unit_root()
-                    except Exception:
-                        root = target
-                    try:
-                        has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
-                    except Exception:
-                        has_attached_leaders = False
+                    root_getter = getattr(target, "get_attached_unit_root", None)
+                    root = root_getter() if callable(root_getter) else target
+                    has_attached_leaders = bool(getattr(root, "attached_leaders", []) or [])
                     if has_attached_leaders:
-                        try:
-                            all_models = root.get_models_for_collision()
-                        except Exception:
-                            all_models = list(getattr(root, "models", []) or [])
+                        get_collision = getattr(root, "get_models_for_collision", None)
+                        all_models = list(get_collision() or []) if callable(get_collision) else list(getattr(root, "models", []) or [])
                         char_models = []
                         for m in all_models:
-                            try:
-                                if not getattr(m, "is_alive", True):
-                                    continue
-                                if not bool(getattr(m, "is_character", False)):
-                                    continue
-                                if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
-                                    if not game_map.can_model_see_model(attacker, m):
-                                        continue
-                                char_models.append(m)
-                            except Exception:
+                            if not getattr(m, "is_alive", True):
                                 continue
+                            if not bool(getattr(m, "is_character", False)):
+                                continue
+                            if hasattr(game_map, "can_model_see_model") and callable(getattr(game_map, "can_model_see_model")):
+                                if not game_map.can_model_see_model(attacker, m):
+                                    continue
+                            char_models.append(m)
                         if char_models:
                             if not bool(getattr(game, "is_authoritative", True)):
                                 return
@@ -1354,11 +1314,7 @@ class AttackResolutionManager:
                                 mid = get_entity_id(model)
                                 allowed_ids.append(mid)
                                 options.append(DecisionOption.create(getattr(model, "name", "CHARACTER"), payload={"model_id": mid}))
-                            player_id = None
-                            try:
-                                player_id = attacker.parent_unit.get_parent_army().player.id
-                            except Exception:
-                                player_id = None
+                            player_id = getattr(getattr(attacker.parent_unit.get_parent_army(), "player", None), "id", None)
                             request = DecisionRequest.create(
                                 DECISION_SELECT_PRECISION_TARGET,
                                 "Select PRECISION allocation target.",
@@ -1380,13 +1336,13 @@ class AttackResolutionManager:
                             seq.step = "precision_choice"
                             game.request_decision(request)
                             return
-            except Exception:
+            except (AttributeError, TypeError, ValueError, KeyError, IndexError):
                 target_model = None
 
         if target_model is None:
             try:
                 candidates = target.get_models_for_wound_allocation()
-            except Exception:
+            except (AttributeError, TypeError):
                 candidates = [m for m in (getattr(target, "models", []) or []) if getattr(m, "is_alive", True)]
             from ..utility.damage_allocation import DamageAllocationCtx, damage_allocation_choice
             choice = damage_allocation_choice(candidates)
@@ -1404,11 +1360,7 @@ class AttackResolutionManager:
                     options.append(DecisionOption.create(getattr(model, "name", "Model"), payload={"model_id": mid}))
                 if not options:
                     return
-                player_id = None
-                try:
-                    player_id = target.get_parent_army().player.id
-                except Exception:
-                    player_id = None
+                player_id = getattr(getattr(target.get_parent_army(), "player", None), "id", None)
                 alloc_ctx = DamageAllocationCtx(
                     reason="Allocate wound",
                     damage_source="attack",
@@ -1454,7 +1406,7 @@ class AttackResolutionManager:
                 if not ignores_cover:
                     wound_instance["benefit_of_cover"] = True
                     wound_instance.setdefault("benefit_of_cover_source", "INDIRECT FIRE")
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         # Benefit of Cover from terrain (ranged only)
         try:
@@ -1472,7 +1424,7 @@ class AttackResolutionManager:
                     wound_instance["benefit_of_cover"] = True
                     wound_instance["benefit_of_cover_source"] = cover_info.get("source_terrain_type")
                     wound_instance["benefit_of_cover_reason"] = cover_info.get("reason")
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         # Benefit of Cover from Fortification cover abilities (ranged only).
         try:
@@ -1481,17 +1433,12 @@ class AttackResolutionManager:
                 is_melee = bool(profile.parent_wargear.is_melee())
             if (not is_melee) and game_map is not None and not wound_instance.get("benefit_of_cover"):
                 fortifications = []
-                try:
-                    players = list(getattr(game, "players", []) or [])
-                except Exception:
-                    players = []
+                players = list(getattr(game, "players", []) or [])
                 for p in players:
                     if p is None:
                         continue
-                    try:
-                        army = p.get_army()
-                    except Exception:
-                        army = None
+                    get_army = getattr(p, "get_army", None)
+                    army = get_army() if callable(get_army) else None
                     if army is None:
                         continue
                     for unit in list(getattr(army, "units", []) or []):
@@ -1508,7 +1455,7 @@ class AttackResolutionManager:
                     source_name = getattr(source_unit, "name", None) if source_unit is not None else None
                     wound_instance["benefit_of_cover_source"] = source_name or "Fortification"
                     wound_instance["benefit_of_cover_reason"] = cover_info.get("reason")
-        except Exception:
+        except (AttributeError, TypeError, ValueError):
             pass
         # Mortal wounds: queue for resolution after attacks.
         is_mortal_only = bool(wound_instance.get("mortal_wound", False)) and not bool(wound_instance.get("mortal_wound_in_addition", False))
@@ -1516,13 +1463,13 @@ class AttackResolutionManager:
         if is_mortal_only or is_mortal_additional:
             try:
                 target_key = profile._pending_mortal_target_key(target)
-            except Exception:
+            except (AttributeError, TypeError, ValueError):
                 target_key = str(seq.target_unit_id or "")
             amount = 0
             if is_mortal_additional:
                 try:
                     amount = int(profile._resolve_mortal_wound_amount(wound_instance.get("mortal_wound_amount")))
-                except Exception:
+                except (AttributeError, TypeError, ValueError):
                     amount = 0
             seq.pending_mortals.setdefault(str(target_key), []).append(
                 {
@@ -1558,7 +1505,7 @@ class AttackResolutionManager:
             if tmp_added:
                 try:
                     del wound_instance["attacker_unit"]
-                except Exception:
+                except KeyError:
                     pass
         needed = save_result.get("needed", None)
         target_unit = self._resolve_unit(game, seq.target_unit_id)
@@ -1663,7 +1610,7 @@ class AttackResolutionManager:
                     break
                 try:
                     candidates = target_unit.get_models_for_wound_allocation()
-                except Exception:
+                except (AttributeError, TypeError):
                     candidates = [m for m in (getattr(target_unit, "models", []) or []) if getattr(m, "is_alive", True)]
                 if not candidates:
                     remaining = 0
@@ -1679,7 +1626,7 @@ class AttackResolutionManager:
                             if allow_initial_outside:
                                 try:
                                     all_models = target_unit.get_models_for_collision()
-                                except Exception:
+                                except (AttributeError, TypeError):
                                     all_models = list(candidates)
                                 if current_model not in all_models:
                                     current_model = None
@@ -1702,22 +1649,14 @@ class AttackResolutionManager:
                         if not options:
                             return False
                         weapon_name = self._weapon_display_name(self._resolve_profile(game, entry.get("wargear_id"), entry.get("profile_name")))
-                        attacker_name = ""
-                        try:
-                            attacker_name = getattr(self._resolve_model(game, entry.get("attacker_model_id")), "name", "") or ""
-                        except Exception:
-                            attacker_name = ""
+                        attacker_name = getattr(self._resolve_model(game, entry.get("attacker_model_id")), "name", "") or ""
                         alloc_ctx = DamageAllocationCtx(
                             reason="Allocate mortal wound",
                             damage_source="attack",
                             weapon_name=weapon_name,
                             attacker_name=attacker_name,
                         )
-                        player_id = None
-                        try:
-                            player_id = target_unit.get_parent_army().player.id
-                        except Exception:
-                            player_id = None
+                        player_id = getattr(getattr(target_unit.get_parent_army(), "player", None), "id", None)
                         request = DecisionRequest.create(
                             DECISION_ALLOCATE_DAMAGE,
                             alloc_ctx.reason or "Allocate mortal wound",
@@ -1921,7 +1860,7 @@ class AttackResolutionManager:
             try:
                 if not is_hazardous_failure(profile, int(die.get("value", 0) or 0)):
                     continue
-            except Exception:
+            except (TypeError, ValueError, AttributeError):
                 continue
             failures += 1
 
@@ -1949,7 +1888,7 @@ class AttackResolutionManager:
             return False
         try:
             root_unit = attacker_unit.get_attached_unit_root()
-        except Exception:
+        except AttributeError:
             root_unit = attacker_unit
         pain_hazardous = bool(seq.context.get("hazardous_pain_melee_non_character", False))
         target_melee_all = bool(seq.context.get("hazardous_target_melee_all", False))
@@ -2002,11 +1941,7 @@ class AttackResolutionManager:
                     options.append(DecisionOption.create(getattr(model, "name", "Model"), payload={"model_id": mid}))
                 if not options:
                     return False
-                player_id = None
-                try:
-                    player_id = root_unit.get_parent_army().player.id
-                except Exception:
-                    player_id = None
+                player_id = getattr(getattr(root_unit.get_parent_army(), "player", None), "id", None)
                 alloc_ctx = DamageAllocationCtx(reason="HAZARDOUS failed test - select model", damage_source="hazardous")
                 request = DecisionRequest.create(
                     DECISION_ALLOCATE_DAMAGE,
@@ -2103,7 +2038,7 @@ class AttackResolutionManager:
             if tmp_added:
                 try:
                     del wound_instance["attacker_unit"]
-                except Exception:
+                except KeyError:
                     pass
         if save_result and not save_result.get("saved"):
             # Roll damage (random) or apply fixed
@@ -2170,7 +2105,7 @@ class AttackResolutionManager:
         spec = dict(getattr(roll_state, "spec", {}) or {})
         try:
             mod = int(spec.get("sum_modifier", 0) or 0)
-        except Exception:
+        except (TypeError, ValueError):
             mod = 0
         total = int(roll_state.total or 0) + int(mod or 0)
         profile._damage_target_with_tracking(
