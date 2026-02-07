@@ -194,6 +194,15 @@ When submitting changes, record:
   - clear boundaries (engine vs UI vs data parsing vs tests)
   - dependency direction that keeps the engine independent of UI
 
+### Unit module specialization (mandatory)
+- Keep `src/warhammer40k_ai/units/unit.py` as the public facade for `Unit`, `UnitRoundState`, `MovementAction`, and `MovementState`.
+- Add new `Unit` behavior to the appropriate file in `src/warhammer40k_ai/units/unit_mixins/` instead of re-expanding `unit.py`.
+- Preserve stable external imports and patch points:
+  - `from warhammer40k_ai.units.unit import Unit`
+  - `warhammer40k_ai.units.unit.get_roll` (tests patch this symbol directly)
+- If a moved method performs local relative imports, ensure import depth matches the `unit_mixins` package location.
+- Avoid introducing cross-mixin duplication; shared helpers belong in `src/warhammer40k_ai/units/unit_mixins/_common.py` or utility modules.
+
 ---
 
 ## Architecture requirements for future multiplayer support (WebSockets)

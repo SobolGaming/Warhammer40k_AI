@@ -82,6 +82,11 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 - Official deployment: alternating deployment with proper zones, reserves, and strategic reserves
 - Battle round system: command, movement, shooting, charge, and fight phases with official rules
 
+### Unit Architecture
+- `src/warhammer40k_ai/units/unit.py` is the facade/entry module for `Unit`, `UnitRoundState`, `MovementAction`, and `MovementState`.
+- Heavy `Unit` behavior is split into focused mixins under `src/warhammer40k_ai/units/unit_mixins/` for easier maintenance and safer code review.
+- External imports remain stable (`from warhammer40k_ai.units.unit import Unit`), while internal behavior is specialized by phase/domain.
+
 ### User Interface
 - Battlefield view: zoomable map with units, terrain, objectives, and deployment zones
 - Roster panes: interactive unit lists showing health, equipment, and deployment status
@@ -177,6 +182,18 @@ Warhammer40k_AI/
 |   |   |-- <faction>_detachments.py
 |   |-- units/
 |   |   |-- unit.py
+|   |   |-- unit_mixins/
+|   |   |   |-- _common.py
+|   |   |   |-- rules_parsing_mixin.py
+|   |   |   |-- datasheet_wargear_mixin.py
+|   |   |   |-- damage_death_mixin.py
+|   |   |   |-- state_attachment_mixin.py
+|   |   |   |-- actions_movement_mixin.py
+|   |   |   |-- shooting_mixin.py
+|   |   |   |-- positioning_mixin.py
+|   |   |   |-- keywords_detachments_mixin.py
+|   |   |   |-- ability_specs_mixin.py
+|   |   |   |-- late_gameplay_mixin.py
 |   |   |-- model.py
 |   |   |-- wargear.py
 |   |   |-- ability.py
@@ -222,6 +239,8 @@ Warhammer40k_AI/
 - `src/warhammer40k_ai/roster/`: Army composition, mustering, and player ownership.
 - `src/warhammer40k_ai/rules/`: Rule managers, detachments, enhancements, stratagems, and faction logic.
 - `src/warhammer40k_ai/units/`: Unit/model/wargear primitives plus status effects.
+  - `unit.py`: public `Unit` facade and shared enums/state objects.
+  - `unit_mixins/`: specialized `Unit` behavior slices (parsing, wargear, movement, shooting, damage, reserves, specs).
 - `src/warhammer40k_ai/network/`: WebSocket transport, lobby state, control protocol, server/client orchestration.
 - `src/warhammer40k_ai/UI/`: Rendering and interactive UI; no core rules live here.
 - `src/warhammer40k_ai/utility/`: Shared helpers (geometry, dice, modifiers, event bus).
