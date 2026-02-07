@@ -8,6 +8,7 @@ openpyxl
 shapely
 simple-namespace
 pytest
+pytest-xdist
 pygame
 shapely
 matplotlib

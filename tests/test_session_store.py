@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from warhammer40k_ai.engine.battlefield import Battlefield
 from warhammer40k_ai.engine.command_kinds import CMD_SET_DEPLOYMENT_WAITING
 from warhammer40k_ai.engine.commands import GameCommand
@@ -16,6 +18,8 @@ from warhammer40k_ai.engine.session_store import (
 )
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 def _build_game() -> Game:

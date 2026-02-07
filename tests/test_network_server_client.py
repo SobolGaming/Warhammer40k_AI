@@ -2,6 +2,8 @@ import asyncio
 import contextlib
 from pathlib import Path
 
+import pytest
+
 from warhammer40k_ai.engine.command_kinds import CMD_NEXT_PHASE
 from warhammer40k_ai.engine.commands import GameCommand
 from warhammer40k_ai.network.client import NetworkClient
@@ -11,6 +13,7 @@ from warhammer40k_ai.version import APP_VERSION
 
 CERT_PATH = Path("tests/fixtures/tls/server.crt")
 KEY_PATH = Path("tests/fixtures/tls/server.key")
+pytestmark = [pytest.mark.integration, pytest.mark.slow]
 
 
 async def _wait_for(client: NetworkClient, category: str, message_type: str, timeout: float = 10.0):

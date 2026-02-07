@@ -73,6 +73,23 @@ python3 -m warhammer40k_ai.UI.wahapedia_ui
 ### Advanced Options
 - `--manual-phases`: Require SPACE key to advance phases
 
+## Testing
+
+```bash
+# Full suite (parallel by default via setup.cfg)
+python -m pytest tests/
+
+# Fast feedback lane: skip long integration/slow tests
+python -m pytest tests/ -m "not slow and not integration"
+
+# Explicit full run with worker/process details
+python -m pytest tests/ -n auto --dist loadscope
+```
+
+Marker conventions:
+- `@pytest.mark.slow`: expensive deterministic tests.
+- `@pytest.mark.integration`: multi-subsystem end-to-end flows (network, persistence, full parsing).
+
 ## Architecture
 
 For a high-level overview of the codebase structure and data flow, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

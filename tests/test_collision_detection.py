@@ -11,12 +11,6 @@ Tests cover:
 """
 
 import pytest
-import sys
-import os
-from unittest.mock import Mock, MagicMock
-
-# Add the src directory to the path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from warhammer40k_ai.utility.calcs import (
     unified_pathfinding, 
@@ -31,6 +25,8 @@ from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
 from shapely.geometry import Polygon, Point
+
+pytestmark = pytest.mark.slow
 
 
 class MockDatasheet:

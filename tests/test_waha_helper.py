@@ -1,11 +1,17 @@
 import unittest
 import logging
+import pytest
 from warhammer40k_ai.waha_helper import WahaHelper
 from types import SimpleNamespace
 
+
+pytestmark = pytest.mark.slow
+
+
 class TestWahaHelper(unittest.TestCase):
-    def setUp(self):
-        self.waha_helper = WahaHelper()
+    @classmethod
+    def setUpClass(cls):
+        cls.waha_helper = WahaHelper()
 
     def test_get_full_datasheet_info_by_name(self):
         # Replace "Belakor" with a datasheet name that should exist in your data

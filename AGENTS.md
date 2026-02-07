@@ -140,6 +140,14 @@ When implementing any rule/ability/feature that involves player choices or promp
 
 ### Framework
 - The testing framework is **pytest**.
+- Parallel execution is configured in `setup.cfg` with `-n auto --dist loadscope` (via `pytest-xdist`).
+
+### Test speed lanes (mandatory conventions)
+- Mark expensive deterministic tests with `@pytest.mark.slow`.
+- Mark multi-subsystem/end-to-end tests with `@pytest.mark.integration`.
+- Keep default full-suite behavior (`python -m pytest tests/`) for full coverage.
+- For fast local iteration, use:
+  - `python -m pytest tests/ -m "not slow and not integration"`
 
 ### Minimum expectation for all changes
 - Any tests created must be run and passed.
@@ -151,7 +159,7 @@ After **large feature changes** or **changes to rule behavior**, in addition to 
 `python -m pytest tests/`
 
 Notes:
-- This run can take **20-30 minutes**.
+- Runtime varies by machine/worker count; with xdist it should be significantly faster than single-process runs.
 - Ensure appropriate timeouts are used in your execution environment/CI so the run is not prematurely terminated.
 
 ### Reporting

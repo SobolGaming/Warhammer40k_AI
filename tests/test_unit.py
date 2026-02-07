@@ -11,9 +11,13 @@ def set_log_level():
     logging.getLogger().setLevel(logging.INFO)
     # You can change INFO to DEBUG, WARNING, ERROR, or CRITICAL
 
+pytestmark = pytest.mark.slow
+
+
 class TestWahaHelper(unittest.TestCase):
-    def setUp(self):
-        self.waha_helper = WahaHelper()
+    @classmethod
+    def setUpClass(cls):
+        cls.waha_helper = WahaHelper()
 
     def test_create_bloodletters_unit(self):
         datasheet_name = "Bloodletters"

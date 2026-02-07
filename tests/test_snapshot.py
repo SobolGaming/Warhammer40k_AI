@@ -18,10 +18,17 @@ from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
 from warhammer40k_ai.waha_helper import WahaHelper
 
 
-def _build_game():
-    waha = WahaHelper()
-    datasheet_one = waha.get_full_datasheet_info_by_name("Bloodletters")
-    datasheet_two = waha.get_full_datasheet_info_by_name("Servitor Battleclade")
+pytestmark = pytest.mark.slow
+
+
+@pytest.fixture(scope="module")
+def waha_helper():
+    return WahaHelper()
+
+
+def _build_game(waha_helper):
+    datasheet_one = waha_helper.get_full_datasheet_info_by_name("Bloodletters")
+    datasheet_two = waha_helper.get_full_datasheet_info_by_name("Servitor Battleclade")
     assert datasheet_one is not None
     assert datasheet_two is not None
 
@@ -44,8 +51,8 @@ def _build_game():
     return game, unit_one, unit_two, player_one, player_two
 
 
-def test_snapshot_roundtrip_core_state():
-    game, unit_one, unit_two, player_one, player_two = _build_game()
+def test_snapshot_roundtrip_core_state(waha_helper):
+    game, unit_one, unit_two, player_one, player_two = _build_game(waha_helper)
 
     lost_model = unit_one.models.pop()
     unit_one.models_lost.append(lost_model)
@@ -226,8 +233,8 @@ def test_snapshot_roundtrip_core_state():
     assert loaded._horde_move_shooting_snapshot[str(loaded_unit_one.id)][str(loaded_unit_two.id)] == 1
 
 
-def test_snapshot_fixed_point_coordinates():
-    game, unit_one, _, _, _ = _build_game()
+def test_snapshot_fixed_point_coordinates(waha_helper):
+    game, unit_one, _, _, _ = _build_game(waha_helper)
 
     model = unit_one.models[0]
     model.model_base.set_position(3.333, 4.444, 0.0)
@@ -244,10 +251,9 @@ def test_snapshot_fixed_point_coordinates():
     assert model_data["position"]["facing"] == int(round(0.9876 * ANGLE_SCALE))
 
 
-def test_snapshot_preserves_army_points_totals():
-    waha = WahaHelper()
-    army_one = parse_army_list("army_lists/warhammer_app_dump.txt", waha)
-    army_two = parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha)
+def test_snapshot_preserves_army_points_totals(waha_helper):
+    army_one = parse_army_list("army_lists/warhammer_app_dump.txt", waha_helper)
+    army_two = parse_army_list("army_lists/chaos_daemons_GT2023.txt", waha_helper)
     army_one.validate()
     army_two.validate()
     before_points = [army_one.get_total_points(), army_two.get_total_points()]
