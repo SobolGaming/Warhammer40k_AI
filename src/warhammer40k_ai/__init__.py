@@ -1,4 +1,4 @@
-﻿"""
+"""
 warhammer40k_ai package bootstrap.
 
 This project runs on Windows where the default console encoding can be cp1252. A lot of
@@ -17,12 +17,10 @@ def _reconfigure_stream(stream) -> None:
         # Python 3.7+: TextIOBase.reconfigure
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
-    except Exception:
+    except (AttributeError, OSError, ValueError):
         # Never fail import due to console quirks.
         return
 
 
 _reconfigure_stream(sys.stdout)
 _reconfigure_stream(sys.stderr)
-
-

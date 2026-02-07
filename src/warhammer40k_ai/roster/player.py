@@ -94,10 +94,7 @@ class Player:
         # Lazily attach stratagem manager when a game is set
         from ..rules.stratagems import StratagemManager
         self.stratagems = StratagemManager(self)
-        try:
-            event_system = getattr(game, "event_system", None)
-        except Exception:
-            event_system = None
+        event_system = getattr(game, "event_system", None)
         if event_system is not None:
             self.stratagems.enable_event_subscriptions(event_system=event_system, group="rule:stratagems")
 
@@ -242,10 +239,7 @@ class Player:
             if key:
                 mgr = getattr(self, "stratagems", None)
                 if mgr is not None:
-                    try:
-                        mgr._used_stratagems_this_phase.add(key)
-                    except Exception:
-                        raise
+                    mgr._used_stratagems_this_phase.add(key)
             self._last_stratagem_spend_failed_due_to_increase = True
         if is_stratagem_spend:
             self._pending_stratagem_cp_increase = None
@@ -373,6 +367,17 @@ class Player:
             return members if members else [unit]
         return [unit]
 
+    def _target_unit_parent_army(self, target_unit):
+        if target_unit is None:
+            return None
+        getter = getattr(target_unit, "get_parent_army", None)
+        if callable(getter):
+            return getter()
+        parent = getattr(target_unit, "parent_army", None)
+        if parent is not None:
+            return parent
+        return getattr(target_unit, "army", None)
+
     def _unit_is_alive_or_unknown(self, unit) -> bool:
         if unit is None:
             return False
@@ -449,19 +454,9 @@ class Player:
     def _target_unit_has_stratagem_target_cp_discount(self, target_unit) -> tuple[bool, list[str]]:
         if target_unit is None:
             return False, []
-        try:
-            parent = None
-            getter = getattr(target_unit, "get_parent_army", None)
-            if callable(getter):
-                parent = getter()
-            else:
-                parent = getattr(target_unit, "parent_army", None)
-                if parent is None:
-                    parent = getattr(target_unit, "army", None)
-            if parent is not None and parent is not self.get_army():
-                return False, []
-        except Exception:
-            pass
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False, []
         members = self._attached_members(target_unit)
         found = False
         names: list[str] = []
@@ -491,19 +486,9 @@ class Player:
     def _target_unit_has_stratagem_target_cp_discount_aura(self, target_unit) -> tuple[bool, list[str]]:
         if target_unit is None:
             return False, []
-        try:
-            parent = None
-            getter = getattr(target_unit, "get_parent_army", None)
-            if callable(getter):
-                parent = getter()
-            else:
-                parent = getattr(target_unit, "parent_army", None)
-                if parent is None:
-                    parent = getattr(target_unit, "army", None)
-            if parent is not None and parent is not self.get_army():
-                return False, []
-        except Exception:
-            pass
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False, []
         army = self.get_army()
         if army is None:
             return False, []
@@ -577,19 +562,9 @@ class Player:
     def _target_unit_has_stratagem_target_cp_increase_sources(self, target_unit, *, current_cost: int | None = None) -> tuple[list[dict], list[dict]]:
         if target_unit is None:
             return [], []
-        try:
-            parent = None
-            getter = getattr(target_unit, "get_parent_army", None)
-            if callable(getter):
-                parent = getter()
-            else:
-                parent = getattr(target_unit, "parent_army", None)
-                if parent is None:
-                    parent = getattr(target_unit, "army", None)
-            if parent is not None and parent is self.get_army():
-                return [], []
-        except Exception:
-            pass
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is self.get_army():
+            return [], []
         army = self.get_army()
         if army is None:
             return [], []
@@ -628,11 +603,8 @@ class Player:
                         continue
                 max_cp = spec.get("max_cp", None)
                 if current_cost is not None and max_cp is not None:
-                    try:
-                        if int(current_cost) >= int(max_cp):
-                            continue
-                    except Exception:
-                        pass
+                    if int(current_cost) >= int(max_cp):
+                        continue
                 if bool(spec.get("optional", False)):
                     optional_specs.append(spec)
                 else:
@@ -742,10 +714,7 @@ class Player:
             return False
         fn = getattr(target_unit, "can_use_beast_handler_heroic_intervention", None)
         if callable(fn):
-            try:
-                return bool(fn(self.game))
-            except Exception:
-                return False
+            return bool(fn(self.game))
         return False
 
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
@@ -756,10 +725,7 @@ class Player:
             return 0
         if not self._target_unit_has_faultless_opportunist(target_unit):
             return 0
-        try:
-            base = int(getattr(stratagem, "cp_cost", 0) or 0)
-        except Exception:
-            base = 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
 
     def _preview_beast_handler_heroic_intervention_discount(self, *, stratagem=None, target_unit=None) -> int:
@@ -770,10 +736,7 @@ class Player:
             return 0
         if not self._target_unit_can_use_beast_handler_heroic_intervention(target_unit):
             return 0
-        try:
-            base = int(getattr(stratagem, "cp_cost", 0) or 0)
-        except Exception:
-            base = 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
 
     def _preview_gift_of_foresight_discount(self, *, stratagem=None, target_unit=None) -> int:
@@ -919,11 +882,8 @@ class Player:
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
-            rule = None
-            try:
-                rule = target_unit.get_traitor_enforcer_overwatch_rule()
-            except Exception:
-                rule = None
+            get_rule = getattr(target_unit, "get_traitor_enforcer_overwatch_rule", None)
+            rule = get_rule() if callable(get_rule) else None
             if rule and bool(getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)):
                 ctx = {
                     "ability_name": str(rule.get("source", "") or "Brutal Example"),
@@ -964,7 +924,7 @@ class Player:
         gof = self._preview_gift_of_foresight_discount(stratagem=stratagem, target_unit=target_unit)
         if gof:
             discount += int(gof)
-            print(f"Gift of Foresight: {self.name} uses Command Re-roll for 0CP.")
+            logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
 
         mop = self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit)
         if mop:
@@ -1040,18 +1000,15 @@ class Player:
                     "reasons": increase_reasons,
                     "stratagem_name": getattr(stratagem, "name", None) or "",
                 }
-                try:
-                    root = target_unit.get_attached_unit_root()
-                except Exception:
-                    root = target_unit
+                get_root = getattr(target_unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else target_unit
                 if root is not None:
-                    try:
-                        root.mark_unit_once_per_battle_used(
+                    mark_used = getattr(root, "mark_unit_once_per_battle_used", None)
+                    if callable(mark_used):
+                        mark_used(
                             "beast_handler_heroic_intervention",
                             ability_name="Beast Handler",
                         )
-                    except Exception:
-                        pass
                 return {
                     "base": base,
                     "discount": base,
@@ -1061,20 +1018,14 @@ class Player:
                     "increase_reasons": increase_reasons,
                 }
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
-            rule = None
-            try:
-                rule = target_unit.get_traitor_enforcer_overwatch_rule()
-            except Exception:
-                rule = None
+            get_rule = getattr(target_unit, "get_traitor_enforcer_overwatch_rule", None)
+            rule = get_rule() if callable(get_rule) else None
             can_traitor = bool(rule) and bool(
                 getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)
             )
-            overwatch_used = False
-            try:
-                mgr = getattr(self, "stratagems", None)
-                overwatch_used = bool(getattr(mgr, "_used_this_turn", {}).get("OVERWATCH", False))
-            except Exception:
-                overwatch_used = False
+            mgr = getattr(self, "stratagems", None)
+            used_this_turn = getattr(mgr, "_used_this_turn", {}) if mgr is not None else {}
+            overwatch_used = bool(used_this_turn.get("OVERWATCH", False)) if isinstance(used_this_turn, dict) else False
             if overwatch_used and not can_traitor:
                 return {"denied": True, "reason": "Overwatch already used this turn"}
             if can_traitor:
@@ -1175,7 +1126,7 @@ class Player:
                 br = self._battle_round()
                 if br > 0:
                     self._ability_used_battle_round["GIFT_OF_FORESIGHT"] = br
-                print(f"Gift of Foresight: {self.name} uses Command Re-roll for 0CP.")
+                logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
 
         # Decide whether to apply Master of the Pageant if available.
         mop_available = bool(self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit))
@@ -1282,21 +1233,25 @@ class Player:
                     # Shuffle back into the remaining deck at a random position.
                     idx = int(rng.randint(0, len(self.secondary_deck)))
                     self.secondary_deck.insert(idx, card)
-                    print(
-                        f"INFO: {self.name} cannot draw Secondary: {card.name} (ineligible); shuffled back into deck"
+                    logger.info(
+                        "%s cannot draw Secondary: %s (ineligible); shuffled back into deck",
+                        self.name,
+                        card.name,
                     )
                 else:
                     # Discard immediately and continue drawing
                     self.discarded_secondaries.append(card)
-                    print(
-                        f"INFO: {self.name} cannot draw Secondary: {card.name} (ineligible); discarded"
+                    logger.info(
+                        "%s cannot draw Secondary: %s (ineligible); discarded",
+                        self.name,
+                        card.name,
                     )
                 continue
             # Allow cards to perform on-draw initialization
             if hasattr(card, 'on_draw'):
                 card.on_draw(game, self)
             self.active_secondaries.append(card)
-            print(f"INFO: {self.name} drew Secondary: {card.name}")
+            logger.info("%s drew Secondary: %s", self.name, card.name)
 
     def discard_secondary(self, card: SecondaryMissionCard, gain_cp: bool = False) -> None:
         if card in self.active_secondaries:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence
 
@@ -15,6 +16,7 @@ from .command_kinds import (
 from .commands import GameCommand
 from .decisions import DecisionRequest, DecisionResult
 from .decision_dispatcher import has_decision_handler, validate_decision
+from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
 
 CommandValidator = Callable[[object, GameCommand], Sequence[str]]
 CommandApplier = Callable[[object, GameCommand], Any]
@@ -37,6 +39,7 @@ class CommandHandler:
 
 
 _HANDLERS: dict[str, CommandHandler] = {}
+logger = logging.getLogger(__name__)
 
 
 def register_command_handler(kind: str, *, validate: CommandValidator, apply: CommandApplier) -> None:
@@ -175,13 +178,9 @@ def _validate_request_decision(game: object, command: GameCommand) -> Sequence[s
         return ("Decision request missing decision_type.",)
     if not has_decision_handler(request.decision_type):
         return (f"Unknown decision type: {request.decision_type}",)
-    try:
-        from .decision_kinds import DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL
-        if bool(getattr(game, "is_authoritative", True)):
-            if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
-                return ("Dice roll decisions are server-originated only.",)
-    except Exception:
-        pass
+    if bool(getattr(game, "is_authoritative", True)):
+        if request.decision_type in (DECISION_REQUEST_DICE_ROLL, DECISION_SELECT_DICE_REROLL):
+            return ("Dice roll decisions are server-originated only.",)
     queue = getattr(game, "decision_queue", None)
     if queue is None or not hasattr(queue, "get"):
         return ("Game missing decision_queue.",)
@@ -218,18 +217,18 @@ def _validate_resolve_decision(game: object, command: GameCommand) -> Sequence[s
     decision_id = payload.get("decision_id")
     option_id = payload.get("option_id")
     def _fail(message: str) -> Sequence[str]:
-        try:
-            req = None
-            queue = getattr(game, "decision_queue", None)
-            if queue is not None and hasattr(queue, "get") and isinstance(decision_id, str) and decision_id:
-                req = queue.get(decision_id)
-            req_player = getattr(req, "player_id", None) if req is not None else None
-            print(
-                "ERROR: Resolve decision validation failed: "
-                f"{message} (decision_id={decision_id}, command_player_id={command.player_id}, request_player_id={req_player})"
-            )
-        except Exception:
-            pass
+        req = None
+        queue = getattr(game, "decision_queue", None)
+        if queue is not None and hasattr(queue, "get") and isinstance(decision_id, str) and decision_id:
+            req = queue.get(decision_id)
+        req_player = getattr(req, "player_id", None) if req is not None else None
+        logger.error(
+            "Resolve decision validation failed: %s (decision_id=%s, command_player_id=%s, request_player_id=%s)",
+            message,
+            decision_id,
+            command.player_id,
+            req_player,
+        )
         return (message,)
 
     if not isinstance(decision_id, str) or not decision_id:

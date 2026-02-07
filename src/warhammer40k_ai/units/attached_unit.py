@@ -15,20 +15,20 @@ class AttachedUnitView:
         self._root = root_unit
 
         # Snapshot members at construction time (so indices remain stable through a dialog session)
-        members = []
-        try:
-            members = list(root_unit.get_attached_unit_members())
-        except Exception:
+        get_members = getattr(root_unit, "get_attached_unit_members", None)
+        if callable(get_members):
+            members = list(get_members() or [])
+        else:
             members = [root_unit]
         self._members = [m for m in members if m is not None]
 
         # Flatten model list
         models: List[Any] = []
         for u in self._members:
-            try:
-                models.extend(list(getattr(u, "models", []) or []))
-            except Exception:
+            unit_models = getattr(u, "models", None)
+            if unit_models is None:
                 continue
+            models.extend(list(unit_models))
         self.models = models
 
     @property
@@ -41,13 +41,12 @@ class AttachedUnitView:
 
     @property
     def name(self) -> str:
-        try:
-            return f"{self._root.name} (Attached)"
-        except Exception:
-            return "Attached Unit"
+        root_name = getattr(self._root, "name", None)
+        if root_name:
+            return f"{root_name} (Attached)"
+        return "Attached Unit"
 
     def __getattr__(self, item: str) -> Any:
         # Delegate everything else to the root unit
         return getattr(self._root, item)
-
 

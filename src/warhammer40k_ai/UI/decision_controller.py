@@ -17,10 +17,8 @@ class UIDecisionController(DecisionController):
             return False
         if player_id is None:
             return True
-        try:
-            player = game._resolve_player_by_id(player_id)
-        except Exception:
-            player = None
+        resolve_player = getattr(game, "_resolve_player_by_id", None)
+        player = resolve_player(player_id) if callable(resolve_player) else None
         if player is None:
             for p in list(getattr(game, "players", []) or []):
                 if getattr(p, "id", None) == player_id:
@@ -28,10 +26,8 @@ class UIDecisionController(DecisionController):
                     break
         if player is None:
             return False
-        try:
-            return bool(player.has_control())
-        except Exception:
-            return False
+        has_control = getattr(player, "has_control", None)
+        return bool(has_control()) if callable(has_control) else False
 
     def on_decision_requested(self, game: object, request: DecisionRequest) -> None:
         handler = getattr(self._game_view, "_on_decision_requested", None)

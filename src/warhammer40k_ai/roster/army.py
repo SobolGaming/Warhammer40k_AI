@@ -373,7 +373,7 @@ class Army:
             self.voice_of_command = VoiceOfCommandManager(self)
             self.deathstrike = DeathstrikeManager(self)
 
-        if fid == "GSC":
+        if fid == "GC":
             # Genestealer Cults can also use Deathstrike
             from ..rules.deathstrike import DeathstrikeManager
             self.deathstrike = DeathstrikeManager(self)
