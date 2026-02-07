@@ -22193,6 +22193,60 @@ class Unit:
                 sr["murderous_onslaught_turn"] = int(turn)
             unit.special_rules = sr
 
+    def _disembark_override_rules(self, *, transport_unit: Optional['Unit'] = None, game: Optional['Game'] = None) -> dict:
+        overrides: dict[str, object] = {}
+        try:
+            sr = getattr(self, "special_rules", None)
+        except Exception:
+            sr = None
+        if isinstance(sr, dict) and sr.get("goretrack_aggressive_disembark_active"):
+            tid = str(sr.get("goretrack_aggressive_disembark_transport_id", "") or "")
+            if tid and transport_unit is not None:
+                try:
+                    if tid != str(get_entity_id(transport_unit) or ""):
+                        return overrides
+                except Exception:
+                    pass
+            try:
+                overrides["max_distance"] = float(sr.get("goretrack_aggressive_disembark_distance", 6.0) or 6.0)
+            except Exception:
+                overrides["max_distance"] = 6.0
+            overrides["require_not_in_engagement"] = not bool(
+                sr.get("goretrack_aggressive_disembark_allow_engagement", True)
+            )
+        try:
+            tsr = getattr(transport_unit, "special_rules", None)
+        except Exception:
+            tsr = None
+        if isinstance(tsr, dict) and tsr.get("goretrack_full_throttle_assault_active"):
+            exp = str(tsr.get("goretrack_full_throttle_assault_expires_phase", "") or "").strip().upper()
+            if exp:
+                try:
+                    phase = getattr(game, "phase", None)
+                    phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+                except Exception:
+                    phase_name = ""
+                if phase_name and phase_name != exp:
+                    return overrides
+            owner = str(tsr.get("goretrack_full_throttle_assault_turn_owner", "") or "")
+            turn = int(tsr.get("goretrack_full_throttle_assault_turn", 0) or 0)
+            if game is not None:
+                try:
+                    current_player = getattr(game, "get_current_player", lambda: None)()
+                except Exception:
+                    current_player = None
+                current_owner = str(getattr(current_player, "id", "") or "")
+                try:
+                    current_turn = int(getattr(game, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if owner and current_owner and owner != current_owner:
+                    return overrides
+                if turn and current_turn and turn != current_turn:
+                    return overrides
+            overrides["allow_charge_after_normal_move"] = True
+        return overrides
+
     def _apply_aggressive_deployment_scouts(self, transport_unit: Optional['Unit'] = None) -> None:
         if transport_unit is None:
             return
@@ -22282,6 +22336,23 @@ class Unit:
         sr = getattr(transport_unit, "special_rules", None)
         if isinstance(sr, dict) and sr.get("pain_rapid_deployment_active"):
             allow_after_advance = True
+        game = None
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        if army is not None and getattr(army, "player", None) is not None:
+            game = army.player.game
+        overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
+        if overrides.get("allow_charge_after_normal_move") is True:
+            allow_charge_after_normal_move = True
+        game = None
+        army = self.get_parent_army()
+        if army is not None and getattr(army, "player", None) is not None:
+            game = army.player.game
+        overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
+        if overrides.get("allow_charge_after_normal_move") is True:
+            allow_charge_after_normal_move = True
 
         # Transport state restrictions for normal disembark
         if not destroyed_transport:
@@ -22310,12 +22381,21 @@ class Unit:
 
         # Choose disembark radius
         disembark_distance = 6.0 if emergency else 3.0
+        require_not_in_engagement = True
+        if not destroyed_transport and not emergency:
+            if overrides.get("max_distance") is not None:
+                try:
+                    disembark_distance = float(overrides.get("max_distance"))
+                except Exception:
+                    disembark_distance = float(disembark_distance)
+            if overrides.get("require_not_in_engagement") is not None:
+                require_not_in_engagement = bool(overrides.get("require_not_in_engagement"))
 
         placements = self._find_disembark_positions(
             transport_base=transport_base,
             game_map=game_map,
             max_distance=disembark_distance,
-            require_not_in_engagement=True,
+            require_not_in_engagement=require_not_in_engagement,
         )
 
         if placements is None and destroyed_transport and not emergency:
@@ -22343,7 +22423,7 @@ class Unit:
                         game_map=game_map,
                         max_distance=6.0,
                         placed=placed_positions,
-                        require_not_in_engagement=True,
+                        require_not_in_engagement=require_not_in_engagement,
                     )
                     if pos is None:
                         unplaced_models.append(m)
@@ -22502,6 +22582,21 @@ class Unit:
             transport_unit = self.embarked_in
         if transport_unit is None:
             return {"valid": False, "reason": "No transport"}
+        game = None
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        if army is not None and getattr(army, "player", None) is not None:
+            game = army.player.game
+        overrides = self._disembark_override_rules(transport_unit=transport_unit, game=game)
+        if overrides.get("max_distance") is not None:
+            try:
+                max_distance = float(overrides.get("max_distance"))
+            except Exception:
+                pass
+        if overrides.get("require_not_in_engagement") is not None:
+            require_not_in_engagement = bool(overrides.get("require_not_in_engagement"))
 
         transport_base = None
         try:

@@ -79,13 +79,19 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "DENIZENS OF THE WARP",
     "DRAUGHT OF TERROR",
     "DELIRIUM UNMADE",
+    "ENDLESS PURSUIT OF VIOLENCE",
     "FATEBORNE NIGHTMARES",
     "FICKLEFIRE",
     "FLICKERING REALITY",
+    "FURY UNLEASHED",
     "IMPOSSIBLE ECLIPSE",
     "PYROGENESIS",
     "THE REALM OF CHAOS",
     "WARP SURGE",
+    "AGGRESSIVE DISEMBARKATION",
+    "FULL-THROTTLE ASSAULT",
+    "SMASH THROUGH",
+    "UNRELENTING ADVANCE",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -123,11 +129,14 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "CORRUPT REALSPACE",
     "DAEMONIC INVULNERABILITY",
     "DELIRIUM UNMADE",
+    "ENDLESS PURSUIT OF VIOLENCE",
     "FLICKERING REALITY",
     "THE REALM OF CHAOS",
     "SUMMONED BY SLAUGHTER",
     "THE FOE FORESEEN",
     "UNBOUND ARROGANCE",
+    "FURY UNLEASHED",
+    "UNRELENTING ADVANCE",
     "SWIFT AS THE EAGLE",
     "WEBWAY TUNNEL",
     "UNYIELDING FORMS",
@@ -924,10 +933,14 @@ class StratagemManager:
 
         if "FIRE AND FADE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_fire_and_fade)
+        if "FURY UNLEASHED" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_fury_unleashed)
         if "REACTIVE REPOSITION" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_reactive_reposition)
         if "SWIFT AS THE EAGLE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_swift_as_the_eagle)
+        if "UNRELENTING ADVANCE" in names:
+            add("unit_shooting_resolved", self._on_unit_shooting_resolved_unrelenting_advance)
         if "UNLEASH BALEFIRE" in names:
             add("unit_shooting_resolved", self._on_unit_shooting_resolved_unleash_balefire)
         if "FICKLEFIRE" in names:
@@ -1026,6 +1039,7 @@ class StratagemManager:
 
         phase_end_trigger_names = {
             "DELIRIUM UNMADE",
+            "ENDLESS PURSUIT OF VIOLENCE",
             "MURDER-CALL",
             "NEW ORDERS",
             "RAPID INGRESS",
@@ -1038,12 +1052,14 @@ class StratagemManager:
             "GO TO GROUND",
             "SMOKESCREEN",
             "BLITZING FIREPOWER",
+            "FULL-THROTTLE ASSAULT",
             "LIGHTNING-FAST REACTIONS",
             "DAEMONIC FURY",
             "HACK AND SLASH",
             "FRENZIED RESILIENCE",
             "DEFIANT TO THE LAST",
             "PEERLESS WARRIOR",
+            "SMASH THROUGH",
             "UNYIELDING FORMS",
             "MERCILESS RECLAMATION",
             "DIMENSIONAL TUNNEL",
@@ -1885,6 +1901,12 @@ class StratagemManager:
             "DENIZENS OF THE WARP": "Target: LEGIONES DAEMONICA unit (arriving via Deep Strike)",
             "DRAUGHT OF TERROR": "Target: LEGIONES DAEMONICA unit (not yet shot/fought)",
             "DELIRIUM UNMADE": "Target: up to two TZEENTCH LEGIONES DAEMONICA units (end of opponent Fight phase)",
+            "AGGRESSIVE DISEMBARKATION": "Target: WORLD EATERS RHINO (not moved) + embarked unit",
+            "ENDLESS PURSUIT OF VIOLENCE": "Target: WORLD EATERS INFANTRY + friendly Transport within 6\"",
+            "FULL-THROTTLE ASSAULT": "Target: WORLD EATERS RHINO (not moved)",
+            "FURY UNLEASHED": "Target: WORLD EATERS RHINO (hit) + embarked KHORNE BERZERKERS",
+            "SMASH THROUGH": "Target: WORLD EATERS VEHICLE (not moved)",
+            "UNRELENTING ADVANCE": "Target: WORLD EATERS VEHICLE (hit)",
             "FATEBORNE NIGHTMARES": "Target: TZEENTCH LEGIONES DAEMONICA unit",
             "FICKLEFIRE": "Target: TZEENTCH LEGIONES DAEMONICA unit (engaged)",
             "FLICKERING REALITY": "Target: TZEENTCH LEGIONES DAEMONICA unit (defensive reaction)",
@@ -2019,6 +2041,381 @@ class StratagemManager:
             pass
         return False
 
+    def _get_world_eaters_mgr(self):
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        return getattr(army, "world_eaters_detachments", None) if army is not None else None
+
+    def _is_goretrack_onslaught(self) -> bool:
+        mgr = self._get_world_eaters_mgr()
+        if mgr is None:
+            return False
+        try:
+            return bool(mgr.is_goretrack_onslaught())
+        except Exception:
+            raise
+
+    def _is_world_eaters_unit(self, unit: Any, mgr=None) -> bool:
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        if mgr is None:
+            mgr = self._get_world_eaters_mgr()
+        if mgr is not None and hasattr(mgr, "unit_is_world_eaters"):
+            try:
+                return bool(mgr.unit_is_world_eaters(root))
+            except Exception:
+                return False
+        try:
+            return bool(root.has_any_keyword("WORLD EATERS"))
+        except Exception:
+            return False
+
+    def _goretrack_embarked_units(
+        self,
+        transport_unit: Any,
+        *,
+        require_world_eaters: bool = True,
+        require_khorne_berzerkers: bool = False,
+    ) -> List[Any]:
+        if transport_unit is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        passengers = list(getattr(transport_unit, "transport_passengers", []) or [])
+        candidates: List[Any] = []
+        for passenger in list(passengers or []):
+            if passenger is None:
+                continue
+            try:
+                root = passenger.get_attached_unit_root()
+            except Exception:
+                root = passenger
+            if root is None:
+                continue
+            if require_world_eaters and not self._is_world_eaters_unit(root, mgr=mgr):
+                continue
+            if require_khorne_berzerkers:
+                try:
+                    if not (root.has_keyword("KHORNE") and root.has_keyword("BERZERKERS")):
+                        continue
+                except Exception:
+                    continue
+            candidates.append(root)
+        try:
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        return candidates
+
+    def _goretrack_rhino_candidates(
+        self,
+        *,
+        require_not_moved: bool = False,
+        require_any_passengers: bool = False,
+        require_khorne_berzerkers: bool = False,
+    ) -> List[Any]:
+        if not self._is_goretrack_onslaught():
+            return []
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        if army is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                uid = get_entity_id(root)
+            except Exception:
+                uid = None
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                continue
+            if not self._is_world_eaters_unit(root, mgr=mgr):
+                continue
+            try:
+                if not root.has_keyword("RHINO"):
+                    continue
+            except Exception:
+                continue
+            if require_not_moved:
+                try:
+                    if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                        continue
+                except Exception:
+                    continue
+            if require_any_passengers or require_khorne_berzerkers:
+                passengers = self._goretrack_embarked_units(
+                    root,
+                    require_world_eaters=True,
+                    require_khorne_berzerkers=require_khorne_berzerkers,
+                )
+                if not passengers:
+                    continue
+            candidates.append(root)
+        try:
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        return candidates
+
+    def _goretrack_vehicle_candidates(
+        self,
+        *,
+        require_not_moved: bool = False,
+    ) -> List[Any]:
+        if not self._is_goretrack_onslaught():
+            return []
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        if army is None:
+            return []
+        mgr = self._get_world_eaters_mgr()
+        candidates: List[Any] = []
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                uid = get_entity_id(root)
+            except Exception:
+                uid = None
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                continue
+            if not self._is_world_eaters_unit(root, mgr=mgr):
+                continue
+            try:
+                if not (root.has_keyword("VEHICLE") or bool(getattr(root, "is_vehicle", False))):
+                    continue
+            except Exception:
+                continue
+            if require_not_moved:
+                try:
+                    if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                        continue
+                except Exception:
+                    continue
+            candidates.append(root)
+        try:
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        return candidates
+
+    def _goretrack_endless_pursuit_candidates(self) -> tuple[list[Any], dict[Any, list[Any]]]:
+        if not self._is_goretrack_onslaught():
+            return ([], {})
+        if self.game is None:
+            return ([], {})
+        try:
+            army = self.player.get_army()
+        except Exception:
+            raise
+        if army is None:
+            return ([], {})
+        game_map = getattr(self.game, "map", None)
+        if game_map is None:
+            return ([], {})
+        try:
+            from ..utility.aura_utils import unit_wholly_within_range_of_unit
+        except Exception:
+            unit_wholly_within_range_of_unit = None
+        mgr = self._get_world_eaters_mgr()
+        candidates: List[Any] = []
+        transports_by_unit: dict[Any, list[Any]] = {}
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            try:
+                uid = get_entity_id(root)
+            except Exception:
+                uid = None
+            if uid and uid in seen:
+                continue
+            if uid:
+                seen.add(uid)
+            try:
+                if not root.is_alive():
+                    continue
+            except Exception:
+                continue
+            try:
+                if not getattr(root, "deployed", False):
+                    continue
+            except Exception:
+                continue
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    continue
+            except Exception:
+                continue
+            try:
+                if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    continue
+            except Exception:
+                continue
+            if not self._is_world_eaters_unit(root, mgr=mgr):
+                continue
+            try:
+                if not root.has_keyword("INFANTRY"):
+                    continue
+            except Exception:
+                continue
+            try:
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    continue
+            except Exception:
+                continue
+            transports: list[Any] = []
+            for t in list(getattr(army, "units", []) or []):
+                try:
+                    if t is None or not t.is_alive():
+                        continue
+                    if not getattr(t, "deployed", False):
+                        continue
+                    if not bool(getattr(t, "is_transport", False)):
+                        continue
+                    if not t.can_transport(root):
+                        continue
+                    if callable(unit_wholly_within_range_of_unit):
+                        if not unit_wholly_within_range_of_unit(t, root, 6.0, use_attached_aggregate=True):
+                            continue
+                    transports.append(t)
+                except Exception:
+                    continue
+            if not transports:
+                continue
+            try:
+                transports = sorted(transports, key=lambda u: str(get_entity_id(u) or ""))
+            except Exception:
+                transports = list(transports)
+            candidates.append(root)
+            transports_by_unit[root] = transports
+        try:
+            candidates = sorted(candidates, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            candidates = list(candidates)
+        return (candidates, transports_by_unit)
+
+    def _goretrack_phase_key(self) -> str:
+        try:
+            game = self.game
+        except Exception:
+            game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        except Exception:
+            br = 0
+        phase_name = ""
+        try:
+            phase = getattr(game, "phase", None)
+            phase_name = str(getattr(phase, "name", "") or phase or "").strip().upper()
+        except Exception:
+            phase_name = ""
+        if not phase_name:
+            try:
+                phase_name = str(getattr(self, "_current_phase_name", "") or "").strip().upper()
+            except Exception:
+                phase_name = ""
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)() if game is not None else None
+        except Exception:
+            current_player = None
+        owner = str(getattr(current_player, "id", "") or "")
+        return f"{br}:{phase_name}:{owner}"
     def _profane_symbiosis_used_this_round(self, unit: Any) -> bool:
         if unit is None:
             return False
@@ -4086,6 +4483,106 @@ class StratagemManager:
                         root.special_rules = sr
         except Exception:
             raise
+        # World Eaters (Goretrack Onslaught): Smash Through / Full-Throttle Assault cleanup at end of Movement phase.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "MOVEMENT_PHASE":
+                units = list(getattr(self.player.get_army(), "units", []) or [])
+                seen = set()
+                for unit in units:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    exp = str(sr.get("goretrack_smash_through_expires_phase", "") or "").strip().upper()
+                    if sr.get("goretrack_smash_through_active") and (not exp or exp == phase_name):
+                        added = set(sr.get("goretrack_smash_through_added_phase_move_terrain_only_types") or [])
+                        if added:
+                            current = list(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                            kept = [t for t in current if t not in added]
+                            if kept:
+                                sr["bearer_unit_phase_move_terrain_only_types"] = kept
+                            else:
+                                sr.pop("bearer_unit_phase_move_terrain_only_types", None)
+                        for key in (
+                            "goretrack_smash_through_active",
+                            "goretrack_smash_through_expires_phase",
+                            "goretrack_smash_through_turn_owner",
+                            "goretrack_smash_through_turn",
+                            "goretrack_smash_through_source",
+                            "goretrack_smash_through_added_phase_move_terrain_only_types",
+                        ):
+                            sr.pop(key, None)
+                        root.special_rules = sr
+                    exp = str(sr.get("goretrack_full_throttle_assault_expires_phase", "") or "").strip().upper()
+                    if sr.get("goretrack_full_throttle_assault_active") and (not exp or exp == phase_name):
+                        for key in (
+                            "goretrack_full_throttle_assault_active",
+                            "goretrack_full_throttle_assault_expires_phase",
+                            "goretrack_full_throttle_assault_turn_owner",
+                            "goretrack_full_throttle_assault_turn",
+                            "goretrack_full_throttle_assault_source",
+                        ):
+                            sr.pop(key, None)
+                        root.special_rules = sr
+                    if sr.get("goretrack_aggressive_disembark_active"):
+                        for key in (
+                            "goretrack_aggressive_disembark_active",
+                            "goretrack_aggressive_disembark_distance",
+                            "goretrack_aggressive_disembark_allow_engagement",
+                            "goretrack_aggressive_disembark_transport_id",
+                            "goretrack_aggressive_disembark_source",
+                        ):
+                            sr.pop(key, None)
+                        root.special_rules = sr
+        except Exception:
+            raise
+        # World Eaters (Goretrack Onslaught): clear reactive stratagem phase keys at end of Shooting phase.
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "SHOOTING_PHASE":
+                units = list(getattr(self.player.get_army(), "units", []) or [])
+                seen = set()
+                for unit in units:
+                    try:
+                        root = unit.get_attached_unit_root()
+                    except Exception:
+                        root = unit
+                    if root is None:
+                        continue
+                    try:
+                        uid = get_entity_id(root)
+                    except Exception:
+                        uid = None
+                    if uid and uid in seen:
+                        continue
+                    if uid:
+                        seen.add(uid)
+                    sr = getattr(root, "special_rules", None)
+                    if not isinstance(sr, dict):
+                        continue
+                    if (
+                        "goretrack_fury_unleashed_phase_key" in sr
+                        or "goretrack_unrelenting_advance_phase_key" in sr
+                    ):
+                        sr.pop("goretrack_fury_unleashed_phase_key", None)
+                        sr.pop("goretrack_unrelenting_advance_phase_key", None)
+                        root.special_rules = sr
+        except Exception:
+            raise
         # Chaos Daemons: Warp Surge (expires at end of Charge phase).
         try:
             phase_name = getattr(phase, "name", None)
@@ -4333,6 +4830,44 @@ class StratagemManager:
                                 "cp_cost": s.cp_cost,
                                 "candidates": candidates,
                                 "transport_candidates_by_unit": transport_candidates_by_unit,
+                            }, use_timer=False)
+        except Exception:
+            raise
+        # World Eaters (Goretrack Onslaught): ENDLESS PURSUIT OF VIOLENCE (end of Fight phase)
+        try:
+            phase_name = getattr(phase, "name", None)
+            if phase_name == "FIGHT_PHASE":
+                s = self.get_by_name("ENDLESS PURSUIT OF VIOLENCE")
+                if not s:
+                    pass
+                elif not self._is_goretrack_onslaught():
+                    pass
+                elif self.player.command_points < s.cp_cost:
+                    pass
+                elif (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                    pass
+                elif not s.can_use(self.player, self.game, phase_name="Fight phase"):
+                    pass
+                else:
+                    candidates, transports_by_unit = self._goretrack_endless_pursuit_candidates()
+                    if candidates:
+                        already = False
+                        for r in self._pending_reactions:
+                            try:
+                                if r.get("event") == "phase_end" and r.get("stratagem") == s.name and r.get("phase") == "Fight phase":
+                                    already = True
+                                    break
+                            except Exception:
+                                raise
+                        if not already:
+                            self._queue_reaction({
+                                "event": "phase_end",
+                                "phase": "Fight phase",
+                                "phase_name": "Fight phase",
+                                "stratagem": s.name,
+                                "cp_cost": s.cp_cost,
+                                "candidates": candidates,
+                                "transport_candidates_by_unit": transports_by_unit,
                             }, use_timer=False)
         except Exception:
             raise
@@ -4972,6 +5507,129 @@ class StratagemManager:
         except Exception:
             raise
 
+    def _on_unit_shooting_resolved_fury_unleashed(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        """
+        Reaction window for FURY UNLEASHED:
+        Opponent's Shooting phase, just after an enemy unit has shot and hit a WORLD EATERS RHINO.
+        """
+        try:
+            if attacker_unit is None or self.game is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is self.player:
+                return
+            if not self._is_goretrack_onslaught():
+                return
+            s = self.get_by_name("FURY UNLEASHED")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            targets = []
+            atk_key = self._attacker_unit_key(attacker_unit)
+            if isinstance(hits_by_target, dict):
+                for t, hits in hits_by_target.items():
+                    try:
+                        if int(hits or 0) <= 0:
+                            continue
+                    except Exception:
+                        continue
+                    targets.append(t)
+            if not targets and atk_key:
+                targets = list(self._recent_shooting_targets.get(atk_key) or [])
+            if atk_key:
+                self._recent_shooting_targets.pop(atk_key, None)
+            mgr = self._get_world_eaters_mgr()
+            candidates = []
+            seen = set()
+            for t in list(targets or []):
+                try:
+                    root = t.get_attached_unit_root()
+                except Exception:
+                    raise
+                if root is None:
+                    continue
+                try:
+                    uid = get_entity_id(root)
+                except Exception:
+                    raise
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                try:
+                    if not root.is_alive():
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                except Exception:
+                    raise
+                if not self._is_world_eaters_unit(root, mgr=mgr):
+                    continue
+                try:
+                    if not root.has_keyword("RHINO"):
+                        continue
+                except Exception:
+                    continue
+                passengers = self._goretrack_embarked_units(
+                    root,
+                    require_world_eaters=True,
+                    require_khorne_berzerkers=True,
+                )
+                if not passengers:
+                    continue
+                try:
+                    sr = getattr(root, "special_rules", None)
+                except Exception:
+                    sr = None
+                if isinstance(sr, dict):
+                    phase_key = self._goretrack_phase_key()
+                    if str(sr.get("goretrack_unrelenting_advance_phase_key", "") or "") == phase_key:
+                        continue
+                candidates.append(root)
+            if not candidates:
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "unit_shooting_resolved" and r.get("stratagem") == s.name and r.get("enemy_unit") is attacker_unit:
+                        return
+                except Exception:
+                    raise
+            payload = {
+                "event": "unit_shooting_resolved",
+                "phase_name": "Shooting phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "enemy_unit": attacker_unit,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
+        except Exception:
+            raise
+
     def _on_unit_shooting_resolved_reactive_reposition(self, attacker_unit=None, hits_by_target=None, **_kwargs):
         """
         Reaction window for REACTIVE REPOSITION:
@@ -5142,6 +5800,122 @@ class StratagemManager:
                         continue
                 except Exception:
                     raise
+                candidates.append(root)
+            if not candidates:
+                return
+            for r in self._pending_reactions:
+                try:
+                    if r.get("event") == "unit_shooting_resolved" and r.get("stratagem") == s.name and r.get("enemy_unit") is attacker_unit:
+                        return
+                except Exception:
+                    raise
+            payload = {
+                "event": "unit_shooting_resolved",
+                "phase_name": "Shooting phase",
+                "stratagem": s.name,
+                "cp_cost": s.cp_cost,
+                "enemy_unit": attacker_unit,
+                "candidates": candidates,
+            }
+            if len(candidates) == 1:
+                payload["target_unit"] = candidates[0]
+            self._queue_reaction(payload)
+        except Exception:
+            raise
+
+    def _on_unit_shooting_resolved_unrelenting_advance(self, attacker_unit=None, hits_by_target=None, **_kwargs):
+        """
+        Reaction window for UNRELENTING ADVANCE:
+        Opponent's Shooting phase, just after an enemy unit has shot and hit a WORLD EATERS VEHICLE.
+        """
+        try:
+            if attacker_unit is None or self.game is None:
+                return
+            if (self._current_phase_name or "").strip().lower() != "shooting phase":
+                return
+            active_player = getattr(self.game, "get_current_player", lambda: None)()
+            if active_player is self.player:
+                return
+            if not self._is_goretrack_onslaught():
+                return
+            s = self.get_by_name("UNRELENTING ADVANCE")
+            if not s:
+                return
+            if self.player.command_points < s.cp_cost:
+                return
+            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
+                return
+            targets = []
+            atk_key = self._attacker_unit_key(attacker_unit)
+            if isinstance(hits_by_target, dict):
+                for t, hits in hits_by_target.items():
+                    try:
+                        if int(hits or 0) <= 0:
+                            continue
+                    except Exception:
+                        continue
+                    targets.append(t)
+            if not targets and atk_key:
+                targets = list(self._recent_shooting_targets.get(atk_key) or [])
+            if atk_key:
+                self._recent_shooting_targets.pop(atk_key, None)
+            mgr = self._get_world_eaters_mgr()
+            candidates = []
+            seen = set()
+            for t in list(targets or []):
+                try:
+                    root = t.get_attached_unit_root()
+                except Exception:
+                    raise
+                if root is None:
+                    continue
+                try:
+                    uid = get_entity_id(root)
+                except Exception:
+                    raise
+                if uid in seen:
+                    continue
+                seen.add(uid)
+                try:
+                    if not root.is_alive():
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if root.get_parent_army().player is not self.player:
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if not getattr(root, "deployed", False):
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if getattr(root, "is_in_reserves", lambda: False)():
+                        continue
+                except Exception:
+                    raise
+                try:
+                    if _unit_cannot_be_target_of_stratagem(root):
+                        continue
+                except Exception:
+                    raise
+                if not self._is_world_eaters_unit(root, mgr=mgr):
+                    continue
+                try:
+                    if not (root.has_keyword("VEHICLE") or bool(getattr(root, "is_vehicle", False))):
+                        continue
+                except Exception:
+                    continue
+                try:
+                    sr = getattr(root, "special_rules", None)
+                except Exception:
+                    sr = None
+                if isinstance(sr, dict):
+                    phase_key = self._goretrack_phase_key()
+                    if str(sr.get("goretrack_fury_unleashed_phase_key", "") or "") == phase_key:
+                        continue
                 candidates.append(root)
             if not candidates:
                 return
@@ -10116,6 +10890,825 @@ class StratagemManager:
             except Exception:
                 raise
             print(f"INFO: APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
+            return True
+
+        # Goretrack Onslaught: AGGRESSIVE DISEMBARKATION
+        if s.name.upper() == "AGGRESSIVE DISEMBARKATION":
+            transport_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+            embarked_unit = (
+                kwargs.get("embarked_unit")
+                or kwargs.get("passenger_unit")
+                or kwargs.get("selected_embarked_unit")
+            )
+            candidates = kwargs.get("candidates") or []
+            if transport_unit is None and candidates and len(candidates) == 1:
+                transport_unit = candidates[0]
+            if transport_unit is None:
+                print("ERROR: Aggressive Disembarkation: no transport provided")
+                return False
+            try:
+                root = transport_unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_goretrack_onslaught():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: Aggressive Disembarkation: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Aggressive Disembarkation: not your turn")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: Aggressive Disembarkation: target was not selected")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: Aggressive Disembarkation: transport is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Aggressive Disembarkation: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_keyword("RHINO"):
+                    print("ERROR: Aggressive Disembarkation: target is not a RHINO")
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                    print("ERROR: Aggressive Disembarkation: transport already moved this phase")
+                    return False
+            except Exception:
+                raise
+            valid_rhinos = self._goretrack_rhino_candidates(require_not_moved=True, require_any_passengers=True)
+            if root not in list(valid_rhinos or []):
+                print("ERROR: Aggressive Disembarkation: transport is not eligible")
+                return False
+            passengers = self._goretrack_embarked_units(root, require_world_eaters=True, require_khorne_berzerkers=False)
+            if not passengers:
+                print("ERROR: Aggressive Disembarkation: no embarked units")
+                return False
+            if embarked_unit is None:
+                if len(passengers) == 1:
+                    embarked_unit = passengers[0]
+                else:
+                    print("ERROR: Aggressive Disembarkation: no embarked unit selected")
+                    return False
+            if embarked_unit not in list(passengers or []):
+                print("ERROR: Aggressive Disembarkation: embarked unit is not eligible")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(embarked_unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["goretrack_aggressive_disembark_active"] = True
+                sr["goretrack_aggressive_disembark_distance"] = 6.0
+                sr["goretrack_aggressive_disembark_allow_engagement"] = True
+                sr["goretrack_aggressive_disembark_transport_id"] = get_entity_id(root)
+                sr["goretrack_aggressive_disembark_source"] = s.name
+                embarked_unit.special_rules = sr
+            except Exception:
+                raise
+            ok = False
+            try:
+                game_map = getattr(self.game, "map", None)
+                if game_map is None:
+                    raise RuntimeError("Aggressive Disembarkation requires an active game map.")
+                ok = bool(
+                    embarked_unit.disembark(
+                        game_map=game_map,
+                        transport_unit=root,
+                        current_turn=int(getattr(self.game, "turn", 0) or 0),
+                    )
+                )
+            except Exception:
+                raise
+            finally:
+                try:
+                    sr = getattr(embarked_unit, "special_rules", None)
+                    if isinstance(sr, dict):
+                        for key in (
+                            "goretrack_aggressive_disembark_active",
+                            "goretrack_aggressive_disembark_distance",
+                            "goretrack_aggressive_disembark_allow_engagement",
+                            "goretrack_aggressive_disembark_transport_id",
+                            "goretrack_aggressive_disembark_source",
+                        ):
+                            sr.pop(key, None)
+                        embarked_unit.special_rules = sr
+                except Exception:
+                    pass
+            if not ok:
+                print("ERROR: Aggressive Disembarkation: disembark failed")
+                return False
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: AGGRESSIVE DISEMBARKATION: {getattr(embarked_unit, 'name', 'Unit')} disembarks within 6\".")
+            return True
+
+        # Goretrack Onslaught: FULL-THROTTLE ASSAULT
+        if s.name.upper() == "FULL-THROTTLE ASSAULT":
+            transport_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+            candidates = kwargs.get("candidates") or []
+            if transport_unit is None and candidates and len(candidates) == 1:
+                transport_unit = candidates[0]
+            if transport_unit is None:
+                print("ERROR: Full-Throttle Assault: no transport provided")
+                return False
+            try:
+                root = transport_unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_goretrack_onslaught():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: Full-Throttle Assault: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Full-Throttle Assault: not your turn")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: Full-Throttle Assault: target was not selected")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: Full-Throttle Assault: transport is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Full-Throttle Assault: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_keyword("RHINO"):
+                    print("ERROR: Full-Throttle Assault: target is not a RHINO")
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                    print("ERROR: Full-Throttle Assault: transport already moved this phase")
+                    return False
+            except Exception:
+                raise
+            valid_rhinos = self._goretrack_rhino_candidates(require_not_moved=True, require_any_passengers=False)
+            if root not in list(valid_rhinos or []):
+                print("ERROR: Full-Throttle Assault: transport is not eligible")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["goretrack_full_throttle_assault_active"] = True
+                sr["goretrack_full_throttle_assault_expires_phase"] = "MOVEMENT_PHASE"
+                sr["goretrack_full_throttle_assault_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["goretrack_full_throttle_assault_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["goretrack_full_throttle_assault_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: FULL-THROTTLE ASSAULT: {getattr(root, 'name', 'Unit')} disembarking units can charge after moving.")
+            return True
+
+        # Goretrack Onslaught: SMASH THROUGH
+        if s.name.upper() == "SMASH THROUGH":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None and candidates and len(candidates) == 1:
+                unit = candidates[0]
+            if unit is None:
+                print("ERROR: Smash Through: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_goretrack_onslaught():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "movement phase":
+                print("ERROR: Smash Through: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is not self.player:
+                print("ERROR: Smash Through: not your turn")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: Smash Through: target was not selected")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: Smash Through: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Smash Through: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not (root.has_keyword("VEHICLE") or bool(getattr(root, "is_vehicle", False))):
+                    print("ERROR: Smash Through: target is not a VEHICLE")
+                    return False
+            except Exception:
+                raise
+            try:
+                if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
+                    print("ERROR: Smash Through: target already moved this phase")
+                    return False
+            except Exception:
+                raise
+            valid_vehicles = self._goretrack_vehicle_candidates(require_not_moved=True)
+            if root not in list(valid_vehicles or []):
+                print("ERROR: Smash Through: target is not eligible")
+                return False
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                move_types = {"move", "advance"}
+                current = set(sr.get("bearer_unit_phase_move_terrain_only_types") or [])
+                added = set()
+                for mt in move_types:
+                    if mt not in current:
+                        current.add(mt)
+                        added.add(mt)
+                if current:
+                    sr["bearer_unit_phase_move_terrain_only_types"] = sorted(current)
+                if added:
+                    sr["goretrack_smash_through_added_phase_move_terrain_only_types"] = sorted(added)
+                sr["goretrack_smash_through_active"] = True
+                sr["goretrack_smash_through_expires_phase"] = "MOVEMENT_PHASE"
+                sr["goretrack_smash_through_turn_owner"] = str(getattr(self.player, "id", "") or "")
+                sr["goretrack_smash_through_turn"] = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+                sr["goretrack_smash_through_source"] = s.name
+                root.special_rules = sr
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: SMASH THROUGH: {getattr(root, 'name', 'Unit')} can move through terrain this phase.")
+            return True
+
+        # Goretrack Onslaught: ENDLESS PURSUIT OF VIOLENCE
+        if s.name.upper() == "ENDLESS PURSUIT OF VIOLENCE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            transport_unit = kwargs.get("transport_unit") or kwargs.get("transport")
+            if unit is None:
+                for r in reversed(self._pending_reactions):
+                    if r.get("stratagem", "").strip().upper() == "ENDLESS PURSUIT OF VIOLENCE":
+                        unit = r.get("unit") or r.get("target_unit")
+                        if transport_unit is None:
+                            transport_unit = r.get("transport_unit") or r.get("transport")
+                        break
+            if unit is None:
+                print("WARN: Endless Pursuit of Violence: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_goretrack_onslaught():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "fight phase":
+                print("WARN: Endless Pursuit of Violence: wrong phase")
+                return False
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("WARN: Endless Pursuit of Violence: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_keyword("INFANTRY"):
+                    print("WARN: Endless Pursuit of Violence: target is not INFANTRY")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                game_map = getattr(self.game, "map", None)
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    return False
+            except Exception:
+                raise
+            if transport_unit is None:
+                try:
+                    mapping = kwargs.get("transport_candidates_by_unit") or {}
+                    transport_unit = (mapping.get(root) or [None])[0]
+                except Exception:
+                    raise
+            if transport_unit is None:
+                try:
+                    candidates, transports_by_unit = self._goretrack_endless_pursuit_candidates()
+                    transport_unit = (transports_by_unit.get(root) or [None])[0]
+                except Exception:
+                    raise
+            if transport_unit is None:
+                print("WARN: Endless Pursuit of Violence: no transport provided")
+                return False
+            try:
+                if not transport_unit.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(transport_unit, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if not transport_unit.can_transport(root):
+                    return False
+            except Exception:
+                raise
+            try:
+                from ..utility.aura_utils import unit_wholly_within_range_of_unit
+                if not unit_wholly_within_range_of_unit(transport_unit, root, 6.0, use_attached_aggregate=True):
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                game_map = getattr(self.game, "map", None)
+                if game_map is None:
+                    raise RuntimeError("Endless Pursuit of Violence requires an active game map.")
+                if not transport_unit.add_passenger(root, game_map=game_map):
+                    print("WARN: Endless Pursuit of Violence: embark failed")
+                    return False
+            except Exception:
+                raise
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: Endless Pursuit of Violence: {getattr(root, 'name', 'Unit')} embarked within {getattr(transport_unit, 'name', 'Transport')}.")
+            return True
+
+        # Goretrack Onslaught: FURY UNLEASHED
+        if s.name.upper() == "FURY UNLEASHED":
+            transport_unit = kwargs.get("unit") or kwargs.get("target_unit") or kwargs.get("transport_unit") or kwargs.get("transport")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacker_unit")
+            embarked_unit = (
+                kwargs.get("embarked_unit")
+                or kwargs.get("passenger_unit")
+                or kwargs.get("selected_embarked_unit")
+            )
+            candidates = kwargs.get("candidates") or []
+            if transport_unit is None:
+                if candidates and len(candidates) == 1:
+                    transport_unit = candidates[0]
+                if transport_unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "FURY UNLEASHED":
+                            transport_unit = r.get("unit") or r.get("target_unit")
+                            enemy_unit = enemy_unit or r.get("enemy_unit")
+                            candidates = candidates or list(r.get("candidates") or [])
+                            if transport_unit is None and candidates and len(candidates) == 1:
+                                transport_unit = candidates[0]
+                            break
+            if transport_unit is None:
+                print("ERROR: Fury Unleashed: no transport provided")
+                return False
+            try:
+                root = transport_unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_goretrack_onslaught():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: Fury Unleashed: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: Fury Unleashed: not opponent's Shooting phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: Fury Unleashed: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: Fury Unleashed: transport is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: Fury Unleashed: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.has_keyword("RHINO"):
+                    print("ERROR: Fury Unleashed: target is not a RHINO")
+                    return False
+            except Exception:
+                raise
+            try:
+                sr = getattr(root, "special_rules", None)
+            except Exception:
+                sr = None
+            if isinstance(sr, dict):
+                phase_key = self._goretrack_phase_key()
+                if str(sr.get("goretrack_unrelenting_advance_phase_key", "") or "") == phase_key:
+                    print("ERROR: Fury Unleashed: unit already targeted by Unrelenting Advance this phase")
+                    return False
+            passengers = self._goretrack_embarked_units(
+                root,
+                require_world_eaters=True,
+                require_khorne_berzerkers=True,
+            )
+            if not passengers:
+                print("ERROR: Fury Unleashed: no embarked KHORNE BERZERKERS unit")
+                return False
+            if embarked_unit is None:
+                if len(passengers) == 1:
+                    embarked_unit = passengers[0]
+                else:
+                    print("ERROR: Fury Unleashed: no embarked unit selected")
+                    return False
+            if embarked_unit not in list(passengers or []):
+                print("ERROR: Fury Unleashed: embarked unit is not eligible")
+                return False
+            if enemy_unit is not None:
+                try:
+                    if enemy_unit.get_parent_army().player is self.player:
+                        print("ERROR: Fury Unleashed: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            ok = False
+            try:
+                game_map = getattr(self.game, "map", None)
+                if game_map is None:
+                    raise RuntimeError("Fury Unleashed requires an active game map.")
+                ok = bool(
+                    embarked_unit.disembark(
+                        game_map=game_map,
+                        transport_unit=root,
+                        current_turn=int(getattr(self.game, "turn", 0) or 0),
+                    )
+                )
+            except Exception:
+                raise
+            if not ok:
+                print("ERROR: Fury Unleashed: disembark failed")
+                return False
+            try:
+                if embarked_unit.can_blood_surge(game=self.game, game_map=getattr(self.game, "map", None)):
+                    max_distance = int(self.game.roll_blood_surge_distance(embarked_unit) or 0)
+                    if max_distance > 0:
+                        self.game._queue_reactive_move_movement_decision(
+                            player=self.player,
+                            unit=embarked_unit,
+                            max_distance=int(max_distance),
+                            kind="blood_surge",
+                            movement_type="blood_surge",
+                            source=s.name,
+                            attacker_unit=enemy_unit,
+                        )
+            except Exception:
+                raise
+            try:
+                sr = getattr(root, "special_rules", None)
+            except Exception:
+                sr = None
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["goretrack_fury_unleashed_phase_key"] = self._goretrack_phase_key()
+            root.special_rules = sr
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: FURY UNLEASHED: {getattr(embarked_unit, 'name', 'Unit')} disembarks and Blood Surges.")
+            return True
+
+        # Goretrack Onslaught: UNRELENTING ADVANCE
+        if s.name.upper() == "UNRELENTING ADVANCE":
+            unit = kwargs.get("unit") or kwargs.get("target_unit")
+            enemy_unit = kwargs.get("enemy_unit") or kwargs.get("attacker_unit")
+            candidates = kwargs.get("candidates") or []
+            if unit is None:
+                if candidates and len(candidates) == 1:
+                    unit = candidates[0]
+                if unit is None:
+                    for r in reversed(self._pending_reactions):
+                        if r.get("stratagem", "").strip().upper() == "UNRELENTING ADVANCE":
+                            unit = r.get("unit") or r.get("target_unit")
+                            enemy_unit = enemy_unit or r.get("enemy_unit")
+                            candidates = candidates or (r.get("candidates") or [])
+                            if unit is None and candidates and len(candidates) == 1:
+                                unit = candidates[0]
+                            break
+            if unit is None:
+                print("ERROR: UNRELENTING ADVANCE: no target unit provided")
+                return False
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                raise
+            if root is None:
+                return False
+            if not self._is_goretrack_onslaught():
+                return False
+            phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
+            if str(phase_name or "").strip().lower() != "shooting phase":
+                print("ERROR: UNRELENTING ADVANCE: wrong phase")
+                return False
+            active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
+            if active_player is self.player:
+                print("ERROR: UNRELENTING ADVANCE: not opponent's Shooting phase")
+                return False
+            if candidates:
+                try:
+                    if root not in list(candidates or []):
+                        print("ERROR: UNRELENTING ADVANCE: target was not selected by the attacker")
+                        return False
+                except Exception:
+                    raise
+            try:
+                if root.get_parent_army().player is not self.player:
+                    print("ERROR: UNRELENTING ADVANCE: target unit is not yours")
+                    return False
+            except Exception:
+                raise
+            try:
+                if _unit_cannot_be_target_of_stratagem(root):
+                    print("ERROR: UNRELENTING ADVANCE: target cannot be selected")
+                    return False
+            except Exception:
+                raise
+            try:
+                if not root.is_alive():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not getattr(root, "deployed", False):
+                    return False
+            except Exception:
+                raise
+            try:
+                if getattr(root, "is_in_reserves", lambda: False)():
+                    return False
+            except Exception:
+                raise
+            try:
+                if not (root.has_keyword("VEHICLE") or bool(getattr(root, "is_vehicle", False))):
+                    print("ERROR: UNRELENTING ADVANCE: target is not a VEHICLE")
+                    return False
+            except Exception:
+                raise
+            try:
+                sr = getattr(root, "special_rules", None)
+            except Exception:
+                sr = None
+            if isinstance(sr, dict):
+                phase_key = self._goretrack_phase_key()
+                if str(sr.get("goretrack_fury_unleashed_phase_key", "") or "") == phase_key:
+                    print("ERROR: UNRELENTING ADVANCE: unit already targeted by Fury Unleashed this phase")
+                    return False
+            if enemy_unit is not None:
+                try:
+                    if enemy_unit.get_parent_army().player is self.player:
+                        print("ERROR: UNRELENTING ADVANCE: attacker is not enemy")
+                        return False
+                except Exception:
+                    raise
+            game_map = getattr(self.game, "map", None)
+            if game_map is None:
+                print("ERROR: UNRELENTING ADVANCE: no map context")
+                return False
+            try:
+                engaged = False
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if not getattr(enemy, "is_alive", lambda: True)():
+                        continue
+                    if not getattr(enemy, "deployed", True):
+                        continue
+                    if game_map.is_within_engagement_range(root, enemy):
+                        engaged = True
+                        break
+                if engaged:
+                    print("ERROR: UNRELENTING ADVANCE: unit is in Engagement Range")
+                    return False
+            except Exception:
+                raise
+            eff_cost = s.cp_cost
+            try:
+                if hasattr(self.player, "apply_stratagem_cp_cost"):
+                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=root).get("cost", s.cp_cost))
+            except Exception:
+                raise
+            if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
+                return False
+            try:
+                if self.game is not None:
+                    self.game._queue_reactive_move_movement_decision(
+                        player=self.player,
+                        unit=root,
+                        max_distance=6,
+                        kind="unrelenting_advance",
+                        movement_type="reactive",
+                        source=s.name,
+                        attacker_unit=enemy_unit,
+                    )
+            except Exception:
+                raise
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["goretrack_unrelenting_advance_phase_key"] = self._goretrack_phase_key()
+            root.special_rules = sr
+            if kwargs.get("dequeue") is True:
+                self._dequeue_reaction_by_name(s.name)
+            try:
+                self._used_stratagems_this_phase.add((s.name or "").strip().upper())
+            except Exception:
+                raise
+            print(f"INFO: UNRELENTING ADVANCE: {getattr(root, 'name', 'Unit')} can move up to 6\".")
             return True
 
         # Rage-cursed Onslaught: RED WRATH (advance then shoot/charge choice; Red Thirst for both)

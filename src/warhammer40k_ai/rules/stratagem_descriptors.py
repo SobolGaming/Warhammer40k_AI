@@ -209,6 +209,73 @@ _SCINTILLATING_LEGION_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS.values()
 }
 
+_GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000010087007": StratagemToolDescriptor(
+        stratagem_id="000010087007",
+        name="Fury Unleashed",
+        timing="opponent_shooting_phase_after_shooting",
+        target="world_eaters_rhino_hit",
+        duration="immediate",
+        effect="disembark_and_blood_surge",
+        cp_cost=1,
+        effect_params={"requires_khorne_berzerkers": True, "movement_type": "blood_surge"},
+    ),
+    "000010087002": StratagemToolDescriptor(
+        stratagem_id="000010087002",
+        name="Endless Pursuit of Violence",
+        timing="end_of_fight_phase",
+        target="world_eaters_infantry_and_transport",
+        duration="immediate",
+        effect="embark_transport_if_within_6",
+        cp_cost=1,
+        range_in=6.0,
+    ),
+    "000010087003": StratagemToolDescriptor(
+        stratagem_id="000010087003",
+        name="Smash Through",
+        timing="movement_phase",
+        target="world_eaters_vehicle_not_moved",
+        duration="until_end_of_phase",
+        effect="move_through_terrain",
+        cp_cost=1,
+        effect_params={"move_types": ["move", "advance"]},
+    ),
+    "000010087004": StratagemToolDescriptor(
+        stratagem_id="000010087004",
+        name="Aggressive Disembarkation",
+        timing="movement_phase",
+        target="world_eaters_rhino_not_moved",
+        duration="immediate",
+        effect="disembark_within_6_and_engage",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"allow_engagement": True},
+    ),
+    "000010087005": StratagemToolDescriptor(
+        stratagem_id="000010087005",
+        name="Full-Throttle Assault",
+        timing="movement_phase",
+        target="world_eaters_rhino_not_moved",
+        duration="until_end_of_phase",
+        effect="disembark_charge_after_normal_move",
+        cp_cost=1,
+    ),
+    "000010087006": StratagemToolDescriptor(
+        stratagem_id="000010087006",
+        name="Unrelenting Advance",
+        timing="opponent_shooting_phase_after_shooting",
+        target="world_eaters_vehicle_hit",
+        duration="immediate",
+        effect="reactive_normal_move",
+        cp_cost=1,
+        effect_params={"max_distance": 6},
+    ),
+}
+
+_GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -221,6 +288,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _SCINTILLATING_LEGION_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -228,4 +298,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         _INFERNAL_LANCE_STRATAGEM_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
+        or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
     )

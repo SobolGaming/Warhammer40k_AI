@@ -2216,6 +2216,236 @@ class GameView:
 
         self._request_skyborne_sanctuary_targets = _request_skyborne_sanctuary_targets
 
+        def _request_goretrack_rhino_unit(
+            player,
+            game,
+            candidates,
+            on_chosen,
+            *,
+            require_not_moved: bool = False,
+            require_any_passengers: bool = False,
+            require_khorne_berzerkers: bool = False,
+            prompt: Optional[str] = None,
+            title: Optional[str] = None,
+            subtitle: Optional[str] = None,
+        ):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_goretrack_rhino_candidates"):
+                        cand = list(
+                            mgr._goretrack_rhino_candidates(
+                                require_not_moved=require_not_moved,
+                                require_any_passengers=require_any_passengers,
+                                require_khorne_berzerkers=require_khorne_berzerkers,
+                            )
+                            or []
+                        )
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            if not prompt:
+                prompt = "Select Goretrack Rhino."
+            if not title:
+                title = "Select Goretrack Rhino"
+            if not subtitle:
+                subtitle = "WORLD EATERS RHINO"
+                if require_not_moved:
+                    subtitle = f"{subtitle} (not moved)"
+                if require_khorne_berzerkers:
+                    subtitle = f"{subtitle} with KHORNE BERZERKERS"
+                elif require_any_passengers:
+                    subtitle = f"{subtitle} with embarked unit"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=prompt,
+                title=title,
+                subtitle=subtitle,
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_goretrack_rhino_unit = _request_goretrack_rhino_unit
+
+        def _request_goretrack_vehicle_unit(
+            player,
+            game,
+            candidates,
+            on_chosen,
+            *,
+            require_not_moved: bool = False,
+            prompt: Optional[str] = None,
+            title: Optional[str] = None,
+            subtitle: Optional[str] = None,
+        ):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_goretrack_vehicle_candidates"):
+                        cand = list(mgr._goretrack_vehicle_candidates(require_not_moved=require_not_moved) or [])
+                except Exception:
+                    cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            if not prompt:
+                prompt = "Select Goretrack Vehicle."
+            if not title:
+                title = "Select Goretrack Vehicle"
+            if not subtitle:
+                subtitle = "WORLD EATERS VEHICLE"
+                if require_not_moved:
+                    subtitle = f"{subtitle} (not moved)"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt=prompt,
+                title=title,
+                subtitle=subtitle,
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_goretrack_vehicle_unit = _request_goretrack_vehicle_unit
+
+        def _request_goretrack_embarked_unit(
+            player,
+            game,
+            transport_unit,
+            on_chosen,
+            *,
+            require_khorne_berzerkers: bool = False,
+        ):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            if transport_unit is None:
+                on_chosen(None)
+                return
+            mgr = getattr(player, "stratagems", None)
+            cand = []
+            try:
+                if mgr is not None and hasattr(mgr, "_goretrack_embarked_units"):
+                    cand = list(
+                        mgr._goretrack_embarked_units(
+                            transport_unit,
+                            require_world_eaters=True,
+                            require_khorne_berzerkers=require_khorne_berzerkers,
+                        )
+                        or []
+                    )
+            except Exception:
+                cand = []
+            if not cand:
+                on_chosen(None)
+                return
+            subtitle = "Embarked WORLD EATERS unit"
+            if require_khorne_berzerkers:
+                subtitle = "Embarked KHORNE BERZERKERS unit"
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=on_chosen,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select embarked unit.",
+                title="Select Embarked Unit",
+                subtitle=subtitle,
+                enemy_unit=transport_unit,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+        self._request_goretrack_embarked_unit = _request_goretrack_embarked_unit
+
+        def _request_endless_pursuit_targets(player, game, candidates, transport_candidates_by_unit, on_chosen):
+            from ..engine.decision_kinds import DECISION_SELECT_OVERWATCH_SHOOTER
+
+            cand = list(candidates or [])
+            transports_by_unit = dict(transport_candidates_by_unit or {})
+            if not cand:
+                mgr = getattr(player, "stratagems", None)
+                try:
+                    if mgr is not None and hasattr(mgr, "_goretrack_endless_pursuit_candidates"):
+                        cand, transports_by_unit = mgr._goretrack_endless_pursuit_candidates()
+                        cand = list(cand or [])
+                        transports_by_unit = dict(transports_by_unit or {})
+                except Exception:
+                    cand = []
+                    transports_by_unit = {}
+            if not cand:
+                on_chosen(None, None)
+                return
+
+            def _pick_transport(unit):
+                if unit is None:
+                    on_chosen(None, None)
+                    return
+                transports = []
+                try:
+                    transports = list(transports_by_unit.get(unit) or [])
+                except Exception:
+                    transports = []
+                if not transports:
+                    try:
+                        from ..utility.aura_utils import unit_wholly_within_range_of_unit
+                    except Exception:
+                        unit_wholly_within_range_of_unit = None
+                    for t in player.get_army().units or []:
+                        try:
+                            if t is None or not t.is_alive() or not getattr(t, "deployed", False):
+                                continue
+                            if not getattr(t, "is_transport", False):
+                                continue
+                            if not t.can_transport(unit):
+                                continue
+                            if callable(unit_wholly_within_range_of_unit):
+                                if not unit_wholly_within_range_of_unit(t, unit, 6.0, use_attached_aggregate=True):
+                                    continue
+                            transports.append(t)
+                        except Exception:
+                            continue
+                if not transports:
+                    on_chosen(unit, None)
+                    return
+                _resolve_unit_selection_dialog(
+                    player=player,
+                    candidates=transports,
+                    on_chosen=lambda t: on_chosen(unit, t),
+                    decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                    prompt="Select Endless Pursuit transport.",
+                    title="Select Endless Pursuit Transport",
+                    subtitle=f"Embark {getattr(unit, 'name', 'unit')} within 6\"",
+                    enemy_unit=unit,
+                    dialog=self.overwatch_shooter_dialog,
+                    allow_skip=True,
+                )
+
+            _resolve_unit_selection_dialog(
+                player=player,
+                candidates=cand,
+                on_chosen=_pick_transport,
+                decision_type=DECISION_SELECT_OVERWATCH_SHOOTER,
+                prompt="Select Endless Pursuit unit.",
+                title="Select Endless Pursuit Unit",
+                subtitle="WORLD EATERS INFANTRY not in Engagement Range",
+                enemy_unit=None,
+                dialog=self.overwatch_shooter_dialog,
+                allow_skip=True,
+            )
+
+        self._request_endless_pursuit_targets = _request_endless_pursuit_targets
+
         # Generic yes/no prompt hook for optional ability decisions (e.g., Direct the Slaughter)
         def _request_yes_no(
             title: str,
@@ -17077,6 +17307,151 @@ class GameView:
                 )
             return
 
+        if name_u == "AGGRESSIVE DISEMBARKATION":
+            transport = context.get("transport_unit") or context.get("unit") or context.get("target_unit") or context.get("transport")
+            embarked = (
+                context.get("embarked_unit")
+                or context.get("passenger_unit")
+                or context.get("selected_embarked_unit")
+            )
+            if transport is None or embarked is None:
+                if callable(getattr(self, "_request_goretrack_rhino_unit", None)):
+                    candidates = context.get("candidates") or []
+
+                    def _after_transport(chosen_transport):
+                        if chosen_transport is None:
+                            print("Aggressive Disembarkation: no transport selected")
+                            return
+                        if embarked is not None:
+                            self._finalize_aggressive_disembarkation(player, name, context, chosen_transport, embarked)
+                            return
+                        if callable(getattr(self, "_request_goretrack_embarked_unit", None)):
+                            self._request_goretrack_embarked_unit(
+                                player,
+                                self.game,
+                                chosen_transport,
+                                lambda unit: self._finalize_aggressive_disembarkation(
+                                    player, name, context, chosen_transport, unit
+                                ),
+                                require_khorne_berzerkers=False,
+                            )
+
+                    if transport is not None:
+                        _after_transport(transport)
+                    else:
+                        self._request_goretrack_rhino_unit(
+                            player,
+                            self.game,
+                            candidates,
+                            _after_transport,
+                            require_not_moved=True,
+                            require_any_passengers=True,
+                            prompt="Select Aggressive Disembarkation Rhino.",
+                            title="Select Aggressive Disembarkation Rhino",
+                            subtitle="WORLD EATERS RHINO (not moved)",
+                        )
+                return
+
+        if name_u == "FULL-THROTTLE ASSAULT" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_goretrack_rhino_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_goretrack_rhino_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    require_not_moved=True,
+                    prompt="Select Full-Throttle Assault Rhino.",
+                    title="Select Full-Throttle Assault Rhino",
+                    subtitle="WORLD EATERS RHINO (not moved)",
+                )
+            return
+
+        if name_u == "SMASH THROUGH" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_goretrack_vehicle_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_goretrack_vehicle_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    require_not_moved=True,
+                    prompt="Select Smash Through vehicle.",
+                    title="Select Smash Through Vehicle",
+                    subtitle="WORLD EATERS VEHICLE (not moved)",
+                )
+            return
+
+        if name_u == "ENDLESS PURSUIT OF VIOLENCE":
+            unit = context.get("unit") or context.get("target_unit")
+            transport = context.get("transport_unit") or context.get("transport")
+            if unit is None or transport is None:
+                if callable(getattr(self, "_request_endless_pursuit_targets", None)):
+                    candidates = context.get("candidates") or ([unit] if unit is not None else [])
+                    transports_by_unit = context.get("transport_candidates_by_unit") or {}
+                    self._request_endless_pursuit_targets(
+                        player,
+                        self.game,
+                        candidates,
+                        transports_by_unit,
+                        lambda chosen_unit, chosen_transport: self._finalize_endless_pursuit(
+                            player, name, context, chosen_unit, chosen_transport
+                        ),
+                    )
+                return
+
+        if name_u == "FURY UNLEASHED":
+            transport = context.get("transport_unit") or context.get("unit") or context.get("target_unit") or context.get("transport")
+            embarked = (
+                context.get("embarked_unit")
+                or context.get("passenger_unit")
+                or context.get("selected_embarked_unit")
+            )
+            if embarked is None:
+                if callable(getattr(self, "_request_goretrack_embarked_unit", None)):
+                    def _after_transport(chosen_transport):
+                        if chosen_transport is None:
+                            print("Fury Unleashed: no transport selected")
+                            return
+                        self._request_goretrack_embarked_unit(
+                            player,
+                            self.game,
+                            chosen_transport,
+                            lambda unit: self._finalize_fury_unleashed(player, name, context, chosen_transport, unit),
+                            require_khorne_berzerkers=True,
+                        )
+
+                    if transport is not None:
+                        _after_transport(transport)
+                    elif callable(getattr(self, "_request_goretrack_rhino_unit", None)):
+                        candidates = context.get("candidates") or []
+                        self._request_goretrack_rhino_unit(
+                            player,
+                            self.game,
+                            candidates,
+                            _after_transport,
+                            require_any_passengers=True,
+                            require_khorne_berzerkers=True,
+                            prompt="Select Fury Unleashed Rhino.",
+                            title="Select Fury Unleashed Rhino",
+                            subtitle="WORLD EATERS RHINO with KHORNE BERZERKERS",
+                        )
+                return
+
+        if name_u == "UNRELENTING ADVANCE" and "target_unit" not in context and "unit" not in context:
+            if callable(getattr(self, "_request_goretrack_vehicle_unit", None)):
+                candidates = context.get("candidates") or []
+                self._request_goretrack_vehicle_unit(
+                    player,
+                    self.game,
+                    candidates,
+                    lambda unit: self._finalize_generic_stratagem(player, name, context, unit),
+                    prompt="Select Unrelenting Advance vehicle.",
+                    title="Select Unrelenting Advance Vehicle",
+                    subtitle="WORLD EATERS VEHICLE",
+                )
+            return
+
         if name_u == "BLITZING FIREPOWER" and "target_unit" not in context and "unit" not in context:
             if callable(getattr(self, "_request_blitzing_firepower_unit", None)):
                 candidates = context.get("candidates") or []
@@ -18249,6 +18624,77 @@ class GameView:
             return
         if unit is None or transport is None:
             print("Skyborne Sanctuary: missing unit or transport")
+            return
+        ctx = dict(context)
+        ctx["unit"] = unit
+        ctx["transport_unit"] = transport
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_aggressive_disembarkation(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        transport,
+        embarked_unit,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if transport is None or embarked_unit is None:
+            print("Aggressive Disembarkation: missing transport or embarked unit")
+            return
+        ctx = dict(context)
+        ctx["unit"] = transport
+        ctx["transport_unit"] = transport
+        ctx["embarked_unit"] = embarked_unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_fury_unleashed(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        transport,
+        embarked_unit,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if transport is None or embarked_unit is None:
+            print("Fury Unleashed: missing transport or embarked unit")
+            return
+        ctx = dict(context)
+        ctx["unit"] = transport
+        ctx["transport_unit"] = transport
+        ctx["embarked_unit"] = embarked_unit
+        ok = manager.use(name, **ctx)
+        if ok:
+            print(f"Used stratagem: {name}")
+        else:
+            print(f"Could not use stratagem: {name}")
+
+    def _finalize_endless_pursuit(
+        self,
+        player,
+        name: str,
+        context: Dict[str, Any],
+        unit,
+        transport,
+    ) -> None:
+        manager = getattr(player, "stratagems", None)
+        if manager is None:
+            return
+        if unit is None or transport is None:
+            print("Endless Pursuit of Violence: missing unit or transport")
             return
         ctx = dict(context)
         ctx["unit"] = unit
