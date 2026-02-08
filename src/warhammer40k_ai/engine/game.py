@@ -5798,6 +5798,13 @@ class Game(
         *,
         target_unit: Optional['Unit'] = None,
     ) -> list[tuple[int, str]]:
+        has_siege_crawler = getattr(charging_unit, "has_siege_crawler", None)
+        if callable(has_siege_crawler):
+            try:
+                if bool(has_siege_crawler()):
+                    return []
+            except Exception:
+                pass
         modifiers: list[tuple[int, str]] = []
 
         # Check for charge modifiers from abilities/enhancements.

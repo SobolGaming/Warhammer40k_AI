@@ -2340,6 +2340,278 @@ class GamePhaseHandlersMixin:
             default_ability_name="Corrupt Machine Spirits",
         )
 
+    def _on_phase_start_herald_of_the_apocalypse(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        from ...utility.aura_utils import unit_within_range_of_unit
+        from ...utility.event_bus import append_action
+
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        tested_targets: set[str] = set()
+
+        for opp in list(self.players or []):
+            if opp is None or opp is player:
+                continue
+            army = self._get_player_army(opp)
+            if army is None:
+                continue
+            seen_sources: set[str] = set()
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                source_id = str(get_entity_id(root) or "")
+                if not source_id or source_id in seen_sources:
+                    continue
+                seen_sources.add(source_id)
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if not bool(getattr(root, "has_herald_of_the_apocalypse", lambda: False)()):
+                    continue
+
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    if enemy_root is None:
+                        continue
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if not enemy_id or enemy_id in tested_targets:
+                        continue
+                    if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                        continue
+                    try:
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    if not bool(getattr(enemy_root, "is_below_starting_strength", lambda: False)()):
+                        continue
+                    if not unit_within_range_of_unit(root, enemy_root, 6.0, use_attached_aggregate=True):
+                        continue
+                    tested_targets.add(enemy_id)
+                    enemy_root.take_battle_shock_test(turn)
+                    append_action(
+                        opp,
+                        f"Herald of the Apocalypse: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
+                    )
+
+    def _on_phase_start_master_of_mechanisms_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        try:
+            current_turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            uid = str(get_entity_id(root) or "")
+            if not uid or uid in seen:
+                continue
+            seen.add(uid)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("master_of_mechanisms_hit_bonus_active"):
+                continue
+            if str(sr.get("master_of_mechanisms_hit_bonus_owner", "") or "") != owner_id:
+                continue
+            try:
+                selected_turn = int(sr.get("master_of_mechanisms_selected_turn", 0) or 0)
+            except Exception:
+                selected_turn = 0
+            if selected_turn and current_turn and selected_turn == current_turn:
+                continue
+            for key in (
+                "master_of_mechanisms_hit_bonus_active",
+                "master_of_mechanisms_hit_bonus",
+                "master_of_mechanisms_hit_bonus_owner",
+                "master_of_mechanisms_source",
+                "master_of_mechanisms_selected_turn_owner",
+                "master_of_mechanisms_selected_turn",
+            ):
+                sr.pop(key, None)
+            root.special_rules = sr
+
+    def _on_phase_start_master_of_mechanisms(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        from ...utility.aura_utils import model_within_range_of_unit
+
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        pending_sources: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "master_of_mechanisms":
+                    continue
+                sid = str(ctx.get("source_unit_id", "") or "")
+                if sid:
+                    pending_sources.add(sid)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        seen_sources: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            source_id = str(get_entity_id(root) or "")
+            if not source_id or source_id in seen_sources:
+                continue
+            seen_sources.add(source_id)
+            if source_id in pending_sources:
+                continue
+            if not root.is_alive() or not getattr(root, "deployed", True):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if not bool(getattr(root, "has_master_of_mechanisms", lambda: False)()):
+                continue
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            bearer = None
+            for model in list(models or []):
+                alive_attr = getattr(model, "is_alive", False)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if alive:
+                    bearer = model
+                    break
+            if bearer is None:
+                continue
+
+            candidates = []
+            seen_targets: set[str] = set()
+            for cand in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if cand is None:
+                    continue
+                try:
+                    target_root = cand.get_attached_unit_root()
+                except Exception:
+                    target_root = cand
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id or target_id in seen_targets:
+                    continue
+                seen_targets.add(target_id)
+                if target_root is root:
+                    continue
+                if not target_root.is_alive() or not getattr(target_root, "deployed", True):
+                    continue
+                try:
+                    if target_root.is_in_reserves() or target_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not target_root.has_any_keyword("VEHICLE"):
+                        continue
+                except Exception:
+                    continue
+                if not model_within_range_of_unit(bearer, target_root, 3.0):
+                    continue
+                tsr = getattr(target_root, "special_rules", None)
+                if isinstance(tsr, dict):
+                    if (
+                        str(tsr.get("master_of_mechanisms_selected_turn_owner", "") or "") == owner_id
+                        and int(tsr.get("master_of_mechanisms_selected_turn", 0) or 0) == int(turn or 0)
+                    ):
+                        continue
+                candidates.append(target_root)
+
+            if not candidates:
+                continue
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            options.extend(
+                DecisionOption.create(
+                    str(getattr(c, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(c)},
+                )
+                for c in sorted(list(candidates), key=_unit_sort_key)
+            )
+            if not options:
+                continue
+            ability_name = "Master of Mechanisms"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a friendly VEHICLE unit within 3\" (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "master_of_mechanisms",
+                    "ability_name": ability_name,
+                    "phase": "Command phase",
+                    "optional": True,
+                    "source_unit_id": source_id,
+                    "unit_id": source_id,
+                    "model_id": str(get_entity_id(bearer) or ""),
+                    "range": 3,
+                    "turn_owner": owner_id,
+                    "turn": int(turn or 0),
+                },
+            )
+            self.request_decision(request)
+
     def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
         """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -3596,6 +3868,17 @@ class GamePhaseHandlersMixin:
                         "post_shoot_disembark_wound_reroll_target_id",
                         "post_shoot_disembark_wound_reroll_owner",
                         "post_shoot_disembark_wound_reroll_turn",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("reorder_reality_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "reorder_reality_active",
+                        "reorder_reality_source",
+                        "reorder_reality_expires_phase",
+                        "reorder_reality_turn",
+                        "reorder_reality_owner",
+                        "reorder_reality_target_ids",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("herald_of_ynnead_expires_phase", "") or "").strip().upper()
@@ -5318,6 +5601,130 @@ class GamePhaseHandlersMixin:
                     context=ctx,
                     payload={"unit_id": unit_id},
                     instance_key=str(unit_id or ""),
+                )
+
+    def _on_phase_end_plough_through_the_enemy(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+        tracked = set(self._phase_enemy_unit_destroyers.get(pname, set()) or set())
+        if not tracked:
+            return
+        from ...utility.aura_utils import unit_within_range_of_unit
+        from ...utility.event_bus import append_action
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        seen: set[str] = set()
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                uid = str(get_entity_id(root) or "")
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                if uid not in tracked:
+                    continue
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if not bool(getattr(root, "has_plough_through_the_enemy", lambda: False)()):
+                    continue
+                hit_any = False
+                tested_targets: set[str] = set()
+                for enemy in list(game_map.get_enemy_units(root) or []):
+                    if enemy is None:
+                        continue
+                    try:
+                        enemy_root = enemy.get_attached_unit_root()
+                    except Exception:
+                        enemy_root = enemy
+                    enemy_id = str(get_entity_id(enemy_root) or "")
+                    if not enemy_id or enemy_id in tested_targets:
+                        continue
+                    tested_targets.add(enemy_id)
+                    if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                        continue
+                    try:
+                        if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                            continue
+                    except Exception:
+                        pass
+                    if not unit_within_range_of_unit(root, enemy_root, 6.0, use_attached_aggregate=True):
+                        continue
+                    enemy_root.take_battle_shock_test(turn)
+                    hit_any = True
+                if hit_any:
+                    append_action(
+                        p,
+                        f"Plough Through the Enemy: enemy units within 6\" of {getattr(root, 'name', 'Unit')} take Battle-shock tests.",
+                    )
+
+    def _on_phase_end_soul_eater(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        tracked = set(self._phase_enemy_unit_destroyers.get(pname, set()) or set())
+        if not tracked:
+            return
+        from ...utility.event_bus import append_action
+
+        seen: set[str] = set()
+        for p in list(self.players or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                uid = str(get_entity_id(root) or "")
+                if not uid or uid in seen:
+                    continue
+                seen.add(uid)
+                if uid not in tracked:
+                    continue
+                if not root.is_alive() or not getattr(root, "deployed", True):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                if not bool(getattr(root, "has_soul_eater", lambda: False)()):
+                    continue
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                current_bonus = int(sr.get("soul_eater_attacks_bonus", 0) or 0)
+                new_bonus = current_bonus + 1
+                sr["soul_eater_attacks_bonus"] = int(new_bonus)
+                sr["soul_eater_source"] = "Soul Eater"
+                root.special_rules = sr
+                append_action(
+                    p,
+                    f"Soul Eater: {getattr(root, 'name', 'Unit')} gains +1 Attacks to its weapons (total +{int(new_bonus)}).",
                 )
 
     def _on_phase_end_leadership_cp_gain(self, player=None, phase=None, **_kwargs) -> None:

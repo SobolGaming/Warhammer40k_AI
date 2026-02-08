@@ -1150,6 +1150,55 @@ class WargearProfile:
                 return False
         return True
 
+    def _unit_temp_ranged_effect_targets_unit(
+        self,
+        attacker: Optional['Model'],
+        effect_key: str,
+        target_unit: Optional['Unit'],
+        *,
+        expected_phase: str = "SHOOTING_PHASE",
+    ) -> bool:
+        if target_unit is None:
+            return False
+        if not self._unit_temp_ranged_effect_active(
+            attacker,
+            effect_key,
+            expected_phase=expected_phase,
+        ):
+            return False
+        unit = getattr(attacker, "parent_unit", None) if attacker is not None else None
+        if unit is None:
+            return False
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else unit
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        target_id = str(get_entity_id(target_root) or "")
+        if not target_id:
+            return False
+        target_ids = {
+            str(v)
+            for v in list(sr.get(f"{str(effect_key or '').strip().lower()}_target_ids", []) or [])
+            if str(v).strip()
+        }
+        return target_id in target_ids
+
+    def _is_siege_shield_demolisher_attack(self, attacker: Optional['Model']) -> bool:
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is None:
+            return False
+        try:
+            has_siege_shield = getattr(attacker_unit, "has_siege_shield", None)
+            if not callable(has_siege_shield) or not bool(has_siege_shield()):
+                return False
+        except Exception:
+            return False
+        weapon_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip().lower()
+        return "demolisher cannon" in weapon_name
+
     def _iter_defensive_entries(
         self,
         target_unit: Optional['Unit'],
@@ -1504,6 +1553,12 @@ class WargearProfile:
                         attack_result.attacks_special_modifiers.append(f"{source} +{att_bonus}A ({weapon_name})")
         except Exception:
             pass
+
+        sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
+        bonus = int(sr.get("soul_eater_attacks_bonus", 0) or 0) if isinstance(sr, dict) else 0
+        if bonus:
+            atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:soul_eater_attacks_add"))
+            attack_result.attacks_special_modifiers.append(f"Soul Eater +{bonus}A")
 
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -1900,6 +1955,8 @@ class WargearProfile:
             attack_result.attacks_special_modifiers.append("Warp Rift Firepower: [INDIRECT FIRE]")
         if daemonic_ordnance_active:
             attack_result.attacks_special_modifiers.append("Daemonic Ordnance: [DEVASTATING WOUNDS], [HAZARDOUS] (ranged)")
+        if self._unit_temp_ranged_effect_active(attacker, "reorder_reality"):
+            attack_result.attacks_special_modifiers.append("Reorder Reality: [HAZARDOUS] (ranged)")
 
         # TORRENT cannot be used "via Indirect Fire" when no target models are visible at selection time.
         # This should normally be prevented at target selection; keep a safety-net here too.
@@ -2367,6 +2424,9 @@ class WargearProfile:
         # Handle hazardous weapon effects
         hazardous_active = self.is_hazardous()
         if daemonic_ordnance_active:
+            hazardous_active = True
+        reorder_reality_active = self._unit_temp_ranged_effect_active(attacker, "reorder_reality")
+        if reorder_reality_active:
             hazardous_active = True
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
         if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
@@ -4190,9 +4250,21 @@ class WargearProfile:
             else:
                 _add_hit_mod(1, "+1 from Heavy (stationary)")
 
+        # Master of Mechanisms: selected friendly VEHICLE gets +1 to hit until next Command phase.
+        sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
+        if isinstance(sr, dict) and sr.get("master_of_mechanisms_hit_bonus_active"):
+            bonus = int(sr.get("master_of_mechanisms_hit_bonus", 1) or 1)
+            if bonus:
+                source = str(sr.get("master_of_mechanisms_source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                _add_hit_mod(int(bonus), f"+{int(bonus)} from {source}")
+
         # INDIRECT FIRE: if no target models were visible at selection time, -1 to hit
         if attack_instance.get("indirect_fire_no_visible", False):
             _add_hit_mod(-1, "-1 from Indirect Fire (no target models visible)")
+
+        # Reorder Reality: this attacker's ranged weapons suffer -1 to hit vs marked target this phase.
+        if self._unit_temp_ranged_effect_targets_unit(attacker, "reorder_reality", target):
+            _add_hit_mod(-1, "-1 from Reorder Reality")
 
         # BIG GUNS NEVER TIRE (BGNT):
         # When a VEHICLE/MONSTER makes ranged attacks and it was Locked in Combat when it selected targets,
@@ -4207,6 +4279,8 @@ class WargearProfile:
                         skip_bgnt = bool(pu._is_ficklefire_active(game=game))
                 except Exception:
                     skip_bgnt = False
+                if self._is_siege_shield_demolisher_attack(attacker):
+                    skip_bgnt = True
                 if not skip_bgnt:
                     _add_hit_mod(-1, "-1 from Big Guns Never Tire (locked when selecting targets)")
         except Exception:
@@ -4246,7 +4320,8 @@ class WargearProfile:
                             )
                         )
                     )
-                    if engaged_with_friendly:
+                    skip_target_penalty = self._is_siege_shield_demolisher_attack(attacker)
+                    if engaged_with_friendly and not skip_target_penalty:
                         _add_hit_mod(-1, "-1 from Big Guns Never Tire (target engaged)")
         except Exception:
             pass

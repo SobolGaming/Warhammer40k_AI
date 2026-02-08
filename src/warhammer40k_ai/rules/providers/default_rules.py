@@ -139,6 +139,8 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("phase_end", "_on_phase_end_sweeping_advance"),
                 ("phase_end", "_on_phase_end_charge_phase_bodyguard_loss"),
                 ("phase_end", "_on_phase_end_fight_phase_destroyed_strategic_reserves"),
+                ("phase_end", "_on_phase_end_plough_through_the_enemy"),
+                ("phase_end", "_on_phase_end_soul_eater"),
                 ("phase_end", "_on_phase_end_leadership_cp_gain"),
                 ("phase_end", "_on_phase_end_daemonic_patrons"),
                 ("phase_end", "_on_phase_end_setup_reactive_shoot_or_charge"),
@@ -207,9 +209,13 @@ def build_default_rule_providers() -> List[RuleProvider]:
             subscriptions=[
                 ("phase_start", "_on_phase_start_spirit_thief"),
                 ("phase_start", "_on_phase_start_corrupt_machine_spirits"),
+                ("phase_start", "_on_phase_start_herald_of_the_apocalypse"),
+                ("phase_start", "_on_phase_start_master_of_mechanisms_cleanup"),
+                ("phase_start", "_on_phase_start_master_of_mechanisms"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_dark_pacts"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_daemonic_ordnance"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_warp_rift_firepower"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_reorder_reality"),
                 ("fight_unit_selected", "_on_fight_unit_selected_dark_pacts"),
             ],
         )

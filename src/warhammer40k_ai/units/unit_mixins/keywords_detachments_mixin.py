@@ -614,6 +614,16 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["dark_destiny"] = bool(found)
         return bool(found)
 
+    def has_bringers_of_change(self) -> bool:
+        """Return True if this unit has the Bringers of Change ability."""
+        if "bringers_of_change" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["bringers_of_change"])
+        found, _ = self._find_ability_with_patterns(["bringers of change"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["bringers_of_change"] = bool(found)
+        return bool(found)
+
     def has_daemonic_ordnance(self) -> bool:
         """Return True if this unit has the Daemonic Ordnance ability."""
         if "daemonic_ordnance" in getattr(self, "_ability_cache", {}):
@@ -688,6 +698,86 @@ class KeywordsDetachmentsMixin:
             cache = {}
         cache["surgeon_acolyte"] = bool(found)
         root._ability_cache = cache
+        return bool(found)
+
+    def has_enrage_machine_spirits(self) -> bool:
+        """Return True if this unit has the Enrage Machine Spirits ability."""
+        if "enrage_machine_spirits" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["enrage_machine_spirits"])
+        found, _ = self._find_ability_with_patterns(["enrage machine spirits"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["enrage_machine_spirits"] = bool(found)
+        return bool(found)
+
+    def has_herald_of_the_apocalypse(self) -> bool:
+        """Return True if this unit has the Herald of the Apocalypse ability."""
+        if "herald_of_the_apocalypse" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["herald_of_the_apocalypse"])
+        found, _ = self._find_ability_with_patterns(["herald of the apocalypse"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["herald_of_the_apocalypse"] = bool(found)
+        return bool(found)
+
+    def has_master_of_mechanisms(self) -> bool:
+        """Return True if this unit has the Master of Mechanisms ability."""
+        if "master_of_mechanisms" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["master_of_mechanisms"])
+        found, _ = self._find_ability_with_patterns(["master of mechanisms"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["master_of_mechanisms"] = bool(found)
+        return bool(found)
+
+    def has_plough_through_the_enemy(self) -> bool:
+        """Return True if this unit has the Plough Through the Enemy ability."""
+        if "plough_through_the_enemy" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["plough_through_the_enemy"])
+        found, _ = self._find_ability_with_patterns(["plough through the enemy"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["plough_through_the_enemy"] = bool(found)
+        return bool(found)
+
+    def has_reorder_reality(self) -> bool:
+        """Return True if this unit has the Reorder Reality ability."""
+        if "reorder_reality" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["reorder_reality"])
+        found, _ = self._find_ability_with_patterns(["reorder reality"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["reorder_reality"] = bool(found)
+        return bool(found)
+
+    def has_siege_crawler(self) -> bool:
+        """Return True if this unit has the Siege Crawler ability."""
+        if "siege_crawler" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["siege_crawler"])
+        found, _ = self._find_ability_with_patterns(["siege crawler"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["siege_crawler"] = bool(found)
+        return bool(found)
+
+    def has_siege_shield(self) -> bool:
+        """Return True if this unit has the Siege Shield ability."""
+        if "siege_shield" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["siege_shield"])
+        found, _ = self._find_ability_with_patterns(["siege shield"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["siege_shield"] = bool(found)
+        return bool(found)
+
+    def has_soul_eater(self) -> bool:
+        """Return True if this unit has the Soul Eater ability."""
+        if "soul_eater" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["soul_eater"])
+        found, _ = self._find_ability_with_patterns(["soul eater"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["soul_eater"] = bool(found)
         return bool(found)
 
     def has_unholy_bloodshed(self) -> bool:

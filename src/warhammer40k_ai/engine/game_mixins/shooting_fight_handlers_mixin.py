@@ -1797,6 +1797,77 @@ class GameShootingFightHandlersMixin:
             instance_key=f"{unit_id}:warp_rift_firepower:shooting",
         )
 
+    def _on_shooting_targets_selected_reorder_reality(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        get_root = getattr(attacking_unit, "get_attached_unit_root", None)
+        root = get_root() if callable(get_root) else attacking_unit
+        if root is None or not root.is_alive():
+            return
+        if not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        turn = int(getattr(self, "turn", 0) or 0)
+        owner_id = str(getattr(player, "id", "") or "")
+        existing_target_ids: set[str] = set()
+        if bool(sr.get("reorder_reality_active")) and str(sr.get("reorder_reality_expires_phase", "") or "").strip().upper() == "SHOOTING_PHASE":
+            prev_turn = int(sr.get("reorder_reality_turn", 0) or 0)
+            prev_owner = str(sr.get("reorder_reality_owner", "") or "")
+            same_owner = (not owner_id) or (not prev_owner) or (prev_owner == owner_id)
+            if (not prev_turn or prev_turn == turn) and same_owner:
+                existing_target_ids = {
+                    str(v)
+                    for v in list(sr.get("reorder_reality_target_ids", []) or [])
+                    if str(v).strip()
+                }
+        target_ids = set(existing_target_ids)
+        marked_any = False
+
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            get_target_root = getattr(target, "get_attached_unit_root", None)
+            target_root = get_target_root() if callable(get_target_root) else target
+            if target_root is None or not target_root.is_alive():
+                continue
+            if not getattr(target_root, "deployed", True):
+                continue
+            if target_root.is_in_reserves() or target_root.is_embarked:
+                continue
+            if not bool(getattr(target_root, "has_reorder_reality", lambda: False)()):
+                continue
+            if not bool(unit_within_range_of_unit(root, target_root, 18.0, use_attached_aggregate=True)):
+                continue
+            target_id = str(maybe_entity_id(target_root) or "")
+            if not target_id:
+                continue
+            target_ids.add(target_id)
+            marked_any = True
+
+        if not marked_any and not target_ids:
+            return
+        sr["reorder_reality_active"] = True
+        sr["reorder_reality_source"] = "Reorder Reality"
+        sr["reorder_reality_expires_phase"] = "SHOOTING_PHASE"
+        sr["reorder_reality_turn"] = int(turn or 0)
+        if owner_id:
+            sr["reorder_reality_owner"] = owner_id
+        sr["reorder_reality_target_ids"] = sorted(target_ids)
+        root.special_rules = sr
+
     def _on_shooting_targets_selected_malefic_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

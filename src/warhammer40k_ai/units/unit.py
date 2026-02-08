@@ -885,6 +885,10 @@ class Unit(
         except Exception:
             pass
 
+        # Siege Crawler: ignore all Move characteristic modifiers.
+        if ckey == "movement" and bool(getattr(self, "has_siege_crawler", lambda: False)()):
+            mods = []
+
         # Apply core ordering + rounding.
         interim, dbg = apply_numeric_modifiers(int(base_val), mods, base_raw=base_raw)
 

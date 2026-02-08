@@ -2336,6 +2336,68 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
         except Exception:
             pass
+    if str(ctx.get("ability", "") or "") == "master_of_mechanisms":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_unit.get_parent_army()
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        ability_name = str(ctx.get("ability_name", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
+        from ...utility.dice import get_roll
+        from ...utility.event_bus import append_dice
+        heal = int(get_roll("D3") or 0)
+        if player is not None:
+            append_dice(player, f"{ability_name} roll: {heal}")
+        get_target_root = getattr(target_unit, "get_attached_unit_root", None)
+        target_root = get_target_root() if callable(get_target_root) else target_unit
+        get_models = getattr(target_root, "get_attached_unit_models", None)
+        models = list(get_models() or []) if callable(get_models) else list(getattr(target_root, "models", []) or [])
+        wounded = []
+        for m in models:
+            alive_attr = getattr(m, "is_alive", True)
+            is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+            if not is_alive:
+                continue
+            base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
+            if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
+                wounded.append(m)
+        if wounded and heal > 0:
+            try:
+                wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
+            except Exception:
+                wounded = list(wounded)
+            target_model = wounded[0]
+            heal_fn = getattr(target_model, "heal", None)
+            if callable(heal_fn):
+                heal_fn(int(heal))
+        tsr = getattr(target_root, "special_rules", None)
+        if not isinstance(tsr, dict):
+            tsr = {}
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(game, "turn", 0) or 0)
+        tsr["master_of_mechanisms_selected_turn_owner"] = owner_id
+        tsr["master_of_mechanisms_selected_turn"] = int(turn or 0)
+        tsr["master_of_mechanisms_hit_bonus_active"] = True
+        tsr["master_of_mechanisms_hit_bonus"] = 1
+        tsr["master_of_mechanisms_hit_bonus_owner"] = owner_id
+        tsr["master_of_mechanisms_source"] = ability_name
+        target_root.special_rules = tsr
+        tname = str(getattr(target_root, "name", "Unit") or "Unit")
+        _log_action_for_players(
+            game,
+            player,
+            f"{ability_name}: {tname} regains up to {int(heal)} wounds and gets +1 to hit until next Command phase.",
+        )
+        return target_root
     if str(ctx.get("ability", "") or "") == "opponent_shooting_phase_disrupt":
         if is_skip_choice(request, result):
             return None

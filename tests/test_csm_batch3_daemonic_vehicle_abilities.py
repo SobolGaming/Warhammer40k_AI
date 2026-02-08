@@ -5,6 +5,7 @@ from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISI
 from warhammer40k_ai.engine.game import BattleRoundPhases, Battlefield, BattlefieldSize, Game
 from warhammer40k_ai.roster.army import Army
 from warhammer40k_ai.roster.player import Player, PlayerControl
+from warhammer40k_ai.utility.modifiers import Modifier, ModifierOp
 from warhammer40k_ai.units.ability import Ability
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
@@ -325,3 +326,295 @@ def test_daemonic_ordnance_and_warp_rift_effects_are_consumed_by_attack_resoluti
         for wound in list(result.wound_results or [])
         for effect in list((wound or {}).get("special_effects", []) or [])
     )
+
+
+def test_bringers_of_change_applies_wound_rerolls_with_objective_upgrade():
+    ability = Ability(
+        "Bringers of Change",
+        "CSM",
+        "Ranged attacks re-roll Wound rolls of 1; full re-rolls vs targets within objective range you do not control.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Lord of Change", abilities=[ability], keywords=["HERETIC ASTARTES"])
+    target = _make_unit("Enemy Unit")
+
+    game, army, enemy_army, p1, p2 = _build_game()
+    army.add_unit(source)
+    enemy_army.add_unit(target)
+    game.map.units = [source, target]
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    objective = SimpleNamespace(
+        x=10.0,
+        y=0.0,
+        z=0.0,
+        control_radius=3.0,
+        controlling_player=p2,
+    )
+    game.map.objectives = [objective]
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    target.models[0].set_location(10.0, 0.0, 0.0, 0.0)
+
+    mods = source.get_unit_wound_reroll_modifiers("ranged", target=target)
+    assert 1 in tuple(mods.get("reroll_wound_values") or ())
+    assert bool(mods.get("reroll_wound_full"))
+
+    objective.controlling_player = p1
+    mods_controlled = source.get_unit_wound_reroll_modifiers("ranged", target=target)
+    assert 1 in tuple(mods_controlled.get("reroll_wound_values") or ())
+    assert not bool(mods_controlled.get("reroll_wound_full"))
+
+
+def test_siege_crawler_ignores_move_advance_and_charge_modifiers():
+    ability = Ability(
+        "Siege Crawler",
+        "CSM",
+        "Ignore modifiers to Move characteristic and to Advance and Charge rolls.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Forgefiend", abilities=[ability], keywords=["VEHICLE"])
+    target = _make_unit("Enemy Unit")
+
+    game, army, enemy_army, p1, _p2 = _build_game()
+    army.add_unit(source)
+    enemy_army.add_unit(target)
+    game.map.units = [source, target]
+    game.phase = BattleRoundPhases.CHARGE_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    assert source.has_siege_crawler()
+    source.add_characteristic_modifier("movement", Modifier(ModifierOp.SUB, 3, source="test:slow"))
+    move_val = source.get_effective_model_characteristic(source.models[0], "movement")
+    assert int(move_val) == 8
+
+    source.special_rules["code_chivalric_advance_bonus"] = 2
+    assert source._collect_advance_roll_modifiers() == []
+
+    source.special_rules["charge_roll_modifier"] = 2
+    assert game._collect_charge_modifiers(source, target_unit=target) == []
+
+
+def test_reorder_reality_marks_attacker_and_applies_hazardous_and_hit_penalty():
+    reorder = Ability(
+        "Reorder Reality",
+        "CSM",
+        "Enemy units that target this unit in the Shooting phase suffer penalties and [HAZARDOUS].",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Shooter")
+    target = _make_unit("Warp Construct", abilities=[reorder])
+
+    game, army, enemy_army, p1, _p2 = _build_game()
+    army.add_unit(source)
+    enemy_army.add_unit(target)
+    game.map.units = [source, target]
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    target.models[0].set_location(6.0, 0.0, 0.0, 0.0)
+
+    game._on_shooting_targets_selected_reorder_reality(attacking_unit=source, target_units=[target])
+    assert bool(source.special_rules.get("reorder_reality_active"))
+    assert str(get_entity_id(target)) in tuple(source.special_rules.get("reorder_reality_target_ids") or ())
+    assert str(source.special_rules.get("reorder_reality_owner", "")) == str(p1.id)
+
+    profile = WargearProfile(
+        "default",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "8",
+            "AP": "-1",
+            "D": "2",
+            "description": "",
+        },
+        parent_wargear=SimpleNamespace(name="Warp Blaster", is_ranged=lambda: True, is_melee=lambda: False),
+    )
+
+    with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[4, 1, 2]):
+        result = profile.attack(target, source.models[0], game_map=game.map)
+
+    assert result is not None
+    assert int(result.hazardous_roll or 0) == 2
+    assert any("Reorder Reality: [HAZARDOUS]" in str(v) for v in list(result.attacks_special_modifiers or []))
+    first_hit = dict((result.hit_results or [])[0] or {})
+    assert any("Reorder Reality" in str(v) for v in list(first_hit.get("modifiers", []) or []))
+
+
+def test_siege_shield_allows_demolisher_blast_into_own_engagement_only():
+    siege_shield = Ability(
+        "Siege Shield",
+        "CSM",
+        "Demolisher Cannon can target in own engagement despite Blast restriction.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Vindicator", abilities=[siege_shield], keywords=["VEHICLE"])
+    target = _make_unit("Enemy Unit")
+    other_friendly = _make_unit("Friendly Squad")
+
+    game, army, enemy_army, _p1, _p2 = _build_game()
+    army.add_unit(source)
+    army.add_unit(other_friendly)
+    enemy_army.add_unit(target)
+    game.map.units = [source, other_friendly, target]
+    game.phase = BattleRoundPhases.SHOOTING_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    target.models[0].set_location(0.4, 0.0, 0.0, 0.0)
+    other_friendly.models[0].set_location(20.0, 20.0, 0.0, 0.0)
+
+    profile = WargearProfile(
+        "default",
+        {
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "10",
+            "AP": "-2",
+            "D": "3",
+            "description": "Blast",
+        },
+        parent_wargear=SimpleNamespace(name="Demolisher Cannon", is_ranged=lambda: True, is_melee=lambda: False),
+    )
+
+    assert source._can_model_shoot_weapon_at_target(source.models[0], profile, target, game.map)
+
+    other_friendly.models[0].set_location(0.5, 0.0, 0.0, 0.0)
+    assert not source._can_model_shoot_weapon_at_target(source.models[0], profile, target, game.map)
+
+
+def test_master_of_mechanisms_queues_optional_selection_and_applies_effect():
+    ability = Ability(
+        "Master of Mechanisms",
+        "CSM",
+        "In your Command phase, select one friendly VEHICLE unit within 3\"; it regains D3 wounds and gets +1 to hit.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Warpsmith", abilities=[ability], keywords=["INFANTRY"])
+    vehicle = _make_unit("Predator", keywords=["VEHICLE"], wounds=10)
+
+    game, army, _enemy_army, p1, _p2 = _build_game()
+    army.add_unit(source)
+    army.add_unit(vehicle)
+    game.map.units = [source, vehicle]
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    vehicle.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+    before_wounds = int(vehicle.models[0].wounds)
+    vehicle.models[0].wounds = before_wounds - 3
+
+    game._on_phase_start_master_of_mechanisms(player=p1, phase=game.phase)
+    req = game.decision_queue.peek()
+    assert req is not None
+    assert req.decision_type == DECISION_CHOOSE_QUARRY
+    assert (req.context or {}).get("ability") == "master_of_mechanisms"
+    assert str((req.options or [])[0].label) == "None"
+
+    vehicle_id = str(get_entity_id(vehicle))
+    option_id = None
+    for opt in list(req.options or []):
+        if str((opt.payload or {}).get("target_unit_id", "")) == vehicle_id:
+            option_id = opt.option_id
+            break
+    assert option_id is not None
+
+    with patch("warhammer40k_ai.utility.dice.get_roll", return_value=2):
+        resolve_decision_command(game, req, option_id, player_id=p1.id)
+
+    assert bool(vehicle.special_rules.get("master_of_mechanisms_hit_bonus_active"))
+    assert int(vehicle.models[0].wounds) == before_wounds - 1
+
+
+def test_herald_of_the_apocalypse_forces_battleshock_in_opponent_command_phase():
+    ability = Ability(
+        "Herald of the Apocalypse (Aura)",
+        "CSM",
+        "In your opponent's Command phase, enemy units below Starting Strength within 6\" must take Battle-shock tests.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Daemon Herald", abilities=[ability])
+    enemy = _make_unit("Enemy Unit", wounds=6)
+
+    game, csm_army, enemy_army, p1, _p2 = _build_game()
+    enemy_army.add_unit(source)
+    csm_army.add_unit(enemy)
+    game.map.units = [source, enemy]
+    game.phase = BattleRoundPhases.COMMAND_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(3.0, 0.0, 0.0, 0.0)
+    enemy.models[0].wounds = int(enemy.models[0].wounds) - 1
+    enemy.take_battle_shock_test = Mock()
+
+    game._on_phase_start_herald_of_the_apocalypse(player=p1, phase=game.phase)
+    enemy.take_battle_shock_test.assert_called_once_with(int(getattr(game, "turn", 0) or 0))
+
+
+def test_plough_through_the_enemy_triggers_on_phase_end_event_bus():
+    ability = Ability(
+        "Plough Through the Enemy",
+        "CSM",
+        "At the end of the Fight phase, after this unit destroys an enemy, nearby enemies take Battle-shock tests.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Daemon Engine", abilities=[ability], keywords=["VEHICLE"])
+    enemy = _make_unit("Enemy Unit")
+
+    game, army, enemy_army, p1, _p2 = _build_game()
+    army.add_unit(source)
+    enemy_army.add_unit(enemy)
+    game.map.units = [source, enemy]
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    source.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+    enemy.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+    enemy.take_battle_shock_test = Mock()
+    game._phase_enemy_unit_destroyers["FIGHT_PHASE"] = {str(get_entity_id(source))}
+
+    game.event_system.publish("phase_end", player=p1, phase=game.phase)
+    enemy.take_battle_shock_test.assert_called_once()
+
+
+def test_soul_eater_triggers_on_phase_end_event_bus():
+    ability = Ability(
+        "Soul Eater",
+        "CSM",
+        "At the end of the Fight phase, after this unit destroys an enemy, it gains +1 Attacks.",
+        "Datasheet",
+        "",
+    )
+    source = _make_unit("Soul Grinder", abilities=[ability], keywords=["VEHICLE"])
+
+    game, army, _enemy_army, p1, _p2 = _build_game()
+    army.add_unit(source)
+    game.map.units = [source]
+    game.phase = BattleRoundPhases.FIGHT_PHASE
+    game.current_player_index = 0
+    game.rebuild_entity_registry()
+
+    game._phase_enemy_unit_destroyers["FIGHT_PHASE"] = {str(get_entity_id(source))}
+    game.event_system.publish("phase_end", player=p1, phase=game.phase)
+
+    assert int(source.special_rules.get("soul_eater_attacks_bonus", 0) or 0) == 1

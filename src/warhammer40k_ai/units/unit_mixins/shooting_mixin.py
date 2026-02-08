@@ -663,6 +663,15 @@ class ShootingMixin:
         # - BGNT also allows a VEHICLE/MONSTER (in its controlling player's Shooting phase) to target enemy units
         #   it is within Engagement Range of (i.e., shoot into its own combat), subject to BLAST restriction.
         target_locked = Unit._is_unit_locked_in_combat(target_unit, game_map)
+        weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "").strip().lower()
+        has_siege_shield = False
+        has_siege_shield_fn = getattr(self, "has_siege_shield", None)
+        if callable(has_siege_shield_fn):
+            try:
+                has_siege_shield = bool(has_siege_shield_fn())
+            except Exception:
+                has_siege_shield = False
+        is_siege_shield_demolisher = has_siege_shield and ("demolisher cannon" in weapon_name)
         ficklefire_active = False
         try:
             if hasattr(self, "_is_ficklefire_active"):
@@ -724,19 +733,24 @@ class ShootingMixin:
         # BLAST restriction supersedes BGNT targeting:
         # Blast weapons cannot target a unit that is within Engagement Range of any friendly unit (relative to the shooter).
         if weapon_profile.is_blast():
-            try:
-                shooter_root = self.get_attached_unit_root()
-            except Exception:
-                shooter_root = self
+            get_shooter_root = getattr(self, "get_attached_unit_root", None)
+            shooter_root = get_shooter_root() if callable(get_shooter_root) else self
+            siege_shield_override = (
+                is_siege_shield_demolisher
+                and self._is_controlling_players_shooting_phase()
+                and game_map.is_within_engagement_range(self, target_unit)
+            )
             for friendly in game_map.get_friendly_units(self):
                 if not friendly.is_alive() or not getattr(friendly, "deployed", True):
                     continue
+                get_friendly_root = getattr(friendly, "get_attached_unit_root", None)
+                friendly_root = get_friendly_root() if callable(get_friendly_root) else friendly
                 if ficklefire_active:
-                    try:
-                        friendly_root = friendly.get_attached_unit_root()
-                    except Exception:
-                        friendly_root = friendly
                     if shooter_root is not None and friendly_root is shooter_root:
+                        continue
+                else:
+                    if siege_shield_override and shooter_root is not None and friendly_root is shooter_root:
+                        # Siege Shield allows Demolisher Cannon shots into this model's own engagement.
                         continue
                 if game_map.is_within_engagement_range(friendly, target_unit):
                     return False
@@ -1207,8 +1221,29 @@ class ShootingMixin:
             # BLAST restriction (friendly engagement) is enforced in _can_model_shoot_weapon_at_target.
             # Keep a small safety-net here too for direct callers.
             if weapon_profile.is_blast():
+                weapon_name = str(getattr(getattr(weapon_profile, "parent_wargear", None), "name", "") or "").strip().lower()
+                has_siege_shield = False
+                has_siege_shield_fn = getattr(self, "has_siege_shield", None)
+                if callable(has_siege_shield_fn):
+                    try:
+                        has_siege_shield = bool(has_siege_shield_fn())
+                    except Exception:
+                        has_siege_shield = False
+                siege_shield_override = (
+                    has_siege_shield
+                    and ("demolisher cannon" in weapon_name)
+                    and self._is_controlling_players_shooting_phase()
+                    and game_map.is_within_engagement_range(self, target_unit)
+                )
+                get_shooter_root = getattr(self, "get_attached_unit_root", None)
+                shooter_root = get_shooter_root() if callable(get_shooter_root) else self
                 for friendly in game_map.get_friendly_units(self):
                     if not friendly.is_alive() or not getattr(friendly, "deployed", True):
+                        continue
+                    get_friendly_root = getattr(friendly, "get_attached_unit_root", None)
+                    friendly_root = get_friendly_root() if callable(get_friendly_root) else friendly
+                    if siege_shield_override and shooter_root is not None and friendly_root is shooter_root:
+                        # Siege Shield allows Demolisher Cannon shots into this model's own engagement.
                         continue
                     if game_map.is_within_engagement_range(friendly, target_unit):
                         return False

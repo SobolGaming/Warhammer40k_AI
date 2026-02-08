@@ -2766,6 +2766,19 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Bringers of Change: ranged attacks re-roll wound 1s, or full wound re-rolls
+        # vs targets within objective range you do not control.
+        has_bringers = bool(getattr(root, "has_bringers_of_change", lambda: False)())
+        if atype in ("any", "ranged") and has_bringers:
+            source = "Bringers of Change"
+            reroll_wound_values.add(1)
+            reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1 (ranged)")
+            if target is not None and bool(self._target_within_uncontrolled_objective_range(target)):
+                mods["reroll_wound_full"] = True
+                reroll_wound_full_reasons.append(
+                    f"{source}: re-roll Wound roll vs targets within objective range you do not control"
+                )
+
         # Fire Support: disembarked unit re-rolls wound rolls vs marked target.
         try:
             if target is not None:
@@ -3608,6 +3621,8 @@ class ActionsMovementMixin:
         return kept
 
     def _collect_advance_roll_modifiers(self) -> list[tuple[int, str]]:
+        if bool(getattr(self, "has_siege_crawler", lambda: False)()):
+            return []
         mods: list[tuple[int, str]] = []
         sr = getattr(self, "special_rules", None)
         try:

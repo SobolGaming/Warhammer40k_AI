@@ -2201,6 +2201,42 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Normal/Advance movement can pass over friendly MONSTER/VEHICLE models and terrain up to 4\" high.",
         ),
+        ("CSM", "Bringers of Change"): (
+            "Supported",
+            "Ranged attacks re-roll Wound rolls of 1; full Wound re-rolls vs targets within objective range of an objective marker you do not control.",
+        ),
+        ("CSM", "Reorder Reality"): (
+            "Supported",
+            "When an enemy unit targets this unit in Shooting phase and is within 18\", that enemy unit's ranged attacks become [HAZARDOUS] and suffer -1 to hit this phase (vs marked targets).",
+        ),
+        ("CSM", "Siege Crawler"): (
+            "Supported",
+            "Ignores modifiers to Move characteristic and Advance/Charge roll modifiers.",
+        ),
+        ("CSM", "Siege Shield"): (
+            "Supported",
+            "Demolisher Cannon attack exception implemented for Big Guns Never Tire/Blast own-engagement targeting interactions.",
+        ),
+        ("CSM", "Soul Eater"): (
+            "Supported",
+            "End of Fight phase: after destroying an enemy unit this phase, gains cumulative +1 Attacks bonus for its weapons.",
+        ),
+        ("CSM", "Plough Through the Enemy"): (
+            "Supported",
+            "End of Fight phase: after destroying an enemy unit this phase, enemy units within 6\" take Battle-shock tests.",
+        ),
+        ("CSM", "Herald of the Apocalypse (Aura)"): (
+            "Supported",
+            "Opponent Command phase: below Starting Strength enemy units within 6\" take Battle-shock tests.",
+        ),
+        ("CSM", "Herald of the Apocalypse"): (
+            "Supported",
+            "Opponent Command phase: below Starting Strength enemy units within 6\" take Battle-shock tests.",
+        ),
+        ("CSM", "Master of Mechanisms"): (
+            "Supported",
+            "Command phase: optional CHOOSE_QUARRY target selection (with None), D3 heal to a friendly VEHICLE within 3\", and +1 to hit until next Command phase.",
+        ),
         ("CSM", "Red Corsairs"): (
             "Supported",
             "Post-deployment redeploy support, including Strategic Reserves placement regardless of current reserves count.",
