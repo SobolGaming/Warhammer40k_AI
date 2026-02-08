@@ -1141,6 +1141,93 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _queue_start_shooting_phase_visible_hit_bonus(
+        self,
+        *,
+        player,
+        source_unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or source_unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+        from ...utility.entity_ids import get_entity_id
+
+        model_id = get_entity_id(model)
+        unit_id = get_entity_id(source_unit)
+        if not model_id or not unit_id:
+            return None
+
+        ability_name = str(spec.get("source", "") or "Marked by Fate").strip() or "Marked by Fate"
+        ability_key = str(ability_name).strip().lower() or "start_shooting_phase_visible_hit_bonus"
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "")) != "start_shooting_phase_visible_hit_bonus":
+                    continue
+                if str(ctx.get("model_id", "")) != str(model_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "") != ability_key:
+                    continue
+                return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"target_unit_id": get_entity_id(cand)},
+            )
+            for cand in sorted(list(candidates or []), key=_cand_sort_key)
+            if cand is not None and get_entity_id(cand)
+        ]
+        if not options:
+            return None
+        try:
+            range_value = int(spec.get("range", 0) or 0)
+        except Exception:
+            range_value = 0
+        try:
+            bonus = int(spec.get("bonus", 0) or 0)
+        except Exception:
+            bonus = 0
+        ctx = {
+            "ability": "start_shooting_phase_visible_hit_bonus",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase": "Shooting phase",
+            "unit": getattr(source_unit, "name", "") or "",
+            "unit_id": unit_id,
+            "source_unit_id": unit_id,
+            "model": getattr(model, "name", "") or "",
+            "model_id": model_id,
+            "range": int(range_value),
+            "hit_bonus": int(bonus),
+        }
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select a visible enemy unit.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_maggot_maws(
         self,
         *,
@@ -1940,6 +2027,86 @@ class GameReactiveDecisionsMixin:
             options=options,
             context={
                 "ability": "move_over_battleshock",
+                "ability_name": ability_name,
+                "ability_key": ability_key,
+                "phase": "Movement phase",
+                "source_unit_id": str(unit_id),
+                "unit_id": str(unit_id),
+                "model_id": str(model_id),
+            },
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_move_over_no_cover_decision(
+        self,
+        *,
+        player,
+        unit,
+        model,
+        candidates: list,
+        spec: dict,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        unit_id = maybe_entity_id(unit)
+        model_id = maybe_entity_id(model)
+        if not unit_id or not model_id:
+            return None
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        ability_name = str(spec.get("source", "") or "Flame-wreathed").strip() or "Flame-wreathed"
+        ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            ability_key = "move_over_no_cover"
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "move_over_no_cover":
+                    continue
+                if str(ctx.get("model_id", "") or "") != str(model_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                    continue
+                return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(maybe_entity_id(u) or "")
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = []
+        for cand in sorted([c for c in list(candidates or []) if c is not None], key=_cand_sort_key):
+            target_id = maybe_entity_id(cand)
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "") or "Enemy unit"),
+                    payload={"target_unit_id": target_id},
+                )
+            )
+        if not options:
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select an enemy unit moved over.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "move_over_no_cover",
                 "ability_name": ability_name,
                 "ability_key": ability_key,
                 "phase": "Movement phase",

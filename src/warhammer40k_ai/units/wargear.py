@@ -671,6 +671,266 @@ class WargearProfile:
             return 0
         return int(bonus)
 
+    def _attacker_game_and_player_id(self, attacker: Optional['Model']) -> tuple[Optional[object], str]:
+        if attacker is None:
+            return None, ""
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            army = unit.get_parent_army() if unit is not None else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+            player_id = str(getattr(player, "id", "") or get_entity_id(player) or "") if player is not None else ""
+            return game, player_id
+        except Exception:
+            return None, ""
+
+    def _target_has_monster_or_vehicle_keyword(self, target: Optional['Unit']) -> bool:
+        if target is None:
+            return False
+        try:
+            if bool(target.has_keyword("MONSTER") or target.has_keyword("VEHICLE")):
+                return True
+        except Exception:
+            pass
+        try:
+            return bool(target.has_any_keyword("MONSTER") or target.has_any_keyword("VEHICLE"))
+        except Exception:
+            return False
+
+    def _target_was_hit_by_thousand_sons_psychic_attack_this_phase(self, attacker: 'Model', target: 'Unit') -> bool:
+        if attacker is None or target is None:
+            return False
+        game, owner_id = self._attacker_game_and_player_id(attacker)
+        if game is None or not owner_id:
+            return False
+        try:
+            from ..rules.thousand_sons_psychic_marks import (
+                target_was_hit_by_thousand_sons_psychic_attack_this_phase,
+            )
+        except Exception:
+            return False
+        return bool(
+            target_was_hit_by_thousand_sons_psychic_attack_this_phase(
+                game,
+                target_unit=target,
+                owner_id=owner_id,
+            )
+        )
+
+    def _marked_by_fate_hit_bonus(self, attacker: 'Model', target: 'Unit') -> tuple[int, str]:
+        if attacker is None or target is None:
+            return (0, "")
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            source_unit = attacker_unit.get_attached_unit_root() if attacker_unit is not None else None
+        except Exception:
+            source_unit = None
+        if source_unit is None:
+            return (0, "")
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("start_shooting_phase_visible_hit_bonus_active"):
+            return (0, "")
+
+        apply_bonus = True
+        phase_key = self._resolve_phase_key(attacker_unit=source_unit, target_unit=target)
+        exp = str(sr.get("start_shooting_phase_visible_hit_bonus_expires_phase", "") or "").strip().upper()
+        if exp and phase_key and phase_key != exp:
+            apply_bonus = False
+        if apply_bonus:
+            _game, attacker_id = self._attacker_game_and_player_id(attacker)
+            owner_id = str(sr.get("start_shooting_phase_visible_hit_bonus_owner", "") or "")
+            if owner_id and attacker_id and owner_id != attacker_id:
+                apply_bonus = False
+        if apply_bonus:
+            game, _attacker_id = self._attacker_game_and_player_id(attacker)
+            try:
+                marked_turn = int(sr.get("start_shooting_phase_visible_hit_bonus_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                apply_bonus = False
+        if apply_bonus:
+            try:
+                current_target_id = str(get_entity_id(target.get_attached_unit_root()) or "")
+            except Exception:
+                current_target_id = str(get_entity_id(target) or "")
+            target_id = str(sr.get("start_shooting_phase_visible_hit_bonus_target_id", "") or "")
+            if target_id and current_target_id and target_id != current_target_id:
+                apply_bonus = False
+        if not apply_bonus:
+            return (0, "")
+        try:
+            bonus = int(sr.get("start_shooting_phase_visible_hit_bonus_value", 0) or 0)
+        except Exception:
+            bonus = 0
+        source = str(sr.get("start_shooting_phase_visible_hit_bonus_source", "") or "Marked by Fate").strip() or "Marked by Fate"
+        return (int(bonus), source) if bonus else (0, "")
+
+    def _sorcerous_support_psychic_hit_wound_bonus(self, attacker: 'Model', target: 'Unit') -> tuple[int, int, str]:
+        if attacker is None or target is None:
+            return (0, 0, "")
+        try:
+            if not bool(self.is_psychic()):
+                return (0, 0, "")
+        except Exception:
+            return (0, 0, "")
+        attacker_unit = getattr(attacker, "parent_unit", None)
+        if attacker_unit is None:
+            return (0, 0, "")
+        transport_id = str(getattr(getattr(attacker_unit, "round_state", None), "disembarked_from_transport_id", "") or "")
+        if not transport_id:
+            return (0, 0, "")
+
+        transport = None
+        try:
+            army = attacker_unit.get_parent_army()
+        except Exception:
+            army = None
+        for cand in list(getattr(army, "units", []) or []):
+            cid = str(getattr(cand, "_id", getattr(cand, "id", "")) or "")
+            if cid and cid == transport_id:
+                transport = cand
+                break
+        if transport is None:
+            return (0, 0, "")
+
+        sr = getattr(transport, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("post_shoot_disembark_psychic_hit_wound_bonus_active"):
+            return (0, 0, "")
+        apply_bonus = True
+        exp = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target)
+            if phase_key and phase_key != exp:
+                apply_bonus = False
+        if apply_bonus:
+            _game, attacker_id = self._attacker_game_and_player_id(attacker)
+            owner_id = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_owner", "") or "")
+            if owner_id and attacker_id and owner_id != attacker_id:
+                apply_bonus = False
+        if apply_bonus:
+            game, _attacker_id = self._attacker_game_and_player_id(attacker)
+            try:
+                marked_turn = int(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_turn", 0) or 0)
+            except Exception:
+                marked_turn = 0
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            if marked_turn and current_turn and marked_turn != current_turn:
+                apply_bonus = False
+        if apply_bonus:
+            try:
+                current_target_id = str(get_entity_id(target.get_attached_unit_root()) or "")
+            except Exception:
+                current_target_id = str(get_entity_id(target) or "")
+            target_id = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_target_id", "") or "")
+            if target_id and current_target_id and target_id != current_target_id:
+                apply_bonus = False
+        if not apply_bonus:
+            return (0, 0, "")
+
+        try:
+            hit_bonus = int(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_hit", 0) or 0)
+        except Exception:
+            hit_bonus = 0
+        try:
+            wound_bonus = int(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_wound", 0) or 0)
+        except Exception:
+            wound_bonus = 0
+        source = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_source", "") or "Sorcerous Support").strip() or "Sorcerous Support"
+        if hit_bonus <= 0 and wound_bonus <= 0:
+            return (0, 0, "")
+        return int(hit_bonus), int(wound_bonus), source
+
+    def _ensorcelled_annihilation_reroll_rule(self, attacker: 'Model', target: 'Unit') -> Optional[dict]:
+        if attacker is None or target is None:
+            return None
+        try:
+            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return None
+        if not self._target_has_monster_or_vehicle_keyword(target):
+            return None
+        if not self._target_was_hit_by_thousand_sons_psychic_attack_this_phase(attacker, target):
+            return None
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            specs = list(unit.model_ensorcelled_annihilation_specs(attacker) or []) if unit is not None else []
+        except Exception:
+            specs = []
+        if not specs:
+            return None
+        specs = sorted(specs, key=lambda s: str(s.get("source", "")))
+        src = str(specs[0].get("source", "") or "Ensorcelled Annihilation").strip() or "Ensorcelled Annihilation"
+        return {"source": src, "reroll_hit": True, "reroll_damage": True}
+
+    def _ensorcelled_destruction_bonus(self, attacker: 'Model', target: 'Unit') -> tuple[int, int, str]:
+        if attacker is None or target is None:
+            return (0, 0, "")
+        try:
+            is_ranged = bool(self.parent_wargear and self.parent_wargear.is_ranged())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return (0, 0, "")
+        if self._target_has_monster_or_vehicle_keyword(target):
+            return (0, 0, "")
+        if not self._target_was_hit_by_thousand_sons_psychic_attack_this_phase(attacker, target):
+            return (0, 0, "")
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            specs = list(unit.model_ensorcelled_destruction_specs(attacker) or []) if unit is not None else []
+        except Exception:
+            specs = []
+        if not specs:
+            return (0, 0, "")
+        best = None
+        for spec in specs:
+            try:
+                s_bonus = int(spec.get("strength_bonus", 0) or 0)
+            except Exception:
+                s_bonus = 0
+            try:
+                a_bonus = int(spec.get("ap_bonus", 0) or 0)
+            except Exception:
+                a_bonus = 0
+            if s_bonus <= 0 and a_bonus <= 0:
+                continue
+            if best is None or (s_bonus + a_bonus) > (best[0] + best[1]):
+                source = str(spec.get("source", "") or "Ensorcelled Destruction").strip() or "Ensorcelled Destruction"
+                best = (s_bonus, a_bonus, source)
+        return best if best is not None else (0, 0, "")
+
+    def _target_cannot_have_cover_this_turn(self, target: Optional['Unit']) -> bool:
+        if target is None:
+            return False
+        try:
+            root = target.get_attached_unit_root()
+        except Exception:
+            root = target
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("move_over_no_cover_active"):
+            return False
+        try:
+            marked_turn = int(sr.get("move_over_no_cover_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn <= 0:
+            return bool(sr.get("move_over_no_cover_active"))
+        game = None
+        try:
+            game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game = None
+        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+        if current_turn <= 0:
+            return bool(sr.get("move_over_no_cover_active"))
+        return current_turn == marked_turn
+
     def _bondsman_magaera_bonus_applies(self, attacker: 'Model', target: 'Unit') -> bool:
         if attacker is None or target is None:
             return False
@@ -990,6 +1250,13 @@ class WargearProfile:
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
+        # Thousand Sons: Ensorcelled Destruction (+1 AP vs non-MONSTER/VEHICLE marked by Psychic hits this phase).
+        try:
+            _s_bonus, ap_bonus, _source = self._ensorcelled_destruction_bonus(attacker, target)
+            if ap_bonus:
+                ap_val -= int(ap_bonus)
+        except Exception:
+            pass
         try:
             target_root = target.get_attached_unit_root() if target is not None else target
         except Exception:
@@ -2289,6 +2556,28 @@ class WargearProfile:
                             monster_vehicle_reroll_rule = rule
         except Exception:
             monster_vehicle_reroll_rule = None
+        # Thousand Sons: Ensorcelled Annihilation (ranged attacks vs MONSTER/VEHICLE marked by Psychic hits this phase
+        # gain hit + damage re-rolls).
+        try:
+            ensorcelled_rule = self._ensorcelled_annihilation_reroll_rule(attacker, target)
+            if ensorcelled_rule:
+                if isinstance(monster_vehicle_reroll_rule, dict):
+                    merged = dict(monster_vehicle_reroll_rule)
+                    merged["reroll_hit"] = bool(merged.get("reroll_hit")) or bool(ensorcelled_rule.get("reroll_hit"))
+                    merged["reroll_damage"] = bool(merged.get("reroll_damage")) or bool(
+                        ensorcelled_rule.get("reroll_damage")
+                    )
+                    existing_source = str(merged.get("source", "") or "").strip()
+                    new_source = str(ensorcelled_rule.get("source", "") or "").strip()
+                    if existing_source and new_source and new_source.lower() not in existing_source.lower():
+                        merged["source"] = f"{existing_source} + {new_source}"
+                    elif not existing_source:
+                        merged["source"] = new_source
+                    monster_vehicle_reroll_rule = merged
+                else:
+                    monster_vehicle_reroll_rule = dict(ensorcelled_rule)
+        except Exception:
+            pass
 
         # Apply AP modifiers that depend on attacker/target context (e.g., Plunging Fire)
         effective_ap = self.get_effective_ap(attacker, target)
@@ -4058,6 +4347,11 @@ class WargearProfile:
                     attack_instance["ignores_cover"] = True
             except Exception:
                 pass
+            try:
+                if self._target_cannot_have_cover_this_turn(target):
+                    attack_instance["ignores_cover"] = True
+            except Exception:
+                pass
         
         bonus_lethal = False
         bonus_sustained_value = 0
@@ -4345,8 +4639,17 @@ class WargearProfile:
             hit_result['special_effects'].append("Torrent (auto-hit)")
             return hit_result
 
-        # Overwatch restriction: only unmodified 6s hit
+        # Overwatch restriction: only unmodified threshold+ hits.
+        # Default threshold is 6+, but some rules can improve this (e.g., Destroyer of Futures).
         if getattr(attacker.parent_unit, '_overwatch_sixes_only', False):
+            try:
+                overwatch_threshold = int(getattr(attacker.parent_unit, "_overwatch_hit_threshold", 6) or 6)
+            except Exception:
+                overwatch_threshold = 6
+            if overwatch_threshold < 2:
+                overwatch_threshold = 2
+            if overwatch_threshold > 6:
+                overwatch_threshold = 6
             dice_roll = None
             miracle_used = False
             try:
@@ -4361,7 +4664,7 @@ class WargearProfile:
                         game=game,
                         dice_count=1,
                         die_faces=6,
-                        needed=6,
+                        needed=overwatch_threshold,
                     )
             except Exception:
                 dice_roll = None
@@ -4377,14 +4680,14 @@ class WargearProfile:
             except Exception:
                 pass
             hit_result['roll'] = dice_roll
-            hit_result['needed'] = 6
-            hit_result['final_needed'] = 6
+            hit_result['needed'] = int(overwatch_threshold)
+            hit_result['final_needed'] = int(overwatch_threshold)
             new_roll, decision = self._maybe_apply_leading_unmodified_six(
                 attacker,
                 target,
                 roll_type="hit",
                 roll_value=dice_roll,
-                needed=6,
+                needed=int(overwatch_threshold),
             )
             if new_roll is not None and int(new_roll) != int(dice_roll):
                 dice_roll = int(new_roll)
@@ -4394,7 +4697,7 @@ class WargearProfile:
                 attacker,
                 roll_type="hit",
                 roll_value=dice_roll,
-                needed=6,
+                needed=int(overwatch_threshold),
                 attacker=attacker,
                 target=target,
             )
@@ -4407,7 +4710,7 @@ class WargearProfile:
                 target,
                 roll_type="hit",
                 roll_value=dice_roll,
-                needed=6,
+                needed=int(overwatch_threshold),
             )
             if new_roll is not None and int(new_roll) != int(dice_roll):
                 dice_roll = int(new_roll)
@@ -4427,15 +4730,17 @@ class WargearProfile:
                 if miracle_used:
                     hit_result['special_effects'].append("Miracle die")
                 return hit_result
-            if dice_roll == 6:
+            if int(dice_roll) >= int(overwatch_threshold):
                 hit_result['hit'] = True
-                hit_result['special_effects'].append("Overwatch: 6 required to hit")
+                hit_result['special_effects'].append(f"Overwatch: {int(overwatch_threshold)}+ required to hit")
                 if miracle_used:
                     hit_result['special_effects'].append("Miracle die")
                 attack_instance['crit_hit'] = True
             else:
                 hit_result['hit'] = False
-                hit_result['special_effects'].append("Overwatch: Miss (requires unmodified 6)")
+                hit_result['special_effects'].append(
+                    f"Overwatch: Miss (requires unmodified {int(overwatch_threshold)}+)"
+                )
                 if miracle_used:
                     hit_result['special_effects'].append("Miracle die")
             return hit_result
@@ -4946,6 +5251,20 @@ class WargearProfile:
                 )(game=game)
                 if hit_bonus:
                     _add_hit_mod(int(hit_bonus), list(hit_reasons or ()) or f"+{int(hit_bonus)} to hit from Psychic attack bonus")
+        except Exception:
+            pass
+        # Thousand Sons: Sorcerous Support (+1 to hit for disembarked Psychic attacks against marked target).
+        try:
+            hit_bonus, _wound_bonus, source = self._sorcerous_support_psychic_hit_wound_bonus(attacker, target)
+            if hit_bonus:
+                _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source}")
+        except Exception:
+            pass
+        # Thousand Sons: Marked by Fate (+1 to hit for this unit against selected enemy in Shooting phase).
+        try:
+            hit_bonus, source = self._marked_by_fate_hit_bonus(attacker, target)
+            if hit_bonus:
+                _add_hit_mod(int(hit_bonus), f"+{int(hit_bonus)} to hit from {source}")
         except Exception:
             pass
         # Movement phase selected target hit bonus (e.g., Aeldari).
@@ -7264,6 +7583,14 @@ class WargearProfile:
                 wound_result.setdefault("modifiers", []).append(f"+{int(py_s_bonus)}S from {py_source}")
         except Exception:
             pass
+        # Thousand Sons: Ensorcelled Destruction (+1 Strength vs non-MONSTER/VEHICLE marked by Psychic hits).
+        try:
+            s_bonus, _ap_bonus, source = self._ensorcelled_destruction_bonus(attacker, target)
+            if s_bonus and isinstance(strength, int):
+                strength = strength + int(s_bonus)
+                wound_result.setdefault("modifiers", []).append(f"+{int(s_bonus)}S from {source}")
+        except Exception:
+            pass
         # Enhancement: improve melee weapons' Strength by X (bearer enhancement).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():
@@ -7689,6 +8016,14 @@ class WargearProfile:
                 if wound_bonus:
                     dice_modifier += int(wound_bonus)
                     wound_result['modifiers'].extend(list(wound_reasons or ()))
+        except Exception:
+            pass
+        # Thousand Sons: Sorcerous Support (+1 to wound for disembarked Psychic attacks against marked target).
+        try:
+            _hit_bonus, wound_bonus, source = self._sorcerous_support_psychic_hit_wound_bonus(attacker, target)
+            if wound_bonus:
+                dice_modifier += int(wound_bonus)
+                wound_result['modifiers'].append(f"+{int(wound_bonus)} to wound from {source}")
         except Exception:
             pass
         # Adepta Sororitas: The Blood of Martyrs (Hallowed Martyrs).

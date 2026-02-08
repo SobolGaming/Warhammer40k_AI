@@ -3111,6 +3111,62 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_shooting_phase_visible_hit_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select a visible enemy; this unit gets +Hit vs that enemy.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (selection range; large sentinel for "visible" with no explicit range)
+            - bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_visible_hit_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_VISIBLE_HIT_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                bonus = int(m.group("val") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            source = str(name or "Marked by Fate").strip() or "Marked by Fate"
+            range_value = 9999
+            key = (source.lower(), int(range_value), int(bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "bonus": int(bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_shooting_phase_death_hex_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: start of Shooting phase, select a visible enemy within range; roll D6 for Death Hex.
@@ -3218,6 +3274,198 @@ class AbilitySpecsMixin:
                 continue
             seen.add(key)
             specs.append({"source": source, "value": int(val)})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_post_shoot_disembark_psychic_hit_wound_bonus_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after this model has shot, select a hit enemy unit; disembarked models gain +Hit/+Wound
+        for Psychic attacks against that target.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - hit_bonus: int
+            - wound_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_post_shoot_disembark_psychic_hit_wound_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._POST_SHOOT_DISEMBARK_PSYCHIC_HIT_WOUND_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                hit_bonus = int(m.group("hit") or 0)
+            except Exception:
+                hit_bonus = 0
+            try:
+                wound_bonus = int(m.group("wound") or 0)
+            except Exception:
+                wound_bonus = 0
+            if hit_bonus <= 0 and wound_bonus <= 0:
+                continue
+            source = str(name or "Sorcerous Support").strip() or "Sorcerous Support"
+            key = (source.lower(), int(hit_bonus), int(wound_bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "hit_bonus": int(hit_bonus),
+                    "wound_bonus": int(wound_bonus),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_ensorcelled_annihilation_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: ranged attacks can re-roll Hit and Damage vs MONSTER/VEHICLE targets
+        marked by Thousand Sons Psychic hits this phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - reroll_hit: bool
+            - reroll_damage: bool
+        """
+        if model is None:
+            return []
+        cache_key = f"model_ensorcelled_annihilation:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._RANGED_ATTACK_PSYCHIC_HIT_MONSTER_VEHICLE_HIT_DAMAGE_REROLL_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Ensorcelled Annihilation").strip() or "Ensorcelled Annihilation"
+            source_key = source.lower()
+            if source_key in seen:
+                continue
+            seen.add(source_key)
+            specs.append({"source": source, "reroll_hit": True, "reroll_damage": True})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_ensorcelled_destruction_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: ranged attacks gain +Strength and +AP vs non-MONSTER/VEHICLE targets
+        marked by Thousand Sons Psychic hits this phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - strength_bonus: int
+            - ap_bonus: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_ensorcelled_destruction:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._RANGED_ATTACK_PSYCHIC_HIT_NONMONSTER_NONVEHICLE_STRENGTH_AP_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                val = int(m.group("val") or 0)
+            except Exception:
+                val = 0
+            if val <= 0:
+                continue
+            source = str(name or "Ensorcelled Destruction").strip() or "Ensorcelled Destruction"
+            key = (source.lower(), int(val), int(val))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append({"source": source, "strength_bonus": int(val), "ap_bonus": int(val)})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_move_over_no_cover_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: after ending a Normal move over an enemy unit, select one such enemy unit;
+        target cannot gain Benefit of Cover until end of turn.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - move_types: list[str]
+        """
+        if model is None:
+            return []
+        cache_key = f"model_move_over_no_cover:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._MOVE_OVER_NO_COVER_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Flame-wreathed").strip() or "Flame-wreathed"
+            source_key = source.lower()
+            if source_key in seen:
+                continue
+            seen.add(source_key)
+            specs.append({"source": source, "move_types": ["move"]})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

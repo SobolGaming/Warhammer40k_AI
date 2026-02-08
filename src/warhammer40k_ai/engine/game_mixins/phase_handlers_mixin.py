@@ -2292,6 +2292,97 @@ class GamePhaseHandlersMixin:
                         spec=spec,
                     )
 
+    def _on_phase_start_shooting_phase_visible_hit_bonus(self, player=None, phase=None, **_kwargs) -> None:
+        """Start of Shooting phase: select a visible enemy target for a same-unit +Hit bonus this phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            def _model_sort_key(m):
+                try:
+                    return str(get_entity_id(m))
+                except Exception:
+                    return str(getattr(m, "name", "") or "")
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                spec_fn = getattr(root, "model_start_shooting_phase_visible_hit_bonus_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = spec_fn(model) or []
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in specs:
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    self._queue_start_shooting_phase_visible_hit_bonus(
+                        player=player,
+                        source_unit=source_unit,
+                        model=model,
+                        candidates=candidates,
+                        spec=spec,
+                    )
+
     def _on_phase_start_death_hex(self, player=None, phase=None, **_kwargs) -> None:
         """Start of Shooting phase: Death Hex selection and roll."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()
@@ -4299,6 +4390,8 @@ class GamePhaseHandlersMixin:
                         "post_shoot_no_cover_active",
                         "post_shoot_no_cover_expires_phase",
                         "post_shoot_no_cover_source",
+                        "post_shoot_no_cover_owner",
+                        "post_shoot_no_cover_turn",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("unleash_hell_expires_phase", "") or "").strip().upper()
@@ -4360,6 +4453,18 @@ class GamePhaseHandlersMixin:
                         "post_shoot_keyword_hit_bonus_expires_phase",
                     ):
                         sr.pop(k, None)
+                exp = str(sr.get("start_shooting_phase_visible_hit_bonus_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "start_shooting_phase_visible_hit_bonus_active",
+                        "start_shooting_phase_visible_hit_bonus_owner",
+                        "start_shooting_phase_visible_hit_bonus_turn",
+                        "start_shooting_phase_visible_hit_bonus_source",
+                        "start_shooting_phase_visible_hit_bonus_target_id",
+                        "start_shooting_phase_visible_hit_bonus_value",
+                        "start_shooting_phase_visible_hit_bonus_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("post_shoot_disembark_wound_reroll_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -4369,6 +4474,35 @@ class GamePhaseHandlersMixin:
                         "post_shoot_disembark_wound_reroll_target_id",
                         "post_shoot_disembark_wound_reroll_owner",
                         "post_shoot_disembark_wound_reroll_turn",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("post_shoot_disembark_psychic_hit_wound_bonus_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_disembark_psychic_hit_wound_bonus_active",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_expires_phase",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_source",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_target_id",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_owner",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_turn",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_hit",
+                        "post_shoot_disembark_psychic_hit_wound_bonus_wound",
+                    ):
+                        sr.pop(k, None)
+                try:
+                    marked_turn = int(sr.get("move_over_no_cover_turn", 0) or 0)
+                except Exception:
+                    marked_turn = 0
+                try:
+                    current_turn = int(getattr(self, "turn", 0) or 0)
+                except Exception:
+                    current_turn = 0
+                if marked_turn and current_turn and marked_turn != current_turn:
+                    for k in (
+                        "move_over_no_cover_active",
+                        "move_over_no_cover_owner",
+                        "move_over_no_cover_turn",
+                        "move_over_no_cover_source",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("reorder_reality_expires_phase", "") or "").strip().upper()

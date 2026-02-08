@@ -3018,6 +3018,73 @@ class Game(
                     allow_skip=bool(spec.get("optional", False)),
                 )
 
+    def _on_unit_move_ended_move_over_no_cover(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        """Resolve move-over no-cover target selection after Normal moves."""
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key != "move":
+            return
+
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return
+
+        from ..utility.calcs import get_enemy_units_moved_over
+
+        for model in models:
+            if not getattr(model, "is_alive", False):
+                continue
+            model_unit = getattr(model, "parent_unit", None) or root
+            spec_fn = getattr(model_unit, "model_move_over_no_cover_specs", None)
+            if not callable(spec_fn):
+                continue
+            specs = list(spec_fn(model) or [])
+            if not specs:
+                continue
+            path = getattr(model, "last_move_path", None)
+            candidates = get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True)
+            if not candidates:
+                continue
+            try:
+                player = model_unit.get_parent_army().player
+            except Exception:
+                player = None
+            if player is None:
+                continue
+            queue_fn = getattr(self, "_queue_move_over_no_cover_decision", None)
+            if not callable(queue_fn):
+                continue
+            for spec in specs:
+                move_types = set(spec.get("move_types") or [])
+                if action_key not in move_types:
+                    continue
+                queue_fn(
+                    player=player,
+                    unit=model_unit,
+                    model=model,
+                    candidates=list(candidates),
+                    spec=spec,
+                )
+
     def _on_unit_move_ended_grenade_pack_flyover(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
             return

@@ -2476,6 +2476,22 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After shooting with Arcane Fire, hit enemy unit is pinned/ensnared: -2 Move and -2 to Charge rolls until next turn.",
         ),
+        ("TS", "Destroyer of Futures"): (
+            "Supported",
+            "Fire Overwatch hits on 5+, or 4+ when the target is within 9\" of one or more friendly Thousand Sons Psyker units.",
+        ),
+        ("TS", "Ensorcelled Annihilation"): (
+            "Supported",
+            "Ranged attacks vs MONSTER/VEHICLE units hit by Thousand Sons Psychic attacks this phase can re-roll Hit and Damage rolls.",
+        ),
+        ("TS", "Ensorcelled Destruction"): (
+            "Supported",
+            "Ranged attacks vs non-MONSTER/VEHICLE units hit by Thousand Sons Psychic attacks this phase gain +1 Strength and +1 AP.",
+        ),
+        ("TS", "Flame-wreathed"): (
+            "Supported",
+            "After ending a Normal move over an enemy unit, select that moved-over unit; it cannot gain Benefit of Cover until end of turn.",
+        ),
         ("TS", "Bringers of Change"): (
             "Supported",
             "Ranged attacks re-roll wound rolls of 1; full wound re-rolls while targeting units within range of uncontrolled objectives.",
@@ -2484,6 +2500,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Model can change one Hit/Wound/Save roll to an unmodified 6 (once per round/turn parser support).",
         ),
+        ("TS", "Marked by Fate (Psychic)"): (
+            "Supported",
+            "Start of Shooting phase: select a visible enemy unit; this unit gains +1 to hit against that target until end of phase.",
+        ),
         ("TS", "One Head Looks Back (Aura)"): (
             "Supported",
             "Opponent targeted Stratagem CP increase aura within 12\".",
@@ -2491,6 +2511,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TS", "Prophesied Doom"): (
             "Supported",
             "After ending a charge move, roll one D6 per model and inflict 1 mortal wound on each 4+.",
+        ),
+        ("TS", "Prophetic Sentinels"): (
+            "Supported",
+            "Once per battle round, this unit can be targeted by Fire Overwatch or Heroic Intervention for 0CP.",
         ),
         ("TS", "Regenerating Monstrosities"): (
             "Supported",
@@ -2507,6 +2531,14 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("TS", "Siege Shield"): (
             "Supported",
             "Demolisher cannon can target units in Engagement Range and ignores Hit penalty while engaged.",
+        ),
+        ("TS", "Snarling Protector"): (
+            "Supported",
+            "Heroic Intervention can target this model for 0CP even if already used this phase; charge rolls can be re-rolled when charging enemies engaging Thousand Sons Psykers.",
+        ),
+        ("TS", "Sorcerous Support"): (
+            "Supported",
+            "After this model shoots, select a hit enemy unit; disembarked models from this transport gain +1 to Hit and +1 to Wound with Psychic attacks against that target this phase.",
         ),
         ("DG", "Mischief Makers"): (
             "Supported",

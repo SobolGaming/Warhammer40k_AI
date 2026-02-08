@@ -1663,6 +1663,384 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_prophetic_sentinels_stratagem_discount_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per battle round, you can target this unit with the Fire Overwatch or Heroic Intervention Stratagem for 0CP."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "prophetic_sentinels_stratagem_discount_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not u._PROPHETIC_SENTINELS_STRATAGEM_RE.fullmatch(normalized):
+                    continue
+                source = str(name or "Prophetic Sentinels").strip() or "Prophetic Sentinels"
+                rule = {
+                    "source": source,
+                    "ability_key": "prophetic_sentinels_stratagem_discount",
+                    "stratagems": ("OVERWATCH", "FIRE OVERWATCH", "HEROIC INTERVENTION"),
+                    "limit": "battle_round",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _prophetic_sentinels_battle_round_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        return str(br)
+
+    def prophetic_sentinels_used_this_battle_round(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._prophetic_sentinels_battle_round_key(game)
+        if not key:
+            return False
+        return str(sr.get("prophetic_sentinels_used_battle_round", "") or "") == key
+
+    def mark_prophetic_sentinels_used(self, game=None, *, source: str = "", stratagem_name: str = "") -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["prophetic_sentinels_used_battle_round"] = self._prophetic_sentinels_battle_round_key(game)
+        if source:
+            sr["prophetic_sentinels_used_source"] = str(source or "").strip()
+        if stratagem_name:
+            sr["prophetic_sentinels_used_stratagem"] = str(stratagem_name or "").strip()
+        root.special_rules = sr
+
+    def can_use_prophetic_sentinels_stratagem_discount(self, game=None, *, stratagem_name: str = "") -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_prophetic_sentinels_stratagem_discount_rule()
+        if not rule:
+            return False
+        if root.prophetic_sentinels_used_this_battle_round(game):
+            return False
+        name_u = str(stratagem_name or "").strip().upper()
+        allowed = {str(v or "").strip().upper() for v in list(rule.get("stratagems", ()) or ()) if str(v or "").strip()}
+        if name_u and allowed and name_u not in allowed:
+            return False
+        return True
+
+    def get_snarling_protector_heroic_intervention_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "You can target this model with the Heroic Intervention Stratagem for 0CP, and can do so even if you have
+        already targeted a different unit with that Stratagem this phase."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "snarling_protector_heroic_intervention_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not u._SNARLING_PROTECTOR_HEROIC_RE.search(normalized):
+                    continue
+                source = str(name or "Snarling Protector").strip() or "Snarling Protector"
+                rule = {
+                    "source": source,
+                    "ability_key": "snarling_protector_heroic_intervention",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def can_use_snarling_protector_heroic_intervention(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        return bool(root.get_snarling_protector_heroic_intervention_rule())
+
+    def get_destroyer_of_futures_overwatch_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time you target this unit with Fire Overwatch, hits are scored on 5+, or 4+ when the target is
+        within 9\" of one or more friendly Thousand Sons Psyker units."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "destroyer_of_futures_overwatch_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = u._DESTROYER_OF_FUTURES_OVERWATCH_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    base_threshold = int(m.group("base") or 0)
+                except Exception:
+                    base_threshold = 0
+                try:
+                    near_threshold = int(m.group("near") or 0)
+                except Exception:
+                    near_threshold = 0
+                try:
+                    range_value = float(m.group("range") or 0)
+                except Exception:
+                    range_value = 0.0
+                if base_threshold <= 0 or near_threshold <= 0:
+                    continue
+                source = str(name or "Destroyer of Futures").strip() or "Destroyer of Futures"
+                rule = {
+                    "source": source,
+                    "base_threshold": int(base_threshold),
+                    "near_threshold": int(near_threshold),
+                    "range": float(range_value or 0.0),
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_destroyer_of_futures_overwatch_hit_threshold(self, *, enemy_unit=None, game=None) -> int:
+        """
+        Return the hit threshold used by Overwatch from Destroyer of Futures.
+        Returns 0 when the rule does not apply.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_destroyer_of_futures_overwatch_rule()
+        if not rule:
+            return 0
+        try:
+            base_threshold = int(rule.get("base_threshold", 0) or 0)
+        except Exception:
+            base_threshold = 0
+        if base_threshold <= 0:
+            return 0
+        if enemy_unit is None:
+            return int(base_threshold)
+        try:
+            game_obj = game
+            if game_obj is None:
+                game_obj = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+        except Exception:
+            game_obj = game
+        game_map = getattr(game_obj, "map", None) if game_obj is not None else None
+        if game_map is None:
+            return int(base_threshold)
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return int(base_threshold)
+        try:
+            near_range = float(rule.get("range", 0.0) or 0.0)
+        except Exception:
+            near_range = 0.0
+        if near_range <= 0:
+            return int(base_threshold)
+        try:
+            near_threshold = int(rule.get("near_threshold", 0) or 0)
+        except Exception:
+            near_threshold = 0
+        if near_threshold <= 0:
+            return int(base_threshold)
+
+        try:
+            army = root.get_parent_army()
+            friendly_units = list(getattr(army, "units", []) or []) if army is not None else []
+        except Exception:
+            friendly_units = []
+        seen = set()
+        for friendly in list(friendly_units or []):
+            if friendly is None:
+                continue
+            try:
+                f_root = friendly.get_attached_unit_root()
+            except Exception:
+                f_root = friendly
+            if f_root is None:
+                continue
+            fid = str(get_entity_id(f_root) or "")
+            if fid and fid in seen:
+                continue
+            if fid:
+                seen.add(fid)
+            if f_root is root:
+                continue
+            try:
+                if not f_root.is_alive() or not getattr(f_root, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if f_root.is_in_reserves() or f_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                has_ts = bool(f_root.has_any_keyword("THOUSAND SONS"))
+            except Exception:
+                has_ts = False
+            try:
+                has_psyker = bool(f_root.has_any_keyword("PSYKER"))
+            except Exception:
+                has_psyker = False
+            if not (has_ts and has_psyker):
+                continue
+            try:
+                dist = float(game_map.get_distance_between_units(f_root, enemy_root))
+            except Exception:
+                continue
+            if dist <= float(near_range) + 1e-6:
+                return int(near_threshold)
+        return int(base_threshold)
+
     def get_daemonforge_counter_offensive_rule(self) -> Optional[dict]:
         """
         Return rule info for abilities like:

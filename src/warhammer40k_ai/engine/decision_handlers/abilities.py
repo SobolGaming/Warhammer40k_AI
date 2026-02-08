@@ -3040,16 +3040,69 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             if not isinstance(sr, dict):
                 sr = {}
             sr["post_shoot_no_cover_active"] = True
-            sr["post_shoot_no_cover_expires_phase"] = "SHOOTING_PHASE"
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            expires_phase = str(ctx.get("expires_phase", "") or "SHOOTING_PHASE").strip().upper() or "SHOOTING_PHASE"
+            sr["post_shoot_no_cover_expires_phase"] = expires_phase
             sr["post_shoot_no_cover_source"] = str(ctx.get("ability_name", "") or "No Cover").strip()
+            sr["post_shoot_no_cover_owner"] = owner_id
+            sr["post_shoot_no_cover_turn"] = int(turn or 0)
             target_root.special_rules = sr
             try:
-                player = None
-                attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
-                if attacker_unit is not None:
-                    player = getattr(attacker_unit.get_parent_army(), "player", None)
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
                 _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "start_shooting_phase_visible_hit_bonus":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                source_root = source_unit.get_attached_unit_root()
+            except Exception:
+                source_root = source_unit
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            try:
+                bonus = int(ctx.get("hit_bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                bonus = 1
+            ability_name = str(ctx.get("ability_name", "") or "Marked by Fate").strip() or "Marked by Fate"
+            sr = getattr(source_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["start_shooting_phase_visible_hit_bonus_active"] = True
+            sr["start_shooting_phase_visible_hit_bonus_owner"] = owner_id
+            sr["start_shooting_phase_visible_hit_bonus_turn"] = int(turn or 0)
+            sr["start_shooting_phase_visible_hit_bonus_source"] = ability_name
+            sr["start_shooting_phase_visible_hit_bonus_target_id"] = str(get_entity_id(target_root) or "")
+            sr["start_shooting_phase_visible_hit_bonus_value"] = int(bonus)
+            sr["start_shooting_phase_visible_hit_bonus_expires_phase"] = "SHOOTING_PHASE"
+            source_root.special_rules = sr
+            try:
+                sname = str(getattr(source_root, "name", "Unit") or "Unit")
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} (+{int(bonus)} to hit this phase).")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "post_shoot_afflicted":
@@ -3335,6 +3388,92 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                     player,
                     f"{ability_name}: {tname} marked (disembarked units gain AP +{int(ap_bonus)}).",
                 )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_disembark_psychic_hit_wound_bonus":
+        if chosen is not None:
+            try:
+                attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id") or ctx.get("source_unit_id"))
+            except Exception:
+                attacker_unit = None
+            if attacker_unit is None:
+                return None
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Sorcerous Support").strip() or "Sorcerous Support"
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            target_id = str(get_entity_id(target_root) or "")
+            try:
+                hit_bonus = int(ctx.get("hit_bonus", 0) or 0)
+            except Exception:
+                hit_bonus = 0
+            try:
+                wound_bonus = int(ctx.get("wound_bonus", 0) or 0)
+            except Exception:
+                wound_bonus = 0
+            if hit_bonus <= 0 and wound_bonus <= 0:
+                hit_bonus = 1
+                wound_bonus = 1
+            sr = getattr(attacker_unit, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_active"] = True
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_expires_phase"] = "SHOOTING_PHASE"
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_source"] = ability_name
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_target_id"] = target_id
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_owner"] = owner_id
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_turn"] = int(turn or 0)
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_hit"] = int(hit_bonus)
+            sr["post_shoot_disembark_psychic_hit_wound_bonus_wound"] = int(wound_bonus)
+            attacker_unit.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {tname} marked (disembarked Psychic attacks +{int(hit_bonus)} hit, +{int(wound_bonus)} wound).",
+                )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "move_over_no_cover":
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is not None and chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            try:
+                player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Flame-wreathed").strip() or "Flame-wreathed"
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["move_over_no_cover_active"] = True
+            sr["move_over_no_cover_owner"] = owner_id
+            sr["move_over_no_cover_turn"] = int(turn or 0)
+            sr["move_over_no_cover_source"] = ability_name
+            target_root.special_rules = sr
+            try:
+                sname = str(getattr(source_unit, "name", "Model") or "Model")
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname}; it cannot gain Benefit of Cover this turn.")
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "herald_of_ynnead":

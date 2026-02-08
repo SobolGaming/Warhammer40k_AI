@@ -610,6 +610,18 @@ class CabalOfSorcerersManager:
                     pass
             except Exception:
                 pass
+            try:
+                from .thousand_sons_psychic_marks import mark_target_hit_by_thousand_sons_psychic_attack
+
+                owner_id = str(getattr(getattr(self.army, "player", None), "id", "") or "")
+                if owner_id:
+                    mark_target_hit_by_thousand_sons_psychic_attack(
+                        game,
+                        target_unit=target_unit,
+                        owner_id=owner_id,
+                    )
+            except Exception:
+                pass
             result["target_mortal_wounds"] = int(dmg or 0)
 
         elif ritual.key == RITUAL_TEMPORAL_SURGE.key:

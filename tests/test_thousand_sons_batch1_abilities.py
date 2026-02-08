@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
 
@@ -73,6 +74,25 @@ def _make_profile():
             "AP": "0",
             "D": "1",
             "description": "",
+        },
+        parent_wargear=parent,
+    )
+
+
+def _make_psychic_profile():
+    from warhammer40k_ai.units.wargear import WargearProfile
+
+    parent = SimpleNamespace(name="Test Psychic Gun", is_melee=lambda: False, is_ranged=lambda: True)
+    return WargearProfile(
+        profile_name="Ranged",
+        wargear_data={
+            "range": "24",
+            "A": "1",
+            "BS_WS": "3+",
+            "S": "4",
+            "AP": "0",
+            "D": "1",
+            "description": "Psychic",
         },
         parent_wargear=parent,
     )
@@ -232,6 +252,254 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
             )
         )
         self.assertEqual(entries, [])
+
+    def test_prophetic_sentinels_discount_once_per_battle_round(self):
+        from warhammer40k_ai.roster.player import PlayerControl
+
+        ability = {
+            "name": "Prophetic Sentinels",
+            "description": (
+                "Once per battle round, you can target this unit with the Fire Overwatch or Heroic Intervention "
+                "Stratagem for 0CP."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, _army2, p1, _p2 = _build_game()
+        unit = _make_unit("Sekhetar Robots", abilities=[ability], model_count=1)
+        army1.add_unit(unit)
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        game.turn = 1
+        p1.control = PlayerControl.REMOTE
+        p1.stratagems = SimpleNamespace(_used_this_turn={})
+        strat = SimpleNamespace(name="Fire Overwatch", cp_cost=1)
+
+        p1.set_next_optional_decision("PROPHETIC_SENTINELS_STRATAGEM_DISCOUNT", True)
+        first = p1.apply_stratagem_cp_cost(strat, target_unit=unit)
+        self.assertEqual(first.get("cost"), 0)
+        self.assertTrue(first.get("prophetic_sentinels_use", False))
+        self.assertTrue(unit.prophetic_sentinels_used_this_battle_round(game))
+
+        p1.set_next_optional_decision("PROPHETIC_SENTINELS_STRATAGEM_DISCOUNT", True)
+        second = p1.apply_stratagem_cp_cost(strat, target_unit=unit)
+        self.assertEqual(int(second.get("cost", 99)), 1)
+        self.assertFalse(bool(second.get("prophetic_sentinels_use", False)))
+
+    def test_snarling_protector_heroic_intervention_discount(self):
+        ability = {
+            "name": "Snarling Protector",
+            "description": (
+                "You can target this model with the Heroic Intervention Stratagem for 0CP, and can do so even if "
+                "you have already targeted a different unit with that Stratagem this phase. In addition, each time "
+                "this model declares a charge that targets an enemy unit within Engagement Range of one or more "
+                "Thousand Sons Psyker units from your army, you can re-roll the Charge roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, _army2, p1, _p2 = _build_game()
+        unit = _make_unit("Maulerfiend", abilities=[ability], model_count=1)
+        army1.add_unit(unit)
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        game.turn = 1
+        p1.stratagems = SimpleNamespace(_used_this_turn={})
+        strat = SimpleNamespace(name="Heroic Intervention", cp_cost=1)
+
+        p1.set_next_optional_decision("SNARLING_PROTECTOR_HEROIC_INTERVENTION", True)
+        applied = p1.apply_stratagem_cp_cost(strat, target_unit=unit)
+        self.assertEqual(applied.get("cost"), 0)
+        self.assertTrue(applied.get("snarling_protector_heroic_intervention_use", False))
+
+    def test_marked_by_fate_hit_bonus_helper(self):
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        game, army1, army2, p1, _p2 = _build_game()
+        attacker_unit = _make_unit("Sorcerer In Terminator Armour", model_count=1)
+        target = _make_unit("Enemy A", model_count=1)
+        other_target = _make_unit("Enemy B", model_count=1)
+        army1.add_unit(attacker_unit)
+        army2.add_unit(target)
+        army2.add_unit(other_target)
+        attacker_unit.deployed = True
+        target.deployed = True
+        other_target.deployed = True
+        game.turn = 1
+        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_active"] = True
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_owner"] = str(p1.id)
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_turn"] = 1
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_target_id"] = str(get_entity_id(target))
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_value"] = 1
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_expires_phase"] = "SHOOTING_PHASE"
+        attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_source"] = "Marked by Fate"
+
+        profile = _make_profile()
+        hit_bonus, source = profile._marked_by_fate_hit_bonus(attacker_unit.models[0], target)
+        self.assertEqual(hit_bonus, 1)
+        self.assertIn("Marked by Fate", source)
+        miss_bonus, _ = profile._marked_by_fate_hit_bonus(attacker_unit.models[0], other_target)
+        self.assertEqual(miss_bonus, 0)
+
+    def test_sorcerous_support_psychic_hit_wound_bonus_helper(self):
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        game, army1, army2, p1, _p2 = _build_game()
+        transport = _make_unit("Chaos Rhino", model_count=1)
+        disembarked = _make_unit("Rubric Marines", model_count=1)
+        target = _make_unit("Enemy A", model_count=1)
+        other_target = _make_unit("Enemy B", model_count=1)
+        army1.add_unit(transport)
+        army1.add_unit(disembarked)
+        army2.add_unit(target)
+        army2.add_unit(other_target)
+        transport.deployed = True
+        disembarked.deployed = True
+        target.deployed = True
+        other_target.deployed = True
+        game.turn = 1
+        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+        disembarked.round_state.disembarked_from_transport_id = str(get_entity_id(transport))
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_active"] = True
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_expires_phase"] = "SHOOTING_PHASE"
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_owner"] = str(p1.id)
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_turn"] = 1
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_target_id"] = str(get_entity_id(target))
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_hit"] = 1
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_wound"] = 1
+        transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_source"] = "Sorcerous Support"
+
+        profile = _make_psychic_profile()
+        hit_bonus, wound_bonus, _source = profile._sorcerous_support_psychic_hit_wound_bonus(
+            disembarked.models[0],
+            target,
+        )
+        self.assertEqual((hit_bonus, wound_bonus), (1, 1))
+        miss_hit, miss_wound, _ = profile._sorcerous_support_psychic_hit_wound_bonus(
+            disembarked.models[0],
+            other_target,
+        )
+        self.assertEqual((miss_hit, miss_wound), (0, 0))
+
+    def test_ensorcelled_destruction_ap_bonus_requires_psychic_mark(self):
+        from warhammer40k_ai.rules.thousand_sons_psychic_marks import mark_target_hit_by_thousand_sons_psychic_attack
+
+        ability = {
+            "name": "Ensorcelled Destruction",
+            "description": (
+                "Each time this model makes a ranged attack that targets a unit (excluding MONSTERS and VEHICLES) "
+                "that was hit by one or more Psychic Attacks made by a Thousand Sons Psyker model from your army "
+                "this phase (including the Doombolt Ritual), improve the Strength and Armour Penetration "
+                "characteristics of that attack by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, _p2 = _build_game()
+        attacker_unit = _make_unit("Chaos Predator Destructor", abilities=[ability], model_count=1)
+        target = _make_unit("Enemy Infantry", model_count=1)
+        army1.add_unit(attacker_unit)
+        army2.add_unit(target)
+        attacker_unit.deployed = True
+        target.deployed = True
+        game.turn = 1
+        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+        profile = _make_profile()
+        attacker_model = attacker_unit.models[0]
+        self.assertEqual(profile.get_effective_ap(attacker_model, target), 0)
+
+        mark_target_hit_by_thousand_sons_psychic_attack(
+            game,
+            target_unit=target,
+            owner_id=str(p1.id),
+        )
+        self.assertEqual(profile.get_effective_ap(attacker_model, target), -1)
+
+    def test_destroyer_of_futures_overwatch_threshold(self):
+        profile = _make_profile()
+        game, army1, army2, _p1, _p2 = _build_game()
+        shooter = _make_unit("Defiler", model_count=1)
+        target = _make_unit("Enemy", model_count=1)
+        army1.add_unit(shooter)
+        army2.add_unit(target)
+        shooter.deployed = True
+        target.deployed = True
+
+        shooter._overwatch_sixes_only = True
+        shooter._overwatch_hit_threshold = 5
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=5):
+            hit5 = profile._hit_target_with_tracking(
+                target,
+                shooter.models[0],
+                {"target_unit": target},
+                allow_rerolls=False,
+                log_roll=False,
+            )
+        with patch("warhammer40k_ai.units.wargear.get_roll", return_value=4):
+            miss4 = profile._hit_target_with_tracking(
+                target,
+                shooter.models[0],
+                {"target_unit": target},
+                allow_rerolls=False,
+                log_roll=False,
+            )
+        self.assertTrue(bool(hit5.get("hit")))
+        self.assertFalse(bool(miss4.get("hit")))
+
+    def test_ensorcelled_annihilation_reroll_rule_requires_psychic_mark(self):
+        from warhammer40k_ai.rules.thousand_sons_psychic_marks import mark_target_hit_by_thousand_sons_psychic_attack
+
+        ability = {
+            "name": "Ensorcelled Annihilation",
+            "description": (
+                "Each time this model makes a ranged attack that targets a MONSTER or VEHICLE unit that was hit by "
+                "one or more Psychic Attacks made by a Thousand Sons Psyker model from your army this phase "
+                "(including the Doombolt Ritual), you can re-roll the Hit roll and you can re-roll the Damage roll."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, _p2 = _build_game()
+        attacker_unit = _make_unit("Mutalith Vortex Beast", abilities=[ability], model_count=1)
+        target = _make_unit("Enemy Monster", model_count=1)
+        target.keywords = ["MONSTER"]
+        army1.add_unit(attacker_unit)
+        army2.add_unit(target)
+        attacker_unit.deployed = True
+        target.deployed = True
+        game.turn = 1
+        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+
+        profile = _make_profile()
+        attacker_model = attacker_unit.models[0]
+        self.assertIsNone(profile._ensorcelled_annihilation_reroll_rule(attacker_model, target))
+
+        mark_target_hit_by_thousand_sons_psychic_attack(
+            game,
+            target_unit=target,
+            owner_id=str(p1.id),
+        )
+        rule = profile._ensorcelled_annihilation_reroll_rule(attacker_model, target)
+        self.assertIsInstance(rule, dict)
+        self.assertTrue(bool(rule.get("reroll_hit")))
+        self.assertTrue(bool(rule.get("reroll_damage")))
+
+    def test_flame_wreathed_no_cover_marker_expires_with_turn(self):
+        profile = _make_profile()
+        game, _army1, army2, _p1, _p2 = _build_game()
+        target = _make_unit("Enemy Infantry", model_count=1)
+        army2.add_unit(target)
+        target.deployed = True
+        target.special_rules["move_over_no_cover_active"] = True
+        target.special_rules["move_over_no_cover_turn"] = 1
+        game.turn = 1
+        self.assertTrue(profile._target_cannot_have_cover_this_turn(target))
+        game.turn = 2
+        self.assertFalse(profile._target_cannot_have_cover_this_turn(target))
 
 
 if __name__ == "__main__":

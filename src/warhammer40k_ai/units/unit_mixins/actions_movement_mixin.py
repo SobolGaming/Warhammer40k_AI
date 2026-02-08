@@ -4329,6 +4329,142 @@ class ActionsMovementMixin:
         root.special_rules = sr
         return True
 
+    def get_snarling_protector_charge_reroll_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time this model declares a charge that targets an enemy unit within Engagement Range of one or more
+        Thousand Sons Psyker units from your army, you can re-roll the Charge roll."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "snarling_protector_charge_reroll_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                normalized = u._normalize_rules_text(u._strip_eligibility_prefix(text_src))
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if not u._SNARLING_PROTECTOR_CHARGE_REROLL_RE.search(normalized):
+                    continue
+                source = str(name or "Snarling Protector").strip() or "Snarling Protector"
+                rule = {"source": source}
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def _snarling_protector_charge_reroll_applies(self, *, target_units: list, game_map=None, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_snarling_protector_charge_reroll_rule()
+        if not rule:
+            return False
+        if not target_units:
+            return False
+        if game_map is None:
+            game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+
+        try:
+            army = root.get_parent_army()
+            friendly_units = list(getattr(army, "units", []) or []) if army is not None else []
+        except Exception:
+            friendly_units = []
+        seen_friendlies: set[str] = set()
+        friendly_psykers: list = []
+        for friendly in list(friendly_units or []):
+            if friendly is None:
+                continue
+            try:
+                f_root = friendly.get_attached_unit_root()
+            except Exception:
+                f_root = friendly
+            if f_root is None:
+                continue
+            fid = str(get_entity_id(f_root) or "")
+            if fid and fid in seen_friendlies:
+                continue
+            if fid:
+                seen_friendlies.add(fid)
+            if f_root is root:
+                continue
+            try:
+                if not f_root.is_alive() or not getattr(f_root, "deployed", True):
+                    continue
+            except Exception:
+                continue
+            try:
+                if f_root.is_in_reserves() or f_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                has_ts = bool(f_root.has_any_keyword("THOUSAND SONS"))
+            except Exception:
+                has_ts = False
+            try:
+                has_psyker = bool(f_root.has_any_keyword("PSYKER"))
+            except Exception:
+                has_psyker = False
+            if has_ts and has_psyker:
+                friendly_psykers.append(f_root)
+        if not friendly_psykers:
+            return False
+
+        seen_targets: set[str] = set()
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                target_root = target.get_attached_unit_root()
+            except Exception:
+                target_root = target
+            if target_root is None:
+                continue
+            tid = str(get_entity_id(target_root) or "")
+            if tid and tid in seen_targets:
+                continue
+            if tid:
+                seen_targets.add(tid)
+            for psyker_unit in friendly_psykers:
+                try:
+                    if game_map.is_within_engagement_range(psyker_unit, target_root):
+                        return True
+                except Exception:
+                    continue
+        return False
+
     def can_reroll_charge_roll(self, *, target_unit=None, game_map=None, game=None) -> bool:
         """
         Best-effort detection for abilities that allow re-rolling Charge rolls for this unit/model.
@@ -4409,6 +4545,17 @@ class ActionsMovementMixin:
                             continue
                         if tid in active_targets:
                             return True
+        except Exception:
+            pass
+        try:
+            if self.get_snarling_protector_charge_reroll_rule():
+                conditional_found = True
+                if self._snarling_protector_charge_reroll_applies(
+                    target_units=target_units,
+                    game_map=game_map,
+                    game=game,
+                ):
+                    return True
         except Exception:
             pass
         try:

@@ -729,6 +729,22 @@ class Player:
             return bool(fn(self.game, enemy_unit=enemy_unit))
         return False
 
+    def _target_unit_can_use_prophetic_sentinels_stratagem_discount(self, target_unit, *, stratagem_name: str = "") -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_prophetic_sentinels_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
+    def _target_unit_can_use_snarling_protector_heroic_intervention(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_snarling_protector_heroic_intervention", None)
+        if callable(fn):
+            return bool(fn(self.game))
+        return False
+
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -767,6 +783,28 @@ class Player:
             target_unit,
             enemy_unit=enemy_unit,
         ):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_prophetic_sentinels_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().upper()
+        if name not in ("HEROIC INTERVENTION", "OVERWATCH", "FIRE OVERWATCH"):
+            return 0
+        if not self._target_unit_can_use_prophetic_sentinels_stratagem_discount(target_unit, stratagem_name=name):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_snarling_protector_heroic_intervention_discount(self, *, stratagem=None, target_unit=None) -> int:
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name != "heroic intervention":
+            return 0
+        if not self._target_unit_can_use_snarling_protector_heroic_intervention(target_unit):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -940,6 +978,74 @@ class Player:
             ):
                 discount = base
                 reasons.append("Guardians of the Machine: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        prophetic = self._preview_prophetic_sentinels_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if prophetic:
+            if name_u in ("OVERWATCH", "FIRE OVERWATCH"):
+                mgr = getattr(self, "stratagems", None)
+                used_this_turn = getattr(mgr, "_used_this_turn", {}) if mgr is not None else {}
+                overwatch_used = bool(used_this_turn.get("OVERWATCH", False)) if isinstance(used_this_turn, dict) else False
+                can_traitor = bool(
+                    getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)
+                )
+                if overwatch_used and not can_traitor:
+                    prophetic = 0
+            if not prophetic:
+                pass
+            else:
+                ability_name = "Prophetic Sentinels"
+                try:
+                    get_rule = getattr(target_unit, "get_prophetic_sentinels_stratagem_discount_rule", None)
+                    rule = get_rule() if callable(get_rule) else None
+                    if isinstance(rule, dict):
+                        ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                if self._should_preview_optional_ability(
+                    "PROPHETIC_SENTINELS_STRATAGEM_DISCOUNT",
+                    ctx,
+                    assume=assume_optional_discounts,
+                ):
+                    discount = base
+                    reasons.append(f"{ability_name}: Stratagem for 0CP.")
+                    return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        snarling = self._preview_snarling_protector_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if snarling:
+            ability_name = "Snarling Protector"
+            try:
+                get_rule = getattr(target_unit, "get_snarling_protector_heroic_intervention_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "SNARLING_PROTECTOR_HEROIC_INTERVENTION",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append(f"{ability_name}: Heroic Intervention for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
@@ -1153,17 +1259,189 @@ class Player:
                     "increase": increase,
                     "increase_reasons": increase_reasons,
                 }
+        prophetic = self._preview_prophetic_sentinels_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if prophetic and target_unit is not None and name_u not in ("OVERWATCH", "FIRE OVERWATCH"):
+            ability_name = "Prophetic Sentinels"
+            try:
+                get_rule = getattr(target_unit, "get_prophetic_sentinels_stratagem_discount_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("PROPHETIC_SENTINELS_STRATAGEM_DISCOUNT", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                try:
+                    mark_used = getattr(target_unit, "mark_prophetic_sentinels_used", None)
+                    if callable(mark_used):
+                        mark_used(
+                            self.game,
+                            source=ability_name,
+                            stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                        )
+                except Exception:
+                    pass
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Stratagem for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "prophetic_sentinels_use": True,
+                    "prophetic_sentinels_source": ability_name,
+                }
+        snarling = self._preview_snarling_protector_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+        )
+        if snarling and target_unit is not None:
+            ability_name = "Snarling Protector"
+            try:
+                get_rule = getattr(target_unit, "get_snarling_protector_heroic_intervention_rule", None)
+                rule = get_rule() if callable(get_rule) else None
+                if isinstance(rule, dict):
+                    ability_name = str(rule.get("source", "") or ability_name).strip() or ability_name
+            except Exception:
+                pass
+            ctx = {
+                "ability_name": ability_name,
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("SNARLING_PROTECTOR_HEROIC_INTERVENTION", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": [f"{ability_name}: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                    "snarling_protector_heroic_intervention_use": True,
+                    "snarling_protector_heroic_intervention_source": ability_name,
+                }
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
             get_rule = getattr(target_unit, "get_traitor_enforcer_overwatch_rule", None)
             rule = get_rule() if callable(get_rule) else None
             can_traitor = bool(rule) and bool(
                 getattr(target_unit, "can_use_traitor_enforcer_overwatch", lambda _g=None: False)(self.game)
             )
+            can_prophetic = bool(
+                self._target_unit_can_use_prophetic_sentinels_stratagem_discount(
+                    target_unit,
+                    stratagem_name=name_u,
+                )
+            )
             mgr = getattr(self, "stratagems", None)
             used_this_turn = getattr(mgr, "_used_this_turn", {}) if mgr is not None else {}
             overwatch_used = bool(used_this_turn.get("OVERWATCH", False)) if isinstance(used_this_turn, dict) else False
             if overwatch_used and not can_traitor:
                 return {"denied": True, "reason": "Overwatch already used this turn"}
+            if can_prophetic:
+                ability_name = "Prophetic Sentinels"
+                try:
+                    get_p_rule = getattr(target_unit, "get_prophetic_sentinels_stratagem_discount_rule", None)
+                    p_rule = get_p_rule() if callable(get_p_rule) else None
+                    if isinstance(p_rule, dict):
+                        ability_name = str(p_rule.get("source", "") or ability_name).strip() or ability_name
+                except Exception:
+                    pass
+                ctx = {
+                    "ability_name": ability_name,
+                    "stratagem": getattr(stratagem, "name", None) or "",
+                    "target_unit": getattr(target_unit, "name", None) or "",
+                    "base_cp_cost": base,
+                }
+                use_prophetic = self._should_use_optional_ability("PROPHETIC_SENTINELS_STRATAGEM_DISCOUNT", ctx)
+                if use_prophetic:
+                    applied_discount = base
+                    cost = max(0, base - applied_discount)
+                    increase = 0
+                    increase_reasons: list[str] = []
+                    opponent = self._get_opponent_player()
+                    if opponent is not None:
+                        inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                            target_unit=target_unit,
+                            stratagem=stratagem,
+                            current_cost=cost,
+                        )
+                        increase = int(inc_info.get("increase", 0) or 0)
+                        increase_reasons = list(inc_info.get("reasons", []) or [])
+                        if increase:
+                            cost = max(0, cost + increase)
+                    self._pending_stratagem_cp_increase = {
+                        "increase": int(increase or 0),
+                        "reasons": increase_reasons,
+                        "stratagem_name": getattr(stratagem, "name", None) or "",
+                    }
+                    try:
+                        mark_used = getattr(target_unit, "mark_prophetic_sentinels_used", None)
+                        if callable(mark_used):
+                            mark_used(
+                                self.game,
+                                source=ability_name,
+                                stratagem_name=str(getattr(stratagem, "name", "") or ""),
+                            )
+                    except Exception:
+                        pass
+                    return {
+                        "base": base,
+                        "discount": applied_discount,
+                        "available_discount": applied_discount,
+                        "cost": cost,
+                        "increase": increase,
+                        "increase_reasons": increase_reasons,
+                        "reasons": [f"{ability_name}: Fire Overwatch for 0CP (used)"],
+                        "prophetic_sentinels_use": True,
+                        "prophetic_sentinels_source": ability_name,
+                    }
             if can_traitor:
                 ability_name = str(rule.get("source", "") or "Brutal Example").strip() or "Brutal Example"
                 ctx = {

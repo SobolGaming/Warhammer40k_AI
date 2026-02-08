@@ -18062,8 +18062,18 @@ class GameView:
                 print("Overwatch: Brutal Example declined; cannot use Overwatch again this turn")
                 return
             if callable(getattr(self, "_request_overwatch_shooting", None)):
+                overwatch_threshold = 6
+                try:
+                    get_threshold = getattr(shooter_unit, "get_destroyer_of_futures_overwatch_hit_threshold", None)
+                    if callable(get_threshold):
+                        threshold = int(get_threshold(enemy_unit=enemy, game=self.game) or 0)
+                        if threshold > 0:
+                            overwatch_threshold = int(threshold)
+                except Exception:
+                    overwatch_threshold = 6
                 try:
                     setattr(shooter_unit, "_overwatch_sixes_only", True)
+                    setattr(shooter_unit, "_overwatch_hit_threshold", int(overwatch_threshold))
                 except Exception:
                     pass
                 self._overwatch_flow_active = True
@@ -18071,6 +18081,10 @@ class GameView:
                 def _done_callback(executed: bool):
                     try:
                         delattr(shooter_unit, "_overwatch_sixes_only")
+                    except Exception:
+                        pass
+                    try:
+                        delattr(shooter_unit, "_overwatch_hit_threshold")
                     except Exception:
                         pass
                     self._overwatch_flow_active = False

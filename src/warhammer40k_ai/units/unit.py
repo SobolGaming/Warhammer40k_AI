@@ -1778,6 +1778,12 @@ class Unit(
         r"the same enemy unit can only be affected by this ability once per turn",
         re.IGNORECASE,
     )
+    _POST_SHOOT_DISEMBARK_PSYCHIC_HIT_WOUND_BONUS_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the phase each time a friendly model that disembarked from this transport this turn makes a psychic attack "
+        r"that targets that enemy unit add (?P<hit>\d+) to the hit roll and add (?P<wound>\d+) to the wound roll",
+        re.IGNORECASE,
+    )
     _HAND_OF_ASURYAN_RE = re.compile(
         r"once per battle when this model is selected to shoot it can use this ability if it does until the end of the phase "
         r"its (?P<weapon>[a-z0-9 ]+?) weapon has a damage characteristic of (?P<damage>\d+)",
@@ -1829,6 +1835,44 @@ class Unit(
     _START_SHOOTING_PHASE_VISIBLE_BATTLESHOCK_RE = re.compile(
         r"at the start of your shooting phase select one enemy unit within (?P<range>\d+) (?:of )?and visible to this model "
         r"that enemy unit must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _START_SHOOTING_PHASE_VISIBLE_HIT_BONUS_RE = re.compile(
+        r"at the start of your shooting phase select one enemy unit that is visible to this psyker model "
+        r"until the end of the phase each time a model in this unit makes an attack that targets that enemy unit "
+        r"add (?P<val>\d+) to the hit roll",
+        re.IGNORECASE,
+    )
+    _RANGED_ATTACK_PSYCHIC_HIT_MONSTER_VEHICLE_HIT_DAMAGE_REROLL_RE = re.compile(
+        r"each time this model makes a ranged attack that targets a monster or vehicle unit that was hit by one or more psychic attacks "
+        r"made by a thousand sons psyker model from your army this phase including the doombolt ritual "
+        r"you can re roll the hit roll and you can re roll the damage roll",
+        re.IGNORECASE,
+    )
+    _RANGED_ATTACK_PSYCHIC_HIT_NONMONSTER_NONVEHICLE_STRENGTH_AP_BONUS_RE = re.compile(
+        r"each time this model makes a ranged attack that targets a unit excluding monsters and vehicles "
+        r"that was hit by one or more psychic attacks made by a thousand sons psyker model from your army this phase "
+        r"including the doombolt ritual improve the strength and armour penetration characteristics of that attack by (?P<val>\d+)",
+        re.IGNORECASE,
+    )
+    _DESTROYER_OF_FUTURES_OVERWATCH_RE = re.compile(
+        r"each time you target this unit with the fire overwatch stratagem hits are scored on unmodified hit rolls of (?P<base>\d)\+ "
+        r"when resolving that stratagem for each of those attacks that targets an enemy unit within (?P<range>\d+) "
+        r"of one or more thousand sons psyker units from your army a hit is scored on an unmodified hit roll of (?P<near>\d)\+ instead",
+        re.IGNORECASE,
+    )
+    _PROPHETIC_SENTINELS_STRATAGEM_RE = re.compile(
+        r"once per battle round you can target this unit with the fire overwatch or heroic intervention stratagem for 0cp",
+        re.IGNORECASE,
+    )
+    _SNARLING_PROTECTOR_HEROIC_RE = re.compile(
+        r"you can target this model with the heroic intervention stratagem for 0cp and can do so even if you have already targeted "
+        r"a different unit with that stratagem this phase",
+        re.IGNORECASE,
+    )
+    _SNARLING_PROTECTOR_CHARGE_REROLL_RE = re.compile(
+        r"in addition each time this model declares a charge that targets an enemy unit within engagement range of one or more "
+        r"thousand sons psyker units from your army you can re roll the charge roll",
         re.IGNORECASE,
     )
     _START_SHOOTING_PHASE_SPIRIT_THIEF_RE = re.compile(
@@ -2302,6 +2346,11 @@ class Unit(
         r"(?:if you do )?(?:and |then )?roll (?:\d+|one|two|three|four|five|six|seven|eight|nine|ten) d6 for each model in this unit "
         r"(?:adding (?P<fly_bonus>\d+) to each result if that enemy unit can fly )?"
         r"for each (?P<threshold>\d)\+? that (?:enemy )?unit suffers (?P<mw>d3|d6|\d+) mortal wounds?",
+        re.IGNORECASE,
+    )
+    _MOVE_OVER_NO_COVER_RE = re.compile(
+        r"each time this model ends a normal move select one enemy unit it moved over during that move "
+        r"until the end of the turn models in that unit cannot have the benefit of cover",
         re.IGNORECASE,
     )
     _GRENADE_PACK_FLYOVER_RE = re.compile(

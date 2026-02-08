@@ -1742,6 +1742,22 @@ class StratagemManager(
             return bool(fn(self.game))
         return False
 
+    def _unit_can_use_prophetic_sentinels_stratagem_discount(self, unit, *, stratagem_name: str = "") -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_prophetic_sentinels_stratagem_discount", None)
+        if callable(fn):
+            return bool(fn(self.game, stratagem_name=stratagem_name))
+        return False
+
+    def _unit_has_snarling_protector_heroic_intervention(self, unit) -> bool:
+        if unit is None:
+            return False
+        fn = getattr(unit, "can_use_snarling_protector_heroic_intervention", None)
+        if callable(fn):
+            return bool(fn(self.game))
+        return False
+
     def _daemonforge_phase_key(self) -> str:
         turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
         phase_name = str(self._current_phase_name or "").strip().upper()
@@ -1776,6 +1792,25 @@ class StratagemManager(
                 return True
         return False
 
+    def _overwatch_zero_cp_available(self, *, target_unit=None, candidates=None) -> bool:
+        if target_unit is not None:
+            return (
+                self._unit_can_use_traitor_enforcer_overwatch(target_unit)
+                or self._unit_can_use_prophetic_sentinels_stratagem_discount(
+                    target_unit,
+                    stratagem_name="OVERWATCH",
+                )
+            )
+        for cand in list(candidates or []):
+            if self._unit_can_use_traitor_enforcer_overwatch(cand):
+                return True
+            if self._unit_can_use_prophetic_sentinels_stratagem_discount(
+                cand,
+                stratagem_name="OVERWATCH",
+            ):
+                return True
+        return False
+
     def _counter_offensive_daemonforge_available(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
             return self._unit_can_use_daemonforge_counter_offensive(target_unit)
@@ -1793,6 +1828,7 @@ class StratagemManager(
                     target_unit,
                     enemy_unit=enemy_unit,
                 )
+                or self._unit_has_snarling_protector_heroic_intervention(target_unit)
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
@@ -1805,6 +1841,7 @@ class StratagemManager(
                     cand,
                     enemy_unit=enemy_unit,
                 )
+                or self._unit_has_snarling_protector_heroic_intervention(cand)
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
@@ -1879,7 +1916,7 @@ class StratagemManager(
             return result
 
         if int(getattr(self.player, "command_points", 0) or 0) < int(result["cp_cost"] or 0):
-            if name_u in ("OVERWATCH", "FIRE OVERWATCH") and self._overwatch_brutal_example_available(
+            if name_u in ("OVERWATCH", "FIRE OVERWATCH") and self._overwatch_zero_cp_available(
                 target_unit=context.get("shooter_unit") or context.get("target_unit") or context.get("unit"),
                 candidates=context.get("candidates"),
             ):
@@ -5216,7 +5253,17 @@ class StratagemManager(
                         )
                 except Exception:
                     raise
-                if self.player.command_points < eff_cost:
+                can_free_heroic = bool(
+                    self._unit_has_faultless_opportunist(unit)
+                    or self._unit_has_beast_handler_heroic_intervention(unit)
+                    or self._unit_has_guardians_of_the_machine_heroic_intervention(unit, enemy_unit=charging_unit)
+                    or self._unit_can_use_prophetic_sentinels_stratagem_discount(
+                        unit,
+                        stratagem_name="HEROIC INTERVENTION",
+                    )
+                    or self._unit_has_snarling_protector_heroic_intervention(unit)
+                )
+                if self.player.command_points < eff_cost and not can_free_heroic:
                     continue
                 candidates.append(unit)
         except Exception:
@@ -6986,10 +7033,14 @@ class StratagemManager(
         except Exception:
             raise
         if overwatch_used:
-            candidates = [u for u in candidates if self._unit_can_use_traitor_enforcer_overwatch(u)]
+            candidates = [
+                u
+                for u in candidates
+                if self._unit_can_use_traitor_enforcer_overwatch(u)
+            ]
             if not candidates:
                 return
-        can_free = any(self._unit_can_use_traitor_enforcer_overwatch(u) for u in candidates)
+        can_free = self._overwatch_zero_cp_available(candidates=candidates)
         if self.player.command_points < s.cp_cost and not can_free:
             return
         # Queue opportunity with minimal context; UI will choose shooter before resolving
@@ -8737,8 +8788,18 @@ class StratagemManager(
             # Apply Overwatch hit restriction: only unmodified 6 hits
             ok = False
             out_of_phase = True
+            overwatch_threshold = 6
+            try:
+                get_threshold = getattr(shooter, "get_destroyer_of_futures_overwatch_hit_threshold", None)
+                if callable(get_threshold):
+                    threshold = int(get_threshold(enemy_unit=enemy_unit, game=self.game) or 0)
+                    if threshold > 0:
+                        overwatch_threshold = int(threshold)
+            except Exception:
+                overwatch_threshold = 6
             try:
                 setattr(shooter, '_overwatch_sixes_only', True)
+                setattr(shooter, '_overwatch_hit_threshold', int(overwatch_threshold))
                 print(f"INFO: Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
                 ok = shooter.execute_shooting_declarations(declarations, self.game.map, out_of_phase=out_of_phase)
             finally:
@@ -8746,6 +8807,10 @@ class StratagemManager(
                     delattr(shooter, '_overwatch_sixes_only')
                 except Exception:
                     raise
+                try:
+                    delattr(shooter, "_overwatch_hit_threshold")
+                except Exception:
+                    pass
                 # If execution failed, ensure we do not mark the unit as having shot
                 if (not ok) and (not out_of_phase) and getattr(shooter, 'round_state', None):
                     shooter.round_state.shot_this_round = False
