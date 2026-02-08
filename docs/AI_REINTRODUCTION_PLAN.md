@@ -770,6 +770,20 @@ Time management is a concrete subsystem, not an open question.
 
 Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and replayable without any ML stack installed.
 
+Status snapshot (updated February 8, 2026):
+- Completed in codebase: PR1 through PR11.
+- Pending: PR12 through PR15.
+- Implemented foundation docs:
+  - `docs/DECISION_RECORD_TELEMETRY.md`
+  - `docs/DECISION_RECORD_REPLAY.md`
+  - `docs/STATE_BLOB_SCHEMA.md`
+  - `docs/TIER1_PLAN_SCHEMA.md`
+  - `docs/TIER2_ORCHESTRATION.md`
+  - `docs/TIME_MANAGER_POLICY.md`
+  - `docs/MOVEMENT_INTENT.md`
+  - `docs/PATH_WITNESS_CONTRACT.md`
+  - `docs/TIGHT_CLEARANCE_POLICY.md`
+
 1. [done] Ruleset/version plumbing + deterministic replay
    - Goal: make the engine replayable and patch-versioned before any AI logic lands.
    - Ruleset identity:
@@ -814,7 +828,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - Add or refresh a Decision types catalog (even if partial initially).
    - Policy: no ML libs.
 
-3. DecisionRecord core logging + schema enforcement + HumanActionCandidate injection
+3. [done] DecisionRecord core logging + schema enforcement + HumanActionCandidate injection
    - Goal: land telemetry core before dual-view/stateblob and replay strictness.
    - DecisionRecord writer:
      - Emit DecisionRecord for every decision: include global_seed, decision_seed, full candidates, mask, timing, and outcome.
@@ -832,7 +846,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - Add a telemetry contract appendix pointing to the JSON schema.
    - Policy: no ML libs.
 
-4. State encoding foundation with canonical perspectives
+4. [done] State encoding foundation with canonical perspectives
    - Goal: define stable, patch-resilient state blobs and feature extraction without ML.
    - Canonicalization:
      - Define StateBlob contents (full JSON snapshot or delta reference path).
@@ -849,7 +863,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - StateBlob schema description (even if not JSON-schema yet).
    - Policy: no ML libs.
 
-5. DecisionRecord dual-view observation + deterministic DecisionRecord replayer
+5. [done] DecisionRecord dual-view observation + deterministic DecisionRecord replayer
    - Goal: complete replay-grade telemetry once StateBlob and perspective contracts are in place.
    - Dual view observation:
      - Store omniscient_state snapshot/delta and player_obs_state[player_id] snapshot/delta.
@@ -863,7 +877,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - Document strict replay guarantees and expected failure modes.
    - Policy: no ML libs.
 
-6. Tier 1 Plan schema integrated into decision contexts
+6. [done] Tier 1 Plan schema integrated into decision contexts
    - Goal: make the Plan real and plumb it end-to-end, even if heuristic initially.
    - Plan schema:
      - Implement Plan object exactly as documented: primary/deny, secondary posture, risk, CP posture, unit tiers.
@@ -878,7 +892,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - Plan schema + example.
    - Policy: no ML libs.
 
-7. Compute Budget / Time Manager
+7. [done] Compute Budget / Time Manager
    - Goal: make tournament-speed a hard contract now, not a later optimization.
    - Time manager:
      - Per decision type caps + tier multipliers (P0/P1/P2).
@@ -899,7 +913,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - Time manager policies and timeout behavior.
    - Policy: no ML libs.
 
-8. MovementIntent schema + solver hooks + minimum PathWitness emission
+8. [done] MovementIntent schema + solver hooks + minimum PathWitness emission
    - Goal: encode intent and let the solver generate legal candidates with replay-grade path references from day one.
    - MovementIntent implementation:
      - Objective targets, deny regions, weights, anchors (0-3), constraint toggles.
@@ -917,7 +931,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - MovementIntent examples and expected candidate metrics.
    - Policy: no ML libs.
 
-9. PathWitness artifacts + continuous validation hardening
+9. [done] PathWitness artifacts + continuous validation hardening
    - Goal: enforce path legality invariants and compact replay/training storage.
    - Witness formats:
      - CorridorWitness per base profile group.
@@ -935,7 +949,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - PathWitness contract (ensure implementation matches).
    - Policy: no ML libs.
 
-10. Tight clearance detection + pivot/orientation constraints
+10. [done] Tight clearance detection + pivot/orientation constraints
    - Goal: make oval bases and hull footprints behave credibly in tight gaps.
    - Clearance profiling:
      - Compute local clearance along corridor.
@@ -950,7 +964,7 @@ Note: PRs 1-13 explicitly avoid ML libraries. Keep the engine importable and rep
      - Regression scenarios for threading cases (major does not fit, minor does).
    - Policy: no ML libs.
 
-11. Tier 2 orchestration scaffolding
+11. [done] Tier 2 orchestration scaffolding
    - Goal: turn Plan into per-unit tasks and intents, with compute tiers.
    - Task schema:
      - SCORE / SCREEN / STAGE / TRADE / DENY / PROTECT / BAIT.
@@ -1087,6 +1101,7 @@ Note: PyTorch and supporting ML libraries are intentionally deferred until the o
 
 - Painted bonus always applies. Reward normalization assumes 90 effective VP.
 - Every engine decision must route through the unified Decision API with deterministic request/response mapping. Gaps must be corrected.
+- Engineering roadmap foundation PRs 3-11 are implemented in-engine and documented; remaining roadmap work starts at PR12.
 
 ### ML Gate Criteria (Must Be Closed Before PR 15)
 

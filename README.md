@@ -132,6 +132,7 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 
 - **AI planning and telemetry**
   - [AI reintroduction plan](docs/AI_REINTRODUCTION_PLAN.md): HRL architecture, movement solver design, and training roadmap.
+    - Roadmap status: PR1-PR11 completed; PR12+ pending (see Engineering Roadmap section in the plan).
   - [DecisionRecord schema](docs/DECISION_RECORD_SCHEMA.json): telemetry contract for human/AI decisions and replay.
   - [DecisionRecord telemetry](docs/DECISION_RECORD_TELEMETRY.md): runtime record guarantees and required fields.
   - [DecisionRecord replay](docs/DECISION_RECORD_REPLAY.md): strict replay guarantees and failure modes.
