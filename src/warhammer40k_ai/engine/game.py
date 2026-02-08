@@ -787,6 +787,38 @@ class Game(
             models = list(getattr(unit, "models", []) or [])
             if not models:
                 continue
+            single_model_regain_texts: set[str] = set()
+            for ab in list(getattr(unit, "possible_abilities", []) or []):
+                desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+                text = str(desc or "")
+                low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                if "command phase" not in low or "regains" not in low or "wounds" not in low:
+                    continue
+                m_single = re.search(r"one model in this unit regains up to (\d+|d3) lost wounds", low)
+                if not m_single:
+                    continue
+                single_model_regain_texts.add(low)
+                token = str(m_single.group(1) or "").strip().lower()
+                if token == "d3":
+                    amount = int(get_roll("D3") or 0)
+                else:
+                    amount = int(token or 0)
+                if amount <= 0:
+                    continue
+                alive_models = [m for m in list(models or []) if bool(getattr(m, "is_alive", True))]
+                if not alive_models:
+                    continue
+                damaged = []
+                for model in list(alive_models):
+                    base_wounds = int(getattr(model, "_base_wounds", getattr(model, "wounds", 0)) or 0)
+                    current_wounds = int(getattr(model, "wounds", 0) or 0)
+                    if base_wounds > current_wounds:
+                        damaged.append((base_wounds - current_wounds, model, base_wounds, current_wounds))
+                if not damaged:
+                    continue
+                damaged.sort(key=lambda item: item[0], reverse=True)
+                _missing, target_model, base_wounds, current_wounds = damaged[0]
+                target_model.wounds = min(base_wounds, current_wounds + amount)
             for model in models:
                 if not bool(getattr(model, "is_alive", True)):
                     continue
@@ -794,6 +826,8 @@ class Game(
                     desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
                     text = str(desc or "")
                     low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                    if low in single_model_regain_texts:
+                        continue
                     if "command phase" not in low or "regains" not in low or "wounds" not in low:
                         continue
                     # Targeted support abilities (e.g., "select one friendly ... that model regains ...")
@@ -1215,6 +1249,44 @@ class Game(
                         break
                 if engaged:
                     continue
+                min_enemy_distance = float(ability.get("min_enemy_distance_horiz", 0) or 0)
+                if min_enemy_distance > 0:
+                    from ..utility.aura_utils import horizontal_distance_between_bases_2d
+
+                    too_close = False
+                    try:
+                        root_models = list(root.get_attached_unit_models() or [])
+                    except Exception:
+                        root_models = list(getattr(root, "models", []) or [])
+                    root_models = [m for m in list(root_models or []) if bool(getattr(m, "is_alive", True))]
+                    for enemy in list(game_map.get_enemy_units(root) or []):
+                        if enemy is None or not enemy.is_alive():
+                            continue
+                        if not getattr(enemy, "deployed", True):
+                            continue
+                        try:
+                            enemy_models = list(enemy.get_attached_unit_models() or [])
+                        except Exception:
+                            enemy_models = list(getattr(enemy, "models", []) or [])
+                        enemy_models = [m for m in list(enemy_models or []) if bool(getattr(m, "is_alive", True))]
+                        for model in list(root_models or []):
+                            if too_close:
+                                break
+                            base_a = getattr(model, "model_base", None)
+                            if base_a is None:
+                                continue
+                            for enemy_model in list(enemy_models or []):
+                                base_b = getattr(enemy_model, "model_base", None)
+                                if base_b is None:
+                                    continue
+                                dist = float(horizontal_distance_between_bases_2d(base_a, base_b))
+                                if dist <= float(min_enemy_distance) + 1e-6:
+                                    too_close = True
+                                    break
+                        if too_close:
+                            break
+                    if too_close:
+                        continue
                 eligible.append({"unit": root, "ability": ability})
 
             if not eligible:

@@ -570,12 +570,19 @@ class RulesParsingMixin:
             norm = re.sub(r"'s\b", "s", norm)
             norm = re.sub(r"[^a-z0-9]+", " ", norm)
             norm = re.sub(r"\s+", " ", norm).strip()
-            if pattern.fullmatch(norm):
+            m = pattern.fullmatch(norm)
+            if m:
+                min_enemy_distance = 0
+                try:
+                    min_enemy_distance = int(m.group("min_dist") or 0)
+                except Exception:
+                    min_enemy_distance = 0
                 return {
                     "name": name or "Strategic Reserves",
                     "description": desc or "",
                     "once_per_battle": "once per battle" in norm,
                     "ability_key": "opponent_turn_strategic_reserves",
+                    "min_enemy_distance_horiz": int(min_enemy_distance or 0),
                 }
         return None
 

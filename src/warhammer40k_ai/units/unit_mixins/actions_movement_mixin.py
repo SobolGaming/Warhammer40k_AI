@@ -1358,6 +1358,12 @@ class ActionsMovementMixin:
             limit = ""
             if self._MODEL_ONCE_PER_BATTLE_ROUND_UNMODIFIED_SIX_RE.fullmatch(normalized):
                 limit = "battle_round"
+            elif (
+                "once per turn" in normalized
+                and "change the result of one hit roll one wound roll or one saving throw made for this model to an unmodified 6"
+                in normalized
+            ):
+                limit = "battle_round"
             elif self._MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE.fullmatch(normalized):
                 limit = "battle"
             if not limit:

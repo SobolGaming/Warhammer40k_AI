@@ -2468,6 +2468,46 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Shooting phase: choose Ignores Cover, Lethal Hits, or Sustained Hits D3 for Bolt of Change until end of phase.",
         ),
+        ("TS", "Ambushing Hunters"): (
+            "Supported",
+            "End of opponent turn: optional Strategic Reserves move while more than 6\" horizontally from enemies.",
+        ),
+        ("TS", "Binding Tendrils (Psychic)"): (
+            "Supported",
+            "After shooting with Arcane Fire, hit enemy unit is pinned/ensnared: -2 Move and -2 to Charge rolls until next turn.",
+        ),
+        ("TS", "Bringers of Change"): (
+            "Supported",
+            "Ranged attacks re-roll wound rolls of 1; full wound re-rolls while targeting units within range of uncontrolled objectives.",
+        ),
+        ("TS", "Glimpse of Eternity (Psychic)"): (
+            "Supported",
+            "Model can change one Hit/Wound/Save roll to an unmodified 6 (once per round/turn parser support).",
+        ),
+        ("TS", "One Head Looks Back (Aura)"): (
+            "Supported",
+            "Opponent targeted Stratagem CP increase aura within 12\".",
+        ),
+        ("TS", "Prophesied Doom"): (
+            "Supported",
+            "After ending a charge move, roll one D6 per model and inflict 1 mortal wound on each 4+.",
+        ),
+        ("TS", "Regenerating Monstrosities"): (
+            "Supported",
+            "Start of each Command phase: one model in the unit regains up to 3 lost wounds.",
+        ),
+        ("TS", "Rites of Coalescence"): (
+            "Supported",
+            "While unit contains a PSYKER model, incoming attacks suffer -1 to Wound rolls.",
+        ),
+        ("TS", "Scryer of Fates (Psychic)"): (
+            "Supported",
+            "After deployment, redeploy up to three units; selected units can be placed into Strategic Reserves regardless of current limits.",
+        ),
+        ("TS", "Siege Shield"): (
+            "Supported",
+            "Demolisher cannon can target units in Engagement Range and ignores Hit penalty while engaged.",
+        ),
         ("DG", "Mischief Makers"): (
             "Supported",
             "Enemy non-TITAN units selected to fight while engaged suffer -1 to hit with melee attacks until end of phase.",

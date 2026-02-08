@@ -1417,6 +1417,17 @@ class WargearProfile:
                         continue
                 if not matched:
                     continue
+            req_contains_kw = str(entry.get("requires_unit_contains_keyword", "") or "").strip()
+            if req_contains_kw:
+                try:
+                    root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+                except Exception:
+                    root = target_unit
+                contains_fn = getattr(root, "_unit_contains_model_with_keyword", None)
+                if not callable(contains_fn):
+                    continue
+                if not bool(contains_fn(req_contains_kw)):
+                    continue
             out.append(entry)
         if key == "defensive_wound_mods":
             try:

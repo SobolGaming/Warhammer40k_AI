@@ -893,6 +893,8 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._POST_SHOOT_PINNED_RE.fullmatch(normalized)
             if not m:
+                m = self._POST_SHOOT_PINNED_ALT_RE.fullmatch(normalized)
+            if not m:
                 continue
             weapon_raw = str(m.group("weapon") or "").strip()
             if not weapon_raw:

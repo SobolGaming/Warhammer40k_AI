@@ -1203,7 +1203,8 @@ class Unit(
                 if "strength characteristic" in norm:
                     continue
                 pattern = (
-                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit )?"
+                    r"(?:while (?:(?:a|an|the) (?P<lemma>[a-z0-9 ]+)|this)(?: model)? is leading (?:this|a) unit |"
+                    r"while this unit contains one or more (?P<lemma_contains>[a-z0-9 ]+) models )?"
                     r"each time (?:an|a) (?:(?P<atype>melee|ranged) )?attack(?:s)? "
                     r"(?:targets|target|is allocated to) "
                     r"(?:this model|this unit|this model s unit|a model in this unit) "
@@ -1220,8 +1221,9 @@ class Unit(
                     continue
                 atype = (m.group("atype") or "any").strip().lower()
                 leader_kw = _normalize_leading_keyword(m.group("lemma"))
+                contains_kw = _normalize_leading_keyword(m.group("lemma_contains"))
                 label = (name or "Defensive ability").strip() or "Defensive ability"
-                key = (label.lower(), atype, int(val), leader_kw or "")
+                key = (label.lower(), atype, int(val), leader_kw or "", contains_kw or "")
                 if key in seen_generic_wound_mods:
                     continue
                 seen_generic_wound_mods.add(key)
@@ -1235,6 +1237,8 @@ class Unit(
                 }
                 if leader_kw:
                     entry["requires_leading_keyword"] = str(leader_kw)
+                if contains_kw:
+                    entry["requires_unit_contains_keyword"] = str(contains_kw)
                 items.append(entry)
                 sr["defensive_wound_mods"] = items
                 self.special_rules = sr
@@ -1575,7 +1579,8 @@ class Unit(
     )
     _OPPONENT_TURN_STRATEGIC_RESERVES_RE = re.compile(
         r"(?:once per battle(?:,)?\s+)?(?:while this model is leading a unit )?at the end of your opponents turn if "
-        r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit) is not within engagement range of one or more enemy units? "
+        r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit) "
+        r"(?:is not within engagement range of one or more enemy units?|is more than (?P<min_dist>\d+) horizontally away from all enemy units?) "
         r"you can remove (?:it|that unit|this unit) from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
     )
@@ -1966,6 +1971,13 @@ class Unit(
         r"from charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_PINNED_ALT_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy (?:(?P<infantry>infantry) )?unit "
+        r"hit by one or more of those attacks made with (?:(?:a|an|the|its)\s+)?(?P<weapon>[a-z0-9 ]+) "
+        r"until the start of your next turn that unit is (?:pinned|ensnared) while a unit is (?:pinned|ensnared) "
+        r"subtract (?P<move>\d+) from (?:that unit s|its) move characteristic and subtract (?P<charge>\d+) from charge rolls made for it",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_PINNED_UNIT_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
@@ -2247,7 +2259,7 @@ class Unit(
         re.IGNORECASE,
     )
     _MODEL_ONCE_PER_BATTLE_ROUND_UNMODIFIED_SIX_RE = re.compile(
-        r"once (?:per|in each) battle round after (?:making )?(?:a )?hit roll (?:a )?wound roll or (?:a )?"
+        r"once (?:per|in each) (?:battle round|turn) after (?:making )?(?:a )?hit roll (?:a )?wound roll or (?:a )?"
         r"(?:saving throw|save roll)(?: is made| made)? for this model you can change the result of that roll to "
         r"(?:an unmodified |a )?6",
         re.IGNORECASE,
