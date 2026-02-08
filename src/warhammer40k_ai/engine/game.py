@@ -212,6 +212,8 @@ class Game(
         self._brazen_fury_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Horde Move shooting snapshots (attacker -> {target: model_count})
         self._horde_move_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # CSM: Guns Blazing trigger snapshots (attacker -> [reactive shooters])
+        self._guns_blazing_shooting_targets: Dict['Unit', List['Unit']] = {}
         # World Eaters: Frenzy (Helbrute) target snapshots (attacker -> [targets])
         self._frenzy_shooting_targets: Dict['Unit', List['Unit']] = {}
         self._frenzy_fight_targets: Dict['Unit', List['Unit']] = {}

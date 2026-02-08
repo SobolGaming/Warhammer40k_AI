@@ -1033,6 +1033,17 @@ class KeywordsDetachmentsMixin:
         self._ability_cache['blood_surge'] = found
         return found
 
+    def has_guns_blazing(self) -> bool:
+        """Check if the unit has the Guns Blazing datasheet ability."""
+        if "guns_blazing" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["guns_blazing"])
+
+        found, _ = self._find_ability_with_patterns(["guns blazing"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["guns_blazing"] = bool(found)
+        return bool(found)
+
     def has_brazen_fury(self) -> bool:
         """Check if the unit has the Brazen Fury detachment ability (Possessed Slaughterband)."""
         if 'brazen_fury' in getattr(self, '_ability_cache', {}):
@@ -3128,6 +3139,25 @@ class KeywordsDetachmentsMixin:
         owner = str(getattr(current_player, "name", "") or "")
         return f"{br}:{pname}:{owner}"
 
+    def _guns_blazing_turn_key(self, game=None) -> str:
+        if game is None:
+            try:
+                game = getattr(getattr(self.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        try:
+            br = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            br = 0
+        try:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        except Exception:
+            current_player = None
+        owner_id = str(getattr(current_player, "id", "") or "")
+        owner_name = str(getattr(current_player, "name", "") or "")
+        owner = owner_id or owner_name
+        return f"{br}:{owner}"
+
     def blood_surge_used_this_phase(self, game=None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -3154,6 +3184,20 @@ class KeywordsDetachmentsMixin:
         if not isinstance(sr, dict):
             sr = {}
         sr["brazen_fury_used_phase_key"] = self._brazen_fury_phase_key(game)
+        self.special_rules = sr
+
+    def guns_blazing_used_this_turn(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._guns_blazing_turn_key(game)
+        return str(sr.get("guns_blazing_used_turn_key", "")) == key
+
+    def mark_guns_blazing_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["guns_blazing_used_turn_key"] = self._guns_blazing_turn_key(game)
         self.special_rules = sr
 
     def can_blood_surge(self, game=None, game_map=None) -> bool:
@@ -3220,6 +3264,48 @@ class KeywordsDetachmentsMixin:
         except Exception:
             pass
         return True
+
+    def can_use_guns_blazing(self, game=None, game_map=None, *, enemy_unit=None) -> bool:
+        if not self.has_guns_blazing():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        try:
+            if self.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(self, "is_embarked", False)) or bool(getattr(self, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        if self.guns_blazing_used_this_turn(game):
+            return False
+
+        owner_army = self.get_parent_army()
+        owner_player = getattr(owner_army, "player", None) if owner_army is not None else None
+        current_player = None
+        if game is not None:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+        if owner_player is not None and current_player is owner_player:
+            return False
+
+        if enemy_unit is None:
+            return True
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return False
+        try:
+            enemy_army = enemy_root.get_parent_army()
+        except Exception:
+            enemy_army = None
+        if enemy_army is None or enemy_army is owner_army:
+            return False
+        return bool(getattr(enemy_root, "is_alive", lambda: False)())
 
     def has_reanimation_protocols(self) -> bool:
         """Check if the unit has Reanimation Protocols (Necrons army rule)."""

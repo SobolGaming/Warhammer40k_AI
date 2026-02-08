@@ -2187,6 +2187,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Warpsmith"): ("Supported", "Conditional Lone Operative within 3\" of friendly HERETIC ASTARTES VEHICLE units."),
         ("CSM", "Indentured Daemon Engines"): ("Supported", "Conditional Lone Operative within 3\" of friendly DAEMON VEHICLE units."),
         ("CSM", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
+        ("CSM", "Guns Blazing"): (
+            "Supported",
+            "Once per turn in opponent Shooting phase: when an enemy unit shoots a friendly HERETIC ASTARTES unit within 3\", this model can shoot that enemy unit out of phase.",
+        ),
         ("CSM", "The Warmaster"): (
             "Supported",
             "Command phase choice: select one Warmaster ability until your next Command phase; only the selected Paragon/Mark/Lord ability is active.",
@@ -2297,6 +2301,10 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Friendly HERETIC ASTARTES INFANTRY within 6\" gain Benefit of Cover vs ranged attacks.",
         ),
+        ("CSM", "Mark of Chaos Ascendant (Aura)"): (
+            "Supported",
+            "Warmaster-selected aura: friendly HERETIC ASTARTES INFANTRY/MOUNTED units within 6\" (excluding DAMNED) have a 4+ invulnerable save.",
+        ),
         ("CSM", "Paragon of Hatred (Aura)"): (
             "Supported",
             "Friendly HERETIC ASTARTES (excluding DAMNED) within 6\" gain full Hit re-roll support.",
@@ -2316,6 +2324,18 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Mind-breaking Mutations (Aura)"): (
             "Supported",
             "Enemy non-VEHICLE units within 3\" suffer -1 Objective Control.",
+        ),
+        ("CSM", "Hamadrya's Knowledge (Psychic)"): (
+            "Supported",
+            "Reactive move trigger: once per battle, when an enemy ends a Normal/Advance/Fall Back move within 9\" and this unit is not engaged, it can make a Normal move up to D6\".",
+        ),
+        ("CSM", "Malign Cover"): (
+            "Supported",
+            "Fortification cover support: ranged attacks allocated to models not fully visible because of this FORTIFICATION grant Benefit of Cover.",
+        ),
+        ("CSM", "Infused with the Blessings of Nurgle"): (
+            "Supported",
+            "Post-shoot selection: choose a hit enemy unit; it is marked Afflicted until the start of your next turn.",
         ),
         ("EC", "Daemon Primarch of Slaanesh"): ("Supported", "Opponent Command phase selection of Beguiling Form, Daemonic Speed, or Enthralling Hypnosis until the next opponent Command phase."),
         ("EC", "Daemonic Poisons"): ("Supported", "After shooting/fight, select a hit enemy unit to poison; poisoned units roll D6 in each Command phase (4+ -> D3 mortal wounds)."),

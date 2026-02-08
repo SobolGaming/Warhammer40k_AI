@@ -163,13 +163,37 @@ class NurglesGiftManager:
         except Exception:
             pass
 
+        if game is None:
+            try:
+                army = unit.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None)
+            except Exception:
+                game = None
+
+        # Datasheet effects can mark units as Afflicted outside contagion range checks.
+        sr = getattr(unit, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("post_shoot_afflicted_active"):
+            owner_id = str(sr.get("post_shoot_afflicted_owner", "") or "")
+            source_army = None
+            if game is not None and owner_id:
+                for p in list(getattr(game, "players", []) or []):
+                    if p is None:
+                        continue
+                    if str(getattr(p, "id", "") or "") != owner_id:
+                        continue
+                    source_army = getattr(p, "army", None)
+                    if source_army is None and hasattr(p, "get_army"):
+                        source_army = p.get_army()
+                    if source_army is not None:
+                        break
+            if source_army is not None:
+                mgr = getattr(source_army, "nurgles_gift", None)
+                if mgr is not None:
+                    plague = mgr.get_active_plague()
+                    if plague is not None:
+                        return plague
+
         if game_map is None:
-            if game is None:
-                try:
-                    army = unit.get_parent_army()
-                    game = getattr(getattr(army, "player", None), "game", None)
-                except Exception:
-                    game = None
             if game is not None:
                 game_map = getattr(game, "map", None)
         if game_map is None:

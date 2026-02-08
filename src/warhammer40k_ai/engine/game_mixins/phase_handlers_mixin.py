@@ -899,6 +899,39 @@ class GamePhaseHandlersMixin:
                         sr.pop(key, None)
                     unit.special_rules = sr
 
+    def _on_phase_start_post_shoot_afflicted_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear post-shoot Afflicted markers at the start of the owner's Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Post-shoot Afflicted cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Post-shoot Afflicted cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if str(sr.get("post_shoot_afflicted_owner", "") or "") != owner_id:
+                    continue
+                if not sr.get("post_shoot_afflicted_active"):
+                    continue
+                for key in (
+                    "post_shoot_afflicted_active",
+                    "post_shoot_afflicted_owner",
+                    "post_shoot_afflicted_turn",
+                    "post_shoot_afflicted_source",
+                ):
+                    sr.pop(key, None)
+                unit.special_rules = sr
+
     def _on_phase_start_pinned_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Pinned effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

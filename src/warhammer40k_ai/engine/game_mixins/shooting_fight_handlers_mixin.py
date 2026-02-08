@@ -1172,6 +1172,75 @@ class GameShootingFightHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_unit_shooting_resolved_post_shoot_afflicted(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot Afflicted requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        specs = attacker_unit.unit_post_shoot_afflicted_specs() or []
+        if not specs:
+            return
+
+        for spec in specs:
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Afflicted").strip() or "Afflicted"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit to Afflict.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_afflicted",
+                    "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
+
     def _on_unit_shooting_resolved_post_shoot_no_cover(
         self,
         attacker_unit=None,
@@ -3013,6 +3082,177 @@ class GameShootingFightHandlersMixin:
                 max_dist = int(self.roll_blood_surge_distance(target) or 0)
                 move_fn(getattr(self, "map", None), max_dist)
                 target.mark_blood_surge_used(self)
+
+    def _on_shooting_targets_selected_guns_blazing(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None:
+            return
+        if attacker_player is not self.get_current_player():
+            return
+
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+        except Exception:
+            return
+
+        snapshot = list(getattr(self, "_guns_blazing_shooting_targets", {}).get(attacking_unit, []) or [])
+        seen_ids = {str(get_entity_id(u) or "") for u in snapshot if u is not None}
+
+        try:
+            players = list(self.players or [])
+        except Exception:
+            players = []
+        for player in players:
+            if player is None or player is attacker_player:
+                continue
+            army = self._get_player_army(player)
+            if army is None:
+                continue
+            roots: dict[str, Any] = {}
+            for unit in list(getattr(army, "units", []) or []):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if not rid:
+                    continue
+                roots[rid] = root
+            for rid in sorted(list(roots.keys())):
+                root = roots[rid]
+                if rid in seen_ids:
+                    continue
+                if not bool(getattr(root, "has_guns_blazing", lambda: False)()):
+                    continue
+                if not bool(getattr(root, "can_use_guns_blazing", lambda **_k: False)(game=self, game_map=game_map)):
+                    continue
+                eligible = False
+                for target in list(target_units or []):
+                    if target is None:
+                        continue
+                    try:
+                        target_root = target.get_attached_unit_root()
+                    except Exception:
+                        target_root = target
+                    if target_root is None:
+                        continue
+                    if target_root.get_parent_army() is not army:
+                        continue
+                    try:
+                        if not target_root.has_any_keyword("HERETIC ASTARTES"):
+                            continue
+                    except Exception:
+                        continue
+                    if unit_within_range_of_unit(root, target_root, 3.0, use_attached_aggregate=True):
+                        eligible = True
+                        break
+                if not eligible:
+                    continue
+                snapshot.append(root)
+                seen_ids.add(rid)
+
+        if not snapshot:
+            return
+        if not hasattr(self, "_guns_blazing_shooting_targets") or not isinstance(
+            getattr(self, "_guns_blazing_shooting_targets", None), dict
+        ):
+            self._guns_blazing_shooting_targets = {}
+        self._guns_blazing_shooting_targets[attacking_unit] = list(snapshot)
+
+    def _on_unit_shooting_resolved_guns_blazing(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        shots = {}
+        try:
+            shots = getattr(self, "_guns_blazing_shooting_targets", {})
+        except Exception:
+            shots = {}
+        if not isinstance(shots, dict):
+            return
+        targets = list(shots.pop(attacker_unit, []) or [])
+        if not targets:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None or attacker_player is not self.get_current_player():
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        pending_for_source: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_DECLARE_SHOTS:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if not bool(ctx.get("guns_blazing_flow", False)):
+                    continue
+                uid = str(ctx.get("unit_id", "") or "")
+                if uid:
+                    pending_for_source.add(uid)
+
+        for source in list(targets):
+            if source is None:
+                continue
+            try:
+                root = source.get_attached_unit_root()
+            except Exception:
+                root = source
+            if root is None:
+                continue
+            source_id = str(get_entity_id(root) or "")
+            if not source_id:
+                continue
+            if source_id in pending_for_source:
+                continue
+            if not bool(getattr(root, "can_use_guns_blazing", lambda **_k: False)(game=self, game_map=game_map, enemy_unit=attacker_root)):
+                continue
+            if not self._setup_reactive_can_shoot_target(root, attacker_root):
+                continue
+            player = getattr(root.get_parent_army(), "player", None)
+            if player is None:
+                continue
+            request = self._queue_setup_reactive_shooting_decision(
+                player=player,
+                unit=root,
+                target_unit=attacker_root,
+                source="Guns Blazing",
+            )
+            if request is None:
+                continue
+            request.context["guns_blazing_flow"] = True
+            request.context["guns_blazing_source"] = "Guns Blazing"
+            request.context["guns_blazing_enemy_unit_id"] = str(get_entity_id(attacker_root) or "")
+            request.context["guns_blazing_unit_id"] = source_id
+            pending_for_source.add(source_id)
 
     def _on_shooting_targets_selected_brazen_fury(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:

@@ -2935,6 +2935,40 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
             except Exception:
                 pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_afflicted":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                current_turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                current_turn = 0
+            ability_name = str(ctx.get("ability_name", "") or "Afflicted").strip() or "Afflicted"
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_afflicted_active"] = True
+            sr["post_shoot_afflicted_owner"] = owner_id
+            sr["post_shoot_afflicted_turn"] = int(current_turn or 0)
+            sr["post_shoot_afflicted_source"] = ability_name
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{ability_name}: {tname} is Afflicted until the start of your next turn.",
+                )
+            except Exception:
+                pass
     if str(ctx.get("ability", "") or "") == "post_shoot_keyword_wound_reroll":
         if chosen is not None:
             try:

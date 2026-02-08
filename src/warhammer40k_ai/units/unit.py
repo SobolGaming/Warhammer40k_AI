@@ -1586,7 +1586,7 @@ class Unit(
         re.IGNORECASE,
     )
     _ENEMY_MOVE_REACTIVE_D6_RE = re.compile(
-        r"once\s+per\s+turn,?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
+        r"once\s+per\s+(?:turn|battle),?\s+when\s+an\s+enemy\s+unit\s+ends\s+a\s+normal(?:,)?\s+advance\s+or\s+fall\s+back\s+move\s+"
         r"within\s+(?P<range>\d+)\s*\"?\s+of\s+this\s+(?:model(?: s)? unit|unit|model)"
         r"(?:\s+if\s+this\s+unit\s+is\s+not\s+within\s+engagement\s+range\s+of\s+(?:one\s+or\s+more|any)\s+enemy\s+units?)?"
         r".*?make\s+a\s+normal\s+move\s+of\s+up\s+to\s+(?P<move>d6|\d+)",
@@ -1916,6 +1916,11 @@ class Unit(
         r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?until the start of your next turn that enemy unit is suppressed "
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_AFFLICTED_RE = re.compile(
+        r"in your shooting phase each time this (?:model|unit) is selected to shoot after this (?:model|unit) has shot "
+        r"select one enemy unit hit by one or more of those attacks until the start of your next turn that enemy unit is afflicted",
         re.IGNORECASE,
     )
     _POST_SHOOT_SNARE_RE = re.compile(

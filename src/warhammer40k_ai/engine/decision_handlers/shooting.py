@@ -307,6 +307,10 @@ def _apply_declare_shots(game: object, request: DecisionRequest, result: Decisio
     if not declarations:
         return False
     success = bool(unit.execute_shooting_declarations(declarations, game_map, out_of_phase=out_of_phase))
+    if success and bool(request.context.get("guns_blazing_flow", False)):
+        mark_used = getattr(unit, "mark_guns_blazing_used", None)
+        if callable(mark_used):
+            mark_used(game)
     try:
         if hasattr(unit, "_clear_formless_horror_allowed"):
             unit._clear_formless_horror_allowed()
