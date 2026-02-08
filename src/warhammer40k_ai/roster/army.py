@@ -273,6 +273,7 @@ class Army:
         self.voice_of_command = None
         self.gate_of_infinity = None
         self.daemon_primarch_slaanesh = None
+        self.csm_warmaster = None
         self.emperors_children = None
         self.emperors_children_detachments = None
         self.deathstrike = None
@@ -381,6 +382,10 @@ class Army:
         if fid == "GK":
             from ..rules.gate_of_infinity import GateOfInfinityManager
             self.gate_of_infinity = GateOfInfinityManager(self)
+
+        if fid == "CSM":
+            from ..rules.csm_warmaster import WarmasterManager
+            self.csm_warmaster = WarmasterManager(self)
 
         from ..rules.detachment_registry import (
             DETACHMENT_MANAGER_BY_FACTION_ID,

@@ -2187,6 +2187,34 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("CSM", "Warpsmith"): ("Supported", "Conditional Lone Operative within 3\" of friendly HERETIC ASTARTES VEHICLE units."),
         ("CSM", "Indentured Daemon Engines"): ("Supported", "Conditional Lone Operative within 3\" of friendly DAEMON VEHICLE units."),
         ("CSM", "Blood Surge"): ("Supported", "Opponent Shooting phase: optional D6+2\" move toward closest non-AIRCRAFT enemy; blocked if Battle-shocked/engaged; once per phase."),
+        ("CSM", "The Warmaster"): (
+            "Supported",
+            "Command phase choice: select one Warmaster ability until your next Command phase; only the selected Paragon/Mark/Lord ability is active.",
+        ),
+        ("CSM", "Voice Eater"): (
+            "Supported",
+            "Enemy non-MONSTER/VEHICLE units within Engagement Range cannot be targeted by Stratagems.",
+        ),
+        ("CSM", "Daemonforge"): (
+            "Supported",
+            "Once per Fight phase, one unit with this ability can use Counter-offensive for 0CP even if already used this phase.",
+        ),
+        ("CSM", "Chirurgeon"): (
+            "Supported",
+            "First time this unit's FABIUS BILE model is destroyed: end-of-phase 2+ return with full wounds; if attached when destroyed, return attached to that unit.",
+        ),
+        ("CSM", "Enrage Machine Spirits"): (
+            "Supported",
+            "End of your Movement phase: optional enemy VEHICLE within range takes a Battle-shock test.",
+        ),
+        ("CSM", "Flying Horror"): (
+            "Supported",
+            "After this model ends a Normal/Advance move, select a moved-over enemy unit to take a Battle-shock test.",
+        ),
+        ("CSM", "Enhanced Warriors"): (
+            "Supported",
+            "If attached at battle start, bodyguard models gain +1 Toughness and +1 Strength on melee weapons.",
+        ),
         ("CSM", "Chosen Marauders"): ("Supported", "Shoot and charge after Advance/Fall Back."),
         ("CSM", "Hovering Death"): ("Supported", "Shoot and charge after Falling Back."),
         ("CSM", "Daemonic Allegiance"): (

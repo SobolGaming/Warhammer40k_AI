@@ -4,7 +4,18 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GameReactiveDecisionsMixin:
-    def queue_phoenix_gem_return(self, *, unit=None, model=None, position=None, phase_name=None, game_map=None, spec=None) -> None:
+    def queue_phoenix_gem_return(
+        self,
+        *,
+        unit=None,
+        model=None,
+        position=None,
+        phase_name=None,
+        game_map=None,
+        spec=None,
+        reattach_bodyguard_unit=None,
+        was_attached_when_destroyed: bool = False,
+    ) -> None:
         if unit is None or model is None:
             return
         payload = {
@@ -14,6 +25,8 @@ class GameReactiveDecisionsMixin:
             "phase_name": phase_name,
             "game_map": game_map,
             "spec": spec or {},
+            "reattach_bodyguard_unit": reattach_bodyguard_unit,
+            "was_attached_when_destroyed": bool(was_attached_when_destroyed),
         }
         pending = list(getattr(self, "_phoenix_gem_pending", []) or [])
         pending.append(payload)
@@ -1849,6 +1862,91 @@ class GameReactiveDecisionsMixin:
             player_id=getattr(player, "id", None),
             options=options,
             context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
+    def _queue_move_over_battleshock_decision(
+        self,
+        *,
+        player,
+        unit,
+        model,
+        candidates: list,
+        spec: dict,
+        allow_skip: bool = False,
+    ) -> DecisionRequest | None:
+        if player is None or unit is None or model is None:
+            return None
+        if not bool(getattr(self, "is_authoritative", True)):
+            return None
+        if not candidates:
+            return None
+        unit_id = maybe_entity_id(unit)
+        model_id = maybe_entity_id(model)
+        if not unit_id or not model_id:
+            return None
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        ability_name = str(spec.get("source", "") or "Move-over Battle-shock").strip() or "Move-over Battle-shock"
+        ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            ability_key = "move_over_battleshock"
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "move_over_battleshock":
+                    continue
+                if str(ctx.get("model_id", "") or "") != str(model_id):
+                    continue
+                if str(ctx.get("ability_key", "") or "").strip().lower() != ability_key:
+                    continue
+                return None
+
+        def _cand_sort_key(u):
+            try:
+                return str(maybe_entity_id(u) or "")
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        options = []
+        if allow_skip:
+            options.append(DecisionOption.create("None", payload={"action": "skip"}))
+        for cand in sorted([c for c in list(candidates or []) if c is not None], key=_cand_sort_key):
+            target_id = maybe_entity_id(cand)
+            if not target_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(cand, "name", "") or "Enemy unit"),
+                    payload={"target_unit_id": target_id},
+                )
+            )
+        if not options:
+            return None
+        if len(options) == 1 and options[0].payload.get("action") == "skip":
+            return None
+
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: select an enemy unit moved over{'' if not allow_skip else ' (or None)'}.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "move_over_battleshock",
+                "ability_name": ability_name,
+                "ability_key": ability_key,
+                "phase": "Movement phase",
+                "source_unit_id": str(unit_id),
+                "unit_id": str(unit_id),
+                "model_id": str(model_id),
+            },
         )
         self.request_decision(request)
         return request

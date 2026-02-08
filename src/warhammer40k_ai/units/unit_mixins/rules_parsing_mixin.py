@@ -1010,25 +1010,58 @@ class RulesParsingMixin:
             if not norm:
                 continue
             m = self._RETURN_ON_DEATH_RE.fullmatch(norm)
-            if not m:
+            spec = None
+            if m:
+                try:
+                    roll_min = int(m.group("roll") or 2)
+                except Exception:
+                    roll_min = 2
+                wounds_raw = m.group("wounds") or ""
+                wounds = self._parse_return_on_death_wounds(wounds_raw)
+                skip_deadly = "without resolving its deadly demise ability" in norm
+                key = re.sub(r"[^a-z0-9]+", "_", str(name or "return_on_death").lower()).strip("_")
+                if not key:
+                    key = "return_on_death"
+                spec = {
+                    "name": name or "Return on Death",
+                    "roll_min": roll_min,
+                    "wounds": wounds,
+                    "skip_deadly_demise": bool(skip_deadly),
+                    "key": key,
+                }
+            else:
+                # Fabius Bile (Chirurgeon): first time this unit's FABIUS BILE model is destroyed,
+                # end-of-phase 2+ return with full wounds, and if attached when destroyed, return attached.
+                if (
+                    "first time" in norm
+                    and "fabius bile model is destroyed" in norm
+                    and (
+                        "at the end of the phase roll one d6" in norm
+                        or "roll one d6 at the end of the phase" in norm
+                    )
+                    and "set that model back up on the battlefield" in norm
+                    and "full wounds remaining" in norm
+                ):
+                    m_roll = re.search(r"on a (?P<roll>\d+)", norm)
+                    try:
+                        roll_min = int(m_roll.group("roll")) if m_roll else 2
+                    except Exception:
+                        roll_min = 2
+                    key = re.sub(r"[^a-z0-9]+", "_", str(name or "chirurgeon").lower()).strip("_")
+                    if not key:
+                        key = "chirurgeon"
+                    must_reattach = "must be set back up attached to that unit" in norm
+                    spec = {
+                        "name": name or "Chirurgeon",
+                        "roll_min": int(roll_min or 2),
+                        "wounds": "full",
+                        "skip_deadly_demise": False,
+                        "key": key,
+                        "model_name": "Fabius Bile",
+                        "must_reattach_if_attached": bool(must_reattach),
+                    }
+            if spec is None:
                 continue
-            try:
-                roll_min = int(m.group("roll") or 2)
-            except Exception:
-                roll_min = 2
-            wounds_raw = m.group("wounds") or ""
-            wounds = self._parse_return_on_death_wounds(wounds_raw)
-            skip_deadly = "without resolving its deadly demise ability" in norm
-            key = re.sub(r"[^a-z0-9]+", "_", str(name or "return_on_death").lower()).strip("_")
-            if not key:
-                key = "return_on_death"
-            spec = {
-                "name": name or "Return on Death",
-                "roll_min": roll_min,
-                "wounds": wounds,
-                "skip_deadly_demise": bool(skip_deadly),
-                "key": key,
-            }
             # Enhancement: Superior Creation is bearer-only; gate it to the bearer model.
             if enhancement_superior_creation and bearer_id and enhancement_key and key == enhancement_key:
                 spec["bearer_model_id"] = bearer_id
@@ -1042,6 +1075,8 @@ class RulesParsingMixin:
                     str(spec.get("key", "") or "").strip().lower(),
                     int(spec.get("roll_min", 0) or 0),
                     str(spec.get("wounds", "") or "").strip().lower(),
+                    str(spec.get("model_name", "") or "").strip().lower(),
+                    bool(spec.get("must_reattach_if_attached", False)),
                 )
                 if key in seen:
                     continue
@@ -1084,6 +1119,8 @@ class RulesParsingMixin:
                 str(spec.get("key", "") or "").strip().lower(),
                 int(spec.get("roll_min", 0) or 0),
                 str(spec.get("wounds", "") or "").strip().lower(),
+                str(spec.get("model_name", "") or "").strip().lower(),
+                bool(spec.get("must_reattach_if_attached", False)),
             )
             if key in seen:
                 continue

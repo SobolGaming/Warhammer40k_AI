@@ -854,6 +854,20 @@ class Game(
                     game=self,
                 )
 
+    def _maybe_prompt_csm_warmaster(self, current_player) -> None:
+        if current_player is None:
+            return
+        army = self._get_player_army(current_player)
+        if army is None:
+            return
+        mgr = getattr(army, "csm_warmaster", None)
+        if mgr is None:
+            return
+        mgr.on_command_phase_start(current_player, game=self)
+        publish = getattr(self.event_system, "publish", None)
+        if callable(publish):
+            publish("csm_warmaster_prompt", player=current_player, game=self)
+
     def _maybe_prompt_waaagh(self) -> None:
         player = self.get_current_player()
         if player is None:
@@ -1315,6 +1329,22 @@ class Game(
         if isinstance(units, list) and unit not in units:
             units.append(unit)
 
+    @staticmethod
+    def _phoenix_gem_bodyguard_is_valid(bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        try:
+            if not bodyguard.is_alive() or not getattr(bodyguard, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if bodyguard.is_in_reserves() or bodyguard.is_embarked:
+                return False
+        except Exception:
+            pass
+        return True
+
     def _resolve_phoenix_gem_return(self, payload: dict) -> None:
         if not isinstance(payload, dict):
             return
@@ -1327,6 +1357,26 @@ class Game(
         roll = self._coerce_int(get_roll("D6"), 0)
         if roll < roll_min:
             return
+
+        reattach_target = payload.get("reattach_bodyguard_unit")
+        was_attached = bool(payload.get("was_attached_when_destroyed", False))
+        require_reattach = bool(spec.get("must_reattach_if_attached", False) and was_attached)
+        if require_reattach:
+            if not self._phoenix_gem_bodyguard_is_valid(reattach_target):
+                return
+            can_attach = getattr(unit, "can_attach_to", None)
+            if callable(can_attach):
+                try:
+                    if not bool(can_attach(reattach_target)):
+                        return
+                except Exception:
+                    return
+            attach_to_unit = getattr(unit, "attach_to_unit", None)
+            if callable(attach_to_unit):
+                try:
+                    attach_to_unit(reattach_target)
+                except Exception:
+                    return
 
         wounds = self._resolve_phoenix_gem_wounds(model, spec)
         self._phoenix_gem_attach_model_to_unit(model, unit)
@@ -2813,6 +2863,74 @@ class Game(
                 allow_skip=True,
                 phase="Movement phase",
             )
+
+    def _on_unit_move_ended_move_over_battleshock(self, unit=None, action: str | None = None, **_kwargs) -> None:
+        """Resolve move-over Battle-shock triggers after Normal/Advance moves."""
+        if unit is None:
+            return
+        action_key = str(action or "").strip().lower()
+        if action_key not in ("move", "advance"):
+            return
+
+        game_map = self.map
+        if game_map is None:
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None or not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        if not models:
+            return
+
+        from ..utility.calcs import get_enemy_units_moved_over
+
+        for model in models:
+            if not getattr(model, "is_alive", False):
+                continue
+            model_unit = getattr(model, "parent_unit", None) or root
+            spec_fn = getattr(model_unit, "model_move_over_battleshock_specs", None)
+            if not callable(spec_fn):
+                continue
+            specs = list(spec_fn(model) or [])
+            if not specs:
+                continue
+            path = getattr(model, "last_move_path", None)
+            candidates = get_enemy_units_moved_over(model, path, game_map, require_vertical_overlap=True)
+            if not candidates:
+                continue
+            try:
+                player = model_unit.get_parent_army().player
+            except Exception:
+                player = None
+            if player is None:
+                continue
+            for spec in specs:
+                move_types = set(spec.get("move_types") or [])
+                if action_key not in move_types:
+                    continue
+                queue_fn = getattr(self, "_queue_move_over_battleshock_decision", None)
+                if not callable(queue_fn):
+                    continue
+                queue_fn(
+                    player=player,
+                    unit=model_unit,
+                    model=model,
+                    candidates=list(candidates),
+                    spec=spec,
+                    allow_skip=bool(spec.get("optional", False)),
+                )
 
     def _on_unit_move_ended_grenade_pack_flyover(self, unit=None, action: str | None = None, **_kwargs) -> None:
         if unit is None:
@@ -5031,6 +5149,9 @@ class Game(
 
         # Fulgrim: Daemon Primarch of Slaanesh selection at the start of the opponent's Command phase.
         self._maybe_prompt_daemon_primarch_slaanesh(current_player)
+
+        # Abaddon: The Warmaster selection at the start of your Command phase.
+        self._maybe_prompt_csm_warmaster(current_player)
 
         # Space Marines: Oath of Moment target selection at the start of your Command phase.
         mgr = getattr(army, "oath_of_moment", None)

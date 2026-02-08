@@ -335,6 +335,18 @@ class ActionsMovementMixin:
                 return bool(unit_has_active_daemon_primarch(self, key))
         except Exception:
             pass
+        try:
+            from ...rules.csm_warmaster import (
+                ability_name_to_key,
+                unit_has_active_warmaster,
+                unit_has_warmaster_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_warmaster_ability(self):
+                return bool(unit_has_active_warmaster(self, key))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:

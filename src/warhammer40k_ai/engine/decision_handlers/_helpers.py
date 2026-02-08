@@ -22,13 +22,106 @@ def get_registry(game: object):
     return getattr(game, "entity_registry", None)
 
 
+def _matches_entity_id(entity: object, entity_id: str) -> bool:
+    if entity is None or not entity_id:
+        return False
+    maybe_id = maybe_entity_id(entity)
+    if not maybe_id:
+        return False
+    return str(maybe_id) == str(entity_id)
+
+
+def _iter_player_armies(game: object):
+    for player in list(getattr(game, "players", []) or []):
+        army = getattr(player, "army", None)
+        if army is None:
+            getter = getattr(player, "get_army", None)
+            if callable(getter):
+                army = getter()
+        if army is not None:
+            yield player, army
+
+
+def _fallback_entity_lookup(game: object, entity_id: str, *, kind: str) -> Optional[object]:
+    if kind == "player":
+        for player in list(getattr(game, "players", []) or []):
+            if _matches_entity_id(player, entity_id):
+                return player
+        return None
+
+    if kind == "army":
+        for _player, army in _iter_player_armies(game):
+            if _matches_entity_id(army, entity_id):
+                return army
+        return None
+
+    if kind == "unit":
+        for _player, army in _iter_player_armies(game):
+            for unit in list(getattr(army, "units", []) or []):
+                if _matches_entity_id(unit, entity_id):
+                    return unit
+        game_map = getattr(game, "map", None)
+        for unit in list(getattr(game_map, "units", []) or []):
+            if _matches_entity_id(unit, entity_id):
+                return unit
+        return None
+
+    if kind == "model":
+        for _player, army in _iter_player_armies(game):
+            for unit in list(getattr(army, "units", []) or []):
+                for model in list(getattr(unit, "models", []) or []):
+                    if _matches_entity_id(model, entity_id):
+                        return model
+                for model in list(getattr(unit, "models_lost", []) or []):
+                    if _matches_entity_id(model, entity_id):
+                        return model
+        return None
+
+    if kind == "wargear":
+        for _player, army in _iter_player_armies(game):
+            for unit in list(getattr(army, "units", []) or []):
+                for model in list(getattr(unit, "models", []) or []):
+                    for wargear in list(getattr(model, "wargear", []) or []):
+                        if _matches_entity_id(wargear, entity_id):
+                            return wargear
+                for model in list(getattr(unit, "models_lost", []) or []):
+                    for wargear in list(getattr(model, "wargear", []) or []):
+                        if _matches_entity_id(wargear, entity_id):
+                            return wargear
+        return None
+
+    if kind == "objective":
+        game_map = getattr(game, "map", None)
+        for objective in list(getattr(game_map, "objectives", []) or []):
+            if _matches_entity_id(objective, entity_id):
+                return objective
+        for objective in list(getattr(game, "objectives", []) or []):
+            if _matches_entity_id(objective, entity_id):
+                return objective
+        return None
+
+    return None
+
+
 def get_entity(game: object, entity_id: str, *, kind: str) -> Optional[object]:
     if not entity_id:
         return None
     registry = get_registry(game)
-    if registry is None:
-        return None
-    return registry.get(entity_id, kind=kind)
+    if registry is not None:
+        entity = registry.get(entity_id, kind=kind)
+        if entity is not None:
+            return entity
+        rebuild = getattr(game, "rebuild_entity_registry", None)
+        if callable(rebuild):
+            try:
+                rebuild()
+            except (AttributeError, TypeError, ValueError):
+                pass
+            else:
+                entity = registry.get(entity_id, kind=kind)
+                if entity is not None:
+                    return entity
+    return _fallback_entity_lookup(game, entity_id, kind=kind)
 
 
 def _coerce_entity_id(value: object) -> Optional[str]:

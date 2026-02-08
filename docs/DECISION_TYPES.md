@@ -119,6 +119,7 @@ For UI mapping, see `docs/NETWORK_SAVELOAD_DESIGN.md`.
 - `ISSUE_ORDER` — Issue an Order.
 - `CHOOSE_WRATHFUL_PRESENCE` — Choose Wrathful Presence.
 - `CHOOSE_DAEMON_PRIMARCH_SLAANESH` — Choose Slaanesh primarch option.
+- `CHOOSE_WARMASTER_ABILITY` — Choose The Warmaster ability.
 - `USE_CAREEN` — Use Careen!
 - `CHOOSE_ASPECT` — Choose Aspect.
 - `USE_LEADING_UNMODIFIED_SIX` — Use leading unmodified six.

@@ -510,6 +510,21 @@ class Unit(
             except Exception:
                 pass
             try:
+                bonus_fn = getattr(self, "get_enhanced_warriors_toughness_bonus", None)
+                if callable(bonus_fn):
+                    ew_bonus, ew_source = bonus_fn(model)
+                    if int(ew_bonus or 0):
+                        source = str(ew_source or "Enhanced Warriors").strip() or "Enhanced Warriors"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(ew_bonus),
+                                source=f"ability:enhanced_warriors_toughness:{source}",
+                            )
+                        )
+            except Exception:
+                pass
+            try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict) and sr.get("nurgles_rot_active"):
                     penalty = int(sr.get("nurgles_rot_penalty", 0) or 0)

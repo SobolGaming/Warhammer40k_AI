@@ -162,6 +162,78 @@ REACTION_ONLY_STRATAGEM_NAMES = {
 }
 
 
+def _unit_has_keyword_safe(unit: Any, keyword: str) -> bool:
+    if unit is None:
+        return False
+    key = str(keyword or "").strip()
+    if not key:
+        return False
+    fn = getattr(unit, "has_any_keyword", None)
+    if callable(fn):
+        try:
+            return bool(fn(key))
+        except (AttributeError, TypeError, ValueError):
+            return False
+    keys = list(getattr(unit, "keywords", []) or [])
+    return key.upper() in {str(k).strip().upper() for k in keys}
+
+
+def _unit_blocked_by_voice_eater(unit: Any) -> bool:
+    if unit is None:
+        return False
+    if _unit_has_keyword_safe(unit, "MONSTER") or _unit_has_keyword_safe(unit, "VEHICLE"):
+        return False
+    try:
+        root = unit.get_attached_unit_root()
+    except (AttributeError, TypeError, ValueError):
+        root = unit
+    if root is None:
+        return False
+    try:
+        if hasattr(root, "is_alive") and callable(root.is_alive) and not root.is_alive():
+            return False
+    except (AttributeError, TypeError, ValueError):
+        pass
+    try:
+        army = root.get_parent_army()
+    except (AttributeError, TypeError, ValueError):
+        army = None
+    player = getattr(army, "player", None) if army is not None else None
+    game = getattr(player, "game", None)
+    game_map = getattr(game, "map", None) if game is not None else None
+    if game_map is None:
+        return False
+
+    seen: set[str] = set()
+    for enemy in list(getattr(game_map, "get_enemy_units", lambda _u: [])(root) or []):
+        if enemy is None:
+            continue
+        try:
+            enemy_root = enemy.get_attached_unit_root()
+        except (AttributeError, TypeError, ValueError):
+            enemy_root = enemy
+        if enemy_root is None:
+            continue
+        eid = str(get_entity_id(enemy_root) or "")
+        if not eid or eid in seen:
+            continue
+        seen.add(eid)
+        try:
+            if hasattr(enemy_root, "is_alive") and callable(enemy_root.is_alive) and not enemy_root.is_alive():
+                continue
+        except (AttributeError, TypeError, ValueError):
+            pass
+        has_voice_eater = getattr(enemy_root, "has_voice_eater", None)
+        if not callable(has_voice_eater) or not bool(has_voice_eater()):
+            continue
+        try:
+            if bool(game_map.is_within_engagement_range(root, enemy_root)):
+                return True
+        except (AttributeError, TypeError, ValueError):
+            continue
+    return False
+
+
 def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
     """
     Core rule: Battle-shocked units cannot be the target of a Stratagem.
@@ -188,6 +260,8 @@ def _unit_cannot_be_target_of_stratagem(unit: Any) -> bool:
         return True
     sr = getattr(unit, "special_rules", None)
     if isinstance(sr, dict) and sr.get("cannot_use_stratagems") is True:
+        return True
+    if _unit_blocked_by_voice_eater(unit):
         return True
     return False
 
@@ -839,6 +913,8 @@ class StratagemManager(
         self._used_stratagems_this_phase: set[str] = set()
         # Track Heroic Intervention targets per phase for named exceptions.
         self._heroic_intervention_units_this_phase: set[str] = set()
+        # CSM: Daemonforge allows one Counter-offensive repeat per Fight phase.
+        self._daemonforge_used_phase_key: str = ""
         # Once-per-battle limits (e.g., INSANE BRAVERY once per battle)
         self._used_once_per_battle: Dict[str, bool] = {
             'INSANE BRAVERY': False,
@@ -1636,11 +1712,45 @@ class StratagemManager(
             return bool(fn(self.game))
         return False
 
+    def _daemonforge_phase_key(self) -> str:
+        turn = int(getattr(self.game, "turn", 0) or 0) if self.game is not None else 0
+        phase_name = str(self._current_phase_name or "").strip().upper()
+        current_player = getattr(self.game, "get_current_player", lambda: None)() if self.game is not None else None
+        owner = str(getattr(current_player, "id", "") or "") or str(getattr(current_player, "name", "") or "")
+        return f"{turn}:{phase_name}:{owner}"
+
+    def _daemonforge_used_this_phase(self) -> bool:
+        used_key = str(getattr(self, "_daemonforge_used_phase_key", "") or "")
+        if not used_key:
+            return False
+        return used_key == self._daemonforge_phase_key()
+
+    def _mark_daemonforge_used_this_phase(self) -> None:
+        self._daemonforge_used_phase_key = self._daemonforge_phase_key()
+
+    def _unit_can_use_daemonforge_counter_offensive(self, unit) -> bool:
+        if unit is None:
+            return False
+        if self._daemonforge_used_this_phase():
+            return False
+        fn = getattr(unit, "can_use_daemonforge_counter_offensive", None)
+        if callable(fn):
+            return bool(fn(self.game))
+        return False
+
     def _overwatch_brutal_example_available(self, *, target_unit=None, candidates=None) -> bool:
         if target_unit is not None:
             return self._unit_can_use_traitor_enforcer_overwatch(target_unit)
         for cand in list(candidates or []):
             if self._unit_can_use_traitor_enforcer_overwatch(cand):
+                return True
+        return False
+
+    def _counter_offensive_daemonforge_available(self, *, target_unit=None, candidates=None) -> bool:
+        if target_unit is not None:
+            return self._unit_can_use_daemonforge_counter_offensive(target_unit)
+        for cand in list(candidates or []):
+            if self._unit_can_use_daemonforge_counter_offensive(cand):
                 return True
         return False
 
@@ -1683,6 +1793,15 @@ class StratagemManager(
         if name_u and name_u in self._used_stratagems_this_phase:
             if name_u == "HEROIC INTERVENTION":
                 if self._heroic_intervention_repeat_allowed(
+                    target_unit=context.get("target_unit") or context.get("unit"),
+                    candidates=context.get("candidates"),
+                ):
+                    pass
+                else:
+                    result["reason"] = "Already used this phase"
+                    return result
+            elif name_u == "COUNTER-OFFENSIVE":
+                if self._counter_offensive_daemonforge_available(
                     target_unit=context.get("target_unit") or context.get("unit"),
                     candidates=context.get("candidates"),
                 ):
@@ -6504,10 +6623,8 @@ class StratagemManager(
             s = self.get_by_name("COUNTER-OFFENSIVE")
             if not s:
                 return
-            if self.player.command_points < s.cp_cost:
-                return
-            if (s.name or "").strip().upper() in self._used_stratagems_this_phase:
-                return
+            key = (s.name or "").strip().upper()
+            already_used = key in self._used_stratagems_this_phase
             # Avoid duplicate pending entries
             for r in self._pending_reactions:
                 if str(r.get("stratagem", "")).strip().upper() == "COUNTER-OFFENSIVE":
@@ -6567,6 +6684,11 @@ class StratagemManager(
                     raise
                 candidates.append(root)
             if not candidates:
+                return
+            daemonforge_available = self._counter_offensive_daemonforge_available(candidates=candidates)
+            if self.player.command_points < s.cp_cost and not daemonforge_available:
+                return
+            if already_used and not daemonforge_available:
                 return
             self._queue_reaction({
                 "event": "fight_sequence_complete",
@@ -7756,6 +7878,11 @@ class StratagemManager(
                         candidates=kwargs.get("candidates"),
                     ):
                         pass
+                    elif key == "COUNTER-OFFENSIVE" and self._counter_offensive_daemonforge_available(
+                        target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
+                        candidates=kwargs.get("candidates"),
+                    ):
+                        pass
                     else:
                         print(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")
                         return False
@@ -8303,9 +8430,19 @@ class StratagemManager(
             except Exception:
                 raise
             eff_cost = s.cp_cost
+            apply_info = {"cost": s.cp_cost}
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=target_unit).get("cost", s.cp_cost))
+                    apply_info = dict(self.player.apply_stratagem_cp_cost(s, target_unit=target_unit) or {})
+                    if bool(apply_info.get("denied", False)):
+                        print(f"ERROR: COUNTER-OFFENSIVE: {str(apply_info.get('reason', '') or 'denied')}")
+                        try:
+                            fight_mgr._forced_next_unit = None
+                            fight_mgr._forced_next_player = None
+                        except Exception:
+                            raise
+                        return False
+                    eff_cost = int(apply_info.get("cost", s.cp_cost))
             except Exception:
                 raise
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
@@ -8326,6 +8463,11 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
+            if bool(apply_info.get("daemonforge_counter_offensive_use", False)):
+                try:
+                    self._mark_daemonforge_used_this_phase()
+                except Exception:
+                    raise
             return True
 
         # Core: SMOKESCREEN (Benefit of Cover + Stealth until end of phase)

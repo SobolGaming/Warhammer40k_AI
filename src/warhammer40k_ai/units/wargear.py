@@ -6924,6 +6924,20 @@ class WargearProfile:
         except Exception:
             pass
         try:
+            if self.parent_wargear and self.parent_wargear.is_melee() and isinstance(strength, int):
+                unit = getattr(attacker, "parent_unit", None)
+                bonus_fn = getattr(unit, "get_enhanced_warriors_melee_strength_bonus", None) if unit is not None else None
+                if callable(bonus_fn):
+                    s_bonus, source = bonus_fn(attacker)
+                    if int(s_bonus or 0):
+                        strength = strength + int(s_bonus)
+                        source_name = str(source or "Enhanced Warriors").strip() or "Enhanced Warriors"
+                        wound_result.setdefault("modifiers", []).append(
+                            f"+{int(s_bonus)}S from {source_name} (bodyguard melee)"
+                        )
+        except Exception:
+            pass
+        try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
             bonuses = list(sr.get("daemonic_allegiance_weapon_bonuses", []) or []) if isinstance(sr, dict) else []
             if bonuses and self.parent_wargear and isinstance(strength, int):

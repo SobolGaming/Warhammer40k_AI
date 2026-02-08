@@ -206,6 +206,12 @@ class DamageDeathMixin:
                     already = False
                 if already:
                     continue
+                required_model_name = str(spec.get("model_name") or "").strip()
+                if required_model_name:
+                    want = re.sub(r"[^a-z0-9]+", " ", required_model_name.lower()).strip()
+                    got = re.sub(r"[^a-z0-9]+", " ", str(getattr(model, "name", "") or "").lower()).strip()
+                    if want and want not in got:
+                        continue
                 bearer_id = str(spec.get("bearer_model_id") or "").strip()
                 if bearer_id and str(getattr(model, "id", "") or "") != bearer_id:
                     continue
@@ -231,6 +237,15 @@ class DamageDeathMixin:
                         setattr(model, "_skip_deadly_demise_once", True)
                     except Exception:
                         pass
+                reattach_bodyguard_unit = None
+                was_attached_when_destroyed = False
+                if bool(spec.get("must_reattach_if_attached", False)):
+                    try:
+                        reattach_bodyguard_unit = getattr(self, "attached_to", None)
+                        was_attached_when_destroyed = reattach_bodyguard_unit is not None
+                    except Exception:
+                        reattach_bodyguard_unit = None
+                        was_attached_when_destroyed = False
                 if hasattr(game, "queue_phoenix_gem_return"):
                     game.queue_phoenix_gem_return(
                         unit=self,
@@ -239,6 +254,8 @@ class DamageDeathMixin:
                         phase_name=phase_name,
                         game_map=game_map,
                         spec=spec,
+                        reattach_bodyguard_unit=reattach_bodyguard_unit,
+                        was_attached_when_destroyed=bool(was_attached_when_destroyed),
                     )
                     try:
                         label = str(spec.get("name") or "Return on Death")

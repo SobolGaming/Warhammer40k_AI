@@ -3060,6 +3060,75 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_movement_phase_end_vehicle_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Movement phase, optionally select an enemy VEHICLE within range;
+        that unit takes a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+            - optional: bool
+            - ability_key: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_movement_phase_end_vehicle_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "end of your movement phase" not in normalized:
+                continue
+            if "battle shock test" not in normalized:
+                continue
+            if "enemy vehicle unit within" not in normalized:
+                continue
+            if "of this model" not in normalized:
+                continue
+            m = re.search(r"enemy vehicle unit within (?P<range>\d+) of this model", normalized)
+            if m is None:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            optional = "you can select one enemy vehicle unit" in normalized
+            source = str(name or "Enrage Machine Spirits").strip() or "Enrage Machine Spirits"
+            ability_key_seed = self._normalize_keyword_phrase(source) or "movement_phase_end_vehicle_battleshock"
+            ability_key = f"movement_phase_end_vehicle_battleshock:{ability_key_seed}"
+            key = (source.lower(), int(range_value), bool(optional))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "optional": bool(optional),
+                    "ability_key": ability_key,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_shooting_phase_spirit_thief_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: start of Shooting phase, select a visible enemy VEHICLE to mark
@@ -3629,6 +3698,79 @@ class AbilitySpecsMixin:
                 continue
             seen.add(key)
             specs.append({"source": source, "model_name": model_name})
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_move_over_battleshock_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: end of Normal/Advance move, select an enemy unit moved over;
+        that unit takes a Battle-shock test.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - move_types: list[str]
+            - optional: bool
+            - ability_key: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_move_over_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, tuple[str, ...], bool]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            if not normalized:
+                continue
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if "moved over" not in normalized:
+                continue
+            if "battle shock test" not in normalized:
+                continue
+            if "mortal wound" in normalized:
+                continue
+            if "each time this model ends a" not in normalized:
+                continue
+            if "that unit must take a battle shock test" not in normalized:
+                continue
+            m = re.search(r"each time this model ends a (?P<moves>[a-z0-9 ]+) move", normalized)
+            if m is None:
+                continue
+            moves_text = str(m.group("moves") or "").strip()
+            move_types = self._parse_move_types_from_text(moves_text)
+            if "move" not in move_types:
+                continue
+            if not move_types.issubset({"move", "advance"}):
+                continue
+            source = str(name or "Move-over Battle-shock").strip() or "Move-over Battle-shock"
+            optional = "you can select" in normalized or "can select one enemy unit" in normalized
+            ability_key_seed = self._normalize_keyword_phrase(source) or "move_over_battleshock"
+            ability_key = f"move_over_battleshock:{ability_key_seed}"
+            dedupe_key = (source.lower(), tuple(sorted(move_types)), bool(optional))
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append(
+                {
+                    "source": source,
+                    "move_types": sorted(move_types),
+                    "optional": bool(optional),
+                    "ability_key": ability_key,
+                }
+            )
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

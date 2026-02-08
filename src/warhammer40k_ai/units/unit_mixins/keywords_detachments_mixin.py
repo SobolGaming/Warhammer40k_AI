@@ -710,6 +710,205 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["enrage_machine_spirits"] = bool(found)
         return bool(found)
 
+    def has_voice_eater(self) -> bool:
+        """Return True if this unit has the Voice Eater ability."""
+        if "voice_eater" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["voice_eater"])
+        found, _ = self._find_ability_with_patterns(["voice eater"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["voice_eater"] = bool(found)
+        return bool(found)
+
+    def has_enhanced_warriors(self) -> bool:
+        """Return True if this unit has the Enhanced Warriors ability."""
+        if "enhanced_warriors" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["enhanced_warriors"])
+        found, _ = self._find_ability_with_patterns(["enhanced warriors"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["enhanced_warriors"] = bool(found)
+        return bool(found)
+
+    def get_enhanced_warriors_rule(self) -> Optional[dict]:
+        """
+        Return parsed rule info for Enhanced Warriors-like text:
+        "If this unit is attached to a unit at the start of the battle, add 1 to the Strength
+        characteristic of melee weapons equipped by Bodyguard models in that unit and add 1 to
+        the Toughness characteristic of Bodyguard models in that unit."
+        """
+        root = self
+        attached_to = getattr(self, "attached_to", None)
+        if attached_to is not None:
+            root = attached_to
+        else:
+            support_joined_to = getattr(self, "support_joined_to", None)
+            if support_joined_to is not None:
+                root = support_joined_to
+        cache_key = "enhanced_warriors_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+        in_progress_key = "_enhanced_warriors_rule_in_progress"
+        if bool(getattr(root, in_progress_key, False)):
+            return None
+        setattr(root, in_progress_key, True)
+
+        try:
+            rule = None
+            seen = set()
+
+            def _iter_rule_entries(unit):
+                # Use raw ability entries instead of active-ability iteration here to avoid
+                # recursion through characteristic resolution while parsing this static rule text.
+                for ab in list(getattr(unit, "possible_abilities", []) or []):
+                    if isinstance(ab, str):
+                        yield ab, ab
+                        continue
+                    if isinstance(ab, dict):
+                        yield str(ab.get("name", "") or ""), str(ab.get("description", "") or "")
+                        continue
+                    yield getattr(ab, "name", "") or "", getattr(ab, "description", "") or ""
+
+                enh = getattr(unit, "enhancement", None)
+                if enh is not None:
+                    name = getattr(enh, "name", "") or ""
+                    desc = getattr(enh, "description", "") or ""
+                    if name or desc:
+                        yield name, desc
+
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except RecursionError:
+                return None
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+
+            for unit in members:
+                if unit is None:
+                    continue
+                for name, desc in _iter_rule_entries(unit):
+                    text_src = desc or name or ""
+                    if not text_src:
+                        continue
+                    key = (str(name or "").strip().lower(), unit._normalize_rules_text(text_src).lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    text = unit._normalize_rules_text(unit._strip_eligibility_prefix(text_src))
+                    if not text:
+                        continue
+                    norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                    norm = norm.lower()
+                    norm = re.sub(r"'s\b", "s", norm)
+                    norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                    norm = re.sub(r"\s+", " ", norm).strip()
+                    if "bodyguard models" not in norm:
+                        continue
+                    if "melee weapons equipped by bodyguard models" not in norm:
+                        continue
+                    if "add 1 to the strength characteristic" not in norm:
+                        continue
+                    if "add 1 to the toughness characteristic of bodyguard models" not in norm:
+                        continue
+                    if "attached to a unit at the start of the battle" not in norm:
+                        continue
+                    source = str(name or "Enhanced Warriors").strip() or "Enhanced Warriors"
+                    rule = {
+                        "source": source,
+                        "ability_key": "enhanced_warriors",
+                        "melee_strength_bonus": 1,
+                        "toughness_bonus": 1,
+                        "requires_attached": True,
+                        "requires_start_of_battle_attachment": True,
+                    }
+                    break
+                if rule is not None:
+                    break
+
+            if not hasattr(root, "_ability_cache"):
+                root._ability_cache = {}
+            root._ability_cache[cache_key] = rule
+            return rule
+        finally:
+            setattr(root, in_progress_key, False)
+
+    def get_enhanced_warriors_melee_strength_bonus(self, model=None) -> tuple[int, str]:
+        """Return (bonus, source) for Enhanced Warriors melee Strength bonus for a specific model."""
+        if model is None:
+            return 0, ""
+        root = self
+        attached_to = getattr(self, "attached_to", None)
+        if attached_to is not None:
+            root = attached_to
+        else:
+            support_joined_to = getattr(self, "support_joined_to", None)
+            if support_joined_to is not None:
+                root = support_joined_to
+        rule = root.get_enhanced_warriors_rule()
+        if not rule:
+            return 0, ""
+        try:
+            parent = getattr(model, "parent_unit", None)
+        except Exception:
+            parent = None
+        if parent is None:
+            return 0, ""
+        # Applies only to bodyguard models in the attached unit (not Leader models).
+        if parent is not root:
+            return 0, ""
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        if not leaders:
+            return 0, ""
+        try:
+            bonus = int(rule.get("melee_strength_bonus", 0) or 0)
+        except Exception:
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(rule.get("source", "") or "Enhanced Warriors").strip() or "Enhanced Warriors"
+        return int(bonus), source
+
+    def get_enhanced_warriors_toughness_bonus(self, model=None) -> tuple[int, str]:
+        """Return (bonus, source) for Enhanced Warriors Toughness bonus for a specific model."""
+        if model is None:
+            return 0, ""
+        root = self
+        attached_to = getattr(self, "attached_to", None)
+        if attached_to is not None:
+            root = attached_to
+        else:
+            support_joined_to = getattr(self, "support_joined_to", None)
+            if support_joined_to is not None:
+                root = support_joined_to
+        rule = root.get_enhanced_warriors_rule()
+        if not rule:
+            return 0, ""
+        try:
+            parent = getattr(model, "parent_unit", None)
+        except Exception:
+            parent = None
+        if parent is None or parent is not root:
+            return 0, ""
+        try:
+            leaders = list(getattr(root, "attached_leaders", []) or [])
+        except Exception:
+            leaders = []
+        if not leaders:
+            return 0, ""
+        try:
+            bonus = int(rule.get("toughness_bonus", 0) or 0)
+        except Exception:
+            bonus = 0
+        if bonus <= 0:
+            return 0, ""
+        source = str(rule.get("source", "") or "Enhanced Warriors").strip() or "Enhanced Warriors"
+        return int(bonus), source
+
     def has_herald_of_the_apocalypse(self) -> bool:
         """Return True if this unit has the Herald of the Apocalypse ability."""
         if "herald_of_the_apocalypse" in getattr(self, "_ability_cache", {}):
@@ -1118,6 +1317,8 @@ class KeywordsDetachmentsMixin:
                 move_token = str(m.group("move") or "").strip().lower()
                 source = str(name or "Loping Speed").strip() or "Loping Speed"
                 rule = {"range": int(rng), "source": source}
+                if "once per battle" in str(text or "").lower():
+                    rule["once_per_battle"] = True
                 if move_token:
                     if move_token.isdigit():
                         try:
@@ -1331,6 +1532,68 @@ class KeywordsDetachmentsMixin:
                     leader_id = None
                 if leader_id:
                     rule["leader_id"] = str(leader_id)
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def get_daemonforge_counter_offensive_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Once per Fight phase, one unit from your army with this ability can be targeted with the Counter-offensive
+        Stratagem for 0CP, even if you have already targeted a different unit with that Stratagem this phase."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "daemonforge_counter_offensive_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = norm.lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "counter offensive" not in norm or "stratagem" not in norm:
+                    continue
+                if "0cp" not in norm:
+                    continue
+                if "once per fight phase" not in norm:
+                    continue
+                source = str(name or "Daemonforge").strip() or "Daemonforge"
+                rule = {
+                    "source": source,
+                    "ability_key": "daemonforge_counter_offensive",
+                }
                 break
             if rule is not None:
                 break
@@ -1696,6 +1959,30 @@ class KeywordsDetachmentsMixin:
             return False
         return True
 
+    def can_use_daemonforge_counter_offensive(self, game=None) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        return bool(root.get_daemonforge_counter_offensive_rule())
+
     def _setup_reactive_shoot_or_charge_turn_key(self, game=None) -> str:
         if game is None:
             try:
@@ -1853,15 +2140,28 @@ class KeywordsDetachmentsMixin:
         key = self._loping_speed_turn_key(game)
         return str(sr.get("loping_speed_used_turn_key", "")) == key
 
-    def mark_loping_speed_used(self, game=None) -> None:
+    def loping_speed_used_this_battle(self) -> bool:
         try:
             root = self.get_attached_unit_root()
         except Exception:
             root = self
         sr = getattr(root, "special_rules", None)
         if not isinstance(sr, dict):
+            return False
+        return bool(sr.get("loping_speed_used_battle", False))
+
+    def mark_loping_speed_used(self, game=None) -> None:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        rule = root.get_loping_speed_rule() or {}
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
             sr = {}
         sr["loping_speed_used_turn_key"] = self._loping_speed_turn_key(game)
+        if bool(rule.get("once_per_battle", False)):
+            sr["loping_speed_used_battle"] = True
         root.special_rules = sr
 
     def can_loping_speed(self, game=None, game_map=None, *, moving_unit=None, range_override: Optional[int] = None) -> bool:
@@ -1886,7 +2186,10 @@ class KeywordsDetachmentsMixin:
                 return False
         except Exception:
             pass
-        if root.loping_speed_used_this_turn(game):
+        if bool(rule.get("once_per_battle", False)):
+            if root.loping_speed_used_this_battle():
+                return False
+        elif root.loping_speed_used_this_turn(game):
             return False
         if game_map is None:
             try:

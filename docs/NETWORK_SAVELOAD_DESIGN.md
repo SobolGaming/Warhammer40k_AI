@@ -179,6 +179,7 @@ Command phase:
 - combat_doctrines_dialog: CHOOSE_COMBAT_DOCTRINE {choice_key | skip} (context `army_id`, `battle_round`)
 - grand_coven_dialog: CHOOSE_GRAND_COVEN {choice_key | skip} (context `army_id`, `battle_round`)
 - combat_drugs_dialog: CHOOSE_COMBAT_DRUGS {choice_key} (context `army_id`, `battle_round`)
+- warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_key} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - blood_tithe_dialog: CHOOSE_BLOOD_TITHE {ability_key | skip} (context `army_id`, `timing`)
 - idols_of_khorne_dialog: CHOOSE_IDOL_OF_KHORNE {ability_key | skip} (context `army_id`, `timing`)
 - vessels_of_wrath_models_dialog: SELECT_VESSEL_OF_WRATH_MODELS {model_ids | skip} (context `army_id`, `battle_round`, `max_models`)
@@ -382,6 +383,7 @@ Note: modifier ignore dialogs are used by abilities like Driven by Ultimate Rage
 - secondary_discard_dialog: DISCARD_SECONDARY {card_id}
 - shadow_form_dialog: CHOOSE_SHADOW_FORM {choice_id}
 - daemon_primarch_slaanesh_dialog: CHOOSE_DAEMON_PRIMARCH_SLAANESH {choice_id} (context `unit_id`, `opponent_player_id`, `battle_round`, `expires_round`)
+- warmaster_dialog: CHOOSE_WARMASTER_ABILITY {choice_id} (context `unit_id`, `battle_round`, `player_id`, `expires_round`)
 - templar_vows_dialog: CHOOSE_VOW {choice_id}
 - voice_of_command_dialog: ISSUE_ORDER {unit_id, order_id}
 - wrathful_presence_dialog: CHOOSE_WRATHFUL_PRESENCE {choice_id}

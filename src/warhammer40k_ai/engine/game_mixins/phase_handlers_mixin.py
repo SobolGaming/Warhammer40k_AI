@@ -2340,6 +2340,157 @@ class GamePhaseHandlersMixin:
             default_ability_name="Corrupt Machine Spirits",
         )
 
+    def _on_phase_end_enrage_machine_spirits(self, player=None, phase=None, **_kwargs) -> None:
+        """End of Movement phase: optional enemy VEHICLE within range takes a Battle-shock test."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        pending_model_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "enrage_machine_spirits":
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    pending_model_ids.add(model_id)
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                model_id = str(get_entity_id(model) or "")
+                if model_id and model_id in pending_model_ids:
+                    continue
+                spec_fn = getattr(root, "model_movement_phase_end_vehicle_battleshock_specs", None)
+                if not callable(spec_fn):
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                for spec in list(specs or []):
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    if range_value <= 0:
+                        continue
+                    candidates = self._enemy_candidates_within_range_of_model(
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=float(range_value),
+                    )
+                    if not candidates:
+                        continue
+                    vehicle_candidates = []
+                    for cand in list(candidates or []):
+                        if cand is None:
+                            continue
+                        try:
+                            if not cand.has_any_keyword("VEHICLE"):
+                                continue
+                        except Exception:
+                            continue
+                        vehicle_candidates.append(cand)
+                    if not vehicle_candidates:
+                        continue
+
+                    options = []
+                    if bool(spec.get("optional", False)):
+                        options.append(DecisionOption.create("None", payload={"action": "skip"}))
+                    for cand in sorted(list(vehicle_candidates), key=_unit_sort_key):
+                        target_id = str(get_entity_id(cand) or "")
+                        if not target_id:
+                            continue
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={"target_unit_id": target_id},
+                            )
+                        )
+                    if not options:
+                        continue
+                    if len(options) == 1 and options[0].payload.get("action") == "skip":
+                        continue
+                    ability_name = str(spec.get("source", "") or "Enrage Machine Spirits").strip() or "Enrage Machine Spirits"
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select an enemy VEHICLE within {int(range_value)}\" (or None).",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={
+                            "ability": "enrage_machine_spirits",
+                            "ability_name": ability_name,
+                            "phase": "Movement phase",
+                            "source_unit_id": str(get_entity_id(source_unit) or ""),
+                            "unit_id": str(get_entity_id(source_unit) or ""),
+                            "model_id": model_id,
+                            "range": int(range_value),
+                            "ability_key": str(spec.get("ability_key", "") or ""),
+                        },
+                    )
+                    self.request_decision(request)
+                    if model_id:
+                        pending_model_ids.add(model_id)
+                    break
+
     def _on_phase_start_herald_of_the_apocalypse(self, player=None, phase=None, **_kwargs) -> None:
         pname = str(getattr(phase, "name", "") or "").strip().upper()
         if pname != "COMMAND_PHASE":

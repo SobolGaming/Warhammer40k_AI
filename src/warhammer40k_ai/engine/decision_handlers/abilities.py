@@ -53,6 +53,7 @@ from ..decision_kinds import (
     DECISION_ISSUE_ORDER,
     DECISION_CHOOSE_WRATHFUL_PRESENCE,
     DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
+    DECISION_CHOOSE_WARMASTER_ABILITY,
     DECISION_CHOOSE_ASPECT,
     DECISION_USE_LEADING_UNMODIFIED_SIX,
     DECISION_USE_MODEL_UNMODIFIED_SIX,
@@ -2336,6 +2337,65 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
         except Exception:
             pass
+    if str(ctx.get("ability", "") or "") == "enrage_machine_spirits":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        player = _resolve_player(game, request, payload)
+        if player is None and source_unit is not None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Enrage Machine Spirits").strip() or "Enrage Machine Spirits"
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        try:
+            target_unit.take_battle_shock_test(turn)
+        except Exception:
+            pass
+        try:
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {tname} takes a Battle-shock test.")
+        except Exception:
+            pass
+    if str(ctx.get("ability", "") or "") == "move_over_battleshock":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        player = _resolve_player(game, request, payload)
+        if player is None and source_unit is not None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Move-over Battle-shock").strip() or "Move-over Battle-shock"
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        try:
+            target_unit.take_battle_shock_test(turn)
+        except Exception:
+            pass
+        try:
+            sname = str(getattr(source_unit, "name", "Model") or "Model")
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {sname} selected {tname} to take a Battle-shock test.")
+        except Exception:
+            pass
     if str(ctx.get("ability", "") or "") == "master_of_mechanisms":
         if is_skip_choice(request, result):
             return None
@@ -4313,6 +4373,64 @@ def _apply_choose_daemon_primarch_slaanesh(game: object, request: DecisionReques
     return str(choice)
 
 
+def _validate_choose_warmaster_ability(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
+    errors = list(validate_option_choice(request, result))
+    if errors:
+        return errors
+    if is_skip_choice(request, result):
+        return ()
+    payload = _option_payload(request, result)
+    unit_val = payload.get("unit_id") or payload.get("unit")
+    choice = payload.get("choice_key") or payload.get("key")
+    if unit_val is None or choice is None:
+        return ("Warmaster selection requires unit_id and key.",)
+    if resolve_unit(game, unit_val) is None:
+        return ("Warmaster unit not found.",)
+    return ()
+
+
+def _apply_choose_warmaster_ability(game: object, request: DecisionRequest, result: DecisionResult):
+    if is_skip_choice(request, result):
+        return None
+    from ...rules.csm_warmaster import set_active_warmaster
+
+    payload = _option_payload(request, result)
+    unit = resolve_unit(game, payload.get("unit_id") or payload.get("unit"))
+    if unit is None:
+        raise RuntimeError("Warmaster unit not found.")
+    choice = payload.get("choice_key") or payload.get("key")
+    start_round = request.context.get("battle_round")
+    if start_round is None and game is not None:
+        start_round = getattr(game, "turn", 0)
+    expires_round = request.context.get("expires_round")
+    if expires_round is None:
+        try:
+            expires_round = int(start_round or 0) + 1
+        except Exception:
+            expires_round = 0
+    player_id = request.context.get("player_id")
+    set_active_warmaster(
+        unit,
+        str(choice),
+        start_round=int(start_round or 0),
+        expires_round=int(expires_round or 0),
+        player_id=str(player_id or ""),
+    )
+    try:
+        player = getattr(getattr(unit, "get_parent_army", lambda: None)(), "player", None)
+    except Exception:
+        player = None
+    try:
+        label = _option_label(request, result) or str(choice)
+        uname = str(getattr(unit, "name", "Unit") or "Unit")
+        until_txt = f"until next Command phase (BR {expires_round})" if expires_round else "until next Command phase"
+        if label:
+            _log_action_for_players(game, player, f"The Warmaster: {uname} selected {label} ({until_txt})")
+    except Exception:
+        pass
+    return str(choice)
+
+
 def _validate_choose_aspect(game: object, request: DecisionRequest, result: DecisionResult) -> Sequence[str]:
     if is_skip_choice(request, result):
         return ()
@@ -5058,6 +5176,11 @@ register_decision_handler(
     DECISION_CHOOSE_DAEMON_PRIMARCH_SLAANESH,
     validate=_validate_choose_daemon_primarch_slaanesh,
     apply=_apply_choose_daemon_primarch_slaanesh,
+)
+register_decision_handler(
+    DECISION_CHOOSE_WARMASTER_ABILITY,
+    validate=_validate_choose_warmaster_ability,
+    apply=_apply_choose_warmaster_ability,
 )
 register_decision_handler(DECISION_CHOOSE_ASPECT, validate=_validate_choose_aspect, apply=_apply_choose_aspect)
 register_decision_handler(
