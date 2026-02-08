@@ -7110,6 +7110,12 @@ def _stratagem_support(name: str, description: str = "") -> Tuple[str, str, str]
         "PYROGENESIS": "Shooting/Fight phase: TZEENTCH LEGIONES DAEMONICA unit gains +2S (or spend Flux for +3S and +1 AP) until end of phase.",
         "THE REALM OF CHAOS": "End of opponent turn: up to two Shadow-of-Chaos units (or one other unit) enter Strategic Reserves and return next Movement phase via Deep Strike.",
         "WARP SURGE": "Charge phase: LEGIONES DAEMONICA unit within Shadow of Chaos can charge after advancing this phase.",
+        "AEGIS ETERNAL": "Opponent Shooting phase: targeted GREY KNIGHTS INFANTRY gains a 4+ invulnerable save while its models are wholly within Hallowed Ground.",
+        "FIRES OF COVENANT": "Opponent Movement phase: targeted GREY KNIGHTS INFANTRY rolls D6 each time an enemy is set up or ends a Normal/Advance/Fall Back move within 6\"; +2 to the roll while wholly within Hallowed Ground; on 4+ that enemy suffers D3 mortal wounds.",
+        "FLAMES OF SANCTITY": "End of Fight phase: targeted PURIFIER SQUAD rolls against each enemy unit within 6\" and inflicts D3 mortal wounds on 4+ (adds 1 to each roll if including Castellan Crowe).",
+        "HALLOWED BEACON": "Movement Reinforcements step: targeted GREY KNIGHTS INFANTRY (non-TERMINATOR) Deep Strike arrival can be set up more than 6\" horizontally away from enemies, and placement must be wholly within Hallowed Ground.",
+        "REPELLING SPHERE": "Opponent Charge phase: targeted GREY KNIGHTS INFANTRY imposes -1 to enemy Charge rolls that include it as a target, or -2 while wholly within Hallowed Ground.",
+        "SANCTIFIED KILL ZONE": "Shooting/Fight phase: targeted GREY KNIGHTS unit wholly within Hallowed Ground gains wound re-rolls (re-roll 1s, or full wound re-rolls for PURIFIER SQUAD) until end of phase.",
     }
 
     if name_u in IMPLEMENTED_STRATAGEM_NAMES:

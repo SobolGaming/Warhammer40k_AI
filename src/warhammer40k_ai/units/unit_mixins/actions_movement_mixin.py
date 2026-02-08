@@ -771,6 +771,8 @@ class ActionsMovementMixin:
         """
         if model is None:
             return None, None
+        sr = getattr(self, "special_rules", None)
+        aegis_active = bool(isinstance(sr, dict) and sr.get("aegis_eternal_active"))
         try:
             temp_val, temp_source = getattr(model, "get_temporary_invulnerable_save", lambda: (0, ""))()
             if temp_val:
@@ -778,7 +780,7 @@ class ActionsMovementMixin:
         except Exception:
             pass
         cache_key = f"model_invulnerable_save:{get_entity_id(model)}"
-        if cache_key in getattr(self, "_ability_cache", {}):
+        if not aegis_active and cache_key in getattr(self, "_ability_cache", {}):
             return self._ability_cache[cache_key]
 
         best_value: Optional[int] = None
@@ -847,9 +849,33 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # AEGIS ETERNAL: models wholly within Hallowed Ground gain a 4+ invulnerable save.
+        if isinstance(sr, dict) and sr.get("aegis_eternal_active"):
+            army = self.get_parent_army() if hasattr(self, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+            owner_id = str(sr.get("aegis_eternal_turn_owner", "") or "")
+            effect_turn = int(sr.get("aegis_eternal_turn", 0) or 0)
+            expires_phase = str(sr.get("aegis_eternal_expires_phase", "") or "").strip().upper()
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "") if game is not None else ""
+            if (not owner_id or owner_id == str(getattr(player, "id", "") or "")) and (not owner_id or owner_id != current_owner):
+                if (not effect_turn or effect_turn == current_turn) and (not expires_phase or expires_phase == phase_name):
+                    gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+                    model_in_hallowed_ground = bool(
+                        gk_mgr is not None
+                        and getattr(gk_mgr, "is_warpbane_task_force", lambda: False)()
+                        and getattr(gk_mgr, "model_wholly_within_hallowed_ground", lambda *_a, **_k: False)(model, game=game)
+                    )
+                    if model_in_hallowed_ground and (best_value is None or 4 < best_value):
+                        best_value = 4
+                        best_source = str(sr.get("aegis_eternal_source", "") or "Aegis Eternal")
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
-        self._ability_cache[cache_key] = (best_value, best_source)
+        if not aegis_active:
+            self._ability_cache[cache_key] = (best_value, best_source)
         return best_value, best_source
 
     def get_model_save_characteristic_override(self, model: Optional['Model'] = None) -> tuple[Optional[int], Optional[str]]:
@@ -3221,6 +3247,34 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # SANCTIFIED KILL ZONE: wound re-rolls in current phase.
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("sanctified_kill_zone_active"):
+                owner_id = str(sr.get("sanctified_kill_zone_turn_owner", "") or "")
+                effect_turn = int(sr.get("sanctified_kill_zone_turn", 0) or 0)
+                expires_phase = str(sr.get("sanctified_kill_zone_expires_phase", "") or "").strip().upper()
+                phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                active = True
+                if owner_id and attacker_owner and owner_id != attacker_owner:
+                    active = False
+                if active and effect_turn and current_turn and effect_turn != current_turn:
+                    active = False
+                if active and expires_phase and phase_name and expires_phase != phase_name:
+                    active = False
+                if active:
+                    source = str(sr.get("sanctified_kill_zone_source", "") or "Sanctified Kill Zone").strip()
+                    if bool(sr.get("sanctified_kill_zone_reroll_full")):
+                        mods["reroll_wound_full"] = True
+                        reroll_wound_full_reasons.append(f"{source}: re-roll Wound roll")
+                    else:
+                        reroll_wound_values.add(1)
+                        reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+        except Exception:
+            pass
+
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
         mods["crit_wound_threshold"] = crit_wound_threshold
@@ -4558,8 +4612,6 @@ class ActionsMovementMixin:
 
     def get_defensive_charge_roll_modifiers(self) -> list[tuple[int, str]]:
         specs = self._defensive_charge_roll_penalty_specs()
-        if not specs:
-            return []
         modifiers: list[tuple[int, str]] = []
         for spec in specs:
             try:
@@ -4569,6 +4621,40 @@ class ActionsMovementMixin:
             if not val:
                 continue
             modifiers.append((-abs(val), spec.get("source", "Charge roll penalty")))
+
+        # REPELLING SPHERE: -1 to Charge rolls, or -2 while wholly within Hallowed Ground.
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("repelling_sphere_active"):
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            player = getattr(army, "player", None) if army is not None else None
+            game = getattr(player, "game", None) if player is not None else None
+            owner_id = str(sr.get("repelling_sphere_turn_owner", "") or "")
+            effect_turn = int(sr.get("repelling_sphere_turn", 0) or 0)
+            expires_phase = str(sr.get("repelling_sphere_expires_phase", "") or "").strip().upper()
+            phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            current_owner = str(getattr(getattr(game, "get_current_player", lambda: None)(), "id", "") or "") if game is not None else ""
+            active = True
+            if owner_id and owner_id != str(getattr(player, "id", "") or ""):
+                active = False
+            if active and owner_id and owner_id == current_owner:
+                active = False
+            if active and effect_turn and current_turn and effect_turn != current_turn:
+                active = False
+            if active and expires_phase and phase_name and expires_phase != phase_name:
+                active = False
+            if active:
+                penalty = 1
+                gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+                if gk_mgr is not None and getattr(gk_mgr, "is_warpbane_task_force", lambda: False)():
+                    if bool(getattr(gk_mgr, "unit_wholly_within_hallowed_ground", lambda *_a, **_k: False)(root, game=game)):
+                        penalty = 2
+                source = str(sr.get("repelling_sphere_source", "") or "Repelling Sphere").strip()
+                modifiers.append((-int(abs(penalty)), f"{source}: charge roll modifier"))
         return modifiers
 
     def register_wargear_charge_keyword_hit(

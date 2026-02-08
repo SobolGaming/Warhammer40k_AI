@@ -276,6 +276,81 @@ _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.values()
 }
 
+_WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS: dict[str, StratagemToolDescriptor] = {
+    "000009778002": StratagemToolDescriptor(
+        stratagem_id="000009778002",
+        name="Sanctified Kill Zone",
+        timing="shooting_or_fight_phase_on_select",
+        target="grey_knights_unit_not_yet_acted_wholly_within_hallowed_ground",
+        duration="until_end_of_phase",
+        effect="wound_reroll",
+        cp_cost=1,
+        effect_params={"reroll_wound_ones": True, "purifier_squad_full_reroll": True},
+    ),
+    "000009778003": StratagemToolDescriptor(
+        stratagem_id="000009778003",
+        name="Flames of Sanctity",
+        timing="end_of_fight_phase",
+        target="purifier_squad_unit_eligible_to_fight",
+        duration="immediate",
+        effect="enemy_units_within_range_mortal_wounds",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={"roll": "D6", "threshold": 4, "mortal_wounds": "D3", "castellan_crowe_bonus": 1},
+    ),
+    "000009778004": StratagemToolDescriptor(
+        stratagem_id="000009778004",
+        name="Hallowed Beacon",
+        timing="movement_phase_reinforcements_step",
+        target="grey_knights_infantry_non_terminator_arriving_deep_strike",
+        duration="this_phase",
+        effect="deep_strike_min_distance_override",
+        cp_cost=1,
+        effect_params={"min_distance": 6, "distance_type": "horizontal", "requires_hallowed_ground": True},
+    ),
+    "000009778005": StratagemToolDescriptor(
+        stratagem_id="000009778005",
+        name="Fires of Covenant",
+        timing="opponent_movement_phase_start",
+        target="grey_knights_infantry_unit",
+        duration="until_end_of_phase",
+        effect="enemy_move_or_setup_proximity_mortal_wounds",
+        cp_cost=1,
+        range_in=6.0,
+        effect_params={
+            "trigger_events": ["enemy_set_up", "enemy_normal_move_end", "enemy_advance_move_end", "enemy_fall_back_end"],
+            "roll": "D6",
+            "base_threshold": 4,
+            "hallowed_ground_roll_bonus": 2,
+            "mortal_wounds": "D3",
+        },
+    ),
+    "000009778006": StratagemToolDescriptor(
+        stratagem_id="000009778006",
+        name="Aegis Eternal",
+        timing="opponent_shooting_phase_after_targets_selected",
+        target="grey_knights_infantry_unit_targeted",
+        duration="until_end_of_phase",
+        effect="invulnerable_save_in_hallowed_ground",
+        cp_cost=1,
+        effect_params={"invulnerable_save": 4},
+    ),
+    "000009778007": StratagemToolDescriptor(
+        stratagem_id="000009778007",
+        name="Repelling Sphere",
+        timing="opponent_charge_phase_start",
+        target="grey_knights_infantry_unit",
+        duration="until_end_of_phase",
+        effect="defensive_charge_roll_penalty",
+        cp_cost=1,
+        effect_params={"base_penalty": 1, "hallowed_ground_penalty": 2},
+    ),
+}
+
+_WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.values()
+}
+
 
 def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> Optional[StratagemToolDescriptor]:
     if stratagem_id:
@@ -291,6 +366,9 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         desc = _GORETRACK_ONSLAUGHT_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
         if desc is not None:
             return desc
+        desc = _WARPBANE_TASK_FORCE_STRATAGEM_DESCRIPTORS.get(str(stratagem_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -299,4 +377,5 @@ def get_stratagem_tool_descriptor(*, stratagem_id: str = "", name: str = "") -> 
         or _DAEMONIC_INCURSION_STRATAGEM_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_STRATAGEM_BY_NAME.get(key)
         or _GORETRACK_ONSLAUGHT_STRATAGEM_BY_NAME.get(key)
+        or _WARPBANE_TASK_FORCE_STRATAGEM_BY_NAME.get(key)
     )

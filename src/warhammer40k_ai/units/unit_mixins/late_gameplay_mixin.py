@@ -1424,6 +1424,16 @@ class LateGameplayMixin:
                         "denizens_deep_strike_source",
                     ):
                         sr.pop(key, None)
+                if "hallowed_beacon_deep_strike_min_distance" in sr or "hallowed_beacon_expires_phase" in sr:
+                    for key in (
+                        "hallowed_beacon_deep_strike_min_distance",
+                        "hallowed_beacon_requires_hallowed_ground",
+                        "hallowed_beacon_turn_owner",
+                        "hallowed_beacon_turn",
+                        "hallowed_beacon_expires_phase",
+                        "hallowed_beacon_source",
+                    ):
+                        sr.pop(key, None)
                 self.special_rules = sr
                 if hasattr(self, "_ability_cache") and isinstance(getattr(self, "_ability_cache", None), dict):
                     self._ability_cache.pop("deep_strike", None)

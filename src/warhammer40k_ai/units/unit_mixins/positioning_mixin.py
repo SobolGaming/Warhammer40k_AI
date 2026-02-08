@@ -3360,6 +3360,40 @@ class PositioningMixin:
             if denizens_min > 0:
                 min_dist = denizens_min if min_dist is None else min(min_dist, denizens_min)
 
+        try:
+            hallowed_beacon_min = float(sr.get("hallowed_beacon_deep_strike_min_distance", 0) or 0)
+        except Exception:
+            hallowed_beacon_min = 0.0
+        if hallowed_beacon_min > 0:
+            try:
+                game = None
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                try:
+                    game = getattr(getattr(army, "player", None), "game", None)
+                except Exception:
+                    game = None
+                owner_id = str(sr.get("hallowed_beacon_turn_owner", "") or "")
+                turn = int(sr.get("hallowed_beacon_turn", 0) or 0)
+                if game is not None:
+                    cur_turn = int(getattr(game, "turn", 0) or 0)
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    pname = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    exp = str(sr.get("hallowed_beacon_expires_phase", "") or "").strip().upper()
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        hallowed_beacon_min = 0.0
+                    elif turn and cur_turn and turn != cur_turn:
+                        hallowed_beacon_min = 0.0
+                    elif exp and pname and exp != pname:
+                        hallowed_beacon_min = 0.0
+            except Exception:
+                hallowed_beacon_min = 0.0
+            if hallowed_beacon_min > 0:
+                min_dist = hallowed_beacon_min if min_dist is None else min(min_dist, hallowed_beacon_min)
+
         return float(min_dist) if min_dist is not None else None
 
     def has_infiltrate(self) -> bool:

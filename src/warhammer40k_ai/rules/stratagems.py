@@ -14,6 +14,7 @@ from .stratagems_chaos_knights import ChaosKnightsStratagemMixin
 from .stratagems_necrons import NecronsStratagemMixin
 from .stratagems_orks import OrksStratagemMixin
 from .stratagems_world_eaters import WorldEatersStratagemMixin
+from .stratagems_grey_knights import GreyKnightsStratagemMixin
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,12 @@ IMPLEMENTED_STRATAGEM_NAMES = {
     "FULL-THROTTLE ASSAULT",
     "SMASH THROUGH",
     "UNRELENTING ADVANCE",
+    "AEGIS ETERNAL",
+    "FIRES OF COVENANT",
+    "FLAMES OF SANCTITY",
+    "HALLOWED BEACON",
+    "REPELLING SPHERE",
+    "SANCTIFIED KILL ZONE",
 }
 
 REACTION_ONLY_STRATAGEM_NAMES = {
@@ -159,6 +166,10 @@ REACTION_ONLY_STRATAGEM_NAMES = {
     "\u2019ARD AS NAILS",
     "PROFANE SYMBIOSIS",
     "CORRUPTING TAINT",
+    "AEGIS ETERNAL",
+    "FIRES OF COVENANT",
+    "FLAMES OF SANCTITY",
+    "REPELLING SPHERE",
 }
 
 
@@ -867,6 +878,7 @@ class Stratagem:
 
 class StratagemManager(
     WorldEatersStratagemMixin,
+    GreyKnightsStratagemMixin,
     ChaosKnightsStratagemMixin,
     ChaosDaemonsStratagemMixin,
     NecronsStratagemMixin,
@@ -1006,8 +1018,10 @@ class StratagemManager(
         if names & {"OVERWATCH", "FIRE OVERWATCH", "APOPLECTIC FRENZY"}:
             add("unit_move_started", self._on_unit_move_started)
 
-        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "CUT DOWN THE WEAK"}:
+        if names & {"OVERWATCH", "FIRE OVERWATCH", "TANK SHOCK", "HEROIC INTERVENTION", "FEIGNED RETREAT", "CUT DOWN THE WEAK", "FIRES OF COVENANT"}:
             add("unit_move_ended", self._on_unit_move_ended)
+        if "FIRES OF COVENANT" in names:
+            add("unit_set_up", self._on_unit_set_up)
 
         if names & {"A GRIM WARNING", "BLOOD OFFERING", "UNBOUND ARROGANCE", "TERRIFYING SPECTACLE"}:
             add("unit_destroyed", self._on_unit_destroyed)
@@ -1066,6 +1080,7 @@ class StratagemManager(
             "'ARD AS NAILS",
             "\u2019ARD AS NAILS",
             "DAEMONIC INVULNERABILITY",
+            "AEGIS ETERNAL",
         }
         fight_reaction_names = {
             "DEFIANT TO THE LAST",
@@ -1118,6 +1133,7 @@ class StratagemManager(
         phase_end_trigger_names = {
             "DELIRIUM UNMADE",
             "ENDLESS PURSUIT OF VIOLENCE",
+            "FLAMES OF SANCTITY",
             "MURDER-CALL",
             "NEW ORDERS",
             "RAPID INGRESS",
@@ -1153,6 +1169,11 @@ class StratagemManager(
             "PYROGENESIS",
             "DENIZENS OF THE WARP",
             "WARP SURGE",
+            "AEGIS ETERNAL",
+            "FIRES OF COVENANT",
+            "HALLOWED BEACON",
+            "REPELLING SPHERE",
+            "SANCTIFIED KILL ZONE",
         }
         needs_phase_end = bool(
             (names & phase_end_trigger_names)
@@ -2457,6 +2478,10 @@ class StratagemManager(
                                     }, use_timer=False)
         except Exception:
             raise
+        try:
+            self._queue_warpbane_phase_start_reactions(player=player, phase=phase)
+        except Exception:
+            raise
 
     def _gilded_champion_detachment_manager(self):
         army = getattr(self.player, "army", None)
@@ -3139,6 +3164,11 @@ class StratagemManager(
                                     payload["unit"] = candidates[0]
                                     payload["target_unit"] = candidates[0]
                                 self._queue_reaction(payload, use_timer=False)
+        except Exception:
+            raise
+        try:
+            self._queue_warpbane_phase_end_reactions(player=player, phase=phase)
+            self._cleanup_warpbane_phase_end_effects(phase=phase)
         except Exception:
             raise
         # Clear command-phase battle-shock suppression flags (e.g., Terrifying Spectacle).
@@ -4414,6 +4444,10 @@ class StratagemManager(
         self._maybe_queue_feigned_retreat(unit, action)
         self._maybe_queue_red_wrath(unit, action)
         self._maybe_queue_cut_down_the_weak(unit, action)
+        self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="move_end", action=action)
+
+    def _on_unit_set_up(self, unit, **kwargs):
+        self._process_warpbane_fires_of_covenant_trigger(unit=unit, trigger_kind="set_up")
 
     def _on_unit_shooting_resolved_fire_and_fade(self, attacker_unit=None, **kwargs):
         """
@@ -5230,6 +5264,10 @@ class StratagemManager(
             atk_key = self._attacker_unit_key(attacking_unit)
             if atk_key:
                 self._recent_shooting_targets[atk_key] = list(target_units or [])
+        except Exception:
+            raise
+        try:
+            self._queue_warpbane_shooting_reactions(attacking_unit=attacking_unit, target_units=target_units)
         except Exception:
             raise
         # GO TO GROUND
@@ -7948,6 +7986,9 @@ class StratagemManager(
                     return False
         except Exception:
             raise
+        warpbane_result = self._use_grey_knights_warpbane_stratagem(s, **kwargs)
+        if warpbane_result is not None:
+            return warpbane_result
         # Adeptus Custodes (Lions of the Emperor): GILDED CHAMPION
         if name_u == "GILDED CHAMPION":
             model = kwargs.get("model") or self._resolve_gilded_champion_model(kwargs)

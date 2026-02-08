@@ -942,6 +942,39 @@ class GameSetupDeploymentReservesMixin:
         for m, loc in zip(unit.models, prospective):
             if loc:
                 m.set_location(*loc)
+
+        # HALLOWED BEACON: unit must be set up wholly within Hallowed Ground.
+        try:
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        except Exception:
+            root = unit
+        sr = getattr(root, "special_rules", None)
+        requires_hallowed_ground = False
+        if isinstance(sr, dict) and bool(sr.get("hallowed_beacon_requires_hallowed_ground")):
+            owner_id = str(sr.get("hallowed_beacon_turn_owner", "") or "")
+            effect_turn = int(sr.get("hallowed_beacon_turn", 0) or 0)
+            expires_phase = str(sr.get("hallowed_beacon_expires_phase", "") or "").strip().upper()
+            current_turn = int(getattr(self, "turn", 0) or 0)
+            current_owner = str(getattr(getattr(self, "get_current_player", lambda: None)(), "id", "") or "")
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            requires_hallowed_ground = True
+            if owner_id and current_owner and owner_id != current_owner:
+                requires_hallowed_ground = False
+            if requires_hallowed_ground and effect_turn and current_turn and effect_turn != current_turn:
+                requires_hallowed_ground = False
+            if requires_hallowed_ground and expires_phase and phase_name and expires_phase != phase_name:
+                requires_hallowed_ground = False
+        if requires_hallowed_ground:
+            army = root.get_parent_army() if hasattr(root, "get_parent_army") else None
+            gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+            if gk_mgr is None or not bool(
+                getattr(gk_mgr, "unit_wholly_within_hallowed_ground", lambda *_a, **_k: False)(root, game=self)
+            ):
+                for m, loc in zip(unit.models, snapshot):
+                    if loc:
+                        m.set_location(*loc)
+                return False
+
         min_enemy_distance = float(self._warp_rifts_min_distance(unit) or 9.0)
         for m, loc in zip(unit.models, snapshot):
             if loc:
