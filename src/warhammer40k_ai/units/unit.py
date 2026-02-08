@@ -454,6 +454,18 @@ class Unit(
                             mods.append(Modifier(ModifierOp.ADD, 1, source="enhancement:strategic_savant"))
                             break
 
+            # Mandulian Reliquary (Warpbane Task Force): while the bearer's unit is not
+            # Battle-shocked, add 3 to the bearer's Objective Control characteristic.
+            try:
+                sr = getattr(root, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("enhancement_mandulian_reliquary"):
+                    bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                    model_id = str(get_entity_id(model) or "")
+                    if bearer_id and model_id and bearer_id == model_id and not root.is_battle_shocked():
+                        mods.append(Modifier(ModifierOp.ADD, 3, source="enhancement:mandulian_reliquary"))
+            except Exception:
+                pass
+
             # OC: strict enemy engagement-range halving (e.g. Chitinous Horrors).
             try:
                 if game_map is None:

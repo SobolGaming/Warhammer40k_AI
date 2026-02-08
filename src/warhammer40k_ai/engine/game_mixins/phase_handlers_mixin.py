@@ -14,6 +14,7 @@ class GamePhaseHandlersMixin:
         - Enhancements that grant Fight First (Once per battle, start of Fight phase).
         """
         pname = str(getattr(phase, "name", "") or "").strip().upper()
+        self._on_phase_start_paragon_of_sanctity(player=player, phase=phase)
         if pname:
             for p in list(getattr(self, "players", []) or []):
                 if p is None:
@@ -1535,6 +1536,154 @@ class GamePhaseHandlersMixin:
                                     p,
                                     f"{label}: {getattr(enemy_root, 'name', 'Unit')} takes a Battle-shock test.",
                                 )
+
+    def _on_phase_start_paragon_of_sanctity(self, player=None, phase=None, **_kwargs) -> None:
+        """Warpbane Task Force: optional once-per-battle Hallowed Ground proxy selection."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if not pname:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        pending_source_ids: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "paragon_of_sanctity":
+                    continue
+                sid = str(ctx.get("source_unit_id", "") or "")
+                if sid:
+                    pending_source_ids.add(sid)
+
+        def _unit_sort_key(unit) -> str:
+            return str(get_entity_id(unit) or "")
+
+        game_map = getattr(self, "map", None)
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+            gk_mgr = getattr(army, "grey_knights_detachments", None)
+            if gk_mgr is None or not bool(getattr(gk_mgr, "is_warpbane_task_force", lambda: False)()):
+                continue
+
+            seen_roots: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+                if root is None:
+                    continue
+                root_id = str(get_entity_id(root) or "")
+                if not root_id or root_id in seen_roots:
+                    continue
+                seen_roots.add(root_id)
+
+                if root_id in pending_source_ids:
+                    continue
+                if not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                if bool(getattr(root, "is_in_reserves", lambda: False)()):
+                    continue
+                if bool(getattr(root, "is_embarked", False)) or getattr(root, "embarked_in", None) is not None:
+                    continue
+
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_paragon_of_sanctity"):
+                    continue
+                ability_key = str(sr.get("enhancement_paragon_of_sanctity_once_key", "") or "paragon_of_sanctity").strip().lower()
+                if not ability_key:
+                    ability_key = "paragon_of_sanctity"
+                if root.has_used_unit_once_per_battle(ability_key):
+                    continue
+
+                get_bearer = getattr(root, "_get_enhancement_bearer_model", None)
+                if not callable(get_bearer):
+                    continue
+                bearer = get_bearer()
+                if bearer is None or not getattr(bearer, "is_alive", True):
+                    continue
+
+                candidates = []
+                candidate_seen: set[str] = set()
+                for cand in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                    if cand is None:
+                        continue
+                    cand_root = cand.get_attached_unit_root() if hasattr(cand, "get_attached_unit_root") else cand
+                    if cand_root is None:
+                        continue
+                    cid = str(get_entity_id(cand_root) or "")
+                    if not cid or cid in candidate_seen:
+                        continue
+                    candidate_seen.add(cid)
+                    if not bool(getattr(cand_root, "is_alive", lambda: False)()):
+                        continue
+                    if not bool(getattr(cand_root, "deployed", False)):
+                        continue
+                    if bool(getattr(cand_root, "is_in_reserves", lambda: False)()):
+                        continue
+                    if bool(getattr(cand_root, "is_embarked", False)) or getattr(cand_root, "embarked_in", None) is not None:
+                        continue
+                    if not bool(getattr(gk_mgr, "_is_grey_knights_unit", lambda _u: False)(cand_root)):
+                        continue
+                    if not bool(getattr(root, "_model_within_range_of_unit", lambda *_a, **_k: False)(bearer, cand_root, 18.0)):
+                        continue
+
+                    visible = True
+                    if game_map is not None and hasattr(game_map, "can_model_see_model"):
+                        visible = False
+                        target_models = list(getattr(cand_root, "get_models_for_collision", lambda: [])() or [])
+                        if not target_models:
+                            target_models = list(getattr(cand_root, "models", []) or [])
+                        for target_model in target_models:
+                            if target_model is None or not getattr(target_model, "is_alive", True):
+                                continue
+                            if game_map.can_model_see_model(bearer, target_model):
+                                visible = True
+                                break
+                    if not visible:
+                        continue
+                    candidates.append(cand_root)
+
+                if not candidates:
+                    continue
+
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for cand in sorted(list(candidates), key=_unit_sort_key):
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    "Paragon of Sanctity: select one friendly GREY KNIGHTS unit within 18\" and visible (or None).",
+                    player_id=getattr(p, "id", None),
+                    options=options,
+                    context={
+                        "ability": "paragon_of_sanctity",
+                        "ability_name": "Paragon of Sanctity",
+                        "phase": pname.replace("_", " ").title(),
+                        "source_unit_id": root_id,
+                        "unit_id": root_id,
+                        "model_id": str(get_entity_id(bearer) or ""),
+                        "ability_key": ability_key,
+                        "range": 18,
+                        "optional": True,
+                    },
+                )
+                self.request_decision(request)
 
     def _on_phase_start_empowered_by_death(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: below Starting Strength units with Empowered by Death gain Fight First until end of phase."""

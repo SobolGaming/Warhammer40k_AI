@@ -257,6 +257,11 @@ class Enhancement:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
         except Exception:
             is_infernal_lance = False
+        gk_mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        try:
+            is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
+        except Exception:
+            is_warpbane_task_force = False
 
         bearer = None
         bearer_id = ""
@@ -709,6 +714,36 @@ class Enhancement:
                 return
             unit.special_rules["enhancement_bestial_aspect"] = True
             unit.special_rules["bearer_unit_assault_ranged"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "mandulian reliquary" or enh_id == "000009777002":
+            if not is_warpbane_task_force:
+                return
+            unit.special_rules["enhancement_mandulian_reliquary"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "radiant champion" or enh_id == "000009777003":
+            if not is_warpbane_task_force:
+                return
+            unit.special_rules["enhancement_radiant_champion"] = True
+            unit.special_rules["enhancement_bearer_melee_precision"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "phial of the abyss" or enh_id == "000009777004":
+            if not is_warpbane_task_force:
+                return
+            unit.special_rules["enhancement_phial_of_the_abyss"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "paragon of sanctity" or enh_id == "000009777005":
+            if not is_warpbane_task_force:
+                return
+            unit.special_rules["enhancement_paragon_of_sanctity"] = True
+            unit.special_rules["enhancement_paragon_of_sanctity_once_key"] = "paragon_of_sanctity"
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

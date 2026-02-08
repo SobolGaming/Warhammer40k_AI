@@ -376,6 +376,32 @@ class WargearProfile:
         attacker_id = str(getattr(attacker, "id", getattr(attacker, "_id", "")) or "")
         return attacker_id == str(bearer_id)
 
+    def _radiant_champion_extra_mortal_wounds(self, attacker: 'Model') -> int:
+        unit = getattr(attacker, "parent_unit", None)
+        if unit is None:
+            return 0
+        sr = self._unit_special_rules(attacker)
+        if not isinstance(sr, dict) or not sr.get("enhancement_radiant_champion"):
+            return 0
+        if not self._attacker_is_enhancement_bearer(attacker, sr):
+            return 0
+        parent = getattr(self, "parent_wargear", None)
+        if parent is None or not bool(getattr(parent, "is_melee", lambda: False)()):
+            return 0
+        army = unit.get_parent_army() if hasattr(unit, "get_parent_army") else None
+        mgr = getattr(army, "grey_knights_detachments", None) if army is not None else None
+        if mgr is None:
+            return 0
+        if not bool(getattr(mgr, "is_warpbane_task_force", lambda: False)()):
+            return 0
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        checker = getattr(mgr, "model_wholly_within_hallowed_ground", None)
+        if not callable(checker):
+            return 0
+        if not bool(checker(attacker, game=game)):
+            return 0
+        return 1
+
     def _attacker_in_shadow_of_chaos(self, attacker: 'Model') -> bool:
         unit = getattr(attacker, "parent_unit", None)
         if unit is None:
@@ -2580,6 +2606,24 @@ class WargearProfile:
                         }
                     )
 
+            # Effects that inflict mortal wounds on each successful wound in addition
+            # to normal damage (e.g., Radiant Champion).
+            extra_on_wound = int(wound_instance.get("successful_wound_extra_mortal_wounds", 0) or 0)
+            if extra_on_wound > 0:
+                target_key = self._pending_mortal_target_key(target)
+                pending_mortal_by_target.setdefault(target_key, []).append(
+                    {
+                        "weapon_profile": self,
+                        "attacker": attacker,
+                        "target_unit": target,
+                        "target_model": target_model,
+                        "attack_instance": wound_instance,
+                        "attack_result": attack_result,
+                        "no_spill": False,
+                        "mortal_wound_amount": int(extra_on_wound),
+                    }
+                )
+
         if local_context or not defer_mortals:
             self.resolve_pending_mortal_wounds_for_target(
                 pending_mortal_by_target, target, game_map=game_map
@@ -4161,6 +4205,16 @@ class WargearProfile:
             if attack_is_melee:
                 sr = self._unit_special_rules(attacker)
                 if isinstance(sr, dict) and sr.get("enhancement_bearer_melee_precision"):
+                    if self._attacker_is_enhancement_bearer(attacker, sr):
+                        attack_instance["bonus_precision"] = True
+        except Exception:
+            pass
+
+        # Enhancement: Radiant Champion grants Precision to bearer melee weapons.
+        try:
+            if attack_is_melee:
+                sr = self._unit_special_rules(attacker)
+                if isinstance(sr, dict) and sr.get("enhancement_radiant_champion"):
                     if self._attacker_is_enhancement_bearer(attacker, sr):
                         attack_instance["bonus_precision"] = True
         except Exception:
@@ -9554,6 +9608,15 @@ class WargearProfile:
                 wound_result['wound'] = _apply_wound_roll(reroll)
         except Exception:
             pass
+
+        if wound_result.get("wound"):
+            extra_mortals = int(self._radiant_champion_extra_mortal_wounds(attacker) or 0)
+            if extra_mortals > 0:
+                current_extra = int(attack_instance.get("successful_wound_extra_mortal_wounds", 0) or 0)
+                attack_instance["successful_wound_extra_mortal_wounds"] = current_extra + extra_mortals
+                wound_result["special_effects"].append(
+                    f"Radiant Champion: {int(extra_mortals)} mortal wound(s) in addition"
+                )
 
         if dice_roll == 1:
             wound_result['special_effects'].append("Natural 1 (auto-fail)")

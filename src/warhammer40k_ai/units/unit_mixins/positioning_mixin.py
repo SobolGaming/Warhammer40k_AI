@@ -3387,6 +3387,9 @@ class PositioningMixin:
         # Enhancement: Praesidius grants Stealth to the bearer model.
         if isinstance(sr, dict) and sr.get("enhancement_praesidius_stealth"):
             return True
+        # Enhancement: Phial of the Abyss grants Stealth to models in the bearer's unit.
+        if isinstance(sr, dict) and sr.get("enhancement_phial_of_the_abyss"):
+            return True
         # Use cached result if available
         if 'stealth' in getattr(self, '_ability_cache', {}):
             found = self._ability_cache['stealth']

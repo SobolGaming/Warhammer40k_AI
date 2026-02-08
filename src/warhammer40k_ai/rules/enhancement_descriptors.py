@@ -185,6 +185,53 @@ _SCINTILLATING_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SCINTILLATING_LEGION_DESCRIPTORS.values()
 }
 
+_WARPBANE_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009777002": EnhancementToolDescriptor(
+        enhancement_id="000009777002",
+        name="Mandulian Reliquary",
+        timing="passive",
+        target="bearer",
+        duration="while_bearer_unit_not_battle_shocked",
+        effect="bearer_objective_control_bonus",
+        effect_params={"objective_control_bonus": 3},
+    ),
+    "000009777003": EnhancementToolDescriptor(
+        enhancement_id="000009777003",
+        name="Radiant Champion",
+        timing="passive",
+        target="bearer",
+        duration="constant_conditional",
+        effect="bearer_melee_precision_and_mortal_on_wound",
+        effect_params={
+            "precision": True,
+            "mortal_wounds_on_successful_wound": 1,
+            "mortal_condition": "bearer_wholly_within_hallowed_ground",
+        },
+    ),
+    "000009777004": EnhancementToolDescriptor(
+        enhancement_id="000009777004",
+        name="Phial of the Abyss",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="grant_stealth",
+    ),
+    "000009777005": EnhancementToolDescriptor(
+        enhancement_id="000009777005",
+        name="Paragon of Sanctity",
+        timing="start_of_any_phase",
+        target="friendly_grey_knights_unit_within_range_visible",
+        duration="until_end_of_phase",
+        effect="count_as_within_hallowed_ground",
+        range_in=18.0,
+        once_per_battle=True,
+    ),
+}
+
+_WARPBANE_TASK_FORCE_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _WARPBANE_TASK_FORCE_DESCRIPTORS.values()
+}
+
 
 def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "") -> Optional[EnhancementToolDescriptor]:
     if enhancement_id:
@@ -200,6 +247,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
     key = _normalize_name(name)
     if not key:
         return None
@@ -208,4 +258,5 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
+        or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
     )

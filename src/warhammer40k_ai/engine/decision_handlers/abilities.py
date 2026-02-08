@@ -1697,6 +1697,55 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         if callable(apply_fn):
             apply_fn(request, result, skipped=skipped)
         return None
+    if ability == "paragon_of_sanctity":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id"))))
+        if source_unit is None or target_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if source_root is None or target_root is None:
+            return None
+        ability_key = str(ctx.get("ability_key", "") or "paragon_of_sanctity").strip().lower()
+        if not ability_key:
+            ability_key = "paragon_of_sanctity"
+        if getattr(source_root, "has_used_unit_once_per_battle", lambda _k: False)(ability_key):
+            return None
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        sr["paragon_of_sanctity_hallowed_ground_active"] = True
+        sr["paragon_of_sanctity_hallowed_ground_turn"] = int(turn)
+        sr["paragon_of_sanctity_hallowed_ground_phase"] = phase_name
+        sr["paragon_of_sanctity_hallowed_ground_source_unit_id"] = str(get_entity_id(source_root) or "")
+        sr["paragon_of_sanctity_hallowed_ground_source"] = str(ctx.get("ability_name", "") or "Paragon of Sanctity")
+        target_root.special_rules = sr
+        getattr(source_root, "mark_unit_once_per_battle_used", lambda _k, **_kw: None)(
+            ability_key,
+            ability_name=str(ctx.get("ability_name", "") or "Paragon of Sanctity"),
+        )
+        try:
+            player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+        except Exception:
+            player = None
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                "Paragon of Sanctity: "
+                f"{getattr(target_root, 'name', 'Unit')} counts as within Hallowed Ground until end of phase.",
+            )
+        except Exception:
+            pass
+        return None
     if ability == "cankerblight":
         payload = _option_payload(request, result)
         target_val = payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id")))

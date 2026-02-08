@@ -141,6 +141,110 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             sources.append(root)
         return sources
 
+    def _model_is_within_hallowed_ground(
+        self,
+        model,
+        *,
+        game,
+        player,
+        opponent,
+        zones: set[str],
+        purifier_units: list,
+    ) -> bool:
+        if model is None:
+            return False
+        if not getattr(model, "is_alive", True):
+            return False
+        if not hasattr(model, "get_location"):
+            return False
+        location = model.get_location()
+        if location is None or len(location) < 2:
+            return False
+        x = float(location[0])
+        y = float(location[1])
+        base = getattr(model, "model_base", None)
+        if base is None:
+            return False
+
+        in_own = game.is_position_wholly_in_deployment_zone(x, y, base, player.id)
+        in_enemy = False
+        if opponent is not None:
+            in_enemy = game.is_position_wholly_in_deployment_zone(x, y, base, opponent.id)
+
+        if in_own and "own" in zones:
+            return True
+        if in_enemy and "enemy" in zones:
+            return True
+        if (not in_own and not in_enemy) and "nml" in zones:
+            return True
+
+        from ..utility.aura_utils import model_wholly_within_range_of_unit
+
+        for source in purifier_units:
+            if model_wholly_within_range_of_unit(source, model, 6.0, use_attached_aggregate=True):
+                return True
+        return False
+
+    def _paragon_treat_as_within_hallowed_ground_active(self, unit, *, game=None) -> bool:
+        if unit is None:
+            return False
+        if game is None:
+            player = getattr(self.army, "player", None)
+            if player is not None:
+                game = getattr(player, "game", None)
+        if game is None:
+            return False
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not bool(sr.get("paragon_of_sanctity_hallowed_ground_active", False)):
+            return False
+        try:
+            effect_turn = int(sr.get("paragon_of_sanctity_hallowed_ground_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        effect_phase = str(sr.get("paragon_of_sanctity_hallowed_ground_phase", "") or "").strip().upper()
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        return bool(effect_turn == current_turn and effect_phase and effect_phase == current_phase)
+
+    def model_wholly_within_hallowed_ground(self, model, *, game=None) -> bool:
+        if not self.is_warpbane_task_force():
+            return False
+        if model is None:
+            return False
+        player = getattr(self.army, "player", None)
+        if player is None:
+            return False
+        if game is None:
+            game = getattr(player, "game", None)
+        if game is None:
+            return False
+        opponent = next((p for p in (getattr(game, "players", None) or []) if p is not player), None)
+        zones = self._active_hallowed_ground_zones(game)
+        purifier_units = self._iter_purifier_units()
+        return self._model_is_within_hallowed_ground(
+            model,
+            game=game,
+            player=player,
+            opponent=opponent,
+            zones=zones,
+            purifier_units=purifier_units,
+        )
+
+    def unit_within_hallowed_ground(self, unit, *, game=None) -> bool:
+        if not self.is_warpbane_task_force():
+            return False
+        if self.unit_wholly_within_hallowed_ground(unit, game=game):
+            return True
+        return self._paragon_treat_as_within_hallowed_ground_active(unit, game=game)
+
     def unit_wholly_within_hallowed_ground(self, unit, *, game=None) -> bool:
         if not self.is_warpbane_task_force():
             return False
@@ -167,33 +271,16 @@ class GreyKnightsDetachmentManager(DetachmentManagerBase):
             return False
 
         purifier_units = self._iter_purifier_units()
-        from ..utility.aura_utils import model_wholly_within_range_of_unit
 
         for model in models:
-            if not getattr(model, "is_alive", True):
-                continue
-            if not hasattr(model, "get_location"):
-                return False
-            x, y, *_rest = model.get_location()
-            base = getattr(model, "model_base", None)
-            if base is None:
-                return False
-            in_own = game.is_position_wholly_in_deployment_zone(float(x), float(y), base, player.id)
-            in_enemy = False
-            if opponent is not None:
-                in_enemy = game.is_position_wholly_in_deployment_zone(float(x), float(y), base, opponent.id)
-            if in_own and "own" in zones:
-                continue
-            if in_enemy and "enemy" in zones:
-                continue
-            if (not in_own and not in_enemy) and "nml" in zones:
-                continue
-            in_purifier = False
-            for source in purifier_units:
-                if model_wholly_within_range_of_unit(source, model, 6.0, use_attached_aggregate=True):
-                    in_purifier = True
-                    break
-            if not in_purifier:
+            if not self._model_is_within_hallowed_ground(
+                model,
+                game=game,
+                player=player,
+                opponent=opponent,
+                zones=zones,
+                purifier_units=purifier_units,
+            ):
                 return False
         return True
 
