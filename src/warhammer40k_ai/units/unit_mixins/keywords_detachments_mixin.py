@@ -1882,6 +1882,8 @@ class KeywordsDetachmentsMixin:
         Return rule info for abilities like:
         "In your Shooting phase, each time a model in this unit makes a ranged attack that targets a MONSTER or VEHICLE unit,
         you can re-roll the Hit roll, you can re-roll the Wound roll and you can re-roll the Damage roll."
+        Also supports model-worded variants such as:
+        "Each time a ranged attack made by this model is allocated to a MONSTER or VEHICLE model, you can re-roll the Damage roll."
         """
         if model is None:
             return None
@@ -1891,7 +1893,7 @@ class KeywordsDetachmentsMixin:
 
         rule = None
         try:
-            for name, desc in self._iter_ability_entries_for_rules(model=None):
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
                 text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
                 if not text:
                     continue
@@ -1900,11 +1902,19 @@ class KeywordsDetachmentsMixin:
                     continue
                 if "monster" not in low or "vehicle" not in low:
                     continue
-                if "each time a model in this unit makes a ranged attack" not in low:
-                    continue
                 if "closest" in low:
                     continue
-                if not re.search(r"targets (?:an? )?(?:enemy )?monster or vehicle unit", low):
+                model_attack_phrase = bool(
+                    ("each time a model in this unit makes a ranged attack" in low)
+                    or ("each time this model makes a ranged attack" in low)
+                    or ("each time a ranged attack made by this model" in low)
+                )
+                if not model_attack_phrase:
+                    continue
+                if not re.search(
+                    r"(?:targets?|allocated to) (?:an? )?(?:enemy )?monster or vehicle (?:unit|model)",
+                    low,
+                ):
                     continue
                 if ("re-roll" not in low) and ("reroll" not in low):
                     continue
@@ -1919,6 +1929,64 @@ class KeywordsDetachmentsMixin:
                     "reroll_wound": bool(allow_wound),
                     "reroll_damage": bool(allow_damage),
                     "requires_shooting_phase": ("shooting phase" in low),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def get_model_target_keyword_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return model attack AP bonus rule for patterns like:
+        "Each time a ranged attack made by this model targets an enemy INFANTRY unit,
+         improve the Armour Penetration characteristic of that attack by 1."
+        """
+        if model is None:
+            return None
+        cache_key = f"model_target_keyword_ap_bonus_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_model_specific_ability_entries(model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                if "ranged attack" not in low:
+                    continue
+                if "each time a ranged attack made by this model" not in low:
+                    continue
+                if "targets" not in low:
+                    continue
+                if "armour penetration" not in low and "armor penetration" not in low:
+                    continue
+                if "characteristic" not in low:
+                    continue
+                if "improve" not in low:
+                    continue
+                if "enemy infantry unit" not in low:
+                    continue
+                m = re.search(r"by\s+(\d+)", low)
+                if not m:
+                    continue
+                try:
+                    ap_bonus = int(m.group(1) or 0)
+                except Exception:
+                    ap_bonus = 0
+                if ap_bonus <= 0:
+                    continue
+                source = str(name or "Target AP bonus").strip() or "Target AP bonus"
+                rule = {
+                    "attack_type": "ranged",
+                    "target_keyword": "INFANTRY",
+                    "ap_bonus": int(ap_bonus),
                     "source": source,
                 }
                 break

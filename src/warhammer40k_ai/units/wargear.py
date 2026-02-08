@@ -876,6 +876,33 @@ class WargearProfile:
                     ap_val -= 1
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                unit = getattr(attacker, "parent_unit", None)
+                get_rule = getattr(unit, "get_model_target_keyword_ap_bonus_rule", None) if unit is not None else None
+                if callable(get_rule):
+                    rule = get_rule(attacker)
+                else:
+                    rule = None
+                if isinstance(rule, dict):
+                    try:
+                        bonus = int(rule.get("ap_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    target_kw = str(rule.get("target_keyword", "") or "").strip().upper()
+                    if bonus > 0 and target_kw:
+                        applies = False
+                        try:
+                            applies = bool(target.has_keyword(target_kw))
+                        except Exception:
+                            try:
+                                applies = bool(target.has_any_keyword(target_kw))
+                            except Exception:
+                                applies = False
+                        if applies:
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)

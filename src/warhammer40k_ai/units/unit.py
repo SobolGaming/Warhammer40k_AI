@@ -1835,6 +1835,12 @@ class Unit(
         r"improve the strength and damage characteristic(?:s)? of that attack by (?P<val>\d+)",
         re.IGNORECASE,
     )
+    _MELEE_CHARGE_STRENGTH_ONLY_RE = re.compile(
+        r"each time a model in (?:this|that) unit makes (?:a|an)? melee attack(?:s)? "
+        r"if (?:this|that) unit made a charge move this turn "
+        r"improve the strength characteristic(?:s)? of that attack by (?P<val>\d+)",
+        re.IGNORECASE,
+    )
     _SPIRIT_MARK_RE = re.compile(
         r"once per turn in your movement phase when this model starts or ends a move select one friendly (?P<keyword>[a-z0-9 ]+) unit within "
         r"(?P<range>\d+)\s*\"?\s*of this model(?: excluding titanic units)? and one enemy unit visible to this model "

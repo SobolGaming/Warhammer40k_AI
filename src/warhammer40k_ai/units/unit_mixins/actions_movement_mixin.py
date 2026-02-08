@@ -3029,20 +3029,39 @@ class ActionsMovementMixin:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = self._MELEE_CHARGE_STRENGTH_DAMAGE_RE.fullmatch(normalized)
-                if not m:
-                    continue
-                try:
-                    val = int(m.group("val") or 0)
-                except Exception:
-                    val = 0
-                if val <= 0:
-                    continue
+                damage_bonus = None
+                if m:
+                    try:
+                        val = int(m.group("val") or 0)
+                    except Exception:
+                        val = 0
+                    if val <= 0:
+                        continue
+                    damage_bonus = int(val)
+                else:
+                    m = self._MELEE_CHARGE_STRENGTH_ONLY_RE.fullmatch(normalized)
+                    if not m:
+                        continue
+                    try:
+                        val = int(m.group("val") or 0)
+                    except Exception:
+                        val = 0
+                    if val <= 0:
+                        continue
+                    damage_bonus = 0
+
                 source = str(name or "Charge melee strength/damage").strip() or "Charge melee strength/damage"
-                key = (source.lower(), int(val))
+                key = (source.lower(), int(val), int(damage_bonus))
                 if key in seen:
                     continue
                 seen.add(key)
-                entries.append({"strength_bonus": int(val), "damage_bonus": int(val), "source": source})
+                entries.append(
+                    {
+                        "strength_bonus": int(val),
+                        "damage_bonus": int(damage_bonus),
+                        "source": source,
+                    }
+                )
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
