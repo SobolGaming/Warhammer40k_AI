@@ -1028,6 +1028,19 @@ class StateAttachmentMixin:
             mod_roll = roll_result
         # 10e: lower Leadership is better; you pass if roll <= Ld.
         passed = mod_roll <= leadership_value
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            setattr(root, "_last_leadership_test_roll", int(roll_result))
+        except Exception:
+            setattr(root, "_last_leadership_test_roll", roll_result)
+        try:
+            setattr(root, "_last_leadership_test_modified_roll", int(mod_roll))
+        except Exception:
+            setattr(root, "_last_leadership_test_modified_roll", mod_roll)
+        setattr(root, "_last_leadership_test_passed", bool(passed))
 
         reroll_sources = []
         try:
@@ -1122,6 +1135,15 @@ class StateAttachmentMixin:
                 except Exception:
                     mod_roll = roll_result
                 passed = mod_roll <= leadership_value
+                try:
+                    setattr(root, "_last_leadership_test_roll", int(roll_result))
+                except Exception:
+                    setattr(root, "_last_leadership_test_roll", roll_result)
+                try:
+                    setattr(root, "_last_leadership_test_modified_roll", int(mod_roll))
+                except Exception:
+                    setattr(root, "_last_leadership_test_modified_roll", mod_roll)
+                setattr(root, "_last_leadership_test_passed", bool(passed))
                 try:
                     from ...utility.event_bus import append_action
                     if player is not None:

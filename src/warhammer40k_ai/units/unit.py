@@ -1788,6 +1788,17 @@ class Unit(
         r"that enemy unit must take a battle shock test",
         re.IGNORECASE,
     )
+    _START_SHOOTING_PHASE_SPIRIT_THIEF_RE = re.compile(
+        r"at the start of your shooting phase select one visible enemy vehicle unit until the end of the phase "
+        r"each time a friendly heretic astartes model makes an attack that targets that unit re roll a wound roll of 1",
+        re.IGNORECASE,
+    )
+    _START_SHOOTING_PHASE_CORRUPT_MACHINE_SPIRITS_RE = re.compile(
+        r"at the start of your shooting phase select one visible enemy vehicle unit within (?P<range>\d+) of this model and roll "
+        r"(?:one|1) d6 on a 2 3 that enemy unit suffers d3 mortal wounds on a 4 5 that enemy unit suffers 3 mortal wounds "
+        r"on a 6 that enemy unit suffers d3 3 mortal wounds",
+        re.IGNORECASE,
+    )
     _START_OPP_SHOOTING_PHASE_MISCHIEF_CONFUSION_RE = re.compile(
         r"at the start of your opponent s shooting phase select one enemy unit within (?P<range>\d+) of and visible to this model "
         r"and roll (?:one|1) d6 on a 2 5 until the end of the phase each time a model in that enemy unit makes an attack "

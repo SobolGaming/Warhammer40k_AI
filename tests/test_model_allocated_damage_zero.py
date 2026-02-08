@@ -111,6 +111,51 @@ class TestModelAllocatedDamageZero(unittest.TestCase):
 
         self.assertEqual(target_unit.models[0].wounds, 1)
 
+    def test_surgeon_acolyte_sets_damage_zero_once_per_turn(self):
+        ability = {
+            "name": "Surgeon Acolyte",
+            "description": (
+                "Once per turn, when an attack is allocated to a model in this unit, if this unit contains "
+                "FABIUS BILE, you can change the Damage characteristic of that attack to 0."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        target_unit = _make_unit("Fabius Bile", abilities=[ability], wounds=5)
+        target_unit.models[0].name = "Fabius Bile"
+        attacker_unit = _make_unit("Attacker", wounds=3)
+
+        attacker_army = Army("Attacker", detachment_type="Other")
+        attacker_army.faction_id = "ATK"
+        defender_army = Army("Defender", detachment_type="Other")
+        defender_army.faction_id = "CSM"
+        attacker = Player("Attacker", PlayerControl.REMOTE, army=attacker_army)
+        defender = Player("Defender", PlayerControl.REMOTE, army=defender_army)
+
+        game = Game(Battlefield(size=BattlefieldSize.STRIKE_FORCE), players=[attacker, defender])
+        attacker_army.add_unit(attacker_unit)
+        defender_army.add_unit(target_unit)
+        game.map.units = [attacker_unit, target_unit]
+
+        profile = _make_profile()
+
+        defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 5)
+
+        # Same turn: ability already consumed, so damage is applied.
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+
+        # Next turn: ability can be used again.
+        game.turn = int(getattr(game, "turn", 0) or 0) + 1
+        defender.set_next_optional_decision("MODEL_ALLOCATED_DAMAGE_ZERO", True)
+        with patch("warhammer40k_ai.units.wargear.get_roll", side_effect=[6, 6, 1]):
+            profile.attack(target_unit, attacker_unit.models[0], game_map=game.map)
+        self.assertEqual(target_unit.models[0].wounds, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

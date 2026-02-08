@@ -3060,6 +3060,109 @@ class AbilitySpecsMixin:
         self._ability_cache[cache_key] = list(specs)
         return list(specs)
 
+    def model_start_shooting_phase_spirit_thief_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select a visible enemy VEHICLE to mark
+        for friendly HERETIC ASTARTES wound reroll 1s until end of phase.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int (0 means no explicit range cap; visibility still required)
+            - keyword: str
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_spirit_thief:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._START_SHOOTING_PHASE_SPIRIT_THIEF_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Spirit Thief").strip() or "Spirit Thief"
+            key = source.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": 0,
+                    "keyword": "heretic astartes",
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_shooting_phase_corrupt_machine_spirits_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: start of Shooting phase, select a visible enemy VEHICLE within range
+        and roll a mortal-wound table.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - range: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_shooting_phase_corrupt_machine_spirits:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._START_SHOOTING_PHASE_CORRUPT_MACHINE_SPIRITS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            if range_value <= 0:
+                continue
+            source = str(name or "Corrupt Machine Spirits").strip() or "Corrupt Machine Spirits"
+            key = (source.lower(), int(range_value))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
     def model_start_opponent_shooting_phase_disrupt_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """
         Model-specific rule: start of opponent's Shooting phase, select a visible enemy; roll D6 for hit penalty or no-shoot.

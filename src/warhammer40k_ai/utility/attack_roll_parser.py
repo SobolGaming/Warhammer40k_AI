@@ -15,6 +15,7 @@ class AttackRollCondition:
     target_below_starting_strength: bool = False
     target_battleshocked: bool = False
     target_within_objective: bool = False
+    target_within_objective_not_controlled: bool = False
     target_within_range: Optional[float] = None
     target_isolated_within: Optional[float] = None
     target_keywords_any: Tuple[str, ...] = ()
@@ -55,6 +56,9 @@ class AttackRollCondition:
             ),
             target_battleshocked=bool(self.target_battleshocked or other.target_battleshocked),
             target_within_objective=bool(self.target_within_objective or other.target_within_objective),
+            target_within_objective_not_controlled=bool(
+                self.target_within_objective_not_controlled or other.target_within_objective_not_controlled
+            ),
             target_within_range=merged_range,
             target_isolated_within=merged_isolated,
             target_keywords_any=tuple({*self.target_keywords_any, *other.target_keywords_any}),
@@ -230,23 +234,45 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
     ):
         return AttackRollCondition(target_within_objective=True)
     if re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit within range of (?:an|one or more) objective marker(?:s)? you do not control",
+        t,
+    ):
+        return AttackRollCondition(target_within_objective_not_controlled=True)
+    if re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit that is within range of (?:an|one or more) objective marker(?:s)?",
         t,
     ):
         return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit that is within range of (?:an|one or more) objective marker(?:s)? you do not control",
+        t,
+    ):
+        return AttackRollCondition(target_within_objective_not_controlled=True)
     if re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*enemy unit within range of (?:an|one or more) objective marker(?:s)?",
         t,
     ):
         return AttackRollCondition(target_within_objective=True)
     if re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*enemy unit within range of (?:an|one or more) objective marker(?:s)? you do not control",
+        t,
+    ):
+        return AttackRollCondition(target_within_objective_not_controlled=True)
+    if re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*enemy unit that is within range of (?:an|one or more) objective marker(?:s)?",
         t,
     ):
         return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(
+        r"(?:the target of that attack|that attack) targets (?:a|an)?\s*enemy unit that is within range of (?:an|one or more) objective marker(?:s)? you do not control",
+        t,
+    ):
+        return AttackRollCondition(target_within_objective_not_controlled=True)
 
     if re.fullmatch(r"that (?:enemy )?unit is within range of (?:an|one or more) objective marker(?:s)?", t):
         return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(r"that (?:enemy )?unit is within range of (?:an|one or more) objective marker(?:s)? you do not control", t):
+        return AttackRollCondition(target_within_objective_not_controlled=True)
 
     m = re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit within (?P<rng>\d+)\"",

@@ -1893,6 +1893,34 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Start of Shooting: select a visible enemy within 12\"; roll D6 (1: Psyker unit suffers D3 MW; 2+: attacks vs target improve AP by 1) until next Movement phase.",
         ),
+        ("CSM", "Dark Ascension (Aura)"): (
+            "Supported",
+            "Friendly HERETIC ASTARTES units within 6\" gain both Dark Pacts weapon effects for that pact until end of phase.",
+        ),
+        ("CSM", "Dark Destiny"): (
+            "Supported",
+            "After passing a Dark Pacts Leadership test with a 7+, gain 1CP.",
+        ),
+        ("CSM", "Spirit Thief"): (
+            "Supported",
+            "Start of Shooting: select a visible enemy VEHICLE; friendly HERETIC ASTARTES attacks re-roll Wound rolls of 1 vs that unit until end of phase.",
+        ),
+        ("CSM", "Corrupt Machine Spirits"): (
+            "Supported",
+            "Start of Shooting: select a visible enemy VEHICLE within 12\"; roll D6 for mortal wounds (2-3=D3, 4-5=3, 6=D3+3).",
+        ),
+        ("CSM", "Daemonic Ordnance"): (
+            "Supported",
+            "When selected to shoot, optional activation grants [DEVASTATING WOUNDS] and [HAZARDOUS] to the model's ranged weapons until end of phase.",
+        ),
+        ("CSM", "Warp Rift Firepower"): (
+            "Supported",
+            "Once per battle in Shooting phase, optional activation grants [INDIRECT FIRE] to the unit's ranged weapons until end of phase.",
+        ),
+        ("CSM", "Surgeon Acolyte"): (
+            "Supported",
+            "Once per turn, when an attack is allocated to the unit and it contains FABIUS BILE, you can set that attack's Damage to 0.",
+        ),
         ("CSM", "Swift Assault"): ("Supported", "Leading: unit ranged weapons gain Assault."),
         ("CSM", "Warp Strike"): ("Supported", "End of Fight: if destroyed an enemy unit and not engaged, enter Strategic Reserves."),
         ("ADM", "Dynamic Efficiency"): ("Partial", "Charge-after-Advance/Fall Back supported; Desperate Escape rerolls not implemented."),

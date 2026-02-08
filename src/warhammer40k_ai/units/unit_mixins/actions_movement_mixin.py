@@ -1807,6 +1807,12 @@ class ActionsMovementMixin:
                     return False
             except Exception:
                 return False
+        if condition.target_within_objective_not_controlled:
+            try:
+                if not self._target_within_uncontrolled_objective_range(target):
+                    return False
+            except Exception:
+                return False
         if condition.target_within_range is not None:
             try:
                 from ...utility.aura_utils import unit_within_range_of_unit
@@ -2057,6 +2063,8 @@ class ActionsMovementMixin:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
+            if cond.target_within_objective_not_controlled:
+                parts.append("vs targets within objective range you do not control")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
             if cond.target_isolated_within is not None:
@@ -2248,6 +2256,8 @@ class ActionsMovementMixin:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
+            if cond.target_within_objective_not_controlled:
+                parts.append("vs targets within objective range you do not control")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
             if cond.target_isolated_within is not None:
@@ -2526,6 +2536,8 @@ class ActionsMovementMixin:
                 parts.append("while within a controlled objective")
             if cond.target_within_objective:
                 parts.append("vs targets within objective range")
+            if cond.target_within_objective_not_controlled:
+                parts.append("vs targets within objective range you do not control")
             if cond.target_within_range is not None:
                 parts.append(f"vs targets within {cond.target_within_range}\"")
             if cond.target_isolated_within is not None:
@@ -2712,6 +2724,44 @@ class ActionsMovementMixin:
                                 if has_keyword:
                                     reroll_wound_values.add(1)
                                     source = str(tsr.get("herald_of_ynnead_source", "") or "Herald of Ynnead").strip() or "Herald of Ynnead"
+                                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+        except Exception:
+            pass
+
+        # Spirit Thief: reroll wound rolls of 1 vs marked VEHICLE (friendly HERETIC ASTARTES only).
+        try:
+            if target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                tsr = getattr(target_root, "special_rules", None)
+                if isinstance(tsr, dict) and tsr.get("spirit_thief_active"):
+                    exp_phase = str(tsr.get("spirit_thief_expires_phase", "") or "").strip().upper()
+                    phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    if not exp_phase or exp_phase == phase_name:
+                        try:
+                            marked_turn = int(tsr.get("spirit_thief_turn", 0) or 0)
+                        except Exception:
+                            marked_turn = 0
+                        try:
+                            current_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            current_turn = 0
+                        if not (marked_turn and current_turn and marked_turn != current_turn):
+                            owner_id = str(tsr.get("spirit_thief_owner", "") or "")
+                            try:
+                                attacker_owner = str(getattr(getattr(root.get_parent_army(), "player", None), "id", "") or "")
+                            except Exception:
+                                attacker_owner = ""
+                            if owner_id and attacker_owner == owner_id:
+                                keyword = str(tsr.get("spirit_thief_keyword", "") or "heretic astartes").strip().lower()
+                                has_keyword = False
+                                try:
+                                    if keyword and root.has_any_keyword(keyword):
+                                        has_keyword = True
+                                except Exception:
+                                    has_keyword = False
+                                if has_keyword:
+                                    reroll_wound_values.add(1)
+                                    source = str(tsr.get("spirit_thief_source", "") or "Spirit Thief").strip() or "Spirit Thief"
                                     reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
         except Exception:
             pass
@@ -2913,7 +2963,7 @@ class ActionsMovementMixin:
                 return False
             if cond.target_below_starting_strength:
                 return False
-            if cond.target_battleshocked or cond.target_within_objective:
+            if cond.target_battleshocked or cond.target_within_objective or cond.target_within_objective_not_controlled:
                 return False
             if cond.target_within_range is not None:
                 return False
@@ -3149,6 +3199,40 @@ class ActionsMovementMixin:
                         return True
                 except Exception:
                     continue
+        return False
+
+    def _target_within_uncontrolled_objective_range(self, target_unit=None, game_map=None) -> bool:
+        if target_unit is None:
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(getattr(self.get_parent_army(), "player", None), "game", None).map
+            except Exception:
+                game_map = None
+        objectives = list(getattr(game_map, "objectives", []) or []) if game_map is not None else []
+        if not objectives:
+            return False
+        try:
+            attacker_player = getattr(self.get_parent_army(), "player", None)
+        except Exception:
+            attacker_player = None
+        try:
+            if bool(getattr(target_unit, "is_embarked", False)) or target_unit.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        for obj in objectives:
+            loc = getattr(obj, "location", None)
+            if loc is None:
+                loc = obj
+            controller = getattr(loc, "controlling_player", None)
+            if attacker_player is not None and controller is attacker_player:
+                continue
+            try:
+                if target_unit.is_within_objective_range(loc):
+                    return True
+            except Exception:
+                continue
         return False
 
     def _objective_in_range(self, game_map=None):
@@ -4627,6 +4711,114 @@ class ActionsMovementMixin:
     def _auto_pass_dark_pacts_test(self) -> bool:
         return self._first_prince_of_chaos_active() and self._is_belakor()
 
+    def _dark_ascension_aura_applies(self, game_map=None) -> bool:
+        """Return True if this unit is affected by Dark Ascension (Aura)."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None or not getattr(root, "is_alive", lambda: False)():
+            return False
+        try:
+            if not root.has_any_keyword("HERETIC ASTARTES"):
+                return False
+        except Exception:
+            return False
+        try:
+            army = root.get_parent_army()
+        except Exception:
+            army = None
+        if army is None:
+            return False
+        try:
+            if game_map is None:
+                game_map = getattr(getattr(army, "player", None), "game", None).map
+        except Exception:
+            game_map = None
+        try:
+            from ...utility.aura_utils import unit_within_range_of_unit
+            from ...utility.entity_ids import get_entity_id
+        except Exception:
+            return False
+
+        seen_roots: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                source_root = unit.get_attached_unit_root()
+            except Exception:
+                source_root = unit
+            if source_root is None:
+                continue
+            try:
+                source_id = str(get_entity_id(source_root) or "")
+            except Exception:
+                source_id = ""
+            if source_id:
+                if source_id in seen_roots:
+                    continue
+                seen_roots.add(source_id)
+            if not getattr(source_root, "is_alive", lambda: False)():
+                continue
+            try:
+                if not getattr(source_root, "deployed", True):
+                    continue
+                if source_root.is_in_reserves() or source_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            has_aura = getattr(source_root, "has_dark_ascension_aura", None)
+            if not callable(has_aura) or not bool(has_aura()):
+                continue
+            try:
+                if unit_within_range_of_unit(root, source_root, 6.0, game_map=game_map):
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _maybe_gain_dark_destiny_cp(self, game, *, passed: bool, auto_passed: bool) -> None:
+        if not passed or auto_passed:
+            return
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return
+        try:
+            if not root.has_dark_destiny():
+                return
+        except Exception:
+            return
+        try:
+            modified_roll = int(getattr(root, "_last_leadership_test_modified_roll", 0) or 0)
+        except Exception:
+            return
+        if modified_roll < 7:
+            return
+        try:
+            player = getattr(root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        if player is None:
+            return
+        gain_fn = getattr(player, "gain_command_points", None)
+        if not callable(gain_fn):
+            return
+        try:
+            gained = int(gain_fn(1, reason="Dark Destiny") or 0)
+        except Exception:
+            gained = 0
+        if gained <= 0:
+            return
+        try:
+            from ...utility.event_bus import append_action
+            append_action(player, f"Dark Destiny: {getattr(root, 'name', 'Unit')} gained {int(gained)} CP.")
+        except Exception:
+            pass
+
     def apply_dark_pacts_choice(self, game, *, choice: str, phase_name: str, trigger: str) -> bool:
         trigger_norm = str(trigger or "").strip().lower()
         if trigger_norm not in ("shooting", "fight"):
@@ -4638,7 +4830,8 @@ class ActionsMovementMixin:
         if choice_norm not in options:
             return False
         passed = True
-        if not self._auto_pass_dark_pacts_test():
+        auto_passed = self._auto_pass_dark_pacts_test()
+        if not auto_passed:
             try:
                 extra_sources = list(self.dark_pacts_leadership_reroll_sources() or [])
             except Exception:
@@ -4655,6 +4848,7 @@ class ActionsMovementMixin:
                     passed = bool(self.pass_leadership_check())
             except Exception:
                 passed = False
+            self._maybe_gain_dark_destiny_cp(game, passed=bool(passed), auto_passed=False)
         if not passed:
             try:
                 from ...utility.dice import DiceCollection
@@ -4670,9 +4864,14 @@ class ActionsMovementMixin:
         if not isinstance(sr, dict):
             sr = {}
         phase_key = str(phase_name or "").strip().upper() or "FIGHT_PHASE"
+        dark_ascension_active = self._dark_ascension_aura_applies(game_map=getattr(game, "map", None))
         sr["dark_pacts_active"] = True
-        sr["dark_pacts_choice"] = choice_norm
+        sr["dark_pacts_choice"] = "BOTH" if dark_ascension_active else choice_norm
         sr["dark_pacts_expires_phase"] = phase_key
+        if dark_ascension_active:
+            sr["dark_ascension_active"] = True
+            sr["dark_ascension_expires_phase"] = phase_key
+            sr["dark_ascension_source"] = "Dark Ascension (Aura)"
         # Despoilers: re-roll Hit roll after making a Dark Pact.
         if root.has_despoilers():
             sr["despoilers_active"] = True

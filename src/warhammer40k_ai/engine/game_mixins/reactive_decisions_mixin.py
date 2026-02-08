@@ -2523,6 +2523,8 @@ class GameReactiveDecisionsMixin:
             "battle_focus_fade_back",
             "sentinel_storm",
             "sweeping_advance",
+            "daemonic_ordnance",
+            "warp_rift_firepower",
         ):
             return
         selected = None
@@ -3059,6 +3061,90 @@ class GameReactiveDecisionsMixin:
             if player is None:
                 return
             self._queue_shoot_again_decision(player=player, unit=root, source=ability_name)
+            return
+
+        if ability_key == "daemonic_ordnance":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            if sr.get("daemonic_ordnance_active"):
+                exp = str(sr.get("daemonic_ordnance_expires_phase", "") or "").strip().upper()
+                if not exp or exp == "SHOOTING_PHASE":
+                    return
+            source = str(payload.get("ability_name") or ctx.get("ability_name") or "Daemonic Ordnance").strip() or "Daemonic Ordnance"
+            owner_id = str(getattr(request, "player_id", "") or getattr(result, "player_id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["daemonic_ordnance_active"] = True
+            sr["daemonic_ordnance_source"] = source
+            sr["daemonic_ordnance_expires_phase"] = "SHOOTING_PHASE"
+            sr["daemonic_ordnance_turn"] = int(turn or 0)
+            if owner_id:
+                sr["daemonic_ordnance_owner"] = owner_id
+            root.special_rules = sr
+            try:
+                from ...utility.event_bus import append_action
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(player, f"{source}: {getattr(root, 'name', 'Unit')} gains [DEVASTATING WOUNDS] and [HAZARDOUS] for ranged weapons this phase.")
+            except Exception:
+                pass
+            return
+
+        if ability_key == "warp_rift_firepower":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None or not unit.is_alive():
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not root.is_alive():
+                return
+            ability_once_key = str(payload.get("ability_key") or ctx.get("ability_key") or "warp_rift_firepower").strip().lower() or "warp_rift_firepower"
+            if root.has_used_unit_once_per_battle(ability_once_key):
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            source = str(payload.get("ability_name") or ctx.get("ability_name") or "Warp Rift Firepower").strip() or "Warp Rift Firepower"
+            owner_id = str(getattr(request, "player_id", "") or getattr(result, "player_id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["warp_rift_firepower_active"] = True
+            sr["warp_rift_firepower_source"] = source
+            sr["warp_rift_firepower_expires_phase"] = "SHOOTING_PHASE"
+            sr["warp_rift_firepower_turn"] = int(turn or 0)
+            if owner_id:
+                sr["warp_rift_firepower_owner"] = owner_id
+            root.special_rules = sr
+            root.mark_unit_once_per_battle_used(ability_once_key, ability_name=source)
+            try:
+                from ...utility.event_bus import append_action
+                player = getattr(root.get_parent_army(), "player", None)
+                if player is not None:
+                    append_action(player, f"{source}: {getattr(root, 'name', 'Unit')} gains [INDIRECT FIRE] for ranged weapons this phase.")
+            except Exception:
+                pass
             return
 
         if ability_key == "daemonic_patrons":

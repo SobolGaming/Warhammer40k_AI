@@ -205,7 +205,11 @@ def build_default_rule_providers() -> List[RuleProvider]:
             name="chaos_space_marines",
             predicate=lambda ctxs, _g: any_faction(ctxs, "CSM"),
             subscriptions=[
+                ("phase_start", "_on_phase_start_spirit_thief"),
+                ("phase_start", "_on_phase_start_corrupt_machine_spirits"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_dark_pacts"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_daemonic_ordnance"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_warp_rift_firepower"),
                 ("fight_unit_selected", "_on_fight_unit_selected_dark_pacts"),
             ],
         )

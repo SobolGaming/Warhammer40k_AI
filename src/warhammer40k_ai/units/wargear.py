@@ -1085,6 +1085,71 @@ class WargearProfile:
         except Exception:
             return ""
 
+    def _unit_temp_ranged_effect_active(
+        self,
+        attacker: Optional['Model'],
+        effect_key: str,
+        *,
+        expected_phase: str = "SHOOTING_PHASE",
+    ) -> bool:
+        """Return True when a unit-level temporary ranged effect is active for the attacker."""
+        key = str(effect_key or "").strip().lower()
+        if not key:
+            return False
+        try:
+            is_ranged = bool(getattr(self.parent_wargear, "is_ranged", lambda: False)())
+        except Exception:
+            is_ranged = False
+        if not is_ranged:
+            return False
+        unit = getattr(attacker, "parent_unit", None) if attacker is not None else None
+        if unit is None:
+            return False
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return False
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(f"{key}_active")):
+            return False
+        exp = str(sr.get(f"{key}_expires_phase", "") or "").strip().upper()
+        if exp:
+            phase_key = self._resolve_phase_key(attacker_unit=root, target_unit=None)
+            if phase_key and phase_key != exp:
+                return False
+        owner = str(sr.get(f"{key}_owner", "") or "")
+        if owner:
+            attacker_owner = ""
+            try:
+                army = root.get_parent_army()
+                player = getattr(army, "player", None) if army is not None else None
+                attacker_owner = str(get_entity_id(player) or getattr(player, "id", "")) if player is not None else ""
+            except Exception:
+                attacker_owner = ""
+            if attacker_owner and owner != attacker_owner:
+                return False
+        try:
+            marked_turn = int(sr.get(f"{key}_turn", 0) or 0)
+        except Exception:
+            marked_turn = 0
+        if marked_turn:
+            current_turn = 0
+            try:
+                army = root.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                current_turn = 0
+            if current_turn and current_turn != marked_turn:
+                return False
+        if expected_phase:
+            phase_key = self._resolve_phase_key(attacker_unit=root, target_unit=None)
+            if phase_key and phase_key != str(expected_phase or "").strip().upper():
+                return False
+        return True
+
     def _iter_defensive_entries(
         self,
         target_unit: Optional['Unit'],
@@ -1818,15 +1883,23 @@ class WargearProfile:
         except Exception:
             attacker_key = None
 
+        warp_rift_firepower_active = self._unit_temp_ranged_effect_active(attacker, "warp_rift_firepower")
+        daemonic_ordnance_active = self._unit_temp_ranged_effect_active(attacker, "daemonic_ordnance")
+
         # INDIRECT FIRE (penalty only if no models in target unit are visible to attacking unit at selection time)
         indirect_fire_no_visible = False
         try:
-            if self.is_indirect_fire() and game_map is not None:
+            indirect_fire_active = bool(self.is_indirect_fire() or warp_rift_firepower_active)
+            if indirect_fire_active and game_map is not None:
                 attacker_unit = attacker.parent_unit
                 if hasattr(attacker_unit, "_attacking_unit_has_any_los_to_target_unit"):
                     indirect_fire_no_visible = not attacker_unit._attacking_unit_has_any_los_to_target_unit(target, game_map)
         except Exception:
             indirect_fire_no_visible = False
+        if warp_rift_firepower_active and not self.is_indirect_fire():
+            attack_result.attacks_special_modifiers.append("Warp Rift Firepower: [INDIRECT FIRE]")
+        if daemonic_ordnance_active:
+            attack_result.attacks_special_modifiers.append("Daemonic Ordnance: [DEVASTATING WOUNDS], [HAZARDOUS] (ranged)")
 
         # TORRENT cannot be used "via Indirect Fire" when no target models are visible at selection time.
         # This should normally be prevented at target selection; keep a safety-net here too.
@@ -2071,6 +2144,8 @@ class WargearProfile:
 
             if indirect_fire_no_visible:
                 attack_instance["indirect_fire_no_visible"] = True
+            if daemonic_ordnance_active:
+                attack_instance["bonus_devastating_wounds"] = True
             
             # Check if we hit
             hit_result = self._hit_target_with_tracking(target, attacker, attack_instance)
@@ -2291,6 +2366,8 @@ class WargearProfile:
         
         # Handle hazardous weapon effects
         hazardous_active = self.is_hazardous()
+        if daemonic_ordnance_active:
+            hazardous_active = True
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
         if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
             if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
@@ -3019,9 +3096,77 @@ class WargearProfile:
         if unit is None:
             return False
         try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            root = unit
+
+        try:
             specs = list(getattr(unit, "model_allocated_damage_zero_specs", lambda _m: [])(target_model) or [])
         except Exception:
             specs = []
+        extra_specs: list[dict] = []
+        surgeon_key = "surgeon_acolyte"
+        try:
+            has_surgeon = bool(getattr(root, "has_surgeon_acolyte", lambda: False)())
+        except Exception:
+            has_surgeon = False
+        if has_surgeon:
+            contains_fabius = False
+            contains_name_fn = getattr(root, "_unit_contains_model_named", None)
+            if callable(contains_name_fn):
+                try:
+                    contains_fabius = bool(contains_name_fn("Fabius Bile"))
+                except Exception:
+                    contains_fabius = False
+            if not contains_fabius:
+                try:
+                    members = list(root.get_attached_unit_members() or [root])
+                except Exception:
+                    members = [root]
+                for member in list(members or []):
+                    if member is None:
+                        continue
+                    m_contains = getattr(member, "_unit_contains_model_named", None)
+                    if callable(m_contains):
+                        try:
+                            if m_contains("Fabius Bile"):
+                                contains_fabius = True
+                                break
+                        except Exception:
+                            continue
+            if contains_fabius:
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                current_owner = ""
+                current_turn = 0
+                try:
+                    army = root.get_parent_army()
+                    player = getattr(army, "player", None) if army is not None else None
+                    current_owner = str(getattr(player, "id", "") or "")
+                    game = getattr(player, "game", None) if player is not None else None
+                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                except Exception:
+                    current_owner = ""
+                    current_turn = 0
+                try:
+                    used_turn = int(sr.get("surgeon_acolyte_used_turn", 0) or 0)
+                except Exception:
+                    used_turn = 0
+                used_owner = str(sr.get("surgeon_acolyte_used_turn_owner", "") or "")
+                used_this_turn = bool(used_turn and current_turn and used_turn == current_turn and (not used_owner or not current_owner or used_owner == current_owner))
+                if not used_this_turn:
+                    extra_specs.append(
+                        {
+                            "source": "Surgeon Acolyte",
+                            "key": surgeon_key,
+                            "usage": "turn",
+                            "priority": 0,
+                        }
+                    )
+        specs = list(specs or []) + list(extra_specs or [])
         if not specs:
             return False
 
@@ -3029,6 +3174,9 @@ class WargearProfile:
         for spec in list(specs or []):
             key = str(spec.get("key", "") or "").strip().lower()
             if not key:
+                continue
+            if str(spec.get("usage", "") or "").strip().lower() == "turn":
+                available.append(spec)
                 continue
             try:
                 if getattr(target_model, "has_used_once_per_battle", lambda _k: False)(key):
@@ -3039,7 +3187,7 @@ class WargearProfile:
         if not available:
             return False
 
-        available = sorted(available, key=lambda s: str(s.get("key", "")))
+        available = sorted(available, key=lambda s: (int(s.get("priority", 50) or 50), str(s.get("key", ""))))
         spec = available[0]
         ability_name = str(spec.get("source", "") or "Damage set to 0").strip() or "Damage set to 0"
         ability_key = str(spec.get("key", "") or "model_allocated_damage_zero").strip().lower() or "model_allocated_damage_zero"
@@ -3160,10 +3308,25 @@ class WargearProfile:
 
         attack_instance["force_damage_zero"] = True
         attack_instance["force_damage_zero_source"] = ability_name
-        try:
-            target_model.mark_used_once_per_battle(ability_key, ability_name=ability_name, source="datasheet")
-        except Exception:
-            pass
+        usage = str(spec.get("usage", "") or "").strip().lower()
+        if usage == "turn":
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+            except Exception:
+                turn = 0
+            sr["surgeon_acolyte_used_turn"] = int(turn or 0)
+            if player is not None:
+                sr["surgeon_acolyte_used_turn_owner"] = str(getattr(player, "id", "") or "")
+            sr["surgeon_acolyte_source"] = ability_name
+            root.special_rules = sr
+        else:
+            try:
+                target_model.mark_used_once_per_battle(ability_key, ability_name=ability_name, source="datasheet")
+            except Exception:
+                pass
 
         try:
             from warhammer40k_ai.utility.event_bus import append_action
@@ -6128,8 +6291,10 @@ class WargearProfile:
                 dark_pacts_choice = str(sr.get("dark_pacts_choice", "") or "").strip().upper()
         except Exception:
             dark_pacts_choice = None
-        dark_pacts_lethal = dark_pacts_choice == "LETHAL HITS"
-        dark_pacts_sustained = bool(dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
+        dark_pacts_lethal = bool(dark_pacts_choice in {"LETHAL HITS", "BOTH"})
+        dark_pacts_sustained = bool(
+            dark_pacts_choice in {"BOTH"} or (dark_pacts_choice and dark_pacts_choice.startswith("SUSTAINED"))
+        )
 
         malefic_lethal = False
         malefic_sustained_value = 0

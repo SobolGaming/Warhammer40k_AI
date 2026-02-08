@@ -2238,6 +2238,104 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             _log_action_for_players(game, player, f"{ability_name}: {tname} marked for AP -1.")
         except Exception:
             pass
+    if str(ctx.get("ability", "") or "") == "spirit_thief":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        model_id = payload.get("model_id") or ctx.get("model_id")
+        model = resolve_model(game, model_id)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Spirit Thief").strip() or "Spirit Thief"
+        keyword = str(ctx.get("keyword", "") or "heretic astartes").strip().lower() or "heretic astartes"
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        sr = getattr(target_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["spirit_thief_active"] = True
+        sr["spirit_thief_owner"] = str(getattr(player, "id", "") or "")
+        try:
+            sr["spirit_thief_turn"] = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            sr["spirit_thief_turn"] = 0
+        sr["spirit_thief_source"] = ability_name
+        sr["spirit_thief_keyword"] = keyword
+        sr["spirit_thief_expires_phase"] = "SHOOTING_PHASE"
+        target_root.special_rules = sr
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {tname} marked for wound re-rolls of 1.")
+        except Exception:
+            pass
+    if str(ctx.get("ability", "") or "") == "corrupt_machine_spirits":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        target_val = payload.get("target_unit_id") or ctx.get("target_unit_id")
+        target_unit = resolve_unit(game, target_val)
+        if target_unit is None:
+            return None
+        model_id = payload.get("model_id") or ctx.get("model_id")
+        model = resolve_model(game, model_id)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id"))
+        if source_unit is None and model is not None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            try:
+                player = source_unit.get_parent_army().player
+            except Exception:
+                player = None
+        ability_name = str(ctx.get("ability_name", "") or "Corrupt Machine Spirits").strip() or "Corrupt Machine Spirits"
+        try:
+            from ...utility.dice import get_roll
+            from ...utility.event_bus import append_dice
+        except Exception:
+            get_roll = None
+            append_dice = None
+        roll = int(get_roll("D6") or 0) if callable(get_roll) else 0
+        if callable(append_dice) and player is not None:
+            append_dice(player, f"{ability_name} roll: {roll}")
+        mortal = 0
+        if 2 <= roll <= 3:
+            mortal = int(get_roll("D3") or 0) if callable(get_roll) else 0
+        elif 4 <= roll <= 5:
+            mortal = 3
+        elif roll >= 6:
+            d3 = int(get_roll("D3") or 0) if callable(get_roll) else 0
+            mortal = int(d3 + 3)
+        if mortal > 0:
+            try:
+                source_unit._apply_mortal_wounds_to_unit(
+                    target_unit,
+                    int(mortal),
+                    game_map=getattr(game, "map", None),
+                )
+            except Exception:
+                pass
+        try:
+            tname = str(getattr(target_unit, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {tname} suffers {int(mortal)} mortal wounds.")
+        except Exception:
+            pass
     if str(ctx.get("ability", "") or "") == "opponent_shooting_phase_disrupt":
         if is_skip_choice(request, result):
             return None

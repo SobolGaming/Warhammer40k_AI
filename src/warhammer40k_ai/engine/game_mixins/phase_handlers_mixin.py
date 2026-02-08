@@ -2156,6 +2156,190 @@ class GamePhaseHandlersMixin:
         )
         self.request_decision(request)
 
+    def _on_phase_start_model_visible_vehicle_quarry(
+        self,
+        player=None,
+        phase=None,
+        *,
+        ability_tag: str,
+        spec_method_name: str,
+        default_ability_name: str,
+    ) -> None:
+        """Start of Shooting phase: per-model visible enemy VEHICLE target selection helper."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = self.map
+        if game_map is None:
+            return
+
+        from ...utility.entity_ids import get_entity_id
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != str(ability_tag or ""):
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        enemy_roots = self._collect_enemy_unit_roots(player)
+        if not enemy_roots:
+            return
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        enemy_roots.sort(key=_unit_sort_key)
+
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            try:
+                models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                models = list(getattr(root, "models", []) or [])
+            if not models:
+                continue
+
+            for model in sorted([m for m in models if getattr(m, "is_alive", True)], key=_model_sort_key):
+                model_id = str(get_entity_id(model) or "")
+                if model_id and model_id in pending_models:
+                    continue
+                spec_fn = getattr(root, spec_method_name, None)
+                if not callable(spec_fn):
+                    continue
+                specs = list(spec_fn(model) or [])
+                if not specs:
+                    continue
+                source_unit = getattr(model, "parent_unit", None) or root
+                queued = False
+                for spec in list(specs or []):
+                    try:
+                        range_value = int(spec.get("range", 0) or 0)
+                    except Exception:
+                        range_value = 0
+                    max_range = float(range_value) if range_value > 0 else 9999.0
+                    candidates = self._visible_enemy_candidates_for_model(
+                        source_unit=source_unit,
+                        model=model,
+                        enemy_roots=enemy_roots,
+                        range_value=max_range,
+                        game_map=game_map,
+                    )
+                    if not candidates:
+                        continue
+                    vehicle_candidates = []
+                    for cand in list(candidates or []):
+                        if cand is None:
+                            continue
+                        is_vehicle = False
+                        try:
+                            is_vehicle = bool(cand.has_any_keyword("VEHICLE"))
+                        except Exception:
+                            try:
+                                is_vehicle = bool(cand.has_keyword("VEHICLE"))
+                            except Exception:
+                                is_vehicle = False
+                        if is_vehicle:
+                            vehicle_candidates.append(cand)
+                    if not vehicle_candidates:
+                        continue
+
+                    options = []
+                    for cand in sorted(vehicle_candidates, key=_unit_sort_key):
+                        target_id = str(get_entity_id(cand) or "")
+                        if not target_id:
+                            continue
+                        options.append(
+                            DecisionOption.create(
+                                str(getattr(cand, "name", "Unit") or "Unit"),
+                                payload={
+                                    "target_unit_id": target_id,
+                                    "model_id": model_id,
+                                    "source_unit_id": str(get_entity_id(source_unit) or ""),
+                                },
+                            )
+                        )
+                    if not options:
+                        continue
+                    ability_name = str(spec.get("source", "") or default_ability_name).strip() or default_ability_name
+                    request = DecisionRequest.create(
+                        DECISION_CHOOSE_QUARRY,
+                        f"{ability_name}: select a VEHICLE target.",
+                        player_id=getattr(player, "id", None),
+                        options=options,
+                        context={
+                            "ability": str(ability_tag or ""),
+                            "ability_name": ability_name,
+                            "source_unit_id": str(get_entity_id(source_unit) or ""),
+                            "model_id": model_id,
+                            "range": int(range_value or 0),
+                            "keyword": str(spec.get("keyword", "") or "").strip().lower(),
+                            "phase": "Shooting phase",
+                        },
+                    )
+                    self.request_decision(request)
+                    queued = True
+                    pending_models.add(model_id)
+                    break
+                if queued:
+                    continue
+
+    def _on_phase_start_spirit_thief(self, player=None, phase=None, **_kwargs) -> None:
+        self._on_phase_start_model_visible_vehicle_quarry(
+            player=player,
+            phase=phase,
+            ability_tag="spirit_thief",
+            spec_method_name="model_start_shooting_phase_spirit_thief_specs",
+            default_ability_name="Spirit Thief",
+        )
+
+    def _on_phase_start_corrupt_machine_spirits(self, player=None, phase=None, **_kwargs) -> None:
+        self._on_phase_start_model_visible_vehicle_quarry(
+            player=player,
+            phase=phase,
+            ability_tag="corrupt_machine_spirits",
+            spec_method_name="model_start_shooting_phase_corrupt_machine_spirits_specs",
+            default_ability_name="Corrupt Machine Spirits",
+        )
+
     def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
         """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

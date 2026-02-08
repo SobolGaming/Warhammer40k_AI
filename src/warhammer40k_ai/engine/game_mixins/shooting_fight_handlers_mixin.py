@@ -1683,6 +1683,120 @@ class GameShootingFightHandlersMixin:
         if callable(trigger_fn):
             trigger_fn(self, phase_name=phase_name, trigger="shooting")
 
+    def _on_shooting_targets_selected_daemonic_ordnance(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            if not getattr(root, "deployed", True):
+                return
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(root, "has_daemonic_ordnance", lambda: False)()):
+            return
+
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("daemonic_ordnance_active"):
+            exp = str(sr.get("daemonic_ordnance_expires_phase", "") or "").strip().upper()
+            if not exp or exp == "SHOOTING_PHASE":
+                return
+
+        unit_id = maybe_entity_id(root)
+        if not unit_id:
+            return
+        ability_name = "Daemonic Ordnance"
+        ctx = {
+            "ability": "daemonic_ordnance",
+            "ability_name": ability_name,
+            "phase": "Shooting phase",
+            "unit": getattr(root, "name", "") or "",
+            "unit_id": unit_id,
+        }
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="daemonic_ordnance",
+            ability_name=ability_name,
+            message=message,
+            context=ctx,
+            payload={"unit_id": unit_id},
+            instance_key=f"{unit_id}:daemonic_ordnance:shooting",
+        )
+
+    def _on_shooting_targets_selected_warp_rift_firepower(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None or not root.is_alive():
+            return
+        try:
+            if not getattr(root, "deployed", True):
+                return
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(root, "has_warp_rift_firepower", lambda: False)()):
+            return
+
+        ability_key = "warp_rift_firepower"
+        if root.has_used_unit_once_per_battle(ability_key):
+            return
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("warp_rift_firepower_active"):
+            exp = str(sr.get("warp_rift_firepower_expires_phase", "") or "").strip().upper()
+            if not exp or exp == "SHOOTING_PHASE":
+                return
+
+        unit_id = maybe_entity_id(root)
+        if not unit_id:
+            return
+        ability_name = "Warp Rift Firepower"
+        ctx = {
+            "ability": "warp_rift_firepower",
+            "ability_name": ability_name,
+            "ability_key": ability_key,
+            "phase": "Shooting phase",
+            "unit": getattr(root, "name", "") or "",
+            "unit_id": unit_id,
+        }
+        message = f"Use {ability_name} for {getattr(root, 'name', 'Unit')}?"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="warp_rift_firepower",
+            ability_name=ability_name,
+            message=message,
+            context=ctx,
+            payload={"unit_id": unit_id, "ability_key": ability_key},
+            instance_key=f"{unit_id}:warp_rift_firepower:shooting",
+        )
+
     def _on_shooting_targets_selected_malefic_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None or not target_units:
             return

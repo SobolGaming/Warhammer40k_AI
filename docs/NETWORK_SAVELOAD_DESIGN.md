@@ -270,6 +270,8 @@ Shooting:
 - post_shoot_leadership_debuff_target_dialog: CHOOSE_POST_SHOOT_LEADERSHIP_DEBUFF_TARGET {target_unit_id} (context `attacker_unit_id`, `ability_name`)
 - daemonic_poisons_target_dialog: CHOOSE_DAEMONIC_POISONS_TARGET {target_unit_id} (context `attacker_unit_id`, `model_id`, `ability_name`, `phase`)
 - gift_of_chaos_target_dialog: CHOOSE_GIFT_OF_CHAOS_TARGET {target_unit_id} (context `ability="gift_of_chaos"`, `attacker_unit_id`, `model_id`, `ability_name`, `phase`)
+- spirit_thief_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="spirit_thief"`, `source_unit_id`, `model_id`, `ability_name`, `keyword`, `range`)
+- corrupt_machine_spirits_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="corrupt_machine_spirits"`, `source_unit_id`, `model_id`, `ability_name`, `range`)
 Other (any phase):
 - power_from_pain_option_dialog: CHOOSE_POWER_FROM_PAIN_OPTION {choice_key} (context `unit_id`, `choice_kind`, `pending_key`)
 - piratical_raiders_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="piratical_raiders"`, `source_unit_id`, `ability_name`)
@@ -329,6 +331,8 @@ Optional ability confirmations (yes/no):
 - start_any_phase_fnp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="start_any_phase_fnp"`, `unit_id`, `ability_key`)
 - dark_ritual_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="dark_ritual"`, `unit_id`, `ability_key`)
 - sentinel_storm_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="sentinel_storm"`, `unit_id`, `ability_key`)
+- daemonic_ordnance_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="daemonic_ordnance"`, `unit_id`)
+- warp_rift_firepower_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="warp_rift_firepower"`, `unit_id`, `ability_key`)
 - cabal_channel_warp_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="cabal_channel_warp"`)
 - stratagem_cp_discount_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="direct_the_slaughter"` or `ability="targeted_stratagem_discount"` or `ability="gift_of_foresight"` or `ability="master_of_the_pageant"` or `ability="opponent_stratagem_cp_increase"` or `ability="brutal_example_overwatch"` or `ability="beast_handler_heroic_intervention"`)
 - flickering_reality_reroll_dialog (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="flickering_reality_reroll"`, `unit_id`, `base_roll`, `ability_name`, `phase_name`)

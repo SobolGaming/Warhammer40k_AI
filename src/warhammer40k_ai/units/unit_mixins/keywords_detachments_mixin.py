@@ -594,6 +594,102 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["despoilers"] = bool(found)
         return bool(found)
 
+    def has_dark_ascension_aura(self) -> bool:
+        """Return True if this unit has the Dark Ascension (Aura) ability."""
+        if "dark_ascension_aura" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["dark_ascension_aura"])
+        found, _ = self._find_ability_with_patterns(["dark ascension"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["dark_ascension_aura"] = bool(found)
+        return bool(found)
+
+    def has_dark_destiny(self) -> bool:
+        """Return True if this unit has the Dark Destiny ability."""
+        if "dark_destiny" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["dark_destiny"])
+        found, _ = self._find_ability_with_patterns(["dark destiny"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["dark_destiny"] = bool(found)
+        return bool(found)
+
+    def has_daemonic_ordnance(self) -> bool:
+        """Return True if this unit has the Daemonic Ordnance ability."""
+        if "daemonic_ordnance" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["daemonic_ordnance"])
+        found, _ = self._find_ability_with_patterns(["daemonic ordnance"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["daemonic_ordnance"] = bool(found)
+        return bool(found)
+
+    def has_warp_rift_firepower(self) -> bool:
+        """Return True if this unit has the Warp Rift Firepower ability."""
+        if "warp_rift_firepower" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["warp_rift_firepower"])
+        found, _ = self._find_ability_with_patterns(["warp rift firepower"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["warp_rift_firepower"] = bool(found)
+        return bool(found)
+
+    def has_spirit_thief(self) -> bool:
+        """Return True if this unit has the Spirit Thief ability."""
+        if "spirit_thief" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["spirit_thief"])
+        found, _ = self._find_ability_with_patterns(["spirit thief"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["spirit_thief"] = bool(found)
+        return bool(found)
+
+    def has_corrupt_machine_spirits(self) -> bool:
+        """Return True if this unit has the Corrupt Machine Spirits ability."""
+        if "corrupt_machine_spirits" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["corrupt_machine_spirits"])
+        found, _ = self._find_ability_with_patterns(["corrupt machine spirits"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["corrupt_machine_spirits"] = bool(found)
+        return bool(found)
+
+    def has_surgeon_acolyte(self) -> bool:
+        """Return True if this attached unit root has Surgeon Acolyte on any member."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and "surgeon_acolyte" in cache:
+            return bool(cache["surgeon_acolyte"])
+
+        found = False
+        members = [root]
+        try:
+            members = list(root.get_attached_unit_members() or [root])
+        except Exception:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            find_fn = getattr(member, "_find_ability_with_patterns", None)
+            if not callable(find_fn):
+                continue
+            try:
+                member_found, _ = find_fn(["surgeon acolyte"])
+            except Exception:
+                member_found = False
+            if member_found:
+                found = True
+                break
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache["surgeon_acolyte"] = bool(found)
+        root._ability_cache = cache
+        return bool(found)
+
     def has_unholy_bloodshed(self) -> bool:
         """Return True if this unit has the Unholy Bloodshed ability."""
         if "unholy_bloodshed" in getattr(self, "_ability_cache", {}):
