@@ -548,6 +548,13 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, bonus, source="aura:leadership_add"))
                 except Exception:
                     pass
+                try:
+                    from ..utility.aura_effects import get_enemy_aura_leadership_characteristic_penalty
+                    penalty = int(get_enemy_aura_leadership_characteristic_penalty(self, game_map=game_map) or 0)
+                    if penalty:
+                        mods.append(Modifier(ModifierOp.ADD, int(penalty), source="aura:enemy_leadership_penalty"))
+                except Exception:
+                    pass
 
         afflicted_plague = None
         try:
@@ -2298,7 +2305,7 @@ class Unit(
         r"each\s+time\s+(?:this\s+model'?s\s+unit|this\s+unit)\s+ends?\s+a\s+charge\s+move.*?"
         r"(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range.*?"
         r"roll\s+one\s+d6\s+for\s+each\s+model\s+in\s+(?:this\s+unit|that\s+unit|this\s+model'?s\s+unit).*?"
-        r"for\s+each\s+4\+.*?d3\s+mortal\s+wounds?",
+        r"for\s+each\s+4\+.*?(?P<mw>d3|1)\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
     _CHARGE_END_MORTAL_REMAINING_WOUNDS_RE = re.compile(

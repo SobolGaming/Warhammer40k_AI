@@ -167,6 +167,39 @@ class TestSelectedToShootOrFightRerollChoice(unittest.TestCase):
         finally:
             wargear_mod.get_roll = old_get_roll
 
+    def test_selected_to_shoot_or_fight_reroll_choice_shoots_or_fights_one_each(self):
+        ability_text = (
+            "Each time this model shoots or fights, while resolving those attacks, "
+            "you can re-roll one Hit roll and you can re-roll one Wound roll."
+        )
+        attacker_unit, attacker_model, target_unit = self._setup_models(ability_text)
+        attacker_unit.grant_selected_to_action_reroll_choice_for_models([attacker_model], action="shoot")
+
+        profile = self._build_profile(ranged=True)
+        attack_instance = {"_aura_attack_mods": self._aura_stub()}
+
+        from warhammer40k_ai.units import wargear as wargear_mod
+
+        seq = iter(
+            [
+                2, 5,  # hit roll fail, then reroll success
+                2, 5,  # wound roll fail, then reroll success
+            ]
+        )
+        old_get_roll = wargear_mod.get_roll
+        wargear_mod.get_roll = lambda _s: next(seq)
+        try:
+            hit_res = profile._hit_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(any("Test Ability" in x for x in hit_res.get("special_effects", [])))
+            self.assertFalse(attacker_model.can_use_selected_to_action_reroll("hit", "shoot"))
+            self.assertTrue(attacker_model.can_use_selected_to_action_reroll("wound", "shoot"))
+
+            wound_res = profile._wound_target_with_tracking(target_unit, attacker_model, attack_instance)
+            self.assertTrue(any("Test Ability" in x for x in wound_res.get("special_effects", [])))
+            self.assertFalse(attacker_model.can_use_selected_to_action_reroll("wound", "shoot"))
+        finally:
+            wargear_mod.get_roll = old_get_roll
+
 
 if __name__ == "__main__":
     unittest.main()

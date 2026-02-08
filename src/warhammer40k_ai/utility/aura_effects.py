@@ -418,6 +418,33 @@ def _parse_reroll_ones_aura(ability) -> Optional[dict]:
     }
 
 
+def _parse_full_hit_reroll_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" ... each time a model in that unit makes an attack,
+       you can re-roll the Hit roll."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? '
+        r"of (?:this unit|this model|the bearer), each time (?:a model in that unit|that model) makes an attack, "
+        r"you can re-?roll (?:a|the) Hit roll",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
+
+
 def _parse_add_oc_aura(ability) -> Optional[dict]:
     """
     Strict parser for:
@@ -465,6 +492,90 @@ def _parse_leadership_oc_aura(ability) -> Optional[dict]:
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
         "range": float(m.group("rng")),
         "amount": int(m.group("amt")),
+    }
+
+
+def _parse_leadership_only_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X model/unit is within N\" (or wholly within N\") of this model/unit/fortification,
+       improve that unit/model's Leadership characteristic by Y."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is (?:(?:wholly )?within) (?P<rng>\d+)" '
+        r"of this (?:unit|model|fortification|the bearer), improve that .*? Leadership characteristic by (?P<amt>\d+)",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+    }
+
+
+def _parse_battleshock_leadership_test_reroll_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While a friendly X unit is within N\" ... you can re-roll Leadership and/or Battle-shock tests taken for that unit."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While a friendly (?P<faction_kw>.+?) (?:unit|model)(?: \((?P<exclude_a>[^)]+)\))? is within (?P<rng>\d+)"(?: \((?P<exclude_b>[^)]+)\))? '
+        r"of (?:this unit|this model|the bearer), you can re-?roll (?P<tests>.+?) tests? taken for that unit",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    tests = str(m.group("tests") or "").lower()
+    reroll_battleshock = "battle-shock" in tests or "battle shock" in tests
+    reroll_leadership = "leadership" in tests
+    if not reroll_battleshock and not reroll_leadership:
+        return None
+    return {
+        "faction_keyword": str(m.group("faction_kw") or "").strip(),
+        "range": float(m.group("rng")),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+        "reroll_battleshock": bool(reroll_battleshock),
+        "reroll_leadership": bool(reroll_leadership),
+    }
+
+
+def _parse_enemy_leadership_characteristic_penalty_aura(ability) -> Optional[dict]:
+    """
+    Strict parser for:
+      "While an enemy unit is within N\" of this model/unit/the bearer, worsen the Leadership
+       characteristic of models in that unit by X."
+    """
+    if not _is_aura_ability(ability):
+        return None
+    desc = _normalize_desc(getattr(ability, "description", ""))
+    if not desc:
+        return None
+    m = re.search(
+        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        r"worsen the Leadership characteristic of models in that unit by (?P<amt>\d+)",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if not m:
+        return None
+    return {
+        "range": float(m.group("rng")),
+        "amount": int(m.group("amt")),
+        "excluded_keywords": _parse_excluded_keywords(desc),
     }
 
 
@@ -693,8 +804,30 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
     if not desc:
         return None
     m = re.search(
-        r'While an enemy unit is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
         r"subtract (?P<move>\d+) from the Move characteristic and subtract (?P<oc>\d+) from the Objective Control characteristic of models in that unit",
+        desc,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        try:
+            rng = float(m.group("rng"))
+            move = int(m.group("move"))
+            oc = int(m.group("oc"))
+        except Exception:
+            return None
+        if rng <= 0 or move <= 0 or oc <= 0:
+            return None
+        return {
+            "range": float(rng),
+            "move": -abs(int(move)),
+            "oc": -abs(int(oc)),
+            "excluded_keywords": _parse_excluded_keywords(desc),
+        }
+
+    m = re.search(
+        r'While an enemy unit(?: \(excluding [^)]+\))? is within (?P<rng>\d+)" of (?:this model|this unit|the bearer), '
+        r"subtract (?P<oc>\d+) from the Objective Control characteristic of models in that enemy unit",
         desc,
         flags=re.IGNORECASE,
     )
@@ -702,13 +835,17 @@ def _parse_enemy_move_oc_penalty_aura(ability) -> Optional[dict]:
         return None
     try:
         rng = float(m.group("rng"))
-        move = int(m.group("move"))
         oc = int(m.group("oc"))
     except Exception:
         return None
-    if rng <= 0 or move <= 0 or oc <= 0:
+    if rng <= 0 or oc <= 0:
         return None
-    return {"range": float(rng), "move": -abs(int(move)), "oc": -abs(int(oc))}
+    return {
+        "range": float(rng),
+        "move": 0,
+        "oc": -abs(int(oc)),
+        "excluded_keywords": _parse_excluded_keywords(desc),
+    }
 
 
 def _parse_enemy_psychic_hazardous_aura(ability) -> Optional[dict]:
@@ -949,6 +1086,30 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                         )
                     )
 
+            # Generic strict parser: full Hit re-roll aura.
+            full_hit = _parse_full_hit_reroll_aura(ab)
+            if full_hit:
+                if full_hit["faction_keyword"]:
+                    matches = _unit_matches_keyword_phrase(attacker_unit, full_hit["faction_keyword"])
+                    if not matches:
+                        try:
+                            matches = bool(attacker_unit.has_any_keyword(full_hit["faction_keyword"]))
+                        except Exception:
+                            matches = False
+                    if not matches:
+                        continue
+                if full_hit.get("excluded_keywords") and _excluded_by_unit_keywords(attacker_unit, full_hit.get("excluded_keywords", ())):
+                    continue
+                if not unit_within_range_of_unit(source, attacker_unit, float(full_hit["range"]), use_attached_aggregate=True):
+                    continue
+                reason = f"Aura: re-roll Hit roll from {ab_name}"
+                out = out.merge(
+                    AuraAttackModifiers(
+                        reroll_hit_full=True,
+                        reroll_hit_full_reasons=(reason,),
+                    )
+                )
+
     # World Eaters: Idols of Khorne (Idol of Infinite Rage).
     army = getattr(attacker_unit, "get_parent_army", lambda: None)()
     mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
@@ -1104,6 +1265,8 @@ def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
         for ab in _iter_possible_abilities(source):
             spec = _parse_leadership_oc_aura(ab)
             if not spec:
+                spec = _parse_leadership_only_aura(ab)
+            if not spec:
                 continue
             ab_name = str(getattr(ab, "name", "") or "")
             aura_key = _norm_name(ab_name)
@@ -1233,11 +1396,48 @@ def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
+            if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
+                continue
             if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
                 continue
             move_penalty += int(spec["move"])
             oc_penalty += int(spec["oc"])
     return int(move_penalty), int(oc_penalty)
+
+
+def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> int:
+    """
+    Return additive Leadership characteristic penalties from enemy auras affecting this unit.
+    Positive values worsen Leadership (higher target number to pass tests).
+    """
+    if unit is None:
+        return 0
+    if game_map is None:
+        game_map = _get_map_from_attacker_unit(unit)
+    if game_map is None:
+        return 0
+
+    total = 0
+    applied_aura_names: set[str] = set()
+    for source in list(game_map.get_enemy_units(unit)):
+        for ab in _iter_possible_abilities(source):
+            spec = _parse_enemy_leadership_characteristic_penalty_aura(ab)
+            if not spec:
+                continue
+            ab_name = str(getattr(ab, "name", "") or "")
+            aura_key = _norm_name(ab_name)
+            if aura_key:
+                if aura_key in applied_aura_names:
+                    continue
+                applied_aura_names.add(aura_key)
+            if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
+                continue
+            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            amt = int(spec.get("amount", 0) or 0)
+            if amt:
+                total += abs(int(amt))
+    return int(total)
 
 
 def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str]:
@@ -1276,6 +1476,26 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
                     continue
                 sources.append(str(ab_name or "Shadow of Khorne (Aura)"))
                 continue
+
+            spec = _parse_battleshock_leadership_test_reroll_aura(ab)
+            if not spec:
+                continue
+            if spec.get("faction_keyword"):
+                matches = _unit_matches_keyword_phrase(unit, spec["faction_keyword"])
+                if not matches:
+                    try:
+                        matches = bool(unit.has_any_keyword(spec["faction_keyword"]))
+                    except Exception:
+                        matches = False
+                if not matches:
+                    continue
+            if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
+                continue
+            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+                continue
+            if not (spec.get("reroll_battleshock") or spec.get("reroll_leadership")):
+                continue
+            sources.append(str(ab_name or "Aura"))
 
     return list(sources)
 
@@ -1460,6 +1680,13 @@ def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
         flags=re.IGNORECASE,
     )
     if not m:
+        m = re.search(
+            r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
+            r"each time a ranged attack is allocated to a model in that unit, that model has the Benefit of Cover",
+            desc,
+            flags=re.IGNORECASE,
+        )
+    if not m:
         return None
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),
@@ -1535,8 +1762,15 @@ def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tupl
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if spec["faction_keyword"] and not target_unit.has_any_keyword(spec["faction_keyword"]):
-                continue
+            if spec["faction_keyword"]:
+                matches = _unit_matches_keyword_phrase(target_unit, spec["faction_keyword"])
+                if not matches:
+                    try:
+                        matches = bool(target_unit.has_any_keyword(spec["faction_keyword"]))
+                    except Exception:
+                        matches = False
+                if not matches:
+                    continue
             if not unit_within_range_of_unit(source, target_unit, float(spec["range"]), use_attached_aggregate=True):
                 continue
             reasons.append(f"Aura: Benefit of Cover from {ab_name}")

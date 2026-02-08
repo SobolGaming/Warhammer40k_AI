@@ -2169,6 +2169,18 @@ class Game(
                 roll_summary = f"rolls={rolls}"
                 if d3_rolls:
                     roll_summary += f", d3={d3_rolls}"
+        elif kind == "per_model_4plus_1":
+            models = list(unit.get_attached_unit_models() or [])
+            rolls = []
+            for m in models:
+                if not getattr(m, "is_alive", False):
+                    continue
+                r = int(get_roll("D6") or 0)
+                rolls.append(r)
+                if r >= 4:
+                    total_mw += 1
+            if rolls:
+                roll_summary = f"rolls={rolls}"
         elif kind == "per_remaining_wounds_4plus_1_max6":
             models = list(unit.get_attached_unit_models() or [])
             alive = [m for m in models if getattr(m, "is_alive", False)]

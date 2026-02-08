@@ -2338,6 +2338,8 @@ class KeywordsDetachmentsMixin:
         Return rule info for abilities like:
         "Each time this model is selected to shoot or fight, you can re-roll one Hit roll or you can re-roll one Wound roll
         when resolving those attacks."
+        Also supports variants that allow one Hit and one Wound re-roll each (not a choice), e.g.
+        "Each time this model shoots or fights ... you can re-roll one Hit roll and you can re-roll one Wound roll."
         """
         if model is None:
             return None
@@ -2354,10 +2356,17 @@ class KeywordsDetachmentsMixin:
                 if not text:
                     continue
                 low = text.lower().replace("\u2019", "'")
-                if not (
+                selected_phrase = (
                     re.search(r"selected\s+to\s+(?:shoot|fire)\s+or\s+fight", low)
                     or re.search(r"selected\s+to\s+fight\s+or\s+(?:shoot|fire)", low)
-                ):
+                )
+                shoots_or_fights_phrase = bool(
+                    re.search(
+                        r"each\s+time\s+this\s+model\s+(?:shoot|shoots|fire|fires)\s+or\s+fight(?:s)?",
+                        low,
+                    )
+                )
+                if not (selected_phrase or shoots_or_fights_phrase):
                     continue
                 if ("re-roll" not in low) and ("reroll" not in low):
                     continue
@@ -2365,12 +2374,15 @@ class KeywordsDetachmentsMixin:
                 allow_wound = bool(re.search(r"re-?roll\s+one\s+wound\s+roll", low))
                 if not (allow_hit and allow_wound):
                     continue
-                if not re.search(r"hit\s+roll.*or.*wound\s+roll|wound\s+roll.*or.*hit\s+roll", low):
+                is_choice = bool(re.search(r"hit\s+roll.*or.*wound\s+roll|wound\s+roll.*or.*hit\s+roll", low))
+                is_one_each = not is_choice
+                if not (is_choice or is_one_each):
                     continue
                 source = str(name or "Selected to shoot or fight").strip() or "Selected to shoot or fight"
                 rule = {
                     "reroll_hit": True,
                     "reroll_wound": True,
+                    "mode": "choice" if is_choice else "one_each",
                     "requires_shooting_phase": ("shooting phase" in low),
                     "requires_fight_phase": ("fight phase" in low),
                     "source": source,
@@ -2466,6 +2478,7 @@ class KeywordsDetachmentsMixin:
                     allow_hit=bool(rule.get("reroll_hit")),
                     allow_wound=bool(rule.get("reroll_wound")),
                     source=str(rule.get("source", "") or ""),
+                    mode=str(rule.get("mode", "choice") or "choice"),
                 )
             except Exception:
                 continue

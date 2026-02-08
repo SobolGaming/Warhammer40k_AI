@@ -1403,7 +1403,15 @@ class Model:
 
     # ---------------- Selected-to-shoot/fight reroll choice helpers ----------------
 
-    def grant_selected_to_action_reroll_choice(self, *, action: str, allow_hit: bool, allow_wound: bool, source: str = "") -> None:
+    def grant_selected_to_action_reroll_choice(
+        self,
+        *,
+        action: str,
+        allow_hit: bool,
+        allow_wound: bool,
+        source: str = "",
+        mode: str = "choice",
+    ) -> None:
         if not isinstance(getattr(self, "_temporary_effects", None), dict):
             self._temporary_effects = {}
         data = self._temporary_effects.get("selected_to_action_reroll_choice", {})
@@ -1415,11 +1423,23 @@ class Model:
         entry = data.get(action_key, {})
         if not isinstance(entry, dict):
             entry = {}
-        entry["remaining"] = max(int(entry.get("remaining", 0) or 0), 1)
-        if allow_hit:
-            entry["allow_hit"] = True
-        if allow_wound:
-            entry["allow_wound"] = True
+        mode_key = str(mode or "choice").strip().lower()
+        if mode_key not in ("choice", "one_each"):
+            mode_key = "choice"
+        entry["mode"] = mode_key
+        if mode_key == "one_each":
+            if allow_hit:
+                entry["allow_hit"] = True
+                entry["hit_remaining"] = max(int(entry.get("hit_remaining", 0) or 0), 1)
+            if allow_wound:
+                entry["allow_wound"] = True
+                entry["wound_remaining"] = max(int(entry.get("wound_remaining", 0) or 0), 1)
+        else:
+            entry["remaining"] = max(int(entry.get("remaining", 0) or 0), 1)
+            if allow_hit:
+                entry["allow_hit"] = True
+            if allow_wound:
+                entry["allow_wound"] = True
         if source:
             entry["source"] = str(source or "")
         data[action_key] = entry
@@ -1453,13 +1473,28 @@ class Model:
         entry = data.get(action_key, {})
         if not isinstance(entry, dict):
             return False
+        kind_key = str(kind or "").strip().lower()
+        mode_key = str(entry.get("mode", "choice") or "choice").strip().lower()
+        if mode_key == "one_each":
+            if kind_key == "hit":
+                try:
+                    remaining = int(entry.get("hit_remaining", 0) or 0)
+                except Exception:
+                    remaining = 0
+                return bool(entry.get("allow_hit")) and remaining > 0
+            if kind_key == "wound":
+                try:
+                    remaining = int(entry.get("wound_remaining", 0) or 0)
+                except Exception:
+                    remaining = 0
+                return bool(entry.get("allow_wound")) and remaining > 0
+            return False
         try:
             remaining = int(entry.get("remaining", 0) or 0)
         except Exception:
             remaining = 0
         if remaining <= 0:
             return False
-        kind_key = str(kind or "").strip().lower()
         if kind_key == "hit":
             return bool(entry.get("allow_hit"))
         if kind_key == "wound":
@@ -1475,18 +1510,43 @@ class Model:
         entry = data.get(action_key, {})
         if not isinstance(entry, dict):
             return False
-        try:
-            remaining = int(entry.get("remaining", 0) or 0)
-        except Exception:
-            remaining = 0
-        if remaining <= 0:
-            return False
         kind_key = str(kind or "").strip().lower()
-        if kind_key == "hit" and not bool(entry.get("allow_hit")):
-            return False
-        if kind_key == "wound" and not bool(entry.get("allow_wound")):
-            return False
-        entry["remaining"] = remaining - 1
+        mode_key = str(entry.get("mode", "choice") or "choice").strip().lower()
+        if mode_key == "one_each":
+            if kind_key == "hit":
+                if not bool(entry.get("allow_hit")):
+                    return False
+                try:
+                    remaining = int(entry.get("hit_remaining", 0) or 0)
+                except Exception:
+                    remaining = 0
+                if remaining <= 0:
+                    return False
+                entry["hit_remaining"] = remaining - 1
+            elif kind_key == "wound":
+                if not bool(entry.get("allow_wound")):
+                    return False
+                try:
+                    remaining = int(entry.get("wound_remaining", 0) or 0)
+                except Exception:
+                    remaining = 0
+                if remaining <= 0:
+                    return False
+                entry["wound_remaining"] = remaining - 1
+            else:
+                return False
+        else:
+            try:
+                remaining = int(entry.get("remaining", 0) or 0)
+            except Exception:
+                remaining = 0
+            if remaining <= 0:
+                return False
+            if kind_key == "hit" and not bool(entry.get("allow_hit")):
+                return False
+            if kind_key == "wound" and not bool(entry.get("allow_wound")):
+                return False
+            entry["remaining"] = remaining - 1
         data[action_key] = entry
         eff["selected_to_action_reroll_choice"] = data
         return True

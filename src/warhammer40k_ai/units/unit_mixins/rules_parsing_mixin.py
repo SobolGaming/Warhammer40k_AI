@@ -1124,8 +1124,13 @@ class RulesParsingMixin:
                 if "charge move" not in low or "mortal wound" not in low:
                     continue
                 kind = None
-                if self._CHARGE_END_MORTAL_PER_MODEL_RE.search(text):
-                    kind = "per_model_4plus_d3"
+                m_per_model = self._CHARGE_END_MORTAL_PER_MODEL_RE.search(text)
+                if m_per_model:
+                    mw_token = str(m_per_model.group("mw") or "").strip().lower()
+                    if mw_token == "1":
+                        kind = "per_model_4plus_1"
+                    else:
+                        kind = "per_model_4plus_d3"
                 elif self._CHARGE_END_MORTAL_REMAINING_WOUNDS_RE.search(text):
                     kind = "per_remaining_wounds_4plus_1_max6"
                 elif self._CHARGE_END_MORTAL_TABLE_RE.search(text):

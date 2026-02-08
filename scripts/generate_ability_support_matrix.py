@@ -2193,6 +2193,38 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Enemy units destroyed by the bearer unit grant Bloodshed points consumed by Blessings of Khorne rolls.",
         ),
+        ("CSM", "Ascended Daemon"): (
+            "Supported",
+            "Selected to shoot/fight grants one Hit re-roll and one Wound re-roll while resolving attacks.",
+        ),
+        ("CSM", "Head Taker"): (
+            "Supported",
+            "Charge-end enemy selection: roll D6 per model in the unit; each 4+ inflicts 1 mortal wound.",
+        ),
+        ("CSM", "Dark Blessing (Aura)"): (
+            "Supported",
+            "Friendly HERETIC ASTARTES INFANTRY within 6\" gain Benefit of Cover vs ranged attacks.",
+        ),
+        ("CSM", "Paragon of Hatred (Aura)"): (
+            "Supported",
+            "Friendly HERETIC ASTARTES (excluding DAMNED) within 6\" gain full Hit re-roll support.",
+        ),
+        ("CSM", "Lord of the Traitor Legions (Aura)"): (
+            "Supported",
+            "Friendly HERETIC ASTARTES (excluding DAMNED) within 6\" can re-roll Leadership and Battle-shock tests.",
+        ),
+        ("CSM", "Icon of Despair (Aura)"): (
+            "Supported",
+            "Enemy units within 6\" of the bearer have Leadership worsened by 1.",
+        ),
+        ("CSM", "Malevolent Locus (Aura)"): (
+            "Supported",
+            "Friendly HERETIC ASTARTES models within 9\" gain Leadership improvement.",
+        ),
+        ("CSM", "Mind-breaking Mutations (Aura)"): (
+            "Supported",
+            "Enemy non-VEHICLE units within 3\" suffer -1 Objective Control.",
+        ),
         ("EC", "Daemon Primarch of Slaanesh"): ("Supported", "Opponent Command phase selection of Beguiling Form, Daemonic Speed, or Enthralling Hypnosis until the next opponent Command phase."),
         ("EC", "Daemonic Poisons"): ("Supported", "After shooting/fight, select a hit enemy unit to poison; poisoned units roll D6 in each Command phase (4+ -> D3 mortal wounds)."),
         ("EC", "Beguiling Form"): ("Supported", "-1 to hit when targeting this model (while selected)."),
