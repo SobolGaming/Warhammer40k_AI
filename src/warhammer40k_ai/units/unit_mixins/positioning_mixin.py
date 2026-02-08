@@ -611,6 +611,25 @@ class PositioningMixin:
         self._ability_cache[cache_key] = ability
         return ability
 
+    def get_command_phase_unit_return_ability(self):
+        """
+        Return ability info dict for command-phase destroyed-model returns to this unit, or None.
+        """
+        cache_key = "command_phase_unit_return_ability"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        ability = None
+        try:
+            ability = self._scan_command_phase_unit_return_ability()
+        except Exception:
+            ability = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = ability
+        return ability
+
     def get_charge_phase_bodyguard_loss_ability(self):
         """
         Return ability info dict for end-of-Charge-phase Leadership test bodyguard losses, or None.
@@ -3192,8 +3211,20 @@ class PositioningMixin:
                 found, _ = self._find_ability_with_patterns(["deep strike", "deepstrike"])
 
         # Attached units can only Deep Strike if every model has Deep Strike.
+        # If an active rule grants Deep Strike to "models in this/that unit",
+        # the grant applies across the attached unit and this per-member check is skipped.
         try:
-            if found and (not bool(getattr(self, "is_leader", False)) or getattr(self, "attached_to", None) is None):
+            root_grants_attached_deep_strike = False
+            if found:
+                try:
+                    root_grants_attached_deep_strike = bool(self._root_has_attached_unit_deep_strike_grant())
+                except Exception:
+                    root_grants_attached_deep_strike = False
+            if (
+                found
+                and not root_grants_attached_deep_strike
+                and (not bool(getattr(self, "is_leader", False)) or getattr(self, "attached_to", None) is None)
+            ):
                 root = self.get_attached_unit_root()
                 leaders = list(getattr(root, "attached_leaders", []) or [])
                 for leader in leaders:
@@ -3213,6 +3244,37 @@ class PositioningMixin:
         self._ability_cache['deep_strike'] = found
         
         return found
+
+    def _root_has_attached_unit_deep_strike_grant(self) -> bool:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        text_grant_re = re.compile(
+            r"models\s+in\s+(?:this|that|the\s+bearer'?s|this\s+model'?s)\s+unit\s+have\s+the\s+deep\s+strike\b",
+            re.IGNORECASE,
+        )
+        abilities = list(getattr(root, "possible_abilities", []) or []) + list(getattr(root, "abilities", []) or [])
+        for ability in abilities:
+            try:
+                checker = getattr(root, "_ability_is_active", None)
+                if callable(checker) and not bool(checker(ability)):
+                    continue
+            except Exception:
+                continue
+            try:
+                if isinstance(ability, str):
+                    text = ability
+                else:
+                    text = str(getattr(ability, "description", "") or getattr(ability, "name", "") or "")
+            except Exception:
+                continue
+            normalized = root._normalize_rules_text(text or "")
+            if normalized and text_grant_re.search(normalized):
+                return True
+        return False
 
     def get_deep_strike_min_distance_override(self) -> Optional[float]:
         """

@@ -793,9 +793,21 @@ class Game(
                 for ab in list(getattr(unit, "possible_abilities", []) or []):
                     desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
                     text = str(desc or "")
-                    if "command phase" not in text.lower() or "regains" not in text.lower() or "wounds" not in text.lower():
+                    low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                    if "command phase" not in low or "regains" not in low or "wounds" not in low:
                         continue
-                    m = re.search(r"regains\s+(\d+|d3)", text.lower())
+                    # Targeted support abilities (e.g., "select one friendly ... that model regains ...")
+                    # are handled through explicit decision flows and should not self-heal here.
+                    if "select one friendly" in low and "that model regains" in low:
+                        continue
+                    if (
+                        "that model regains" in low
+                        and "this model regains" not in low
+                        and "the bearer regains" not in low
+                        and "this unit regains" not in low
+                    ):
+                        continue
+                    m = re.search(r"regains\s+(\d+|d3)", low)
                     if not m:
                         continue
                     token = m.group(1)
@@ -3287,6 +3299,66 @@ class Game(
             return
         self._record_setup_reactive_shoot_or_charge_candidate(unit)
 
+    def _kill_reward_spec_is_active_for_phase(self, spec: dict) -> bool:
+        """Return True when a kill-reward spec is active in the current phase context."""
+        if not isinstance(spec, dict):
+            return False
+        if not bool(spec.get("requires_fight_phase", False)):
+            return True
+        phase = getattr(self, "phase", None)
+        phase_name = str(getattr(phase, "name", "") or "").strip().upper()
+        return phase_name == "FIGHT_PHASE"
+
+    def _apply_kill_reward_weapon_attacks_bonus(
+        self,
+        *,
+        attacker_model=None,
+        attacker_unit=None,
+        target_unit=None,
+        target_model=None,
+        spec: Optional[dict] = None,
+    ) -> None:
+        """Apply persistent weapon Attacks bonuses granted by on-destroy kill-reward specs."""
+        if attacker_model is None or not isinstance(spec, dict):
+            return
+        try:
+            attacks_bonus = int(spec.get("attacks_bonus", 0) or 0)
+        except Exception:
+            attacks_bonus = 0
+        if attacks_bonus <= 0:
+            return
+        weapon_name = str(spec.get("weapon_name", "") or "").strip()
+        if not weapon_name:
+            return
+        set_bonus = getattr(attacker_model, "set_temporary_weapon_bonus", None)
+        if not callable(set_bonus):
+            return
+
+        source = str(spec.get("source_ability", "") or "Kill reward").strip() or "Kill reward"
+        attacker_id = str(get_entity_id(attacker_model) or "")
+        target_id = str(get_entity_id(target_model) or get_entity_id(target_unit) or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        key = f"kill_reward_weapon_attacks:{attacker_id}:{target_id}:{turn}:{source}:{weapon_name}"
+        key = re.sub(r"[^a-zA-Z0-9:_\\-]+", "_", key).strip("_")
+        set_bonus(
+            key=key,
+            weapon_name=weapon_name,
+            attacks_bonus=int(attacks_bonus),
+            source=source,
+            expires_phase="",
+        )
+        self.event_system.publish(
+            "model_temporary_effect_applied",
+            model=attacker_model,
+            unit=attacker_unit,
+            target_unit=target_unit,
+            target_model=target_model,
+            effect="weapon_attacks_bonus_on_destroy",
+            weapon_name=weapon_name,
+            attacks_bonus=int(attacks_bonus),
+            reason=source,
+        )
+
     def _on_model_destroyed_rules(self, attacker_model=None, attacker_unit=None, target_model=None, target_unit=None, **_kwargs) -> None:
         # Generic partial support for "gain CP when this model destroys an enemy KEYWORD unit/model".
         if attacker_unit is None or target_unit is None:
@@ -3303,6 +3375,9 @@ class Game(
 
             for spec in specs:
                 if spec.get("trigger") != "model_destroyed":
+                    continue
+
+                if not self._kill_reward_spec_is_active_for_phase(spec):
                     continue
 
                 # Optional restriction: melee only (Feared Interrogator)
@@ -3356,6 +3431,15 @@ class Game(
                         unit=attacker_unit,
                         amount=amount,
                         reason=spec.get("source_ability", ""),
+                    )
+
+                if spec.get("type") == "weapon_attacks_bonus_on_destroy":
+                    self._apply_kill_reward_weapon_attacks_bonus(
+                        attacker_model=attacker_model,
+                        attacker_unit=attacker_unit,
+                        target_unit=target_unit,
+                        target_model=target_model,
+                        spec=spec,
                     )
 
         try:
@@ -3560,6 +3644,9 @@ class Game(
             if spec.get("trigger") != "unit_destroyed":
                 continue
 
+            if not self._kill_reward_spec_is_active_for_phase(spec):
+                continue
+
             # Optional restriction: melee only
             if spec.get("requires_melee", False):
                 wp = destroyed_by_weapon_profile
@@ -3607,6 +3694,15 @@ class Game(
                     unit=destroyed_by_unit,
                     amount=amount,
                     reason=spec.get("source_ability", ""),
+                )
+
+            if spec.get("type") == "weapon_attacks_bonus_on_destroy":
+                self._apply_kill_reward_weapon_attacks_bonus(
+                    attacker_model=destroyed_by_model,
+                    attacker_unit=destroyed_by_unit,
+                    target_unit=unit,
+                    target_model=None,
+                    spec=spec,
                 )
 
     def _on_unit_destroyed_battleshock_on_kill(

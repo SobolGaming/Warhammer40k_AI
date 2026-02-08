@@ -1754,6 +1754,13 @@ class Unit(
         r"that targets that enemy unit you can re ?roll the wound roll",
         re.IGNORECASE,
     )
+    _POST_SHOOT_DISEMBARK_AP_BONUS_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the turn each time a friendly model that disembarked from this transport this turn makes an attack "
+        r"that targets that enemy unit improve the armou?r penetration characteristic of that attack by (?P<val>\d+) "
+        r"the same enemy unit can only be affected by this ability once per turn",
+        re.IGNORECASE,
+    )
     _HAND_OF_ASURYAN_RE = re.compile(
         r"once per battle when this model is selected to shoot it can use this ability if it does until the end of the phase "
         r"its (?P<weapon>[a-z0-9 ]+?) weapon has a damage characteristic of (?P<damage>\d+)",
@@ -1878,6 +1885,11 @@ class Unit(
         r"improve the strength characteristic(?:s)? of that attack by (?P<val>\d+)",
         re.IGNORECASE,
     )
+    _MELEE_CHARGE_DAMAGE_ONLY_MODEL_KEYWORD_RE = re.compile(
+        r"each time this unit makes a charge move until the end of the turn add (?P<val>\d+) to the damage characteristic "
+        r"of melee weapons equipped by (?P<keyword>[a-z0-9 ]+) models in this unit",
+        re.IGNORECASE,
+    )
     _SPIRIT_MARK_RE = re.compile(
         r"once per turn in your movement phase when this model starts or ends a move select one friendly (?P<keyword>[a-z0-9 ]+) unit within "
         r"(?P<range>\d+)\s*\"?\s*of this model(?: excluding titanic units)? and one enemy unit visible to this model "
@@ -1899,6 +1911,11 @@ class Unit(
     _TACTICAL_ACUMEN_RE = re.compile(
         r"while this model is leading a unit in your shooting phase after that unit has shot it can make a normal move of up to "
         r"(?P<range>\d+)\s*\"?\s*if it does until the end of the turn that unit is not eligible to declare a charge",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE = re.compile(
+        r"in your shooting phase after this unit has shot if it is not within engagement range of one or more enemy units "
+        r"it can make a normal move of up to (?P<range>\d+)\s*\"?\s*if it does until the end of the turn this unit is not eligible to declare a charge",
         re.IGNORECASE,
     )
     _SHADOW_FIELD_RE = re.compile(
@@ -1937,6 +1954,13 @@ class Unit(
         r"from charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_PINNED_UNIT_RE = re.compile(
+        r"in your shooting phase after this unit has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"until the start of your next turn that enemy unit is pinned while a unit is pinned subtract (?P<move>\d+) from that unit s move characteristic "
+        r"and subtract (?P<charge>\d+) from charge rolls made for it",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_AFLAME_RE = re.compile(
         r"in your shooting phase after this model has shot select one enemy unit "
         r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
@@ -1960,6 +1984,12 @@ class Unit(
         r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
         r"until the end of the turn each time a friendly (?P<keyword>[a-z0-9 ]+) unit makes an attack that targets that unit "
         r"you can re ?roll the wound roll",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_KEYWORD_HIT_BONUS_RE = re.compile(
+        r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
+        r"until the end of the phase each time a (?:(?:friendly )?(?P<keyword>[a-z0-9 ]+) model(?: from your army)?|model from your army) makes an attack that targets that unit "
+        r"add (?P<val>\d+) to the hit roll",
         re.IGNORECASE,
     )
     _POST_SHOOT_WRACKING_AGONIES_RE = re.compile(
@@ -2034,6 +2064,17 @@ class Unit(
         r"and roll (?:eight|8) d6 for each 4 that enemy unit suffers 1 mortal wounds?",
         re.IGNORECASE,
     )
+    _LEADING_WEAPON_ATTACKS_BONUS_RE = re.compile(
+        r"while this model is leading a unit add (?P<bonus>\d+) to the attacks characteristic of "
+        r"(?P<weapon>[a-z0-9 ]+?) weapons? equipped by models in that unit",
+        re.IGNORECASE,
+    )
+    _FIGHT_SELECTED_MORTAL_TABLE_RE = re.compile(
+        r"each time this model s unit is selected to fight you can select one enemy unit within engagement range of this model s unit "
+        r"and roll one d6 on a 2 3 that enemy unit suffers 1 mortal wounds? on a 4 5 that enemy unit suffers d3 mortal wounds? "
+        r"on a 6 that enemy unit suffers d3 3 mortal wounds?",
+        re.IGNORECASE,
+    )
     _DAEMONIC_PATRONS_RE = re.compile(
         r"each time this unit is selected to fight it can call upon (?:the )?daemonic patrons if it does until the end of the phase "
         r"each time a model in this unit makes an attack an unmodified wound roll of (?P<thresh>\d) scores a critical wound "
@@ -2045,6 +2086,11 @@ class Unit(
         r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
         r"add 3 to the attacks characteristic of melee weapons equipped by this model and improve the armou?r penetration "
         r"characteristic of those weapons by 1",
+        re.IGNORECASE,
+    )
+    _FIGHT_PHASE_MELEE_ATTACKS_STRENGTH_RE = re.compile(
+        r"once per battle at the start of the fight phase this model can use this ability if it does until the end of the phase "
+        r"add (?P<attacks>\d+) to the attacks and strength characteristics of melee weapons equipped by this model",
         re.IGNORECASE,
     )
     _FIGHT_PHASE_MELEE_FULL_BUFF_RE = re.compile(

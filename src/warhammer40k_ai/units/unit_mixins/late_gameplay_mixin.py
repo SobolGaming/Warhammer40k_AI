@@ -150,6 +150,7 @@ class LateGameplayMixin:
                 requires_melee = True
         except Exception:
             requires_melee = False
+        requires_fight_phase = "fight phase" in txt
 
         target_keywords = []
         for needle, kw in keyword_map.items():
@@ -173,6 +174,7 @@ class LateGameplayMixin:
             "target_keywords": set(target_keywords),
             "target_keyword_mode": target_keyword_mode,
             "requires_melee": requires_melee,
+            "requires_fight_phase": bool(requires_fight_phase),
             "source_ability": ability_name or "",
         }]
 
@@ -249,6 +251,88 @@ class LateGameplayMixin:
             "source_ability": ability_name or "",
         }]
 
+    def _parse_weapon_attacks_bonus_on_kill_specs_from_text(self, ability_name: str, ability_desc: str) -> List[dict]:
+        """
+        Parse support for abilities that grant persistent weapon Attacks bonuses on kill, e.g.:
+        "... destroys an enemy CHARACTER model in the Fight phase ... until the end of the battle,
+         add 1 to the Attacks characteristic of its Nemesis force weapon."
+        """
+        normalized = self._normalize_rules_text(ability_desc)
+        txt = normalized.lower().replace("\u2019", "'")
+
+        if "destroys" not in txt or "enemy" not in txt:
+            return []
+        if "until the end of the battle" not in txt:
+            return []
+        if "attacks characteristic" not in txt:
+            return []
+
+        m_bonus = re.search(r"add\s+(\d+)\s+to\s+the\s+attacks\s+characteristic", txt, flags=re.IGNORECASE)
+        if not m_bonus:
+            return []
+        try:
+            attacks_bonus = int(m_bonus.group(1) or 0)
+        except Exception:
+            attacks_bonus = 0
+        if attacks_bonus <= 0:
+            return []
+
+        weapon_name = ""
+        m_weapon = re.search(r"of\s+its\s+([a-z0-9 '\-]+?)\s+weapons?\b", txt, flags=re.IGNORECASE)
+        if m_weapon:
+            weapon_name = str(m_weapon.group(1) or "").strip()
+        if not weapon_name:
+            return []
+
+        trigger = "model_destroyed"
+        try:
+            if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bunit\b", txt):
+                trigger = "unit_destroyed"
+            if re.search(r"destroys\s+an?\s+(?:enemy\s+)?\b.*\bmodel\b", txt):
+                trigger = "model_destroyed"
+        except Exception:
+            trigger = "model_destroyed"
+
+        requires_melee = False
+        try:
+            if "melee attack" in txt or "with a melee" in txt:
+                requires_melee = True
+        except Exception:
+            requires_melee = False
+        requires_fight_phase = "fight phase" in txt
+
+        keyword_map = {
+            "character": "CHARACTER",
+            "epic hero": "EPIC HERO",
+            "monster": "MONSTER",
+            "vehicle": "VEHICLE",
+            "psyker": "PSYKER",
+        }
+        target_keywords = []
+        for needle, kw in keyword_map.items():
+            if needle in txt:
+                target_keywords.append(kw)
+        target_keyword_mode = "all"
+        try:
+            if len(target_keywords) > 1 and " or " in txt:
+                target_keyword_mode = "any"
+        except Exception:
+            target_keyword_mode = "all"
+
+        return [
+            {
+                "type": "weapon_attacks_bonus_on_destroy",
+                "trigger": trigger,
+                "attacks_bonus": int(attacks_bonus),
+                "weapon_name": str(weapon_name),
+                "target_keywords": set(target_keywords),
+                "target_keyword_mode": target_keyword_mode,
+                "requires_melee": bool(requires_melee),
+                "requires_fight_phase": bool(requires_fight_phase),
+                "source_ability": ability_name or "",
+            }
+        ]
+
     def get_kill_reward_specs(self, model: Optional['Model'] = None) -> List[dict]:
         """Return parsed 'on destroy' reward specs for this unit (and optionally a specific model).
 
@@ -264,6 +348,7 @@ class LateGameplayMixin:
             for n, d in self._iter_ability_entries_for_rules(model=None):
                 base_specs.extend(self._parse_cp_on_kill_specs_from_text(n, d))
                 base_specs.extend(self._parse_heal_on_kill_specs_from_text(n, d))
+                base_specs.extend(self._parse_weapon_attacks_bonus_on_kill_specs_from_text(n, d))
             if not hasattr(self, "_ability_cache"):
                 self._ability_cache = {}
             self._ability_cache[cache_key] = base_specs
@@ -280,6 +365,7 @@ class LateGameplayMixin:
                 continue
             model_specs.extend(self._parse_cp_on_kill_specs_from_text(n, d))
             model_specs.extend(self._parse_heal_on_kill_specs_from_text(n, d))
+            model_specs.extend(self._parse_weapon_attacks_bonus_on_kill_specs_from_text(n, d))
 
         return list(base_specs) + model_specs
     
@@ -826,6 +912,49 @@ class LateGameplayMixin:
                     entry = (5, "against psychic attacks and mortal wounds")
                     if entry not in result:
                         result.append(entry)
+        except Exception:
+            pass
+        try:
+            # Truesilver Aegis (Aura): friendly GREY KNIGHTS units wholly within 6" gain FNP 6+ vs mortal wounds.
+            if self.has_any_keyword("GREY KNIGHTS"):
+                from ...utility.aura_utils import unit_wholly_within_range_of_unit
+
+                army = self.get_parent_army()
+                friendly_units = []
+                if army is not None:
+                    try:
+                        game = getattr(getattr(army, "player", None), "game", None)
+                        game_map = getattr(game, "map", None) if game is not None else None
+                    except Exception:
+                        game_map = None
+                    if game_map is not None and hasattr(game_map, "get_friendly_units"):
+                        try:
+                            friendly_units = list(game_map.get_friendly_units(self))
+                        except Exception:
+                            friendly_units = []
+                    if not friendly_units:
+                        friendly_units = list(getattr(army, "units", []) or [])
+
+                if friendly_units:
+                    seen = set((int(v), (c or "")) for v, c in result)
+                    for source in list(friendly_units):
+                        if source is None:
+                            continue
+                        has_aura = getattr(source, "has_truesilver_aegis_aura", None)
+                        if not callable(has_aura) or not bool(has_aura()):
+                            continue
+                        try:
+                            if hasattr(source, "is_active_for_rules") and not source.is_active_for_rules():
+                                continue
+                        except Exception:
+                            continue
+                        if not unit_wholly_within_range_of_unit(source, self, 6.0, use_attached_aggregate=True):
+                            continue
+                        key = (6, "against mortal wounds")
+                        if key not in seen:
+                            seen.add(key)
+                            result.append((6, "against mortal wounds"))
+                        break
         except Exception:
             pass
         try:

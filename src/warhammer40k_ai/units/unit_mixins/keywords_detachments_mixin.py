@@ -919,14 +919,125 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["herald_of_the_apocalypse"] = bool(found)
         return bool(found)
 
+    def get_command_phase_vehicle_repair_hit_bonus_rule(self) -> Optional[dict]:
+        """
+        Return rule info for command-phase abilities that:
+        - select one friendly VEHICLE within X"
+        - heal it (typically D3)
+        - grant +Hit until the start of your next Command phase
+
+        Covers wording variants such as Master of Mechanisms and Blessing of the Omnissiah.
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "command_phase_vehicle_repair_hit_bonus_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen: set[tuple[str, str]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized_text = unit._normalize_rules_text(text_src)
+                if not normalized_text:
+                    continue
+                key = (str(name or "").strip().lower(), normalized_text.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                norm = normalized_text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "command phase" not in norm:
+                    continue
+                if "select one friendly" not in norm:
+                    continue
+                if "vehicle" not in norm:
+                    continue
+                if "regains" not in norm or "lost wounds" not in norm:
+                    continue
+                if "hit roll" not in norm or "until the start of your next command phase" not in norm:
+                    continue
+                range_value = 3
+                m_range = re.search(r"within\s+(\d+)", norm)
+                if m_range:
+                    try:
+                        range_value = int(m_range.group(1) or 3)
+                    except Exception:
+                        range_value = 3
+                heal_roll = ""
+                heal_flat = 0
+                m_heal = re.search(r"regains?\s+up\s+to\s+(\d+|d\d+)\s+lost wounds", norm)
+                if m_heal:
+                    token = str(m_heal.group(1) or "").strip().lower()
+                    if token.startswith("d"):
+                        heal_roll = token.upper()
+                    else:
+                        try:
+                            heal_flat = int(token)
+                        except Exception:
+                            heal_flat = 0
+                hit_bonus = 1
+                m_hit = re.search(r"add\s+(\d+)\s+to\s+the\s+hit\s+roll", norm)
+                if m_hit:
+                    try:
+                        hit_bonus = int(m_hit.group(1) or 1)
+                    except Exception:
+                        hit_bonus = 1
+                source = str(name or "Master of Mechanisms").strip() or "Master of Mechanisms"
+                rule = {
+                    "source": source,
+                    "range": int(range_value),
+                    "heal_roll": str(heal_roll or ""),
+                    "heal_flat": int(heal_flat or 0),
+                    "hit_bonus": int(hit_bonus or 1),
+                    "limit_once_per_turn": "only be selected for this ability once per turn" in norm,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def has_master_of_mechanisms(self) -> bool:
         """Return True if this unit has the Master of Mechanisms ability."""
         if "master_of_mechanisms" in getattr(self, "_ability_cache", {}):
             return bool(self._ability_cache["master_of_mechanisms"])
         found, _ = self._find_ability_with_patterns(["master of mechanisms"])
+        if not found:
+            found = bool(self.get_command_phase_vehicle_repair_hit_bonus_rule())
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache["master_of_mechanisms"] = bool(found)
+        return bool(found)
+
+    def has_truesilver_aegis_aura(self) -> bool:
+        """Return True if this unit has Truesilver Aegis aura."""
+        cache_key = "truesilver_aegis_aura"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found, _ = self._find_ability_with_patterns(["truesilver aegis"])
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
     def has_plough_through_the_enemy(self) -> bool:
@@ -1674,6 +1785,73 @@ class KeywordsDetachmentsMixin:
         root._ability_cache[cache_key] = rule
         return rule
 
+    def get_guardians_of_the_machine_heroic_intervention_rule(self) -> Optional[dict]:
+        """
+        Return rule info for abilities like:
+        "Each time an enemy unit ends a charge move ... you can target this model's unit with the Heroic
+        Intervention Stratagem for 0CP, and can do so even if you already targeted another unit this phase."
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "guardians_of_the_machine_heroic_intervention_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for u in members:
+            if u is None:
+                continue
+            for name, desc in u._iter_ability_entries_for_rules(model=None):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                key = (str(name or "").strip().lower(), u._normalize_rules_text(text_src).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                text = u._normalize_rules_text(self._strip_eligibility_prefix(text_src))
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'")
+                norm = norm.lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "heroic intervention" not in norm or "stratagem" not in norm:
+                    continue
+                if "0cp" not in norm:
+                    continue
+                if "enemy unit ends a charge move" not in norm:
+                    continue
+                if "engagement range" not in norm or "vehicle" not in norm:
+                    continue
+                if "within 6" not in norm:
+                    continue
+                source = str(name or "Guardians of the Machine").strip() or "Guardians of the Machine"
+                rule = {
+                    "source": source,
+                    "range": 6,
+                    "ability_key": "guardians_of_the_machine_heroic_intervention",
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
     def get_fortification_cover_rule(self) -> Optional[dict]:
         """
         Return rule info for Fortification cover abilities like:
@@ -1763,10 +1941,118 @@ class KeywordsDetachmentsMixin:
                     found = True
                     break
                 except Exception:
-                    continue
+                        continue
             if not found:
                 return False
         return True
+
+    def can_use_guardians_of_the_machine_heroic_intervention(self, game=None, enemy_unit=None) -> bool:
+        """Return True if Guardians of the Machine can grant Heroic Intervention for 0CP right now."""
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return False
+        try:
+            if not root.is_alive() or not getattr(root, "deployed", False):
+                return False
+        except Exception:
+            return False
+        try:
+            if root.is_in_reserves():
+                return False
+        except Exception:
+            pass
+        try:
+            if bool(getattr(root, "is_embarked", False)) or bool(getattr(root, "embarked_in", None)):
+                return False
+        except Exception:
+            pass
+        rule = root.get_guardians_of_the_machine_heroic_intervention_rule()
+        if not rule:
+            return False
+        if enemy_unit is None:
+            return False
+        if game is None:
+            try:
+                game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+            except Exception:
+                game = None
+        game_map = getattr(game, "map", None) if game is not None else None
+        if game_map is None:
+            return False
+        try:
+            enemy_root = enemy_unit.get_attached_unit_root()
+        except Exception:
+            enemy_root = enemy_unit
+        if enemy_root is None:
+            return False
+        try:
+            if root.get_parent_army() == enemy_root.get_parent_army():
+                return False
+        except Exception:
+            pass
+        try:
+            if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                return False
+        except Exception:
+            return False
+        try:
+            if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                return False
+        except Exception:
+            pass
+        try:
+            rng = float(rule.get("range", 6) or 6)
+        except Exception:
+            rng = 6.0
+        try:
+            dist = float(game_map.get_distance_between_units(root, enemy_root))
+        except Exception:
+            return False
+        if dist > (rng + 1e-6):
+            return False
+
+        try:
+            army = root.get_parent_army()
+            units = list(getattr(army, "units", []) or []) if army is not None else []
+        except Exception:
+            units = []
+        seen_ids: set[str] = set()
+        for u in units:
+            if u is None:
+                continue
+            try:
+                v_root = u.get_attached_unit_root()
+            except Exception:
+                v_root = u
+            uid = str(get_entity_id(v_root) or "")
+            if uid and uid in seen_ids:
+                continue
+            if uid:
+                seen_ids.add(uid)
+            if v_root is None:
+                continue
+            try:
+                if not v_root.is_alive() or not getattr(v_root, "deployed", True):
+                    continue
+                if v_root.is_in_reserves() or v_root.is_embarked:
+                    continue
+            except Exception:
+                continue
+            try:
+                is_vehicle = bool(v_root.has_keyword("VEHICLE") or v_root.has_any_keyword("VEHICLE"))
+            except Exception:
+                is_vehicle = False
+            if not is_vehicle:
+                continue
+            try:
+                if game_map.is_within_engagement_range(v_root, enemy_root):
+                    return True
+            except Exception:
+                continue
+        return False
 
     def get_strategic_reserves_round_bonus_rule(self) -> Optional[dict]:
         """
@@ -2382,6 +2668,8 @@ class KeywordsDetachmentsMixin:
         Return rule info for abilities like:
         "In your Shooting phase, each time a model in this unit makes a ranged attack that targets a MONSTER or VEHICLE unit,
         you can re-roll the Hit roll, you can re-roll the Wound roll and you can re-roll the Damage roll."
+        Also supports melee variants such as:
+        "Each time this model makes a melee attack that targets a MONSTER or VEHICLE unit, you can re-roll ..."
         Also supports model-worded variants such as:
         "Each time a ranged attack made by this model is allocated to a MONSTER or VEHICLE model, you can re-roll the Damage roll."
         """
@@ -2398,17 +2686,29 @@ class KeywordsDetachmentsMixin:
                 if not text:
                     continue
                 low = text.lower().replace("\u2019", "'")
-                if "ranged attack" not in low:
+                attack_type = "any"
+                if "ranged attack" in low:
+                    attack_type = "ranged"
+                elif "melee attack" in low:
+                    attack_type = "melee"
+                else:
                     continue
                 if "monster" not in low or "vehicle" not in low:
                     continue
                 if "closest" in low:
                     continue
-                model_attack_phrase = bool(
-                    ("each time a model in this unit makes a ranged attack" in low)
-                    or ("each time this model makes a ranged attack" in low)
-                    or ("each time a ranged attack made by this model" in low)
-                )
+                if attack_type == "ranged":
+                    model_attack_phrase = bool(
+                        ("each time a model in this unit makes a ranged attack" in low)
+                        or ("each time this model makes a ranged attack" in low)
+                        or ("each time a ranged attack made by this model" in low)
+                    )
+                else:
+                    model_attack_phrase = bool(
+                        ("each time a model in this unit makes a melee attack" in low)
+                        or ("each time this model makes a melee attack" in low)
+                        or ("each time a melee attack made by this model" in low)
+                    )
                 if not model_attack_phrase:
                     continue
                 if not re.search(
@@ -2428,7 +2728,9 @@ class KeywordsDetachmentsMixin:
                     "reroll_hit": bool(allow_hit),
                     "reroll_wound": bool(allow_wound),
                     "reroll_damage": bool(allow_damage),
+                    "attack_type": str(attack_type or "any"),
                     "requires_shooting_phase": ("shooting phase" in low),
+                    "requires_fight_phase": ("fight phase" in low),
                     "source": source,
                 }
                 break
@@ -2487,6 +2789,63 @@ class KeywordsDetachmentsMixin:
                     "attack_type": "ranged",
                     "target_keyword": "INFANTRY",
                     "ap_bonus": int(ap_bonus),
+                    "source": source,
+                }
+                break
+        except Exception:
+            rule = None
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
+    def get_melee_target_excluding_keywords_ap_bonus_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """
+        Return melee AP bonus rule for patterns like:
+        "Each time a model in this unit makes a melee attack that targets a unit (excluding MONSTERS and VEHICLES),
+         improve the Armour Penetration characteristic of that attack by 1."
+        """
+        if model is None:
+            return None
+        cache_key = f"melee_target_excluding_keywords_ap_bonus:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule = None
+        try:
+            for name, desc in self._iter_ability_entries_for_rules(model=model):
+                text = self._normalize_rules_text(self._strip_eligibility_prefix(desc or name or ""))
+                if not text:
+                    continue
+                low = text.lower().replace("\u2019", "'")
+                low = re.sub(r"'s\b", "s", low)
+                low = re.sub(r"[^a-z0-9]+", " ", low)
+                low = re.sub(r"\s+", " ", low).strip()
+                if "melee attack" not in low:
+                    continue
+                if "armour penetration" not in low and "armor penetration" not in low:
+                    continue
+                if "improve" not in low:
+                    continue
+                if "excluding monsters and vehicles" not in low:
+                    continue
+                if "targets a unit" not in low and "targets unit" not in low:
+                    continue
+                m = re.search(r"by\s+(\d+)", low)
+                if not m:
+                    continue
+                try:
+                    ap_bonus = int(m.group(1) or 0)
+                except Exception:
+                    ap_bonus = 0
+                if ap_bonus <= 0:
+                    continue
+                source = str(name or "Melee target AP bonus").strip() or "Melee target AP bonus"
+                rule = {
+                    "attack_type": "melee",
+                    "ap_bonus": int(ap_bonus),
+                    "target_exclude_keywords_any": ("monster", "vehicle"),
                     "source": source,
                 }
                 break

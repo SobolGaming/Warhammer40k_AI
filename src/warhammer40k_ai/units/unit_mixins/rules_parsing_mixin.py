@@ -463,6 +463,65 @@ class RulesParsingMixin:
             }
         return None
 
+    def _scan_command_phase_unit_return_ability(self):
+        for ab in self._iter_active_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = ab
+                    desc = ab
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                name = ""
+                desc = ""
+            text = self._normalize_rules_text(desc or "")
+            if not text:
+                continue
+            low = text.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+            if "command phase" not in low:
+                continue
+            if "bodyguard model" in low or "bodyguard models" in low:
+                continue
+            if "return" not in low or "destroyed" not in low:
+                continue
+            if "select one friendly" in low:
+                continue
+            if (
+                "to the bearer s unit" not in low
+                and "to the bearer's unit" not in low
+                and "to this unit" not in low
+            ):
+                continue
+            m = re.search(
+                r"return\s+(?:up to\s+)?(one|a|\d+|d3)\s+destroyed\s+models?",
+                low,
+            )
+            if not m:
+                continue
+            token = str(m.group(1) or "").strip()
+            amount_roll = ""
+            try:
+                amount = int(token)
+            except Exception:
+                if token in ("one", "a"):
+                    amount = 1
+                elif token == "d3":
+                    amount = 3
+                    amount_roll = "D3"
+                else:
+                    amount = 0
+            if amount <= 0:
+                continue
+            return {
+                "amount": int(amount),
+                "amount_roll": amount_roll,
+                "name": name or "Command phase model return",
+                "description": desc or "",
+                "exclude_character": ("excluding character" in low),
+            }
+        return None
+
     def _scan_charge_phase_bodyguard_loss_ability(self):
         pattern = self._CHARGE_PHASE_BODYGUARD_LOSS_RE
         for ab in self._iter_active_abilities():

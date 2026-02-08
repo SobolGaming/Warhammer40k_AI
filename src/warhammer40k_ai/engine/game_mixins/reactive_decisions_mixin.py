@@ -2595,6 +2595,7 @@ class GameReactiveDecisionsMixin:
             "waaagh",
             "possessed_lord",
             "fight_phase_melee_ap_boost",
+            "might_of_titan",
             "chance_for_glory",
             "malefic_destruction",
             "sacrificial_dagger",
@@ -2695,6 +2696,41 @@ class GameReactiveDecisionsMixin:
                 return
             ability_name = str(ctx.get("ability_name", "") or "Fight phase melee boost").strip()
             model.activate_fight_phase_melee_ap_boost(key=key, ability_name=ability_name)
+            return
+
+        if ability_key == "might_of_titan":
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None:
+                return
+            key = str(
+                payload.get("buff_key")
+                or ctx.get("buff_key")
+                or "fight_phase_melee_attacks_strength_boost"
+            ).strip().lower()
+            if not key:
+                key = "fight_phase_melee_attacks_strength_boost"
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)(key):
+                return
+            if not getattr(model, "is_alive", True):
+                return
+            ability_name = str(ctx.get("ability_name", "") or "Might of Titan").strip() or "Might of Titan"
+            try:
+                attacks_bonus = int(payload.get("attacks_bonus") or ctx.get("attacks_bonus") or 0)
+            except Exception:
+                attacks_bonus = 0
+            try:
+                strength_bonus = int(payload.get("strength_bonus") or ctx.get("strength_bonus") or 0)
+            except Exception:
+                strength_bonus = 0
+            model.activate_fight_phase_melee_attacks_strength_boost(
+                key=key,
+                ability_name=ability_name,
+                attacks_bonus=int(attacks_bonus),
+                strength_bonus=int(strength_bonus),
+            )
             return
 
         if ability_key == "chance_for_glory":

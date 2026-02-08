@@ -464,6 +464,38 @@ class Model:
             ap_bonus=1,
         )
 
+    def activate_fight_phase_melee_attacks_strength_boost(
+        self,
+        *,
+        key: str,
+        ability_name: str,
+        attacks_bonus: int = 3,
+        strength_bonus: int = 3,
+    ) -> bool:
+        """
+        Once per battle, at the start of the Fight phase, this model can use this ability.
+        If it does, until the end of the phase:
+        - add to the Attacks characteristic of melee weapons equipped by this model
+        - add to the Strength characteristic of melee weapons equipped by this model
+        """
+        label = str(ability_name or "").strip() or "Fight phase melee attacks/strength boost"
+        try:
+            attacks_bonus = int(attacks_bonus or 0)
+        except Exception:
+            attacks_bonus = 0
+        try:
+            strength_bonus = int(strength_bonus or 0)
+        except Exception:
+            strength_bonus = 0
+        if attacks_bonus <= 0 and strength_bonus <= 0:
+            return False
+        return self._activate_once_per_battle_melee_buff(
+            key=key,
+            ability_name=label,
+            attacks_bonus=int(attacks_bonus),
+            strength_bonus=int(strength_bonus),
+        )
+
     def activate_fight_phase_melee_full_characteristic_boost(
         self,
         *,

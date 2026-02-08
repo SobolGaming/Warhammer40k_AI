@@ -71,6 +71,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_battleshock"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_crit_hit_threshold"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_disembark_wound_reroll"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_disembark_ap_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_mortal_wounds_battleshock"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_wracking_agonies"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_snare"),
@@ -80,6 +81,7 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_afflicted"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_no_cover"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_ap_bonus"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_hit_bonus"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_keyword_wound_reroll"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_shoot_again"),
                 ("unit_shooting_resolved", "_on_unit_shooting_resolved_post_shoot_leadership_debuff"),
@@ -223,6 +225,18 @@ def build_default_rule_providers() -> List[RuleProvider]:
                 ("shooting_targets_selected", "_on_shooting_targets_selected_warp_rift_firepower"),
                 ("shooting_targets_selected", "_on_shooting_targets_selected_reorder_reality"),
                 ("fight_unit_selected", "_on_fight_unit_selected_dark_pacts"),
+            ],
+        )
+    )
+
+    providers.append(
+        RuleProvider(
+            name="grey_knights",
+            predicate=lambda ctxs, _g: any_faction(ctxs, "GK"),
+            subscriptions=[
+                ("phase_start", "_on_phase_start_master_of_mechanisms_cleanup"),
+                ("phase_start", "_on_phase_start_master_of_mechanisms"),
+                ("fight_unit_selected", "_on_fight_unit_selected_hammer_aflame"),
             ],
         )
     )

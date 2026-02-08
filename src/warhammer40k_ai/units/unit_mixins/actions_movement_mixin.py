@@ -194,6 +194,10 @@ class ActionsMovementMixin:
         r"\b(?:while|if)\s+(?:this model|this unit|the bearer)\s+is\s+leading(?:s)?\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
         re.IGNORECASE,
     )
+    _LED_BY_MODEL_RE = re.compile(
+        r"\b(?:while|if)\s+an?\s+(?P<model>[^.,;:]+?)\s+model\s+is\s+leading\s+(?:this|that)\s+unit\b",
+        re.IGNORECASE,
+    )
 
     def _ability_leading_specific_units(self, ability) -> list[str]:
         """Return specific unit phrases for abilities gated by leading a named unit."""
@@ -217,6 +221,65 @@ class ActionsMovementMixin:
             if phrase:
                 phrases.append(phrase)
         return phrases
+
+    def _ability_led_by_model_phrases(self, ability) -> list[str]:
+        """
+        Return model-name/keyword phrases for abilities gated by
+        "while a/an <model> model is leading this unit".
+        """
+        name = ""
+        desc = ""
+        try:
+            if isinstance(ability, str):
+                desc = ability
+            else:
+                name = str(getattr(ability, "name", "") or "")
+                desc = str(getattr(ability, "description", "") or "")
+        except Exception:
+            desc = ""
+        text = self._strip_eligibility_prefix(f"{name} {desc}".strip())
+        text = self._normalize_rules_text(text)
+        if not text:
+            return []
+        phrases: list[str] = []
+        for m in self._LED_BY_MODEL_RE.finditer(text):
+            phrase = str(m.group("model") or "").strip()
+            if phrase:
+                phrases.append(phrase)
+        return phrases
+
+    def _attached_leader_matches_phrase(self, phrase: str) -> bool:
+        if not str(phrase or "").strip():
+            return False
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        leaders = list(getattr(root, "attached_leaders", []) or [])
+        if not leaders:
+            return False
+
+        phrase_name = self._normalize_attached_unit_name(phrase)
+        for leader in leaders:
+            if leader is None:
+                continue
+            try:
+                if self._unit_matches_keyword_phrase(leader, phrase, use_effective=False):
+                    return True
+            except Exception:
+                pass
+            try:
+                leader_name = self._normalize_attached_unit_name(getattr(leader, "name", ""))
+                if phrase_name and leader_name and (phrase_name in leader_name or leader_name in phrase_name):
+                    return True
+            except Exception:
+                pass
+            try:
+                if hasattr(leader, "_unit_contains_model_named") and leader._unit_contains_model_named(phrase):
+                    return True
+            except Exception:
+                pass
+        return False
 
     def _attached_unit_matches_phrase(self, phrase: str) -> bool:
         bodyguard = getattr(self, "attached_to", None)
@@ -295,6 +358,10 @@ class ActionsMovementMixin:
 
     def _ability_is_active(self, ability) -> bool:
         """Return True if the ability is currently active for this unit."""
+        led_by_model_phrases = self._ability_led_by_model_phrases(ability)
+        if led_by_model_phrases:
+            if not any(self._attached_leader_matches_phrase(phrase) for phrase in led_by_model_phrases):
+                return False
         if self._ability_requires_leading(ability):
             # Only enforce leading attachment when this unit is actually a Leader datasheet.
             if bool(getattr(self, "is_leader", False)) and not bool(getattr(self, "is_attached_leader", False)):
@@ -1354,7 +1421,7 @@ class ActionsMovementMixin:
             return list(cache.get(cache_key) or [])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int]] = set()
+        seen: set[tuple[str, int, int, str]] = set()
 
         for ab, leader in root._iter_attached_leader_leading_abilities():
             try:
@@ -1388,6 +1455,205 @@ class ActionsMovementMixin:
                 continue
             seen.add(key)
             specs.append({"source": source, "range": int(rng), "leader": leader})
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def leading_weapon_attacks_bonus_specs(self) -> list[dict]:
+        """
+        Leading ability: while this model is leading a unit, add to the Attacks characteristic
+        of named weapons equipped by models in that unit.
+
+        Returns list with keys:
+            - leader: leader unit object
+            - source: ability name
+            - weapon_name: target weapon phrase
+            - attacks_bonus: int
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "leading_weapon_attacks_bonus_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, int]] = set()
+        for ab, leader in root._iter_attached_leader_leading_abilities():
+            try:
+                if isinstance(ab, str):
+                    name = str(ab or "")
+                    desc = str(ab or "")
+                else:
+                    name = str(getattr(ab, "name", "") or "")
+                    desc = str(getattr(ab, "description", "") or "") or name
+            except Exception:
+                continue
+            text_src = leader._strip_eligibility_prefix(desc or "")
+            normalized = leader._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._LEADING_WEAPON_ATTACKS_BONUS_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                bonus = int(m.group("bonus") or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            weapon_name = str(m.group("weapon") or "").strip()
+            if not weapon_name:
+                continue
+            source = str(name or "Leading weapon attacks bonus").strip() or "Leading weapon attacks bonus"
+            key = (source.lower(), weapon_name.lower(), int(bonus))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "leader": leader,
+                    "source": source,
+                    "weapon_name": weapon_name,
+                    "attacks_bonus": int(bonus),
+                }
+            )
+
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[cache_key] = list(specs)
+        root._ability_cache = cache
+        return list(specs)
+
+    def leading_weapon_attacks_bonus_for_weapon(self, weapon_name: str, attacker_model=None) -> tuple[int, list[str]]:
+        """Return (total_bonus, reasons) for leading weapon Attacks bonuses on the named weapon."""
+        if not weapon_name:
+            return 0, []
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        if root is None:
+            return 0, []
+        if attacker_model is not None:
+            try:
+                model_unit = getattr(attacker_model, "parent_unit", None)
+                model_root = model_unit.get_attached_unit_root() if model_unit is not None else None
+                if model_root is not None and model_root is not root:
+                    return 0, []
+            except Exception:
+                pass
+        specs = root.leading_weapon_attacks_bonus_specs() if hasattr(root, "leading_weapon_attacks_bonus_specs") else []
+        if not specs:
+            return 0, []
+        total = 0
+        reasons: list[str] = []
+        for spec in list(specs or []):
+            leader = spec.get("leader")
+            if leader is None:
+                continue
+            try:
+                if not bool(getattr(leader, "is_attached_leader", False)):
+                    continue
+                alive_fn = getattr(leader, "is_alive", None)
+                if callable(alive_fn) and not alive_fn():
+                    continue
+            except Exception:
+                continue
+            weapon_phrase = str(spec.get("weapon_name", "") or "").strip()
+            if not weapon_phrase:
+                continue
+            try:
+                if hasattr(root, "_weapon_name_matches") and callable(getattr(root, "_weapon_name_matches")):
+                    if not root._weapon_name_matches([weapon_phrase], weapon_name):
+                        continue
+                else:
+                    wn = str(weapon_name or "").strip().lower()
+                    wp = str(weapon_phrase or "").strip().lower()
+                    if not wn or not wp or (wp not in wn and wn not in wp):
+                        continue
+            except Exception:
+                continue
+            try:
+                bonus = int(spec.get("attacks_bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            total += int(bonus)
+            source = str(spec.get("source", "") or "Leading weapon attacks bonus").strip() or "Leading weapon attacks bonus"
+            reasons.append(f"{source} +{int(bonus)}A ({weapon_phrase})")
+        return int(total), reasons
+
+    def unit_post_shoot_reactive_move_no_charge_specs(self) -> list[dict]:
+        """
+        Unit ability: after this unit has shot, it can make a Normal move up to X";
+        if it does, it cannot declare a charge this turn.
+
+        Returns list of specs with keys:
+            - source: ability name
+            - range: int
+            - requires_not_engaged: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_reactive_move_no_charge_specs"
+        cache = getattr(root, "_ability_cache", None)
+        if isinstance(cache, dict) and cache_key in cache:
+            return list(cache.get(cache_key) or [])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, bool]] = set()
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        for member in members:
+            if member is None:
+                continue
+            for name, desc in member._iter_ability_entries_for_rules(model=None):
+                text_src = member._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = member._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                try:
+                    rng = int(m.group("range") or 0)
+                except Exception:
+                    rng = 0
+                if rng <= 0:
+                    continue
+                source = str(name or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
+                requires_not_engaged = "not within engagement range" in normalized
+                key = (source.lower(), int(rng), bool(requires_not_engaged))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "range": int(rng),
+                        "requires_not_engaged": bool(requires_not_engaged),
+                    }
+                )
 
         if not isinstance(cache, dict):
             cache = {}
@@ -3105,6 +3371,7 @@ class ActionsMovementMixin:
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = self._MELEE_CHARGE_STRENGTH_DAMAGE_RE.fullmatch(normalized)
                 damage_bonus = None
+                model_keyword = ""
                 if m:
                     try:
                         val = int(m.group("val") or 0)
@@ -3115,28 +3382,41 @@ class ActionsMovementMixin:
                     damage_bonus = int(val)
                 else:
                     m = self._MELEE_CHARGE_STRENGTH_ONLY_RE.fullmatch(normalized)
-                    if not m:
-                        continue
-                    try:
-                        val = int(m.group("val") or 0)
-                    except Exception:
+                    if m:
+                        try:
+                            val = int(m.group("val") or 0)
+                        except Exception:
+                            val = 0
+                        if val <= 0:
+                            continue
+                        damage_bonus = 0
+                    else:
+                        m = self._MELEE_CHARGE_DAMAGE_ONLY_MODEL_KEYWORD_RE.fullmatch(normalized)
+                        if not m:
+                            continue
+                        try:
+                            val = int(m.group("val") or 0)
+                        except Exception:
+                            val = 0
+                        if val <= 0:
+                            continue
+                        damage_bonus = int(val)
+                        try:
+                            kw_raw = str(m.group("keyword") or "").strip()
+                        except Exception:
+                            kw_raw = ""
+                        model_keyword = member._normalize_keyword_phrase(kw_raw) or kw_raw.lower()
                         val = 0
-                    if val <= 0:
-                        continue
-                    damage_bonus = 0
 
                 source = str(name or "Charge melee strength/damage").strip() or "Charge melee strength/damage"
-                key = (source.lower(), int(val), int(damage_bonus))
+                key = (source.lower(), int(val), int(damage_bonus), str(model_keyword))
                 if key in seen:
                     continue
                 seen.add(key)
-                entries.append(
-                    {
-                        "strength_bonus": int(val),
-                        "damage_bonus": int(damage_bonus),
-                        "source": source,
-                    }
-                )
+                entry = {"strength_bonus": int(val), "damage_bonus": int(damage_bonus), "source": source}
+                if model_keyword:
+                    entry["model_keyword"] = str(model_keyword)
+                entries.append(entry)
 
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}

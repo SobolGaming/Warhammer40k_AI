@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 from ..utility.ability_support import ABILITY_GATE_OF_INFINITY, army_has_ability_id
@@ -31,15 +32,30 @@ class GateOfInfinityManager:
         abilities = list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])
         for ab in abilities:
             try:
+                checker = getattr(unit, "_ability_is_active", None)
+                if callable(checker) and not bool(checker(ab)):
+                    continue
+            except Exception:
+                pass
+            try:
                 if isinstance(ab, str):
                     name = ab
                     ab_id = ""
+                    desc = ab
                 else:
                     name = getattr(ab, "name", "")
                     ab_id = getattr(ab, "id", "")
+                    desc = getattr(ab, "description", "")
                 if str(ab_id or "").strip() == ABILITY_GATE_OF_INFINITY:
                     return True
                 if "gate of infinity" in str(name or "").lower():
+                    return True
+                text = str(f"{name} {desc}" or "").strip().lower()
+                text = re.sub(r"\s+", " ", text)
+                if re.search(
+                    r"\b(?:have|has)\s+(?:the\s+)?(?:deep\s+strike\s+and\s+)?teleport\s+assault\s+abilit(?:y|ies)\b",
+                    text,
+                ):
                     return True
             except Exception:
                 continue

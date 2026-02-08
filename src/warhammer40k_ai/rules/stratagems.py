@@ -1658,10 +1658,11 @@ class StratagemManager(
 
     def _effective_cp_cost(self, stratagem: Stratagem, context: Dict[str, Any]) -> int:
         target_unit = context.get("target_unit") or context.get("unit")
+        enemy_unit = context.get("enemy_unit")
         cost = int(getattr(stratagem, "cp_cost", 0) or 0)
         preview_cost = getattr(self.player, "preview_stratagem_cp_cost", None)
         if callable(preview_cost):
-            prev = preview_cost(stratagem, target_unit=target_unit)
+            prev = preview_cost(stratagem, target_unit=target_unit, enemy_unit=enemy_unit)
             return int((prev or {}).get("cost", cost))
         return cost
 
@@ -1702,6 +1703,14 @@ class StratagemManager(
         fn = getattr(unit, "can_use_beast_handler_heroic_intervention", None)
         if callable(fn):
             return bool(fn(self.game))
+        return False
+
+    def _unit_has_guardians_of_the_machine_heroic_intervention(self, unit, *, enemy_unit=None) -> bool:
+        if unit is None or enemy_unit is None:
+            return False
+        fn = getattr(unit, "can_use_guardians_of_the_machine_heroic_intervention", None)
+        if callable(fn):
+            return bool(fn(self.game, enemy_unit=enemy_unit))
         return False
 
     def _unit_can_use_traitor_enforcer_overwatch(self, unit) -> bool:
@@ -1754,11 +1763,15 @@ class StratagemManager(
                 return True
         return False
 
-    def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None) -> bool:
+    def _heroic_intervention_repeat_allowed(self, *, target_unit=None, candidates=None, enemy_unit=None) -> bool:
         if target_unit is not None:
             if not (
                 self._unit_has_faultless_opportunist(target_unit)
                 or self._unit_has_beast_handler_heroic_intervention(target_unit)
+                or self._unit_has_guardians_of_the_machine_heroic_intervention(
+                    target_unit,
+                    enemy_unit=enemy_unit,
+                )
             ):
                 return False
             uid = self._heroic_intervention_target_id(target_unit)
@@ -1767,6 +1780,10 @@ class StratagemManager(
             if not (
                 self._unit_has_faultless_opportunist(cand)
                 or self._unit_has_beast_handler_heroic_intervention(cand)
+                or self._unit_has_guardians_of_the_machine_heroic_intervention(
+                    cand,
+                    enemy_unit=enemy_unit,
+                )
             ):
                 continue
             uid = self._heroic_intervention_target_id(cand)
@@ -1795,6 +1812,7 @@ class StratagemManager(
                 if self._heroic_intervention_repeat_allowed(
                     target_unit=context.get("target_unit") or context.get("unit"),
                     candidates=context.get("candidates"),
+                    enemy_unit=context.get("enemy_unit"),
                 ):
                     pass
                 else:
@@ -5155,7 +5173,13 @@ class StratagemManager(
                 eff_cost = s.cp_cost
                 try:
                     if hasattr(self.player, "preview_stratagem_cp_cost"):
-                        eff_cost = int(self.player.preview_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+                        eff_cost = int(
+                            self.player.preview_stratagem_cp_cost(
+                                s,
+                                target_unit=unit,
+                                enemy_unit=charging_unit,
+                            ).get("cost", s.cp_cost)
+                        )
                 except Exception:
                     raise
                 if self.player.command_points < eff_cost:
@@ -7876,6 +7900,7 @@ class StratagemManager(
                     if key == "HEROIC INTERVENTION" and self._heroic_intervention_repeat_allowed(
                         target_unit=kwargs.get("target_unit") or kwargs.get("unit"),
                         candidates=kwargs.get("candidates"),
+                        enemy_unit=kwargs.get("enemy_unit"),
                     ):
                         pass
                     elif key == "COUNTER-OFFENSIVE" and self._counter_offensive_daemonforge_available(
@@ -8346,7 +8371,13 @@ class StratagemManager(
             eff_cost = s.cp_cost
             try:
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
-                    eff_cost = int(self.player.apply_stratagem_cp_cost(s, target_unit=unit).get("cost", s.cp_cost))
+                    eff_cost = int(
+                        self.player.apply_stratagem_cp_cost(
+                            s,
+                            target_unit=unit,
+                            enemy_unit=enemy,
+                        ).get("cost", s.cp_cost)
+                    )
             except Exception:
                 raise
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):

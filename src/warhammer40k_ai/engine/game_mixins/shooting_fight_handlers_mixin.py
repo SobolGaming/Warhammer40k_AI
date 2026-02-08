@@ -105,23 +105,27 @@ class GameShootingFightHandlersMixin:
         except Exception:
             pass
 
-        specs = attacker_unit.leading_tactical_acumen_specs() or []
-        if not specs:
-            return
-
-        unit_id = maybe_entity_id(attacker_unit)
-        queue = getattr(self, "decision_queue", None)
-        if queue is not None and hasattr(queue, "list"):
+        def _has_pending_reactive_move(unit_obj) -> bool:
+            unit_id = maybe_entity_id(unit_obj)
+            queue = getattr(self, "decision_queue", None)
+            if queue is None or not hasattr(queue, "list"):
+                return False
             for req in list(queue.list() or []):
                 if str(getattr(req, "decision_type", "")) != DECISION_MOVE_UNIT:
                     continue
                 ctx = dict(getattr(req, "context", {}) or {})
-                if str(ctx.get("reactive_move_kind", "") or "") != "tactical_acumen":
+                kind = str(ctx.get("reactive_move_kind", "") or "")
+                if kind not in ("tactical_acumen", "post_shoot_no_charge"):
                     continue
                 if str(ctx.get("unit_id", "") or "") == str(unit_id or ""):
-                    return
+                    return True
+            return False
 
-        for spec in specs:
+        if _has_pending_reactive_move(attacker_unit):
+            return
+
+        leading_specs = attacker_unit.leading_tactical_acumen_specs() or []
+        for spec in leading_specs:
             leader = spec.get("leader")
             if leader is None:
                 continue
@@ -150,6 +154,53 @@ class GameShootingFightHandlersMixin:
                 movement_type="reactive",
                 source=source,
             )
+            return
+
+        unit_specs = attacker_unit.unit_post_shoot_reactive_move_no_charge_specs() or []
+        if not unit_specs:
+            return
+
+        engaged = False
+        try:
+            game_map = getattr(self, "map", None)
+            if game_map is not None:
+                enemies = list(game_map.get_enemy_units(attacker_unit) or [])
+                for enemy in enemies:
+                    if enemy is None or not enemy.is_alive():
+                        continue
+                    try:
+                        if not bool(getattr(enemy, "deployed", True)):
+                            continue
+                    except Exception:
+                        continue
+                    try:
+                        if game_map.is_within_engagement_range(attacker_unit, enemy):
+                            engaged = True
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            engaged = False
+
+        for spec in unit_specs:
+            if bool(spec.get("requires_not_engaged", False)) and engaged:
+                continue
+            try:
+                max_distance = int(spec.get("range", 0) or 0)
+            except Exception:
+                max_distance = 0
+            if max_distance <= 0:
+                continue
+            source = str(spec.get("source", "") or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
+            self._queue_reactive_move_movement_decision(
+                player=attacker_player,
+                unit=attacker_unit,
+                max_distance=max_distance,
+                kind="post_shoot_no_charge",
+                movement_type="reactive",
+                source=source,
+            )
+            return
 
     def _on_unit_shooting_resolved_post_shoot_battleshock(
         self,
@@ -466,6 +517,100 @@ class GameShootingFightHandlersMixin:
                     "model_id": get_entity_id(model),
                     "ability": "post_shoot_disembark_wound_reroll",
                     "ability_name": ability_name,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_disembark_ap_bonus(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot disembark AP bonus requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _model_hit_target(model, target) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(target)
+            if not hit_models:
+                return False
+            return model in hit_models
+
+        triggers: list[tuple[Any, dict, list[Any]]] = []
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_shoot_disembark_ap_bonus_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                candidates: list[Any] = []
+                for target_unit, hits in (hits_by_target or {}).items():
+                    if target_unit is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(target_unit):
+                        continue
+                    if not _model_hit_target(model, target_unit):
+                        continue
+                    candidates.append(target_unit)
+                if candidates:
+                    triggers.append((model, spec, candidates))
+
+        if not triggers:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for model, spec, candidates in triggers:
+            if not candidates:
+                continue
+            ability_name = str(spec.get("source", "") or "Fire Focus").strip() or "Fire Focus"
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a target.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "model_id": get_entity_id(model),
+                    "ability": "post_shoot_disembark_ap_bonus",
+                    "ability_name": ability_name,
+                    "ap_bonus": int(spec.get("value", 1) or 1),
                 },
             )
             self.request_decision(request)
@@ -870,6 +1015,77 @@ class GameShootingFightHandlersMixin:
                         _log_action_for_players(self, attacker_player, f"{source}: {tname} is pinned until your next turn.")
                     except Exception:
                         pass
+
+        def _is_monster_or_vehicle(unit) -> bool:
+            if unit is None:
+                return False
+            try:
+                return bool(unit.has_keyword("MONSTER") or unit.has_keyword("VEHICLE"))
+            except Exception:
+                pass
+            try:
+                return bool(unit.has_any_keyword("MONSTER") or unit.has_any_keyword("VEHICLE"))
+            except Exception:
+                return False
+
+        unit_specs = attacker_unit.unit_post_shoot_pinned_specs() or []
+        if not unit_specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in unit_specs:
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            try:
+                move_penalty = int(spec.get("move_penalty", -2) or -2)
+            except Exception:
+                move_penalty = -2
+            try:
+                charge_penalty = int(spec.get("charge_penalty", -2) or -2)
+            except Exception:
+                charge_penalty = -2
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                if exclude_mv and _is_monster_or_vehicle(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Pinned").strip() or "Pinned"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit to pin.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_pinned",
+                    "ability_name": ability_name,
+                    "move_penalty": int(move_penalty),
+                    "charge_penalty": int(charge_penalty),
+                },
+            )
+            self.request_decision(request)
 
     def _on_unit_shooting_resolved_post_shoot_aflame(
         self,
@@ -1454,6 +1670,86 @@ class GameShootingFightHandlersMixin:
                     "attack_type": attack_type,
                     "ap_bonus": int(ap_bonus),
                     "limit_scope": limit_scope,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_keyword_hit_bonus(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot keyword hit bonus requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        specs = attacker_unit.unit_post_shoot_keyword_hit_bonus_specs() or []
+        if not specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "Post-shoot Hit bonus").strip() or "Post-shoot Hit bonus"
+            keyword = str(spec.get("keyword", "") or "").strip()
+            try:
+                bonus = int(spec.get("bonus", 0) or 0)
+            except Exception:
+                bonus = 0
+            if bonus <= 0:
+                continue
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_keyword_hit_bonus",
+                    "ability_name": ability_name,
+                    "keyword_phrase": keyword,
+                    "hit_bonus": int(bonus),
                 },
             )
             self.request_decision(request)
@@ -2736,6 +3032,140 @@ class GameShootingFightHandlersMixin:
                 payload={"unit_id": unit_id, "model_id": model_id},
                 instance_key=f"{model_id}:sacrificial_dagger:fight",
             )
+
+    def _on_fight_unit_selected_hammer_aflame(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        if not root.is_alive() or not getattr(root, "deployed", True):
+            return
+        if root.is_in_reserves() or root.is_embarked:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            player = root.get_parent_army().player
+        except Exception:
+            player = None
+        if player is None:
+            return
+        if selecting_player is not None and selecting_player is not player:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        pending_model_ids: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "hammer_aflame":
+                    continue
+                if str(ctx.get("source_unit_id", "") or "") != str(get_entity_id(root) or ""):
+                    continue
+                model_id = str(ctx.get("model_id", "") or "")
+                if model_id:
+                    pending_model_ids.add(model_id)
+
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        try:
+            models = sorted(models, key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            models = list(models)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        for model in list(models or []):
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_model_ids:
+                continue
+            get_specs = getattr(root, "model_fight_selected_mortal_table_specs", None)
+            specs = list(get_specs(model) or []) if callable(get_specs) else []
+            if not specs:
+                continue
+            candidates: list[Any] = []
+            seen_targets: set[str] = set()
+            try:
+                enemy_units = list(game_map.get_enemy_units(root) or [])
+            except Exception:
+                enemy_units = []
+            for enemy in enemy_units:
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                enemy_id = str(get_entity_id(enemy_root) or "")
+                if not enemy_id or enemy_id in seen_targets:
+                    continue
+                seen_targets.add(enemy_id)
+                if not enemy_root.is_alive() or not getattr(enemy_root, "deployed", True):
+                    continue
+                try:
+                    if enemy_root.is_in_reserves() or enemy_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                try:
+                    if not game_map.is_within_engagement_range(root, enemy_root):
+                        continue
+                except Exception:
+                    continue
+                candidates.append(enemy_root)
+            if not candidates:
+                continue
+            for spec in specs:
+                ability_name = str(spec.get("source", "") or "Hammer Aflame (Psychic)").strip() or "Hammer Aflame (Psychic)"
+                options = [DecisionOption.create("None", payload={"action": "skip"})]
+                for cand in sorted(list(candidates), key=_unit_sort_key):
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload={"target_unit_id": get_entity_id(cand)},
+                        )
+                    )
+                if len(options) <= 1:
+                    continue
+                req = DecisionRequest.create(
+                    DECISION_CHOOSE_QUARRY,
+                    f"{ability_name}: select one enemy unit within Engagement Range (or None).",
+                    player_id=getattr(player, "id", None),
+                    options=options,
+                    context={
+                        "ability": "hammer_aflame",
+                        "ability_name": ability_name,
+                        "phase": "Fight phase",
+                        "source_unit_id": get_entity_id(root),
+                        "unit_id": get_entity_id(root),
+                        "model_id": model_id,
+                    },
+                )
+                self.request_decision(req)
+                if model_id:
+                    pending_model_ids.add(model_id)
+                break
 
     def _on_fight_unit_selected_harbinger_of_death(self, unit=None, **_kwargs) -> None:
         if unit is None:

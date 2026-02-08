@@ -337,6 +337,59 @@ class GamePhaseHandlersMixin:
                             payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
                             instance_key=f"{model_id}:{key}",
                         )
+            # Once per battle: start of Fight phase -> add Attacks and Strength (e.g., Might of Titan).
+            for unit in list(army.units):
+                if not unit.is_alive():
+                    continue
+                models = list(getattr(unit, "models", []) or [])
+                for m in models:
+                    if not getattr(m, "is_alive", True):
+                        continue
+                    get_specs = getattr(unit, "model_start_fight_phase_melee_attacks_strength_boost_specs", None)
+                    specs = list(get_specs(m) or []) if callable(get_specs) else []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        key = str(spec.get("key") or "fight_phase_melee_attacks_strength_boost").strip().lower()
+                        if not key:
+                            key = "fight_phase_melee_attacks_strength_boost"
+                        if getattr(m, "has_used_once_per_battle", lambda _k: False)(key):
+                            continue
+                        unit_id = maybe_entity_id(unit)
+                        model_id = maybe_entity_id(m)
+                        ability_name = str(spec.get("source", "") or "Fight phase melee attacks/strength boost").strip()
+                        try:
+                            attacks_bonus = int(spec.get("attacks_bonus", 0) or 0)
+                        except Exception:
+                            attacks_bonus = 0
+                        try:
+                            strength_bonus = int(spec.get("strength_bonus", 0) or 0)
+                        except Exception:
+                            strength_bonus = 0
+                        ctx = {
+                            "ability_name": ability_name,
+                            "unit": getattr(unit, "name", "") or "",
+                            "model": getattr(m, "name", "") or "",
+                            "phase": "Fight phase",
+                            "unit_id": unit_id,
+                            "model_id": model_id,
+                            "buff_key": key,
+                            "attacks_bonus": int(attacks_bonus),
+                            "strength_bonus": int(strength_bonus),
+                        }
+                        message = (
+                            f"Activate {ability_name} for {getattr(m, 'name', 'Model')} "
+                            f"({getattr(unit, 'name', 'Unit')})?"
+                        )
+                        self._queue_optional_ability_confirmation(
+                            player=player,
+                            ability_key="might_of_titan",
+                            ability_name=ability_name,
+                            message=message,
+                            context=ctx,
+                            payload={"unit_id": unit_id, "model_id": model_id, "buff_key": key},
+                            instance_key=f"{model_id}:{key}",
+                        )
             # Once per battle: start of Fight phase -> improve S/A/AP/D for this model.
             for unit in list(army.units):
                 if not unit.is_alive():
@@ -623,6 +676,77 @@ class GamePhaseHandlersMixin:
                 bodyguard_unit=bodyguard,
                 ability=ability,
                 remaining=amount,
+            )
+
+        seen_roots: set[str] = set()
+        for unit in list(army.units):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not root.is_alive():
+                continue
+            if not getattr(root, "deployed", True):
+                continue
+            if str(getattr(root, "reserve_status", "deployed")) != "deployed":
+                continue
+            if root.is_in_reserves():
+                continue
+            if bool(getattr(root, "embarked_in", None)):
+                continue
+            if root.is_embarked:
+                continue
+            if len(root.models or []) <= 0:
+                continue
+            if not list(root.models_lost or []):
+                continue
+
+            ability = root.get_command_phase_unit_return_ability()
+            if not ability:
+                continue
+
+            amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
+            amount = int(ability.get("amount", 0) or 0)
+            if amount_roll:
+                try:
+                    from ...utility.dice import get_roll
+                    rolled = int(get_roll(amount_roll) or 0)
+                except Exception:
+                    rolled = 0
+                if rolled <= 0:
+                    continue
+                amount = int(rolled)
+                ability = dict(ability or {})
+                ability["rolled_amount"] = int(rolled)
+            if amount <= 0:
+                continue
+
+            allowed_ids = []
+            if bool(ability.get("exclude_character", False)):
+                for model in list(getattr(root, "models_lost", []) or []):
+                    is_character = bool(getattr(model, "is_character", False))
+                    if is_character:
+                        continue
+                    model_id = str(get_entity_id(model) or "")
+                    if model_id:
+                        allowed_ids.append(model_id)
+            if bool(ability.get("exclude_character", False)) and not allowed_ids:
+                continue
+
+            self._queue_bodyguard_return_decision(
+                player=player,
+                leader_unit=root,
+                bodyguard_unit=root,
+                ability=ability,
+                remaining=amount,
+                allowed_model_ids=list(allowed_ids) if allowed_ids else None,
+                allow_skip=True,
             )
 
     def _on_phase_start_dance_of_death(self, player=None, phase=None, **_kwargs) -> None:
@@ -2708,7 +2832,37 @@ class GamePhaseHandlersMixin:
                     continue
             except Exception:
                 pass
-            if not bool(getattr(root, "has_master_of_mechanisms", lambda: False)()):
+            get_rule = getattr(root, "get_command_phase_vehicle_repair_hit_bonus_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            if not isinstance(rule, dict):
+                if not bool(getattr(root, "has_master_of_mechanisms", lambda: False)()):
+                    continue
+                rule = {
+                    "source": "Master of Mechanisms",
+                    "range": 3,
+                    "heal_roll": "D3",
+                    "heal_flat": 0,
+                    "hit_bonus": 1,
+                }
+            try:
+                selection_range = float(rule.get("range", 3) or 3)
+            except Exception:
+                selection_range = 3.0
+            if selection_range <= 0:
+                selection_range = 3.0
+            ability_name = str(rule.get("source", "") or "Master of Mechanisms").strip() or "Master of Mechanisms"
+            try:
+                hit_bonus = int(rule.get("hit_bonus", 1) or 1)
+            except Exception:
+                hit_bonus = 1
+            heal_roll = str(rule.get("heal_roll", "") or "").strip().upper()
+            try:
+                heal_flat = int(rule.get("heal_flat", 0) or 0)
+            except Exception:
+                heal_flat = 0
+            if not heal_roll and heal_flat <= 0:
+                heal_roll = "D3"
+            if hit_bonus <= 0:
                 continue
             try:
                 models = list(root.get_attached_unit_models() or [])
@@ -2751,7 +2905,7 @@ class GamePhaseHandlersMixin:
                         continue
                 except Exception:
                     continue
-                if not model_within_range_of_unit(bearer, target_root, 3.0):
+                if not model_within_range_of_unit(bearer, target_root, selection_range):
                     continue
                 tsr = getattr(target_root, "special_rules", None)
                 if isinstance(tsr, dict):
@@ -2775,10 +2929,9 @@ class GamePhaseHandlersMixin:
             )
             if not options:
                 continue
-            ability_name = "Master of Mechanisms"
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
-                f"{ability_name}: select a friendly VEHICLE unit within 3\" (or None).",
+                f"{ability_name}: select a friendly VEHICLE unit within {int(selection_range)}\" (or None).",
                 player_id=getattr(player, "id", None),
                 options=options,
                 context={
@@ -2789,7 +2942,10 @@ class GamePhaseHandlersMixin:
                     "source_unit_id": source_id,
                     "unit_id": source_id,
                     "model_id": str(get_entity_id(bearer) or ""),
-                    "range": 3,
+                    "range": int(selection_range),
+                    "hit_bonus": int(hit_bonus),
+                    "heal_roll": heal_roll,
+                    "heal_flat": int(heal_flat),
                     "turn_owner": owner_id,
                     "turn": int(turn or 0),
                 },
@@ -4043,6 +4199,18 @@ class GamePhaseHandlersMixin:
                                 "post_shoot_ap_bonus_selected_phase",
                             ):
                                 sr.pop(k, None)
+                exp = str(sr.get("post_shoot_keyword_hit_bonus_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "post_shoot_keyword_hit_bonus_active",
+                        "post_shoot_keyword_hit_bonus_owner",
+                        "post_shoot_keyword_hit_bonus_turn",
+                        "post_shoot_keyword_hit_bonus_source",
+                        "post_shoot_keyword_hit_bonus_phrase",
+                        "post_shoot_keyword_hit_bonus_value",
+                        "post_shoot_keyword_hit_bonus_expires_phase",
+                    ):
+                        sr.pop(k, None)
                 exp = str(sr.get("post_shoot_disembark_wound_reroll_expires_phase", "") or "").strip().upper()
                 if exp and exp == pname:
                     for k in (
@@ -4297,6 +4465,23 @@ class GamePhaseHandlersMixin:
                                 "symphony_of_pain_turn",
                                 "symphony_of_pain_source",
                                 "symphony_of_pain_keywords",
+                            ):
+                                sr.pop(k, None)
+                    owner = str(sr.get("post_shoot_disembark_ap_bonus_owner", "") or "")
+                    try:
+                        turn = int(sr.get("post_shoot_disembark_ap_bonus_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if owner and owner == active_name:
+                        if int(turn or 0) == int(getattr(self, "turn", 0) or 0):
+                            for k in (
+                                "post_shoot_disembark_ap_bonus_active",
+                                "post_shoot_disembark_ap_bonus_source",
+                                "post_shoot_disembark_ap_bonus_target_id",
+                                "post_shoot_disembark_ap_bonus_owner",
+                                "post_shoot_disembark_ap_bonus_turn",
+                                "post_shoot_disembark_ap_bonus_value",
+                                "post_shoot_disembark_ap_bonus_expires_phase",
                             ):
                                 sr.pop(k, None)
         for p in list(self.players or []):

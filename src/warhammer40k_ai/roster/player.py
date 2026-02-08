@@ -721,6 +721,14 @@ class Player:
             return bool(fn(self.game))
         return False
 
+    def _target_unit_can_use_guardians_of_the_machine_heroic_intervention(self, target_unit, *, enemy_unit=None) -> bool:
+        if target_unit is None or enemy_unit is None:
+            return False
+        fn = getattr(target_unit, "can_use_guardians_of_the_machine_heroic_intervention", None)
+        if callable(fn):
+            return bool(fn(self.game, enemy_unit=enemy_unit))
+        return False
+
     def _preview_faultless_opportunist_discount(self, *, stratagem=None, target_unit=None) -> int:
         if stratagem is None or target_unit is None:
             return 0
@@ -739,6 +747,26 @@ class Player:
         if name != "heroic intervention":
             return 0
         if not self._target_unit_can_use_beast_handler_heroic_intervention(target_unit):
+            return 0
+        base = int(getattr(stratagem, "cp_cost", 0) or 0)
+        return max(0, base)
+
+    def _preview_guardians_of_the_machine_heroic_intervention_discount(
+        self,
+        *,
+        stratagem=None,
+        target_unit=None,
+        enemy_unit=None,
+    ) -> int:
+        if stratagem is None or target_unit is None or enemy_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name != "heroic intervention":
+            return 0
+        if not self._target_unit_can_use_guardians_of_the_machine_heroic_intervention(
+            target_unit,
+            enemy_unit=enemy_unit,
+        ):
             return 0
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         return max(0, base)
@@ -849,7 +877,14 @@ class Player:
             self._next_optional_selections = {}
         self._next_optional_selections[k] = value
 
-    def preview_stratagem_cp_cost(self, stratagem, *, target_unit=None, assume_optional_discounts: bool | None = None) -> dict:
+    def preview_stratagem_cp_cost(
+        self,
+        stratagem,
+        *,
+        target_unit=None,
+        enemy_unit=None,
+        assume_optional_discounts: bool | None = None,
+    ) -> dict:
         """
         Preview effective CP cost without consuming any once-per-round ability usage.
 
@@ -883,6 +918,28 @@ class Player:
             if self._should_preview_optional_ability("BEAST_HANDLER_HEROIC_INTERVENTION", ctx, assume=assume_optional_discounts):
                 discount = base
                 reasons.append("Beast Handler: Heroic Intervention for 0CP.")
+                return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
+
+        guardians = self._preview_guardians_of_the_machine_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+            enemy_unit=enemy_unit,
+        )
+        if guardians:
+            ctx = {
+                "ability_name": "Guardians of the Machine",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "enemy_unit": getattr(enemy_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability(
+                "GUARDIANS_OF_THE_MACHINE_HEROIC_INTERVENTION",
+                ctx,
+                assume=assume_optional_discounts,
+            ):
+                discount = base
+                reasons.append("Guardians of the Machine: Heroic Intervention for 0CP.")
                 return {"base": base, "discount": discount, "cost": 0, "reasons": reasons}
 
         if name_u in ("OVERWATCH", "FIRE OVERWATCH") and target_unit is not None:
@@ -972,7 +1029,7 @@ class Player:
         cost = max(0, base - discount)
         return {"base": base, "discount": discount, "cost": cost, "reasons": reasons}
 
-    def apply_stratagem_cp_cost(self, stratagem, *, target_unit=None) -> dict:
+    def apply_stratagem_cp_cost(self, stratagem, *, target_unit=None, enemy_unit=None) -> dict:
         """
         Compute effective CP cost and CONSUME any once-per-battle-round discounts that are applied.
         """
@@ -1052,6 +1109,47 @@ class Player:
                     "discount": base,
                     "cost": cost,
                     "reasons": ["Beast Handler: Heroic Intervention for 0CP."],
+                    "increase": increase,
+                    "increase_reasons": increase_reasons,
+                }
+        guardians = self._preview_guardians_of_the_machine_heroic_intervention_discount(
+            stratagem=stratagem,
+            target_unit=target_unit,
+            enemy_unit=enemy_unit,
+        )
+        if guardians:
+            ctx = {
+                "ability_name": "Guardians of the Machine",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "enemy_unit": getattr(enemy_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_use_optional_ability("GUARDIANS_OF_THE_MACHINE_HEROIC_INTERVENTION", ctx):
+                cost = 0
+                increase = 0
+                increase_reasons: list[str] = []
+                opponent = self._get_opponent_player()
+                if opponent is not None:
+                    inc_info = opponent.apply_targeted_stratagem_cp_increase(
+                        target_unit=target_unit,
+                        stratagem=stratagem,
+                        current_cost=cost,
+                    )
+                    increase = int(inc_info.get("increase", 0) or 0)
+                    increase_reasons = list(inc_info.get("reasons", []) or [])
+                    if increase:
+                        cost = max(0, cost + increase)
+                self._pending_stratagem_cp_increase = {
+                    "increase": int(increase or 0),
+                    "reasons": increase_reasons,
+                    "stratagem_name": getattr(stratagem, "name", None) or "",
+                }
+                return {
+                    "base": base,
+                    "discount": base,
+                    "cost": cost,
+                    "reasons": ["Guardians of the Machine: Heroic Intervention for 0CP."],
                     "increase": increase,
                     "increase_reasons": increase_reasons,
                 }
@@ -1174,7 +1272,12 @@ class Player:
                         "daemonforge_counter_offensive_source": ability_name,
                     }
         # For application, we still compute "available" discounts (even if declined), but affordability uses applied discount.
-        preview = self.preview_stratagem_cp_cost(stratagem, target_unit=target_unit, assume_optional_discounts=True)
+        preview = self.preview_stratagem_cp_cost(
+            stratagem,
+            target_unit=target_unit,
+            enemy_unit=enemy_unit,
+            assume_optional_discounts=True,
+        )
         available_discount = int(preview.get("discount", 0) or 0)
 
         applied_discount = 0

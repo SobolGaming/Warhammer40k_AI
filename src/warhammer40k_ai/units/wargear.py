@@ -320,6 +320,32 @@ class WargearProfile:
                 continue
             s_bonus = int(entry.get("strength_bonus", 0) or 0)
             d_bonus = int(entry.get("damage_bonus", 0) or 0)
+            model_keyword = str(entry.get("model_keyword", "") or "").strip()
+            if model_keyword:
+                applies = False
+                try:
+                    has_kw = getattr(attacker, "has_keyword", None)
+                    if callable(has_kw):
+                        applies = bool(has_kw(model_keyword.upper()))
+                except Exception:
+                    applies = False
+                if not applies:
+                    try:
+                        has_any = getattr(attacker, "has_any_keyword", None)
+                        if callable(has_any):
+                            applies = bool(has_any(model_keyword))
+                    except Exception:
+                        applies = False
+                if not applies:
+                    try:
+                        attacker_unit = getattr(attacker, "parent_unit", None)
+                        if attacker_unit is not None:
+                            if attacker_unit._unit_matches_keyword_phrase(attacker_unit, model_keyword, use_effective=True):
+                                applies = True
+                    except Exception:
+                        applies = False
+                if not applies:
+                    continue
             source = str(entry.get("source") or "Charge melee bonus").strip() or "Charge melee bonus"
             if s_bonus:
                 strength_bonus += s_bonus
@@ -903,6 +929,38 @@ class WargearProfile:
                             ap_val -= int(bonus)
         except Exception:
             pass
+        try:
+            if self.parent_wargear and self.parent_wargear.is_melee():
+                unit = getattr(attacker, "parent_unit", None)
+                get_rule = getattr(unit, "get_melee_target_excluding_keywords_ap_bonus_rule", None) if unit is not None else None
+                if callable(get_rule):
+                    rule = get_rule(attacker)
+                else:
+                    rule = None
+                if isinstance(rule, dict):
+                    try:
+                        bonus = int(rule.get("ap_bonus", 0) or 0)
+                    except Exception:
+                        bonus = 0
+                    excluded = tuple(str(v or "").strip().upper() for v in list(rule.get("target_exclude_keywords_any", ()) or ()) if str(v or "").strip())
+                    if bonus > 0 and excluded:
+                        applies = True
+                        for kw in excluded:
+                            has_kw = False
+                            try:
+                                has_kw = bool(target.has_keyword(kw))
+                            except Exception:
+                                try:
+                                    has_kw = bool(target.has_any_keyword(kw))
+                                except Exception:
+                                    has_kw = False
+                            if has_kw:
+                                applies = False
+                                break
+                        if applies:
+                            ap_val -= int(bonus)
+        except Exception:
+            pass
         cabal_bonus = self._cabal_twist_of_fate_ap_bonus(attacker, target)
         if cabal_bonus:
             ap_val -= int(cabal_bonus)
@@ -914,6 +972,73 @@ class WargearProfile:
             attacker_unit = getattr(attacker, "parent_unit", None)
         except Exception:
             attacker_unit = None
+        # Post-shoot disembark AP bonus (e.g., Fire Focus).
+        try:
+            if attacker_unit is not None and target_root is not None:
+                transport_id = str(getattr(getattr(attacker_unit, "round_state", None), "disembarked_from_transport_id", "") or "")
+                if transport_id:
+                    transport = None
+                    army = None
+                    try:
+                        army = attacker_unit.get_parent_army()
+                    except Exception:
+                        army = None
+                    if army is not None:
+                        for cand in list(getattr(army, "units", []) or []):
+                            cid = str(getattr(cand, "_id", getattr(cand, "id", "")) or "")
+                            if cid and cid == transport_id:
+                                transport = cand
+                                break
+                    if transport is not None:
+                        tsr = getattr(transport, "special_rules", None)
+                        if isinstance(tsr, dict) and tsr.get("post_shoot_disembark_ap_bonus_active"):
+                            apply_bonus = True
+                            exp = str(tsr.get("post_shoot_disembark_ap_bonus_expires_phase", "") or "").strip().upper()
+                            if exp:
+                                phase_key = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+                                if phase_key and phase_key != exp:
+                                    apply_bonus = False
+                            if apply_bonus:
+                                owner_id = str(tsr.get("post_shoot_disembark_ap_bonus_owner", "") or "")
+                                if owner_id:
+                                    attacker_player = None
+                                    try:
+                                        attacker_player = getattr(army, "player", None) if army is not None else None
+                                    except Exception:
+                                        attacker_player = None
+                                    attacker_id = ""
+                                    if attacker_player is not None:
+                                        try:
+                                            attacker_id = str(get_entity_id(attacker_player) or getattr(attacker_player, "id", ""))
+                                        except Exception:
+                                            attacker_id = str(getattr(attacker_player, "id", "") or "")
+                                    if attacker_id and attacker_id != owner_id:
+                                        apply_bonus = False
+                            if apply_bonus:
+                                try:
+                                    marked_turn = int(tsr.get("post_shoot_disembark_ap_bonus_turn", 0) or 0)
+                                except Exception:
+                                    marked_turn = 0
+                                if marked_turn:
+                                    game = None
+                                    try:
+                                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                                    except Exception:
+                                        game = None
+                                    current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                                    if current_turn and current_turn != marked_turn:
+                                        apply_bonus = False
+                            if apply_bonus:
+                                target_id = str(tsr.get("post_shoot_disembark_ap_bonus_target_id", "") or "")
+                                current_target_id = str(get_entity_id(target_root) or "")
+                                if target_id and current_target_id and target_id != current_target_id:
+                                    apply_bonus = False
+                            if apply_bonus:
+                                bonus = int(tsr.get("post_shoot_disembark_ap_bonus_value", 0) or 0)
+                                if bonus:
+                                    ap_val -= int(bonus)
+        except Exception:
+            pass
         # Post-shoot AP bonus applied to a marked target for friendly keyword attacks.
         if target_root is not None and attacker_unit is not None:
             sr = getattr(target_root, "special_rules", None)
@@ -1528,6 +1653,25 @@ class WargearProfile:
             pass
 
         try:
+            if self.parent_wargear:
+                unit = getattr(attacker, "parent_unit", None)
+                if unit is not None and hasattr(unit, "leading_weapon_attacks_bonus_for_weapon"):
+                    bonus, reasons = unit.leading_weapon_attacks_bonus_for_weapon(
+                        getattr(self.parent_wargear, "name", ""),
+                        attacker_model=attacker,
+                    )
+                    if bonus:
+                        atk_mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:leading_weapon_attacks_add"))
+                        if reasons:
+                            attack_result.attacks_special_modifiers.extend(list(reasons))
+                        else:
+                            attack_result.attacks_special_modifiers.append(
+                                f"Leading ability +{int(bonus)}A ({getattr(self.parent_wargear, 'name', 'weapon')})"
+                            )
+        except Exception:
+            pass
+
+        try:
             sr = self._unit_special_rules(attacker)
             bonuses = list(sr.get("daemonic_allegiance_weapon_bonuses", []) or []) if isinstance(sr, dict) else []
             if bonuses and self.parent_wargear:
@@ -2056,36 +2200,56 @@ class WargearProfile:
         monster_vehicle_reroll_rule = None
         try:
             is_ranged = bool(getattr(getattr(self, "parent_wargear", None), "is_ranged", lambda: False)())
-            if is_ranged:
-                unit = getattr(attacker, "parent_unit", None)
-                if unit is not None and getattr(unit, "get_monster_vehicle_reroll_rule", None):
-                    rule = unit.get_monster_vehicle_reroll_rule(attacker)
-                    if rule:
-                        target_ok = False
+            is_melee = bool(getattr(getattr(self, "parent_wargear", None), "is_melee", lambda: False)())
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and getattr(unit, "get_monster_vehicle_reroll_rule", None):
+                rule = unit.get_monster_vehicle_reroll_rule(attacker)
+                if rule:
+                    rule_attack_type = str(rule.get("attack_type", "any") or "any").strip().lower() or "any"
+                    if rule_attack_type == "ranged" and not is_ranged:
+                        rule = None
+                    elif rule_attack_type == "melee" and not is_melee:
+                        rule = None
+                if rule:
+                    target_ok = False
+                    try:
+                        target_ok = bool(target.has_keyword("MONSTER") or target.has_keyword("VEHICLE"))
+                    except Exception:
                         try:
-                            target_ok = bool(target.has_keyword("MONSTER") or target.has_keyword("VEHICLE"))
+                            target_ok = bool(target.has_any_keyword("MONSTER") or target.has_any_keyword("VEHICLE"))
                         except Exception:
+                            target_ok = False
+                    if target_ok:
+                        if rule.get("requires_shooting_phase"):
+                            game = None
                             try:
-                                target_ok = bool(target.has_any_keyword("MONSTER") or target.has_any_keyword("VEHICLE"))
+                                game = unit.get_parent_army().player.game
                             except Exception:
-                                target_ok = False
-                        if target_ok:
-                            if rule.get("requires_shooting_phase"):
                                 game = None
+                            if game is None or not bool(getattr(game, "is_shooting_phase", lambda: False)()):
+                                rule = None
+                            else:
                                 try:
-                                    game = unit.get_parent_army().player.game
-                                except Exception:
-                                    game = None
-                                if game is None or not bool(getattr(game, "is_shooting_phase", lambda: False)()):
-                                    rule = None
-                                else:
-                                    try:
-                                        if game.get_current_player() is not unit.get_parent_army().player:
-                                            rule = None
-                                    except Exception:
+                                    if game.get_current_player() is not unit.get_parent_army().player:
                                         rule = None
-                            if rule:
-                                monster_vehicle_reroll_rule = rule
+                                except Exception:
+                                    rule = None
+                        if rule and rule.get("requires_fight_phase"):
+                            game = None
+                            try:
+                                game = unit.get_parent_army().player.game
+                            except Exception:
+                                game = None
+                            if game is None or not bool(getattr(game, "is_fight_phase", lambda: False)()):
+                                rule = None
+                            else:
+                                try:
+                                    if game.get_current_player() is not unit.get_parent_army().player:
+                                        rule = None
+                                except Exception:
+                                    rule = None
+                        if rule:
+                            monster_vehicle_reroll_rule = rule
         except Exception:
             monster_vehicle_reroll_rule = None
 
@@ -4727,6 +4891,57 @@ class WargearProfile:
             bonus, reason = target.get_movement_phase_visible_hit_bonus(attacker_unit, game=game)
             if bonus:
                 _add_hit_mod(int(bonus), reason or f"+{int(bonus)} to hit from Movement phase bonus")
+        except Exception:
+            pass
+        # Post-shoot target hit bonus (e.g., Guidance of the Ancients).
+        try:
+            if target is not None:
+                target_root = target.get_attached_unit_root() if hasattr(target, "get_attached_unit_root") else target
+                tsr = getattr(target_root, "special_rules", None)
+                attacker_unit = getattr(attacker, "parent_unit", None)
+                if isinstance(tsr, dict) and attacker_unit is not None and tsr.get("post_shoot_keyword_hit_bonus_active"):
+                    apply_bonus = True
+                    exp_phase = str(tsr.get("post_shoot_keyword_hit_bonus_expires_phase", "") or "").strip().upper()
+                    if exp_phase:
+                        phase_name = self._resolve_phase_key(attacker_unit=attacker_unit, target_unit=target_root)
+                        if phase_name and phase_name != exp_phase:
+                            apply_bonus = False
+                    if apply_bonus:
+                        owner_id = str(tsr.get("post_shoot_keyword_hit_bonus_owner", "") or "")
+                        if owner_id:
+                            attacker_id = ""
+                            try:
+                                attacker_id = str(get_entity_id(attacker_unit.get_parent_army().player) or "")
+                            except Exception:
+                                attacker_id = ""
+                            if attacker_id and attacker_id != owner_id:
+                                apply_bonus = False
+                    if apply_bonus:
+                        try:
+                            marked_turn = int(tsr.get("post_shoot_keyword_hit_bonus_turn", 0) or 0)
+                        except Exception:
+                            marked_turn = 0
+                        if marked_turn:
+                            game = None
+                            try:
+                                game = attacker_unit.get_parent_army().player.game
+                            except Exception:
+                                game = None
+                            current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                            if current_turn and current_turn != marked_turn:
+                                apply_bonus = False
+                    keyword_phrase = str(tsr.get("post_shoot_keyword_hit_bonus_phrase", "") or "").strip()
+                    if apply_bonus and keyword_phrase:
+                        try:
+                            if not attacker_unit._unit_matches_keyword_phrase(attacker_unit, keyword_phrase, use_effective=True):
+                                apply_bonus = False
+                        except Exception:
+                            apply_bonus = False
+                    if apply_bonus:
+                        bonus = int(tsr.get("post_shoot_keyword_hit_bonus_value", 0) or 0)
+                        if bonus:
+                            source = str(tsr.get("post_shoot_keyword_hit_bonus_source", "") or "Post-shoot Hit bonus").strip() or "Post-shoot Hit bonus"
+                            _add_hit_mod(int(bonus), f"+{int(bonus)} to hit from {source}")
         except Exception:
             pass
         # Dark Ritual (once per battle): +1 to hit until end of turn.

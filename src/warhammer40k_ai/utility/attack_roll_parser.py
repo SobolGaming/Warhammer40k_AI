@@ -273,6 +273,10 @@ def _parse_condition(text: str) -> Optional[AttackRollCondition]:
         return AttackRollCondition(target_within_objective=True)
     if re.fullmatch(r"that (?:enemy )?unit is within range of (?:an|one or more) objective marker(?:s)? you do not control", t):
         return AttackRollCondition(target_within_objective_not_controlled=True)
+    if re.fullmatch(r"(?:the )?target is within range of (?:an|one or more) objective marker(?:s)?", t):
+        return AttackRollCondition(target_within_objective=True)
+    if re.fullmatch(r"(?:the )?target is within range of (?:an|one or more) objective marker(?:s)? you do not control", t):
+        return AttackRollCondition(target_within_objective_not_controlled=True)
 
     m = re.fullmatch(
         r"(?:the target of that attack|that attack) targets (?:a|an)?\s*unit within (?P<rng>\d+)\"",
