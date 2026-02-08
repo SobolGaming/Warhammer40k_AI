@@ -62,12 +62,17 @@ flowchart LR
 Purpose: **rules execution and authoritative state transitions**.
 
 Key responsibilities:
-- Game state lifecycle (`game.py`, `phase.py`, `turn_manager.py`, setup/deployment managers)
+- Game state lifecycle (`game.py` facade + `game_mixins/`, `phase.py`, `turn_manager.py`, setup/deployment managers)
 - Command validation & dispatch (`command_dispatcher.py`, `commands.py`, `command_kinds.py`)
 - Decision system (`decision_requests.py`, `decisions.py`, `decision_kinds.py`, `decision_dispatcher.py`, `decision_handlers/`)
 - Decision controllers & routing (`decision_controller.py`) for UI/AI/network integration
 - Deterministic randomness (`random_source.py`) and dice plumbing (`dice_rolls.py`, `roll_handlers.py`)
 - Persistence/replay (`snapshot.py`, `ref_codec.py`, `event_log.py`, `replay.py`, `session_store.py`)
+
+`Game` composition notes:
+- `game.py` keeps constructor/state wiring and cross-cutting orchestration.
+- `game_mixins/` contains specialized phase/domain handlers (setup/deployment/reserves, missions/scoring/actions, reactive decisions, shooting/fight handlers, and phase start/end hooks).
+- This split keeps import paths stable (`from warhammer40k_ai.engine.game import Game`) while reducing monolithic file churn and improving targeted testability.
 
 ### Rules layer (`src/warhammer40k_ai/rules/`)
 

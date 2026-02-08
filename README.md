@@ -98,6 +98,8 @@ For a high-level overview of the codebase structure and data flow, see [docs/ARC
 - Complete setup phases: army loading, battlefield creation, attacker/defender determination, deployment, and first turn order
 - Official deployment: alternating deployment with proper zones, reserves, and strategic reserves
 - Battle round system: command, movement, shooting, charge, and fight phases with official rules
+- `src/warhammer40k_ai/engine/game.py` is the `Game` facade and orchestration entry point.
+- Heavy phase and rules-timing handlers are split into focused mixins under `src/warhammer40k_ai/engine/game_mixins/`.
 
 ### Unit Architecture
 - `src/warhammer40k_ai/units/unit.py` is the facade/entry module for `Unit`, `UnitRoundState`, `MovementAction`, and `MovementState`.
@@ -203,6 +205,12 @@ Warhammer40k_AI/
 |   |   |-- terrain_layouts.py
 |   |-- engine/
 |   |   |-- game.py
+|   |   |-- game_mixins/
+|   |   |   |-- setup_deployment_reserves_mixin.py
+|   |   |   |-- missions_scoring_actions_mixin.py
+|   |   |   |-- reactive_decisions_mixin.py
+|   |   |   |-- shooting_fight_handlers_mixin.py
+|   |   |   |-- phase_handlers_mixin.py
 |   |   |-- phase.py
 |   |   |-- turn_manager.py
 |   |   |-- deployment.py
@@ -283,6 +291,8 @@ Warhammer40k_AI/
 - `scripts/`: Entry points and helper scripts (including `main.py`).
 - `src/warhammer40k_ai/battlefield/`: Map geometry, terrain layouts, objectives, and placement rules.
 - `src/warhammer40k_ai/engine/`: Game loop, setup/phase flow, missions, and decision plumbing.
+  - `game.py`: public `Game` facade/composition root.
+  - `game_mixins/`: specialized `Game` behavior slices by phase/domain timing.
 - `src/warhammer40k_ai/roster/`: Army composition, mustering, and player ownership.
 - `src/warhammer40k_ai/rules/`: Rule managers, detachments, enhancements, stratagems, and faction logic.
 - `src/warhammer40k_ai/units/`: Unit/model/wargear primitives plus status effects.
