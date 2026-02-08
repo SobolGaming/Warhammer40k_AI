@@ -5,7 +5,6 @@ import numpy as np
 from ..utility.constants import (
     MM_TO_INCHES,
     FREELY_CLIMBABLE_RANGE,
-    ENGAGEMENT_RANGE_HORIZONTAL,
     ENGAGEMENT_RANGE_VERTICAL,
     RUINS_FLOOR_HEIGHT,
     RUINS_FLOOR_THICKNESS,
@@ -32,7 +31,7 @@ logger = logging.getLogger(__name__)
 ORIENTATIONS = [0, 90, 45, -45, 15, -15, 30, -30, 60, -60, 75, -75]  # Degrees
 
 # Import existing constants
-from .constants import ENGAGEMENT_RANGE_HORIZONTAL, MM_TO_INCHES
+from .constants import ENGAGEMENT_RANGE_HORIZONTAL
 
 # Global caches for collision detection
 _terrain_cache = {}  # Cache for terrain blocking polygons by (game_map_id, unit_keywords, movement_type)
@@ -135,74 +134,41 @@ def angle_difference(angle1: float, angle2: float) -> float:
 def get_freely_climbable_range(unit: 'Unit', movement_type=None) -> float:
     """Return the height threshold that can be traversed without vertical cost."""
     threshold = float(FREELY_CLIMBABLE_RANGE)
-    try:
-        if _super_heavy_walker_active_for_move(unit, movement_type):
-            threshold = max(threshold, 4.0)
-    except Exception:
-        pass
-    try:
-        height = _unit_move_over_low_terrain_height(unit, movement_type)
-        if height is not None:
-            threshold = max(threshold, float(height))
-    except Exception:
-        pass
+    if _super_heavy_walker_active_for_move(unit, movement_type):
+        threshold = max(threshold, 4.0)
+    height = _unit_move_over_low_terrain_height(unit, movement_type)
+    if height is not None:
+        threshold = max(threshold, float(height))
     return float(threshold)
 
 def counts_as_infantry_for_terrain(unit: 'Unit') -> bool:
     """Resolve Infantry-equivalent terrain interaction (Kill Team counts as Infantry)."""
-    try:
-        fn = getattr(unit, "counts_as_infantry_for_terrain", None)
-        if callable(fn):
-            return bool(fn())
-    except Exception:
-        pass
-    try:
-        return bool(getattr(unit, "is_infantry", False))
-    except Exception:
-        return False
+    fn = getattr(unit, "counts_as_infantry_for_terrain", None)
+    if callable(fn):
+        return bool(fn())
+    return bool(getattr(unit, "is_infantry", False))
 
 def _can_breach_ruins_walls(unit: 'Unit') -> bool:
     """Check if a unit can treat RUINS walls as breachable without move-type gating."""
-    try:
-        fn = getattr(unit, "can_move_through_ruins_walls", None)
-        if callable(fn):
-            return bool(fn())
-    except Exception:
-        pass
-    try:
-        if counts_as_infantry_for_terrain(unit):
-            return True
-    except Exception:
-        pass
-    try:
-        if getattr(unit, "is_beast", False):
-            return True
-    except Exception:
-        pass
-    try:
-        if getattr(unit, "is_imperium_primarch", False):
-            return True
-    except Exception:
-        pass
-    try:
-        if getattr(unit, "is_belisarius_cawl", False):
-            return True
-    except Exception:
-        pass
+    fn = getattr(unit, "can_move_through_ruins_walls", None)
+    if callable(fn):
+        return bool(fn())
+    if counts_as_infantry_for_terrain(unit):
+        return True
+    if getattr(unit, "is_beast", False):
+        return True
+    if getattr(unit, "is_imperium_primarch", False):
+        return True
+    if getattr(unit, "is_belisarius_cawl", False):
+        return True
     return False
 
 def _movement_type_tag(movement_type) -> Optional[str]:
     if movement_type is None:
         return None
-    try:
-        if hasattr(movement_type, "value"):
-            return str(movement_type.value)
-    except Exception:
-        pass
-    try:
-        return str(movement_type)
-    except Exception:
-        return None
+    if hasattr(movement_type, "value"):
+        return str(movement_type.value)
+    return str(movement_type)
 
 def _move_type_matches(value, movement_type) -> bool:
     mt = _movement_type_tag(movement_type)
@@ -219,39 +185,34 @@ def _move_type_matches(value, movement_type) -> bool:
     return False
 
 def _unit_move_over_low_terrain_height(unit: 'Unit', movement_type) -> Optional[float]:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
+        return None
+    height = sr.get("move_over_low_terrain_height_value")
+    if height is None:
+        return None
+    types = sr.get("move_over_low_terrain_height_types")
+    if not _move_type_matches(types, movement_type):
+        return None
     try:
-        sr = getattr(unit, "special_rules", None)
-        if not isinstance(sr, dict):
-            return None
-        height = sr.get("move_over_low_terrain_height_value")
-        if height is None:
-            return None
-        types = sr.get("move_over_low_terrain_height_types")
-        if not _move_type_matches(types, movement_type):
-            return None
         return float(height)
-    except Exception:
+    except (TypeError, ValueError):
         return None
 
 def _unit_can_move_over_friendly_monster_vehicle(unit: 'Unit', movement_type) -> bool:
-    try:
-        sr = getattr(unit, "special_rules", None)
-        if not isinstance(sr, dict):
-            return False
-        types = sr.get("move_over_friendly_monster_vehicle_types")
-        return _move_type_matches(types, movement_type)
-    except Exception:
+    sr = getattr(unit, "special_rules", None)
+    if not isinstance(sr, dict):
         return False
+    types = sr.get("move_over_friendly_monster_vehicle_types")
+    return _move_type_matches(types, movement_type)
 
 def _super_heavy_walker_active_for_move(unit: 'Unit', movement_type) -> bool:
     mt = _movement_type_tag(movement_type)
     if mt not in ("move", "advance", "fall_back"):
         return False
-    try:
-        if unit is not None and hasattr(unit, "has_super_heavy_walker"):
-            return bool(unit.has_super_heavy_walker())
-    except Exception:
-        return False
+    fn = getattr(unit, "has_super_heavy_walker", None) if unit is not None else None
+    if callable(fn):
+        return bool(fn())
     return False
 
 def _ruins_wall_traversal_allowed(unit: 'Unit', movement_type=None) -> bool:
@@ -271,64 +232,46 @@ def _movement_type_allows_flip_belt(movement_type) -> bool:
 
 def _unit_ignores_vertical_distance(unit: 'Unit', movement_type=None) -> bool:
     mt = _movement_type_tag(movement_type)
-    try:
-        fn = getattr(unit, "ignores_vertical_distance_for_move_type", None)
-        if callable(fn) and fn(movement_type):
-            return True
-    except Exception:
-        pass
+    fn = getattr(unit, "ignores_vertical_distance_for_move_type", None)
+    if callable(fn) and fn(movement_type):
+        return True
     if mt == "advance":
-        try:
-            fn = getattr(unit, "advance_ignores_vertical_distance", None)
-            if callable(fn) and fn():
-                return True
-        except Exception:
-            pass
+        fn = getattr(unit, "advance_ignores_vertical_distance", None)
+        if callable(fn) and fn():
+            return True
     if not _movement_type_allows_flip_belt(movement_type):
         return False
-    try:
-        fn = getattr(unit, "has_flip_belt", None)
-        if callable(fn):
-            return bool(fn())
-    except Exception:
-        return False
+    fn = getattr(unit, "has_flip_belt", None)
+    if callable(fn):
+        return bool(fn())
     return False
 
 def _unit_is_fly_move(unit: 'Unit', movement_type=None) -> bool:
     if not _movement_type_allows_fly_over(movement_type):
         return False
-    try:
-        return bool(getattr(unit, "is_flying", False))
-    except Exception:
-        return False
+    return bool(getattr(unit, "is_flying", False))
 
 def _unit_can_fly_over_big_models(unit: 'Unit', movement_type=None) -> bool:
     if not _unit_is_fly_move(unit, movement_type):
         return False
-    try:
-        return bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
-    except Exception:
-        return False
+    return bool(getattr(unit, "is_monster", False) or getattr(unit, "is_vehicle", False))
 
 def _is_position_on_terrain(game_map: 'Map', position: Tuple[float, float, float]) -> bool:
     if game_map is None:
         return False
-    try:
-        terrain_features = list(getattr(game_map, "terrain_features", []) or [])
-    except Exception:
-        terrain_features = []
+    terrain_features = list(getattr(game_map, "terrain_features", []) or [])
     if not terrain_features:
         return False
     try:
         point = Point(float(position[0]), float(position[1]))
-    except Exception:
+    except (TypeError, ValueError, IndexError):
         return False
     for terrain_feature in terrain_features:
-        try:
-            if terrain_feature.footprint.contains(point):
-                return True
-        except Exception:
+        footprint = getattr(terrain_feature, "footprint", None)
+        if footprint is None:
             continue
+        if footprint.contains(point):
+            return True
     return False
 
 def _fly_use_diagonal(unit: 'Unit', movement_type, game_map: 'Map',
@@ -340,7 +283,7 @@ def _fly_use_diagonal(unit: 'Unit', movement_type, game_map: 'Map',
             return True
     try:
         return abs(float(end_pos[2]) - float(start_pos[2])) > 1e-6
-    except Exception:
+    except (TypeError, ValueError, IndexError):
         return False
 
 def movement_segment_cost(start: Tuple[float, float, float], end: Tuple[float, float, float],
@@ -358,7 +301,7 @@ def movement_segment_cost(start: Tuple[float, float, float], end: Tuple[float, f
     dz = 0.0
     try:
         dz = abs(float(end[2]) - float(start[2]))
-    except Exception:
+    except (TypeError, ValueError, IndexError):
         dz = 0.0
     threshold = get_freely_climbable_range(unit, movement_type)
     vertical = dz if dz > threshold else 0.0
@@ -373,7 +316,7 @@ def measure_path_distance(path: List[Tuple[float, float, float]], unit: 'Unit',
     def _pos(p) -> Tuple[float, float, float]:
         try:
             return (float(p[0]), float(p[1]), float(p[2]) if len(p) > 2 else 0.0)
-        except Exception:
+        except (TypeError, ValueError, IndexError):
             return (0.0, 0.0, 0.0)
 
     positions = [_pos(p) for p in path]
