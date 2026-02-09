@@ -788,6 +788,7 @@ def _keyword_support(canon: str, examples: Sequence[str]) -> Tuple[str, str]:
         "melta": "Adds damage at half range (supports dice values like D3/D6+X).",
         "extra attacks": "Melee selection supports 1 primary weapon plus all [EXTRA ATTACKS] weapons.",
         "one shot": "Each model can use a ONE SHOT weapon once per battle.",
+        "overcharge": "Hazardous tests for Overcharge profiles apply a -2 roll modifier (raw failures on 1-3).",
         "pistol": "Engaged shooting + pistol-vs-other-ranged choice enforced.",
         "lance": "If the bearer charged this turn, +1 to wound rolls for this weapon.",
         "twin-linked": "Re-roll failed wound rolls for attacks made with this weapon.",
@@ -2748,6 +2749,7 @@ def _classify_ability_base(
     move_over_low_terrain_support = _move_over_low_terrain_support(description)
     titanic_move_through_support = _titanic_move_through_support(description)
     move_over_mortal_support = _move_over_mortal_wounds_support(description)
+    hazardous_test_modifier_support = _hazardous_test_modifier_support(description)
     common_support = _bearer_unit_common_support(description)
     leading_support = _leading_unit_common_support(description)
     bearer_invuln_support = _bearer_invulnerable_save_support(description)
@@ -2864,6 +2866,8 @@ def _classify_ability_base(
         return titanic_move_through_support
     if move_over_mortal_support:
         return move_over_mortal_support
+    if hazardous_test_modifier_support:
+        return hazardous_test_modifier_support
     if ranged_ignore_bs_hit_support:
         return ranged_ignore_bs_hit_support
     if ranged_targeting_restriction_support:
@@ -6980,6 +6984,32 @@ def _move_over_mortal_wounds_support(description: str) -> Optional[Tuple[str, st
     return (
         "Supported",
         f"{type_label}: select a moved-over enemy; roll {dice_count}D6{fly_note}, each {threshold}+ inflicts {mortal_text} mortal wounds.",
+    )
+
+
+def _hazardous_test_modifier_support(description: str) -> Optional[Tuple[str, str]]:
+    if not description:
+        return None
+    norm = _norm_rules_text(description)
+    if not norm:
+        return None
+    pattern = (
+        r"each time (?:the bearer|this model|a model in this unit) takes a hazardous test "
+        r"for this weapon profile subtract (?P<mod>\d+) from the result"
+    )
+    m = re.fullmatch(pattern, norm)
+    if not m:
+        return None
+    try:
+        mod = int(m.group("mod") or 0)
+    except Exception:
+        mod = 0
+    if mod <= 0:
+        return None
+    fail_max = min(6, 1 + mod)
+    return (
+        "Supported",
+        f"Hazardous tests for this profile use a -{mod} modifier (raw failures on 1-{fail_max}).",
     )
 
 
