@@ -50,6 +50,7 @@ def collect_hazardous_eligible_models(
     *,
     include_melee_non_character: bool = False,
     include_melee_all: bool = False,
+    include_ranged_all: bool = False,
 ) -> List:
     """Return alive models eligible to suffer Hazardous failures in the given unit."""
     if root_unit is None:
@@ -102,6 +103,14 @@ def collect_hazardous_eligible_models(
                         continue
             except Exception:
                 has_hazardous = False
+        if not has_hazardous and include_ranged_all:
+            for wg in (getattr(model, "wargear", []) or []):
+                if wg is None:
+                    continue
+                is_ranged = getattr(wg, "is_ranged", None)
+                if callable(is_ranged) and is_ranged():
+                    has_hazardous = True
+                    break
         if has_hazardous:
             eligible.append(model)
     return eligible

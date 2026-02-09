@@ -261,6 +261,7 @@ class Army:
         self.code_chivalric = None
         self.bondsman = None
         self.cabal_of_sorcerers = None
+        self.crimson_king = None
         self.synapse = None
         self.shadow_in_the_warp = None
         self.power_from_pain = None
@@ -332,7 +333,9 @@ class Army:
 
         if fid == "TS":
             from ..rules.cabal_of_sorcerers import CabalOfSorcerersManager
+            from ..rules.thousand_sons_crimson_king import CrimsonKingManager
             self.cabal_of_sorcerers = CabalOfSorcerersManager(self)
+            self.crimson_king = CrimsonKingManager(self)
 
         if fid == "TYR":
             from ..rules.synapse import SynapseManager
@@ -2118,6 +2121,9 @@ class Army:
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "wrathful_presence", None)
+        if mgr is not None:
+            mgr.on_battle_round_start(int(battle_round), game=game)
+        mgr = getattr(self, "crimson_king", None)
         if mgr is not None:
             mgr.on_battle_round_start(int(battle_round), game=game)
         mgr = getattr(self, "harbingers_of_dread", None)

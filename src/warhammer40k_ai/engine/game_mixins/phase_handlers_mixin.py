@@ -1352,6 +1352,15 @@ class GamePhaseHandlersMixin:
                         "shooting_phase_ineligible_expires_phase",
                     ):
                         sr.pop(key, None)
+                if str(sr.get("shooting_phase_ranged_hazardous_owner", "") or "") == owner_id and sr.get("shooting_phase_ranged_hazardous_active"):
+                    for key in (
+                        "shooting_phase_ranged_hazardous_active",
+                        "shooting_phase_ranged_hazardous_owner",
+                        "shooting_phase_ranged_hazardous_turn",
+                        "shooting_phase_ranged_hazardous_source",
+                        "shooting_phase_ranged_hazardous_expires_phase",
+                    ):
+                        sr.pop(key, None)
                 unit.special_rules = sr
 
     def _on_phase_start_movement_phase_visible_wound_bonus_cleanup(self, player=None, phase=None, **_kwargs) -> None:
@@ -3327,6 +3336,7 @@ class GamePhaseHandlersMixin:
                         limit_one = bool(spec.get("limit_one_per_army", False))
                         optional = bool(spec.get("optional", False))
                         mortal_on_one = bool(spec.get("mortal_on_one", False))
+                        grant_ranged_hazardous = bool(spec.get("grant_ranged_hazardous", False))
                         used_fn = getattr(opp, "_ability_used_this_turn", None)
                         if limit_one and callable(used_fn) and used_fn(ability_key):
                             continue
@@ -3341,6 +3351,7 @@ class GamePhaseHandlersMixin:
                                 "optional": optional,
                                 "limit_one": limit_one,
                                 "mortal_on_one": mortal_on_one,
+                                "grant_ranged_hazardous": grant_ranged_hazardous,
                                 "model_id": None if limit_one else model_id,
                             }
                         entries = groups.setdefault(group_key, [])
@@ -3407,6 +3418,7 @@ class GamePhaseHandlersMixin:
                     "ability_name": ability_name,
                     "ability_key": ability_key,
                     "mortal_on_one": bool(meta.get("mortal_on_one", False)),
+                    "grant_ranged_hazardous": bool(meta.get("grant_ranged_hazardous", False)),
                     "optional": bool(meta.get("optional", False)),
                     "limit_one_per_army": bool(meta.get("limit_one", False)),
                     "phase": "Shooting phase",
@@ -4908,6 +4920,15 @@ class GamePhaseHandlersMixin:
                             "cloudstrider_choice_turn",
                             "cloudstrider_deep_strike_min_distance",
                             "cloudstrider_source",
+                        ):
+                            sr.pop(k, None)
+                    if str(sr.get("aetherstride_sustained_hits_d3_owner", "") or "") == owner_id:
+                        for k in (
+                            "aetherstride_sustained_hits_d3_active",
+                            "aetherstride_sustained_hits_d3_owner",
+                            "aetherstride_sustained_hits_d3_turn",
+                            "aetherstride_model_id",
+                            "aetherstride_source",
                         ):
                             sr.pop(k, None)
                     if str(sr.get("feigned_retreat_turn_owner", "") or "") == owner_id:

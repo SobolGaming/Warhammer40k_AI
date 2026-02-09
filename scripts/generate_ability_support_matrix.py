@@ -2468,6 +2468,34 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "Shooting phase: choose Ignores Cover, Lethal Hits, or Sustained Hits D3 for Bolt of Change until end of phase.",
         ),
+        ("TS", "Aetherstride (Psychic)"): (
+            "Supported",
+            "Movement phase setup prompt supports 6\" Deep Strike placement, prevents charging that turn, and grants Sustained Hits D3 to Dark Blessing until turn end.",
+        ),
+        ("TS", "Impossible Form (Psychic)"): (
+            "Supported",
+            "Unearthly Power selection enables -1 Damage for attacks allocated to this model.",
+        ),
+        ("TS", "Sacrificial Blessing"): (
+            "Supported",
+            "When selected to shoot/fight while leading: optional use destroys one bodyguard model and grants D3 Attacks and D3 Strength to the model's Psychic weapons until end of phase.",
+        ),
+        ("TS", "Time Flux (Aura, Psychic)"): (
+            "Supported",
+            "Unearthly Power selection enables a 6\" aura that grants +2\" Move to friendly THOUSAND SONS units.",
+        ),
+        ("TS", "Treason of Tzeentch (Psychic)"): (
+            "Supported",
+            "Unearthly Power selection enables start-of-opponent Shooting phase target selection that makes the target unit's ranged weapons Hazardous until end of phase.",
+        ),
+        ("TS", "Twisted Sorceries (Psychic)"): (
+            "Supported",
+            "Once per battle in Shooting/Fight: optional use grants +3 Attacks and +3 Strength to the model's Psychic weapons until end of phase.",
+        ),
+        ("TS", "Unearthly Power"): (
+            "Supported",
+            "Start of battle round: choose one Crimson King ability (Impossible Form, Treason of Tzeentch, or Time Flux) active until the start of the next battle round.",
+        ),
         ("TS", "Ambushing Hunters"): (
             "Supported",
             "End of opponent turn: optional Strategic Reserves move while more than 6\" horizontally from enemies.",

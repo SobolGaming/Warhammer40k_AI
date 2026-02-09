@@ -1746,6 +1746,60 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "unearthly_power":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        choice_key = str(payload.get("choice_key", "") or "").strip().upper()
+        if not choice_key:
+            return None
+        try:
+            from ...rules.thousand_sons_crimson_king import set_active_crimson_king
+        except Exception:
+            return None
+        try:
+            start_round = int(ctx.get("battle_round", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            start_round = int(getattr(game, "turn", 0) or 0)
+        try:
+            expires_round = int(ctx.get("expires_round", 0) or (start_round + 1))
+        except Exception:
+            expires_round = int(start_round + 1)
+        player_id = str(ctx.get("player_id", "") or "")
+        if not player_id:
+            try:
+                owner = getattr(source_root.get_parent_army(), "player", None)
+            except Exception:
+                owner = None
+            player_id = str(getattr(owner, "id", "") or "")
+        set_active_crimson_king(
+            source_root,
+            choice_key,
+            start_round=int(start_round or 0),
+            expires_round=int(expires_round or 0),
+            player_id=player_id,
+        )
+        try:
+            player = getattr(getattr(source_root, "get_parent_army", lambda: None)(), "player", None)
+        except Exception:
+            player = None
+        ability_name = str(ctx.get("ability_name", "") or "Unearthly Power").strip() or "Unearthly Power"
+        choice_name = str(payload.get("choice_name", "") or payload.get("label", "") or payload.get("summary", "") or choice_key).strip() or choice_key
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {getattr(source_root, 'name', 'Unit')} selected {choice_name}.",
+            )
+        except Exception:
+            pass
+        return None
     if ability == "cankerblight":
         payload = _option_payload(request, result)
         target_val = payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id")))
@@ -2604,6 +2658,44 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             except Exception:
                 pass
         try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [target_root]
+        if not members:
+            members = [target_root]
+        try:
+            phase_owner = game.get_current_player()
+        except Exception:
+            phase_owner = None
+        owner_id = str(getattr(phase_owner, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if bool(ctx.get("grant_ranged_hazardous")):
+            for unit in members:
+                if unit is None:
+                    continue
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["shooting_phase_ranged_hazardous_active"] = True
+                sr["shooting_phase_ranged_hazardous_owner"] = owner_id
+                sr["shooting_phase_ranged_hazardous_turn"] = int(turn or 0)
+                sr["shooting_phase_ranged_hazardous_source"] = ability_name
+                sr["shooting_phase_ranged_hazardous_expires_phase"] = "SHOOTING_PHASE"
+                unit.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(game, player, f"{ability_name}: {tname} ranged weapons are Hazardous this phase.")
+            except Exception:
+                pass
+            return target_unit
+        try:
             from ...utility.dice import get_roll
             from ...utility.event_bus import append_dice
         except Exception:
@@ -2633,25 +2725,6 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 except Exception:
                     pass
             return target_unit
-        try:
-            target_root = target_unit.get_attached_unit_root()
-        except Exception:
-            target_root = target_unit
-        try:
-            members = list(target_root.get_attached_unit_members() or [])
-        except Exception:
-            members = [target_root]
-        if not members:
-            members = [target_root]
-        try:
-            phase_owner = game.get_current_player()
-        except Exception:
-            phase_owner = None
-        owner_id = str(getattr(phase_owner, "id", "") or "")
-        try:
-            turn = int(getattr(game, "turn", 0) or 0)
-        except Exception:
-            turn = 0
         if 2 <= roll <= 5:
             for unit in members:
                 if unit is None:

@@ -2966,6 +2966,129 @@ class GameShootingFightHandlersMixin:
                 instance_key=f"{model_id}:sacrificial_dagger:shooting",
             )
 
+    def _on_shooting_targets_selected_sacrificial_blessing(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        root = attacking_unit.get_attached_unit_root() if hasattr(attacking_unit, "get_attached_unit_root") else attacking_unit
+        if root is None or not root.is_alive():
+            return
+        if getattr(root, "is_in_reserves", lambda: False)() or getattr(root, "is_embarked", False):
+            return
+        player = root.get_parent_army().player if hasattr(root, "get_parent_army") else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "sacrificial_blessing":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        for entry in sorted(
+            list(root.iter_sacrificial_blessing_models() or []),
+            key=lambda e: str(get_entity_id(e.get("model")) or ""),
+        ):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "sacrificial_blessing",
+                "ability_name": str(entry.get("source", "") or "Sacrificial Blessing").strip() or "Sacrificial Blessing",
+                "phase": "Shooting phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+            }
+            message = f"Use {ctx['ability_name']} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="sacrificial_blessing",
+                ability_name=ctx["ability_name"],
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id},
+                instance_key=f"{model_id}:sacrificial_blessing:shooting:{getattr(self, 'turn', 0)}",
+            )
+
+    def _on_shooting_targets_selected_twisted_sorceries(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        root = attacking_unit.get_attached_unit_root() if hasattr(attacking_unit, "get_attached_unit_root") else attacking_unit
+        if root is None or not root.is_alive():
+            return
+        if getattr(root, "is_in_reserves", lambda: False)() or getattr(root, "is_embarked", False):
+            return
+        player = root.get_parent_army().player if hasattr(root, "get_parent_army") else None
+        if player is None or player is not self.get_current_player():
+            return
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "twisted_sorceries":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        for entry in sorted(
+            list(root.iter_twisted_sorceries_models() or []),
+            key=lambda e: str(get_entity_id(e.get("model")) or ""),
+        ):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)("twisted_sorceries"):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "twisted_sorceries",
+                "ability_name": str(entry.get("source", "") or "Twisted Sorceries").strip() or "Twisted Sorceries",
+                "phase": "Shooting phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+                "buff_key": "twisted_sorceries",
+            }
+            message = f"Use {ctx['ability_name']} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="twisted_sorceries",
+                ability_name=ctx["ability_name"],
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id, "buff_key": "twisted_sorceries"},
+                instance_key=f"{model_id}:twisted_sorceries:shooting",
+            )
+
     def _on_shooting_targets_selected_harvester_of_souls(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -3381,6 +3504,135 @@ class GameShootingFightHandlersMixin:
                 context=ctx,
                 payload={"unit_id": unit_id, "model_id": model_id},
                 instance_key=f"{model_id}:sacrificial_dagger:fight",
+            )
+
+    def _on_fight_unit_selected_sacrificial_blessing(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None or not root.is_alive():
+            return
+        if getattr(root, "is_in_reserves", lambda: False)() or getattr(root, "is_embarked", False):
+            return
+        player = root.get_parent_army().player if hasattr(root, "get_parent_army") else None
+        if player is None:
+            return
+        if selecting_player is not None and player is not selecting_player:
+            return
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "sacrificial_blessing":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        for entry in sorted(
+            list(root.iter_sacrificial_blessing_models() or []),
+            key=lambda e: str(get_entity_id(e.get("model")) or ""),
+        ):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "sacrificial_blessing",
+                "ability_name": str(entry.get("source", "") or "Sacrificial Blessing").strip() or "Sacrificial Blessing",
+                "phase": "Fight phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+            }
+            message = f"Use {ctx['ability_name']} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="sacrificial_blessing",
+                ability_name=ctx["ability_name"],
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id},
+                instance_key=f"{model_id}:sacrificial_blessing:fight:{getattr(self, 'turn', 0)}",
+            )
+
+    def _on_fight_unit_selected_twisted_sorceries(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        pname = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if pname and pname != "FIGHT_PHASE":
+            return
+        root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        if root is None or not root.is_alive():
+            return
+        if getattr(root, "is_in_reserves", lambda: False)() or getattr(root, "is_embarked", False):
+            return
+        player = root.get_parent_army().player if hasattr(root, "get_parent_army") else None
+        if player is None:
+            return
+        if selecting_player is not None and player is not selecting_player:
+            return
+
+        pending_models = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "twisted_sorceries":
+                    continue
+                mid = str(ctx.get("model_id", "") or "")
+                if mid:
+                    pending_models.add(mid)
+
+        for entry in sorted(
+            list(root.iter_twisted_sorceries_models() or []),
+            key=lambda e: str(get_entity_id(e.get("model")) or ""),
+        ):
+            model = entry.get("model")
+            if model is None or not getattr(model, "is_alive", False):
+                continue
+            if getattr(model, "has_used_once_per_battle", lambda _k: False)("twisted_sorceries"):
+                continue
+            model_id = str(get_entity_id(model) or "")
+            if model_id and model_id in pending_models:
+                continue
+            unit_id = get_entity_id(root)
+            if not unit_id or not model_id:
+                continue
+            ctx = {
+                "ability": "twisted_sorceries",
+                "ability_name": str(entry.get("source", "") or "Twisted Sorceries").strip() or "Twisted Sorceries",
+                "phase": "Fight phase",
+                "unit": getattr(root, "name", "") or "",
+                "unit_id": unit_id,
+                "model": getattr(model, "name", "") or "",
+                "model_id": model_id,
+                "buff_key": "twisted_sorceries",
+            }
+            message = f"Use {ctx['ability_name']} for {getattr(model, 'name', 'Model')}?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="twisted_sorceries",
+                ability_name=ctx["ability_name"],
+                message=message,
+                context=ctx,
+                payload={"unit_id": unit_id, "model_id": model_id, "buff_key": "twisted_sorceries"},
+                instance_key=f"{model_id}:twisted_sorceries:fight",
             )
 
     def _on_fight_unit_selected_hammer_aflame(self, unit=None, selecting_player=None, **_kwargs) -> None:

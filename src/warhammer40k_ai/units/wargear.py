@@ -2937,17 +2937,75 @@ class WargearProfile:
         if reorder_reality_active:
             hazardous_active = True
         sr = getattr(getattr(attacker, "parent_unit", None), "special_rules", None)
+        parent_wargear = getattr(self, "parent_wargear", None)
+        is_melee_weapon = bool(
+            parent_wargear is not None
+            and callable(getattr(parent_wargear, "is_melee", None))
+            and parent_wargear.is_melee()
+        )
+        is_ranged_weapon = bool(
+            parent_wargear is not None
+            and callable(getattr(parent_wargear, "is_ranged", None))
+            and parent_wargear.is_ranged()
+        )
         if isinstance(sr, dict) and sr.get("pain_melee_hazardous_non_character"):
-            if self.parent_wargear and self.parent_wargear.is_melee() and not bool(getattr(attacker, "is_character", False)):
+            if is_melee_weapon and not bool(getattr(attacker, "is_character", False)):
                 hazardous_active = True
         target_melee_hazardous = False
-        if self.parent_wargear and self.parent_wargear.is_melee():
+        if is_melee_weapon:
             target_root = target.get_attached_unit_root() if (target is not None and hasattr(target, "get_attached_unit_root")) else target
             fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
             if callable(fn):
                 target_melee_hazardous = bool(fn())
         if target_melee_hazardous:
             hazardous_active = True
+        target_ranged_hazardous = False
+        if is_ranged_weapon:
+            target_root = target.get_attached_unit_root() if (target is not None and hasattr(target, "get_attached_unit_root")) else target
+            tsr = getattr(target_root, "special_rules", None) if target_root is not None else None
+            if isinstance(tsr, dict) and tsr.get("shooting_phase_ranged_hazardous_active"):
+                apply_hazardous = True
+                exp = str(tsr.get("shooting_phase_ranged_hazardous_expires_phase", "") or "").strip().upper()
+                if exp:
+                    phase_key = self._resolve_phase_key(attacker_unit=getattr(attacker, "parent_unit", None), target_unit=target)
+                    if phase_key and phase_key != exp:
+                        apply_hazardous = False
+                if apply_hazardous:
+                    owner_id = str(tsr.get("shooting_phase_ranged_hazardous_owner", "") or "")
+                    if owner_id:
+                        try:
+                            army = attacker.parent_unit.get_parent_army()
+                            player = getattr(army, "player", None) if army is not None else None
+                        except Exception:
+                            player = None
+                        attacker_id = ""
+                        if player is not None:
+                            try:
+                                attacker_id = get_entity_id(player)
+                            except Exception:
+                                attacker_id = str(getattr(player, "id", "") or "")
+                        if attacker_id and attacker_id != owner_id:
+                            apply_hazardous = False
+                if apply_hazardous:
+                    try:
+                        turn = int(tsr.get("shooting_phase_ranged_hazardous_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if turn:
+                        try:
+                            game = getattr(getattr(attacker.parent_unit.get_parent_army(), "player", None), "game", None)
+                        except Exception:
+                            game = None
+                        if game is not None and int(getattr(game, "turn", 0) or 0) != int(turn or 0):
+                            apply_hazardous = False
+                if apply_hazardous:
+                    target_ranged_hazardous = True
+                    hazardous_active = True
+                    try:
+                        source = str(tsr.get("shooting_phase_ranged_hazardous_source", "") or "Treason of Tzeentch").strip()
+                        attack_result.attacks_special_modifiers.append(f"{source}: [HAZARDOUS] (ranged)")
+                    except Exception:
+                        pass
         # Enemy psychic auras that make Psychic weapons hazardous (e.g., Discordant Disruption).
         try:
             from ..utility.aura_effects import get_enemy_aura_psychic_hazardous
@@ -3011,6 +3069,7 @@ class WargearProfile:
                         root_unit,
                         include_melee_non_character=bool(pain_hazardous),
                         include_melee_all=bool(target_melee_hazardous),
+                        include_ranged_all=bool(target_ranged_hazardous),
                     )
                 except Exception:
                     eligible = []
@@ -4356,6 +4415,7 @@ class WargearProfile:
         bonus_lethal = False
         bonus_sustained_value = 0
         bonus_sustained_label = ""
+        bonus_sustained_dice = ""
         bonus_devastating = False
         bonus_twin_linked = False
         bonus_heavy = False
@@ -4365,8 +4425,9 @@ class WargearProfile:
         bonus_anti_specs = ()
         bonus_precision_on_crit = False
         bonus_precision = False
+
         def _set_bonus_sustained(value: int, label: str) -> None:
-            nonlocal bonus_sustained_value, bonus_sustained_label
+            nonlocal bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             try:
                 val = int(value or 0)
             except Exception:
@@ -4377,6 +4438,34 @@ class WargearProfile:
                 bonus_sustained_value = val
                 bonus_sustained_label = str(label or "")
             elif val == bonus_sustained_value and label:
+                if bonus_sustained_label:
+                    if str(label) not in bonus_sustained_label:
+                        bonus_sustained_label = f"{bonus_sustained_label} + {label}"
+                else:
+                    bonus_sustained_label = str(label)
+            # Fixed Sustained Hits that are >= die max should take precedence over dice variants.
+            try:
+                if bonus_sustained_dice == "D3" and bonus_sustained_value >= 3:
+                    bonus_sustained_dice = ""
+                if bonus_sustained_dice == "D6" and bonus_sustained_value >= 6:
+                    bonus_sustained_dice = ""
+            except Exception:
+                pass
+
+        def _set_bonus_sustained_dice(value: str, label: str) -> None:
+            nonlocal bonus_sustained_dice, bonus_sustained_label
+            die = str(value or "").strip().upper()
+            if die not in ("D3", "D6"):
+                return
+            die_max = 3 if die == "D3" else 6
+            if int(bonus_sustained_value or 0) >= die_max:
+                return
+            if bonus_sustained_dice == "D6" and die == "D3":
+                return
+            if bonus_sustained_dice != die:
+                bonus_sustained_dice = die
+                bonus_sustained_label = str(label or "")
+            elif label:
                 if bonus_sustained_label:
                     if str(label) not in bonus_sustained_label:
                         bonus_sustained_label = f"{bonus_sustained_label} + {label}"
@@ -4398,7 +4487,7 @@ class WargearProfile:
             return tuple(merged)
 
         def _apply_keyword_bonus(bonus, *, sustained_label: str = "", heavy_label: str = "", lance_label: str = "") -> None:
-            nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label
+            nonlocal bonus_lethal, bonus_sustained_value, bonus_sustained_label, bonus_sustained_dice
             nonlocal bonus_devastating, bonus_twin_linked, bonus_heavy, bonus_heavy_label
             nonlocal bonus_lance, bonus_lance_label, bonus_anti_specs, bonus_precision
             if not isinstance(bonus, dict):
@@ -4410,6 +4499,9 @@ class WargearProfile:
             bonus_sustained_val = int(bonus.get("sustained_hits_value", 0) or 0)
             if bonus_sustained_val:
                 _set_bonus_sustained(bonus_sustained_val, sustained_label)
+            bonus_sustained_die = str(bonus.get("sustained_hits_dice", "") or "").strip().upper()
+            if bonus_sustained_die:
+                _set_bonus_sustained_dice(bonus_sustained_die, sustained_label)
             if bool(bonus.get("devastating_wounds")):
                 bonus_devastating = True
             if bool(bonus.get("twin_linked")):
@@ -4495,6 +4587,7 @@ class WargearProfile:
             bonus_lethal = False
             bonus_sustained_value = 0
             bonus_sustained_label = ""
+            bonus_sustained_dice = ""
             bonus_devastating = False
             bonus_twin_linked = False
             bonus_heavy = False
@@ -7172,7 +7265,7 @@ class WargearProfile:
             if callable(value_fn):
                 war_horde_sustained_value = int(value_fn(unit, attack_type="melee") or 0)
         war_horde_sustained = bool(war_horde_sustained_value)
-        bonus_sustained = bool(bonus_sustained_value)
+        bonus_sustained = bool(bonus_sustained_value or bonus_sustained_dice)
 
         sustained_base = (
             self.is_sustained_hits()
@@ -7190,6 +7283,26 @@ class WargearProfile:
             or bonus_sustained
             or malefic_sustained
         )
+
+        def _resolve_bonus_sustained_hits() -> tuple[int, str]:
+            if int(bonus_sustained_value or 0) > 0:
+                val = int(bonus_sustained_value or 0)
+                if bonus_sustained_label:
+                    return val, f"Sustained Hits (+{val}) [{bonus_sustained_label}]"
+                return val, f"Sustained Hits (+{val})"
+            die = str(bonus_sustained_dice or "").strip().upper()
+            if die not in ("D3", "D6"):
+                return 1, "Sustained Hits (+1)"
+            try:
+                rolled = int(get_roll(die) or 0)
+            except Exception:
+                rolled = 0
+            if rolled <= 0:
+                rolled = 1
+            label = f"Sustained Hits ({die}={rolled})"
+            if bonus_sustained_label:
+                label = f"{label} [{bonus_sustained_label}]"
+            return int(rolled), label
 
         blitzing_grants_sustained = False
         try:
@@ -7273,12 +7386,10 @@ class WargearProfile:
                     elif war_horde_sustained_value:
                         sustained_val = max(int(sustained_val), int(war_horde_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [War Horde]"
-                    elif bonus_sustained_value:
-                        sustained_val = max(int(sustained_val), int(bonus_sustained_value))
-                        if bonus_sustained_label:
-                            label = f"Sustained Hits (+{sustained_val}) [{bonus_sustained_label}]"
-                        else:
-                            label = f"Sustained Hits (+{sustained_val})"
+                    elif bonus_sustained:
+                        bonus_val, bonus_label = _resolve_bonus_sustained_hits()
+                        sustained_val = max(int(sustained_val), int(bonus_val or 0))
+                        label = str(bonus_label or f"Sustained Hits (+{sustained_val})")
                     elif malefic_sustained_value:
                         sustained_val = max(int(sustained_val), int(malefic_sustained_value))
                         label = f"Sustained Hits (+{sustained_val}) [Malefic Surge]"
@@ -7344,6 +7455,7 @@ class WargearProfile:
                             attack_instance['sustained_hit'] = 1
                     else:
                         label = "Sustained Hits (+1)"
+                        rolled_bonus_sustained_val = 0
                         if blessings_sustained:
                             label += " [Blessings of Khorne]"
                         elif dark_pacts_sustained:
@@ -7371,16 +7483,8 @@ class WargearProfile:
                             else:
                                 label += " [War Horde]"
                         elif bonus_sustained:
-                            if bonus_sustained_value > 1:
-                                if bonus_sustained_label:
-                                    label = f"Sustained Hits (+{bonus_sustained_value}) [{bonus_sustained_label}]"
-                                else:
-                                    label = f"Sustained Hits (+{bonus_sustained_value})"
-                            else:
-                                if bonus_sustained_label:
-                                    label += f" [{bonus_sustained_label}]"
-                                else:
-                                    label += ""
+                            rolled_bonus_sustained_val, _bonus_label = _resolve_bonus_sustained_hits()
+                            label = str(_bonus_label or label)
                         elif blitzing_grants_sustained:
                             label += " [Blitzing Firepower]"
                         hit_result['special_effects'].append(label)
@@ -7392,7 +7496,7 @@ class WargearProfile:
                         if war_horde_sustained:
                             sustained_vals.append(int(war_horde_sustained_value or 0))
                         if bonus_sustained:
-                            sustained_vals.append(int(bonus_sustained_value or 0))
+                            sustained_vals.append(int(rolled_bonus_sustained_val or 0))
                         attack_instance['sustained_hit'] = max(sustained_vals)
 
         # Ork charge-related keywords: track hits against MONSTER/VEHICLE units.

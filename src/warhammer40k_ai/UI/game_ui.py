@@ -5103,6 +5103,89 @@ class GameView:
                 return
 
             ability = str(ctx.get("ability", "") or "")
+            if ability in ("opponent_shooting_phase_disrupt", "unearthly_power"):
+                from ..utility.decision_utils import resolve_decision_command
+                from .decision_ui_utils import option_id_for_action, first_option_id
+
+                dlg = getattr(self, "thousand_sons_quarry_dialog", None)
+                if dlg is None:
+                    try:
+                        from .dialogs import QuarrySelectionDialog
+                        self.thousand_sons_quarry_dialog = QuarrySelectionDialog(self.screen.get_width(), self.screen.get_height())
+                        dlg = self.thousand_sons_quarry_dialog
+                    except Exception:
+                        dlg = None
+
+                skip_id = option_id_for_action(request, "skip")
+                default_id = skip_id or first_option_id(request)
+                if dlg is None:
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    return
+
+                title = str(ctx.get("ability_name", "") or getattr(request, "prompt", "") or "Select Target").strip() or "Select Target"
+                header = "Select a target."
+                subtitle = ""
+                if ability == "unearthly_power":
+                    source = self._resolve_unit_by_id(ctx.get("source_unit_id") or ctx.get("unit_id"))
+                    if source is not None:
+                        header = f"{getattr(source, 'name', 'Unit')} chooses a Crimson King ability."
+                    else:
+                        header = "Choose a Crimson King ability."
+                    subtitle = "Effect lasts until the start of the next battle round."
+                else:
+                    model_name = str(ctx.get("model", "") or "").strip()
+                    unit_name = str(ctx.get("unit", "") or "").strip()
+                    if model_name and unit_name:
+                        header = f"{model_name} ({unit_name})"
+                    elif unit_name:
+                        header = unit_name
+                    subtitle = "Select an enemy unit."
+                    if bool(ctx.get("grant_ranged_hazardous")):
+                        subtitle = "Select an enemy unit; its ranged weapons become Hazardous this phase."
+
+                def _on_confirm(option_id: str):
+                    resolve_decision_command(self.game, request, option_id, player_id=getattr(player, "id", None))
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                def _on_cancel():
+                    if default_id:
+                        resolve_decision_command(
+                            self.game,
+                            request,
+                            default_id,
+                            player_id=getattr(player, "id", None),
+                            result_payload={"skipped": True} if default_id == skip_id else {},
+                        )
+                    try:
+                        dlg.hide()
+                    except Exception:
+                        pass
+
+                dlg.show(
+                    title=title,
+                    header=header,
+                    subtitle=subtitle,
+                    on_confirm=_on_confirm,
+                    on_cancel=_on_cancel,
+                    decision_request=request,
+                    show_cancel=True,
+                )
+                try:
+                    self.dialog_manager.open(dlg, modal=True)
+                except Exception:
+                    pass
+                return
+
             if ability == "oath_of_moment":
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import first_option_id
@@ -6533,7 +6616,7 @@ class GameView:
         if decision_type == DECISION_CHOOSE_QUARRY:
             ctx = dict(getattr(request, "context", {}) or {})
             ability_key = str(ctx.get("ability", "") or "")
-            if ability_key not in ("monarch_of_the_hunt", "methodical_destruction"):
+            if ability_key not in ("monarch_of_the_hunt", "methodical_destruction", "unearthly_power"):
                 return
             unit = self._resolve_unit_by_id(ctx.get("source_unit_id"))
             if unit is None:

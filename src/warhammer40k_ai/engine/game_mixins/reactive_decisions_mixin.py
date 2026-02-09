@@ -2864,6 +2864,8 @@ class GameReactiveDecisionsMixin:
             "chance_for_glory",
             "malefic_destruction",
             "sacrificial_dagger",
+            "sacrificial_blessing",
+            "twisted_sorceries",
             "start_any_phase_damage_set_one",
             "start_any_phase_invulnerable_save",
             "start_any_phase_fnp",
@@ -3080,6 +3082,124 @@ class GameReactiveDecisionsMixin:
                     wound_bonus=1,
                     source=ability_name,
                     expires_phase=phase_name,
+                )
+            return
+
+        if ability_key in ("sacrificial_blessing", "twisted_sorceries"):
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not model_id:
+                return
+            model = self._resolve_model_by_id(model_id)
+            if model is None or not getattr(model, "is_alive", True):
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            unit = self._resolve_unit_by_id(unit_id) if unit_id else getattr(model, "parent_unit", None)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            if ability_key == "twisted_sorceries":
+                once_key = str(payload.get("buff_key") or ctx.get("buff_key") or "twisted_sorceries").strip().lower()
+                if not once_key:
+                    once_key = "twisted_sorceries"
+                if getattr(model, "has_used_once_per_battle", lambda _k: False)(once_key):
+                    return
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = "FIGHT_PHASE"
+            ability_name = str(
+                ctx.get("ability_name", "")
+                or ("Sacrificial Blessing" if ability_key == "sacrificial_blessing" else "Twisted Sorceries")
+            ).strip() or ("Sacrificial Blessing" if ability_key == "sacrificial_blessing" else "Twisted Sorceries")
+
+            def _destroy_one_bodyguard_model() -> bool:
+                try:
+                    models = list(root._get_bodyguard_support_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                alive = [m for m in models if getattr(m, "is_alive", False)]
+                if not alive:
+                    return False
+                try:
+                    alive.sort(key=lambda m: str(get_entity_id(m) or ""))
+                except Exception:
+                    pass
+                picked = alive[0]
+                die_fn = getattr(picked, "die", None)
+                if callable(die_fn):
+                    die_fn(game_map=getattr(self, "map", None))
+                    return True
+                return False
+
+            def _psychic_weapon_names() -> list[str]:
+                names: list[str] = []
+                for wg in list(getattr(model, "wargear", []) or []):
+                    if wg is None:
+                        continue
+                    try:
+                        profiles = list((getattr(wg, "profiles", {}) or {}).values())
+                    except Exception:
+                        profiles = []
+                    has_psychic = False
+                    for profile in profiles:
+                        if profile is None:
+                            continue
+                        try:
+                            if bool(getattr(profile, "is_psychic", lambda: False)()):
+                                has_psychic = True
+                                break
+                        except Exception:
+                            continue
+                    if has_psychic:
+                        name = str(getattr(wg, "name", "") or "").strip()
+                        if name and name not in names:
+                            names.append(name)
+                return names
+
+            attacks_bonus = 0
+            strength_bonus = 0
+            if ability_key == "sacrificial_blessing":
+                if not _destroy_one_bodyguard_model():
+                    return
+                try:
+                    attacks_bonus = int(get_roll("D3") or 0)
+                except Exception:
+                    attacks_bonus = 0
+                try:
+                    strength_bonus = int(get_roll("D3") or 0)
+                except Exception:
+                    strength_bonus = 0
+            else:
+                attacks_bonus = 3
+                strength_bonus = 3
+            if attacks_bonus <= 0 and strength_bonus <= 0:
+                return
+
+            weapon_names = _psychic_weapon_names()
+            if not weapon_names:
+                return
+            for idx, weapon_name in enumerate(weapon_names):
+                if not hasattr(model, "set_temporary_weapon_bonus"):
+                    break
+                model.set_temporary_weapon_bonus(
+                    key=f"{ability_key}:{idx}:{model_id}",
+                    weapon_name=weapon_name,
+                    attacks_bonus=int(attacks_bonus or 0),
+                    strength_bonus=int(strength_bonus or 0),
+                    source=ability_name,
+                    expires_phase=phase_name,
+                )
+            if ability_key == "twisted_sorceries":
+                model.mark_used_once_per_battle(
+                    str(payload.get("buff_key") or ctx.get("buff_key") or "twisted_sorceries").strip().lower() or "twisted_sorceries",
+                    ability_name=ability_name,
+                    source="datasheet",
                 )
             return
 
@@ -3780,6 +3900,21 @@ class GameReactiveDecisionsMixin:
             sr["cloudstrider_no_charge_turn"] = int(turn)
             source = str(ctx.get("ability_name", "") or "Cloudstrider").strip() or "Cloudstrider"
             sr["cloudstrider_source"] = source
+            if "aetherstride" in source.lower():
+                try:
+                    model_id = ""
+                    models = list(root.get_attached_unit_models() or [])
+                    models = [m for m in models if getattr(m, "is_alive", False)]
+                    if models:
+                        models.sort(key=lambda m: str(get_entity_id(m) or ""))
+                        model_id = str(get_entity_id(models[0]) or "")
+                    sr["aetherstride_sustained_hits_d3_active"] = True
+                    sr["aetherstride_sustained_hits_d3_turn"] = int(turn)
+                    sr["aetherstride_sustained_hits_d3_owner"] = owner_id
+                    sr["aetherstride_model_id"] = model_id
+                    sr["aetherstride_source"] = source
+                except Exception:
+                    pass
             root.special_rules = sr
             try:
                 from ...utility.event_bus import append_action

@@ -3927,6 +3927,7 @@ class AbilitySpecsMixin:
             - mortal_on_one: bool
             - optional: bool
             - limit_one_per_army: bool
+            - grant_ranged_hazardous: bool
         """
         if model is None:
             return []
@@ -3935,7 +3936,7 @@ class AbilitySpecsMixin:
             return list(self._ability_cache[cache_key])
 
         specs: list[dict] = []
-        seen: set[tuple[str, int, bool]] = set()
+        seen: set[tuple[str, int, bool, bool]] = set()
 
         for name, desc in self._iter_model_specific_ability_entries(model):
             text_src = desc or name or ""
@@ -3951,13 +3952,18 @@ class AbilitySpecsMixin:
             mortal_on_one = False
             optional = False
             limit_one = False
+            grant_ranged_hazardous = False
             if not m:
                 m = self._START_OPP_SHOOTING_PHASE_HORRIBLE_FASCINATION_RE.fullmatch(normalized)
-                if not m:
-                    continue
-                mortal_on_one = True
-                optional = True
-                limit_one = True
+                if m:
+                    mortal_on_one = True
+                    optional = True
+                    limit_one = True
+                else:
+                    m = self._START_OPP_SHOOTING_PHASE_TREASON_HAZARDOUS_RE.fullmatch(normalized)
+                    if not m:
+                        continue
+                    grant_ranged_hazardous = True
             try:
                 range_value = int(m.group("range") or 0)
             except Exception:
@@ -3965,7 +3971,7 @@ class AbilitySpecsMixin:
             if range_value <= 0:
                 continue
             source = str(name or "Opponent Shooting phase disruption").strip() or "Opponent Shooting phase disruption"
-            key = (source.lower(), int(range_value), bool(mortal_on_one))
+            key = (source.lower(), int(range_value), bool(mortal_on_one), bool(grant_ranged_hazardous))
             if key in seen:
                 continue
             seen.add(key)
@@ -3976,6 +3982,7 @@ class AbilitySpecsMixin:
                     "mortal_on_one": bool(mortal_on_one),
                     "optional": bool(optional),
                     "limit_one_per_army": bool(limit_one),
+                    "grant_ranged_hazardous": bool(grant_ranged_hazardous),
                 }
             )
 

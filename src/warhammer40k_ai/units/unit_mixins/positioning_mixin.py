@@ -800,6 +800,21 @@ class PositioningMixin:
         root._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def _iter_attached_model_specific_ability_entries(self, root, model):
+        """Resolve model-specific ability text via each model's owning unit."""
+        if model is None:
+            return
+        model_unit = getattr(model, "parent_unit", None) or root
+        iter_fn = getattr(model_unit, "_iter_model_specific_ability_entries", None)
+        if callable(iter_fn):
+            for name, desc in iter_fn(model):
+                yield name, desc
+            return
+        fallback_fn = getattr(root, "_iter_model_specific_ability_entries", None)
+        if callable(fallback_fn):
+            for name, desc in fallback_fn(model):
+                yield name, desc
+
     def iter_cruel_amusement_models(self) -> list[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -813,7 +828,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -861,7 +876,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -908,7 +923,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -945,7 +960,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -984,7 +999,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -1035,7 +1050,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -1057,6 +1072,76 @@ class PositioningMixin:
                 break
         return results
 
+    def iter_sacrificial_blessing_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                name_low = str(name or text_src).lower()
+                normalized = root._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "sacrificial blessing" not in name_low:
+                    if not root._SACRIFICIAL_BLESSING_RE.fullmatch(normalized):
+                        continue
+                results.append(
+                    {
+                        "model": model,
+                        "source": str(name or "Sacrificial Blessing").strip() or "Sacrificial Blessing",
+                    }
+                )
+                break
+        return results
+
+    def iter_twisted_sorceries_models(self) -> list[dict]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        results: list[dict] = []
+        try:
+            models = list(root.get_attached_unit_models() or [])
+        except Exception:
+            models = list(getattr(root, "models", []) or [])
+        for model in list(models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
+                text_src = desc or name or ""
+                if not text_src:
+                    continue
+                name_low = str(name or text_src).lower()
+                normalized = root._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                if "twisted sorceries" not in name_low:
+                    if not root._TWISTED_SORCERIES_RE.fullmatch(normalized):
+                        continue
+                results.append(
+                    {
+                        "model": model,
+                        "source": str(name or "Twisted Sorceries").strip() or "Twisted Sorceries",
+                    }
+                )
+                break
+        return results
+
     def iter_gift_of_chaos_models(self) -> list[dict]:
         try:
             root = self.get_attached_unit_root()
@@ -1070,7 +1155,7 @@ class PositioningMixin:
         for model in list(models or []):
             if not getattr(model, "is_alive", False):
                 continue
-            for name, desc in root._iter_model_specific_ability_entries(model):
+            for name, desc in self._iter_attached_model_specific_ability_entries(root, model):
                 text_src = desc or name or ""
                 if not text_src:
                     continue
@@ -1121,6 +1206,17 @@ class PositioningMixin:
             if "deep strike" in norm and "more than 6" in norm and "not eligible to declare a charge" in norm:
                 source = name or "Cloudstrider"
                 break
+        if not source:
+            for name, desc in root._iter_ability_entries_for_rules(model=None):
+                text = root._normalize_rules_text(desc or name or "")
+                if not text:
+                    continue
+                norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "deep strike" in norm and "more than 6" in norm and "not eligible to declare a charge" in norm:
+                    source = str(name or "Cloudstrider").strip() or "Cloudstrider"
+                    break
         if not hasattr(root, "_ability_cache"):
             root._ability_cache = {}
         root._ability_cache[cache_key] = source
@@ -1643,6 +1739,7 @@ class PositioningMixin:
             "ignores_cover": False,
             "lethal_hits": False,
             "sustained_hits_value": 0,
+            "sustained_hits_dice": "",
             "devastating_wounds": False,
             "twin_linked": False,
             "heavy": False,
@@ -1676,6 +1773,15 @@ class PositioningMixin:
                     val = int(m.group(1))
                     bonuses["sustained_hits_value"] = max(int(bonuses["sustained_hits_value"] or 0), val)
                     sources.append(f"Sustained Hits {val} ({source})")
+                else:
+                    md = re.search(r"SUSTAINED HITS\s+(D3|D6)", kw)
+                    if md:
+                        die = str(md.group(1) or "").strip().upper()
+                        if die in ("D3", "D6"):
+                            fixed = int(bonuses["sustained_hits_value"] or 0)
+                            if fixed <= 0 or (die == "D6" and fixed < 6) or (die == "D3" and fixed < 3):
+                                bonuses["sustained_hits_dice"] = die
+                            sources.append(f"Sustained Hits {die} ({source})")
             elif kw == "DEVASTATING WOUNDS":
                 bonuses["devastating_wounds"] = True
                 sources.append(f"Devastating Wounds ({source})")
@@ -1710,6 +1816,7 @@ class PositioningMixin:
             or bonuses["lance"]
             or bonuses["precision"]
             or int(bonuses["sustained_hits_value"] or 0) > 0
+            or str(bonuses.get("sustained_hits_dice", "") or "").strip()
             or bool(bonuses.get("anti_specs"))
         ):
             return bonuses
@@ -1782,6 +1889,32 @@ class PositioningMixin:
                         rules = list(rules or []) + [
                             {"attack_type": "any", "keyword": "LETHAL HITS", "source": source},
                             {"attack_type": "any", "keyword": "PRECISION", "source": source},
+                        ]
+        except Exception:
+            pass
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("aetherstride_sustained_hits_d3_active"):
+                model_id = str(get_entity_id(model) or "")
+                owner_id = str(sr.get("aetherstride_sustained_hits_d3_owner", "") or "")
+                turn = int(sr.get("aetherstride_sustained_hits_d3_turn", 0) or 0)
+                source = str(sr.get("aetherstride_source", "") or "Aetherstride").strip() or "Aetherstride"
+                apply_bonus = False
+                if model_id and model_id == str(sr.get("aetherstride_model_id", "") or ""):
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    if game is not None:
+                        try:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                            cur_owner = str(getattr(game.get_current_player(), "id", "") or "")
+                            apply_bonus = bool(cur_turn == turn and owner_id and cur_owner == owner_id)
+                        except Exception:
+                            apply_bonus = False
+                if apply_bonus:
+                    wname = str(weapon_name or "").strip().lower()
+                    if "dark blessing" in wname:
+                        rules = list(rules or []) + [
+                            {"attack_type": "any", "keyword": "SUSTAINED HITS D3", "source": source}
                         ]
         except Exception:
             pass

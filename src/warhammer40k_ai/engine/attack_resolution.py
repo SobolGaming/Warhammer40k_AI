@@ -1768,14 +1768,47 @@ class AttackResolutionManager:
         except (AttributeError, TypeError, ValueError):
             hazardous_active = False
         target_melee_hazardous = False
+        target_ranged_hazardous = False
         target_unit = self._resolve_unit(game, seq.target_unit_id)
         parent_wargear = getattr(profile, "parent_wargear", None)
         is_melee = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_melee", None)) and parent_wargear.is_melee())
+        is_ranged = bool(parent_wargear is not None and callable(getattr(parent_wargear, "is_ranged", None)) and parent_wargear.is_ranged())
         if is_melee and target_unit is not None and hasattr(target_unit, "get_attached_unit_root"):
             target_root = target_unit.get_attached_unit_root()
             fn = getattr(target_root, "enemy_melee_weapons_hazardous_while_targeted", None) if target_root is not None else None
             if callable(fn):
                 target_melee_hazardous = bool(fn())
+        if is_ranged and target_unit is not None and hasattr(target_unit, "get_attached_unit_root"):
+            target_root = target_unit.get_attached_unit_root()
+            sr = getattr(target_root, "special_rules", None) if target_root is not None else None
+            if isinstance(sr, dict) and sr.get("shooting_phase_ranged_hazardous_active"):
+                apply_hazardous = True
+                exp = str(sr.get("shooting_phase_ranged_hazardous_expires_phase", "") or "").strip().upper()
+                if exp and exp != "SHOOTING_PHASE":
+                    apply_hazardous = False
+                if apply_hazardous:
+                    owner_id = str(sr.get("shooting_phase_ranged_hazardous_owner", "") or "")
+                    if owner_id:
+                        try:
+                            current = game.get_current_player()
+                        except Exception:
+                            current = None
+                        current_id = str(getattr(current, "id", "") or "")
+                        if not current_id and current is not None:
+                            try:
+                                current_id = str(get_entity_id(current) or "")
+                            except Exception:
+                                current_id = ""
+                        if current_id and current_id != owner_id:
+                            apply_hazardous = False
+                if apply_hazardous:
+                    try:
+                        turn = int(sr.get("shooting_phase_ranged_hazardous_turn", 0) or 0)
+                    except Exception:
+                        turn = 0
+                    if turn and int(getattr(game, "turn", 0) or 0) != int(turn):
+                        apply_hazardous = False
+                target_ranged_hazardous = bool(apply_hazardous)
         pain_hazardous = False
         try:
             sr = getattr(attacker_unit, "special_rules", None)
@@ -1786,7 +1819,7 @@ class AttackResolutionManager:
         except (AttributeError, TypeError, ValueError):
             pain_hazardous = False
         test_model_ids: list[str] = []
-        if hazardous_active or pain_hazardous or target_melee_hazardous:
+        if hazardous_active or pain_hazardous or target_melee_hazardous or target_ranged_hazardous:
             for model_id in list(seq.model_ids or []):
                 model = self._resolve_model(game, model_id)
                 if model is None or not getattr(model, "is_alive", False):
@@ -1794,6 +1827,8 @@ class AttackResolutionManager:
                 if hazardous_active:
                     test_model_ids.append(model_id)
                 elif target_melee_hazardous:
+                    test_model_ids.append(model_id)
+                elif target_ranged_hazardous:
                     test_model_ids.append(model_id)
                 else:
                     if not bool(getattr(model, "is_character", False)):
@@ -1803,6 +1838,7 @@ class AttackResolutionManager:
         seq.context["hazardous_test_model_ids"] = list(test_model_ids)
         seq.context["hazardous_pain_melee_non_character"] = bool(pain_hazardous)
         seq.context["hazardous_target_melee_all"] = bool(target_melee_hazardous)
+        seq.context["hazardous_target_ranged_all"] = bool(target_ranged_hazardous)
         seq.step = "hazardous_roll"
         player = attacker_unit.get_parent_army().player if attacker_unit is not None else None
         player_id = getattr(player, "id", None) if player is not None else None
@@ -1892,6 +1928,7 @@ class AttackResolutionManager:
             root_unit = attacker_unit
         pain_hazardous = bool(seq.context.get("hazardous_pain_melee_non_character", False))
         target_melee_all = bool(seq.context.get("hazardous_target_melee_all", False))
+        target_ranged_all = bool(seq.context.get("hazardous_target_ranged_all", False))
         from ..utility.hazardous import collect_hazardous_eligible_models
         from ..utility.damage_allocation import DamageAllocationCtx, hazardous_allocation_choice
         game_map = getattr(game, "map", None)
@@ -1903,6 +1940,7 @@ class AttackResolutionManager:
                     root_unit,
                     include_melee_non_character=pain_hazardous,
                     include_melee_all=target_melee_all,
+                    include_ranged_all=target_ranged_all,
                 )
             except (AttributeError, TypeError, ValueError):
                 eligible = []

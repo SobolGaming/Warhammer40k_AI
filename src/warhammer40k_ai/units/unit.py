@@ -667,6 +667,13 @@ class Unit(
             if bonus:
                 mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:temporary_movement_add"))
             try:
+                from ..rules.thousand_sons_crimson_king import time_flux_move_bonus_for_unit
+                bonus = int(time_flux_move_bonus_for_unit(self, game_map=game_map) or 0)
+                if bonus:
+                    mods.append(Modifier(ModifierOp.ADD, int(bonus), source="ability:time_flux"))
+            except Exception:
+                pass
+            try:
                 sr = getattr(self, "special_rules", None)
                 if isinstance(sr, dict):
                     daemonic_bonus = int(sr.get("daemonic_allegiance_move_bonus", 0) or 0)
@@ -1937,6 +1944,12 @@ class Unit(
         r"makes an attack subtract 1 from the hit roll on a 6 that enemy unit is not eligible to shoot this phase",
         re.IGNORECASE,
     )
+    _START_OPP_SHOOTING_PHASE_TREASON_HAZARDOUS_RE = re.compile(
+        r"at the start of your opponent s shooting phase select one enemy unit within (?P<range>\d+) "
+        r"(?:of and visible to|of) this psyker until the end of the phase ranged weapons equipped by models in that unit "
+        r"have the hazardous ability",
+        re.IGNORECASE,
+    )
     _MOVEMENT_PHASE_END_ENEMY_WITHIN_RANGE_MORTAL_TABLE_RE = re.compile(
         r"at the end of your movement phase roll (?:one|1) d6 for each enemy unit within (?P<range>\d+) of this model "
         r"on a 2 3 that unit suffers 1 mortal wounds? on a 4 5 that unit suffers d3 mortal wounds? on a 6 that unit suffers d6 mortal wounds?"
@@ -2258,6 +2271,17 @@ class Unit(
     _SACRIFICIAL_DAGGER_RE = re.compile(
         r"once per phase when this model is selected to shoot or fight it can use this ability if it does this model s unit suffers 1 mortal wound "
         r"and until the end of the phase each time this model makes a psychic attack add 1 to the hit roll and add 1 to the wound roll",
+        re.IGNORECASE,
+    )
+    _SACRIFICIAL_BLESSING_RE = re.compile(
+        r"while this model is leading a unit in your shooting phase and the fight phase each time that unit is selected to shoot or fight "
+        r"this model can use this ability if it does select one bodyguard model in that unit that bodyguard model is destroyed and until the end of the phase "
+        r"add d3 to the attacks and strength characteristics of psychic weapons equipped by this model",
+        re.IGNORECASE,
+    )
+    _TWISTED_SORCERIES_RE = re.compile(
+        r"once per battle in your shooting phase or the fight phase this model can use this ability if it does until the end of the phase "
+        r"improve the strength and attacks characteristics of psychic weapons equipped by this model by (?P<val>\d+)",
         re.IGNORECASE,
     )
     _GIFT_OF_CHAOS_RE = re.compile(

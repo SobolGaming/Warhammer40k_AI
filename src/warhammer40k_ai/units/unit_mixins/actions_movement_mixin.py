@@ -414,6 +414,18 @@ class ActionsMovementMixin:
                 return bool(unit_has_active_warmaster(self, key))
         except Exception:
             pass
+        try:
+            from ...rules.thousand_sons_crimson_king import (
+                ability_name_to_key,
+                unit_has_active_crimson_king,
+                unit_has_crimson_king_sub_ability,
+            )
+            name = ability if isinstance(ability, str) else getattr(ability, "name", "")
+            key = ability_name_to_key(name)
+            if key and unit_has_crimson_king_sub_ability(self):
+                return bool(unit_has_active_crimson_king(self, key))
+        except Exception:
+            pass
 
         # Power from Pain: pain abilities only apply while the unit is Empowered.
         try:
