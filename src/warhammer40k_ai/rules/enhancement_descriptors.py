@@ -185,6 +185,51 @@ _SCINTILLATING_LEGION_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _SCINTILLATING_LEGION_DESCRIPTORS.values()
 }
 
+_GRAND_COVEN_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010193002": EnhancementToolDescriptor(
+        enhancement_id="000010193002",
+        name="Lord of Forbidden Lore",
+        timing="while_manifesting_ritual",
+        target="bearer",
+        duration="instant",
+        effect="ritual_range_bonus",
+        effect_params={"ritual_range_bonus": 6},
+    ),
+    "000010193003": EnhancementToolDescriptor(
+        enhancement_id="000010193003",
+        name="Incandaeum",
+        timing="while_selecting_ritual",
+        target="bearer",
+        duration="once_per_battle",
+        effect="doombolt_repeat_override",
+        once_per_battle=True,
+        effect_params={"ritual_key": "DOOMBOLT"},
+    ),
+    "000010193004": EnhancementToolDescriptor(
+        enhancement_id="000010193004",
+        name="Umbralefic Crystal",
+        timing="command_phase_start",
+        target="bearer_unit",
+        duration="until_reinforcements_step",
+        effect="reposition_to_strategic_reserves_then_deep_strike",
+        once_per_battle=True,
+        effect_params={"min_enemy_distance_horizontal": 9, "requires_not_in_engagement_range": True},
+    ),
+    "000010193005": EnhancementToolDescriptor(
+        enhancement_id="000010193005",
+        name="Eldritch Vortex of E'taph",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_psychic_strength_damage_bonus",
+        effect_params={"strength_bonus": 1, "damage_bonus": 1},
+    ),
+}
+
+_GRAND_COVEN_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _GRAND_COVEN_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009777002": EnhancementToolDescriptor(
         enhancement_id="000009777002",
@@ -247,6 +292,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _SCINTILLATING_LEGION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _GRAND_COVEN_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -258,5 +306,6 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
+        or _GRAND_COVEN_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
     )

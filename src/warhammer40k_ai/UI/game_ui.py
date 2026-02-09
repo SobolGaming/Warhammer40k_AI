@@ -13163,10 +13163,14 @@ class GameView:
         if not casters:
             return False
         try:
-            rituals = list(mgr.get_available_rituals() or [])
+            rituals_available = False
+            for _caster_unit, caster_model in list(casters or []):
+                if list(mgr.get_available_rituals(caster_model=caster_model) or []):
+                    rituals_available = True
+                    break
         except Exception:
-            rituals = []
-        return bool(rituals)
+            rituals_available = False
+        return bool(rituals_available)
 
     def _cabal_hud_hint(self, player, mgr) -> str:
         if self.game is None:
@@ -13192,10 +13196,14 @@ class GameView:
         if not casters:
             return "No eligible Cabal models available."
         try:
-            rituals = list(mgr.get_available_rituals() or [])
+            rituals_available = False
+            for _caster_unit, caster_model in list(casters or []):
+                if list(mgr.get_available_rituals(caster_model=caster_model) or []):
+                    rituals_available = True
+                    break
         except Exception:
-            rituals = []
-        if not rituals:
+            rituals_available = False
+        if not rituals_available:
             return "No rituals remaining this turn."
         return ""
 
@@ -13267,7 +13275,7 @@ class GameView:
                 return
             caster_model = value
             caster_unit = getattr(caster_model, "parent_unit", None) or caster_map.get(option_id, (None, None))[0]
-            rituals = list(mgr.get_available_rituals() or [])
+            rituals = list(mgr.get_available_rituals(caster_model=caster_model) or [])
             if not rituals:
                 _cancel_flow()
                 return

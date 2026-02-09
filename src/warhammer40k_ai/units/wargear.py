@@ -7738,6 +7738,18 @@ class WargearProfile:
                     wound_result.setdefault("modifiers", []).append(
                         f"+{shadow_extra}S from Enhancement bearer (Shadow of Chaos)"
                     )
+        if isinstance(strength, int):
+            sr = self._unit_special_rules(attacker)
+            psychic_bonus = int(sr.get("enhancement_bearer_psychic_strength_bonus", 0) or 0)
+            if (
+                psychic_bonus
+                and self._attacker_is_enhancement_bearer(attacker, sr)
+                and self.is_psychic()
+            ):
+                strength = strength + psychic_bonus
+                wound_result.setdefault("modifiers", []).append(
+                    f"+{psychic_bonus}S from Eldritch Vortex of E'taph"
+                )
         # Aura: add Strength to weapons for nearby friendly units.
         try:
             from ..utility.aura_effects import get_aura_strength_bonus
@@ -11172,6 +11184,19 @@ class WargearProfile:
                         Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:psychic_destroyer_damage_add")
                     )
                     damage_result['special_effects'].append(f"Psychic Destroyer +{d_bonus}D (ranged psychic)")
+        except Exception:
+            pass
+        try:
+            if self.is_psychic():
+                sr = self._unit_special_rules(attacker)
+                d_bonus = int(sr.get("enhancement_bearer_psychic_damage_bonus", 0) or 0)
+                if d_bonus and self._attacker_is_enhancement_bearer(attacker, sr):
+                    damage_mods.append(
+                        Modifier(ModifierOp.ADD, int(d_bonus), source="enhancement:bearer_psychic_damage_add")
+                    )
+                    damage_result['special_effects'].append(
+                        f"Eldritch Vortex of E'taph +{d_bonus}D (bearer psychic)"
+                    )
         except Exception:
             pass
 

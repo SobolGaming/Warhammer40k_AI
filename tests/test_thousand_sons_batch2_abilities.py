@@ -6,6 +6,7 @@ from warhammer40k_ai.engine.decision_handlers.abilities import _apply_choose_qua
 from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY, DECISION_CONFIRM_YES_NO
 from warhammer40k_ai.engine.decisions import DecisionOption, DecisionRequest, DecisionResult
 from warhammer40k_ai.engine.phase import BattleRoundPhases
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 from warhammer40k_ai.utility.entity_ids import get_entity_id
 
@@ -434,6 +435,101 @@ class TestThousandSonsBatch2Abilities(unittest.TestCase):
             )
         self.assertTrue(bool(hit.get("hit", False)))
         self.assertEqual(int(attack_instance.get("sustained_hit", 0) or 0), 2)
+
+    def test_umbralefic_crystal_confirmation_moves_unit_to_reserves_and_enables_turn1_arrival(self):
+        game, army1, army2, p1, _p2 = _build_game()
+        army1.detachment_type = "Grand Coven"
+        army1.configure_rule_managers()
+
+        bearer_unit = _make_unit("Sorcerer", model_count=1, keywords=["THOUSAND SONS", "PSYKER"])
+        enemy = _make_unit("Enemy", model_count=1, faction_keywords=["ADEPTUS ASTARTES"])
+        bearer_unit.deployed = True
+        bearer_unit.reserve_status = "deployed"
+        enemy.deployed = True
+        enemy.reserve_status = "deployed"
+        army1.add_unit(bearer_unit)
+        army2.add_unit(enemy)
+        game.map.units = [bearer_unit, enemy]
+        bearer_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        enemy.models[0].set_location(35.0, 25.0, 0.0, 0.0)
+
+        Enhancement(
+            id="000010193004",
+            name="Umbralefic Crystal",
+            faction_id="TS",
+            detachment="Grand Coven",
+            points=20,
+            description="",
+        ).apply_to_unit(bearer_unit)
+
+        game.turn = 1
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_thousand_sons_enhancements(player=p1, phase=game.phase)
+        pending = [
+            r
+            for r in list(game.decision_queue.list() or [])
+            if r.decision_type == DECISION_CONFIRM_YES_NO and str((r.context or {}).get("ability", "")) == "umbralefic_crystal"
+        ]
+        self.assertTrue(pending)
+        request = pending[0]
+
+        use_opt = _option_with_choice(request, True)
+        applied = resolve_decision_command(game, request, use_opt.option_id, player_id=p1.id)
+        self.assertTrue(getattr(applied, "ok", False))
+        self.assertTrue(bearer_unit.is_in_strategic_reserves())
+        self.assertTrue(bearer_unit.has_used_unit_once_per_battle("umbralefic_crystal"))
+        self.assertTrue(bool((bearer_unit.special_rules or {}).get("umbralefic_crystal_temp_deep_strike")))
+
+        # Turn 1 strategic reserves would normally be illegal; Umbralefic Crystal allows this turn's arrival.
+        self.assertTrue(game.can_place_unit_arriving_from_reserves(bearer_unit, (20.0, 20.0, 0.0)))
+
+    def test_umbralefic_crystal_invalid_choice_is_rejected(self):
+        game, army1, army2, p1, _p2 = _build_game()
+        army1.detachment_type = "Grand Coven"
+        army1.configure_rule_managers()
+
+        bearer_unit = _make_unit("Sorcerer", model_count=1, keywords=["THOUSAND SONS", "PSYKER"])
+        enemy = _make_unit("Enemy", model_count=1, faction_keywords=["ADEPTUS ASTARTES"])
+        bearer_unit.deployed = True
+        bearer_unit.reserve_status = "deployed"
+        enemy.deployed = True
+        enemy.reserve_status = "deployed"
+        army1.add_unit(bearer_unit)
+        army2.add_unit(enemy)
+        game.map.units = [bearer_unit, enemy]
+        bearer_unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        enemy.models[0].set_location(35.0, 25.0, 0.0, 0.0)
+
+        Enhancement(
+            id="000010193004",
+            name="Umbralefic Crystal",
+            faction_id="TS",
+            detachment="Grand Coven",
+            points=20,
+            description="",
+        ).apply_to_unit(bearer_unit)
+
+        game.turn = 1
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        game._on_phase_start_thousand_sons_enhancements(player=p1, phase=game.phase)
+        pending = [
+            r
+            for r in list(game.decision_queue.list() or [])
+            if r.decision_type == DECISION_CONFIRM_YES_NO and str((r.context or {}).get("ability", "")) == "umbralefic_crystal"
+        ]
+        self.assertTrue(pending)
+        request = pending[0]
+
+        invalid = resolve_decision_command(game, request, "invalid-option-id", player_id=p1.id)
+        self.assertFalse(getattr(invalid, "ok", True))
+        self.assertFalse(bearer_unit.is_in_reserves())
+        self.assertFalse(bearer_unit.has_used_unit_once_per_battle("umbralefic_crystal"))
 
 
 if __name__ == "__main__":

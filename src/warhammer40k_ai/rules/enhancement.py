@@ -262,6 +262,11 @@ class Enhancement:
             is_warpbane_task_force = bool(gk_mgr and gk_mgr.is_warpbane_task_force())
         except Exception:
             is_warpbane_task_force = False
+        ts_mgr = getattr(army, "thousand_sons_detachments", None) if army is not None else None
+        try:
+            is_grand_coven = bool(ts_mgr and ts_mgr.is_grand_coven())
+        except Exception:
+            is_grand_coven = False
 
         bearer = None
         bearer_id = ""
@@ -308,6 +313,40 @@ class Enhancement:
             unit.special_rules["enhancement_psychic_destroyer_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_psychic_destroyer_damage_bonus", 0) or 0
             ) + 1
+
+        if name == "lord of forbidden lore" or enh_id == "000010193002":
+            if not is_grand_coven:
+                return
+            unit.special_rules["enhancement_lord_of_forbidden_lore"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "incandaeum" or enh_id == "000010193003":
+            if not is_grand_coven:
+                return
+            unit.special_rules["enhancement_incandaeum"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "umbralefic crystal" or enh_id == "000010193004":
+            if not is_grand_coven:
+                return
+            unit.special_rules["enhancement_umbralefic_crystal"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "eldritch vortex of e'taph" or enh_id == "000010193005":
+            if not is_grand_coven:
+                return
+            unit.special_rules["enhancement_eldritch_vortex_of_etaph"] = True
+            unit.special_rules["enhancement_bearer_psychic_strength_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_psychic_strength_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_bearer_psychic_damage_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_psychic_damage_bonus", 0) or 0
+            ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "blood-forged armour" or enh_id == "000010078003":
             if not is_khorne_daemonkin:

@@ -2230,6 +2230,110 @@ class GamePhaseHandlersMixin:
             return
         mgr.on_shooting_phase_start(game=self, player=player)
 
+    def _on_phase_start_thousand_sons_enhancements(self, player=None, phase=None, **_kwargs) -> None:
+        """Thousand Sons Grand Coven enhancements that trigger at the start of your Command phase."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = player.get_army()
+        if army is None:
+            raise RuntimeError(f"Thousand Sons enhancement hooks require an army for {player.name}.")
+        mgr = getattr(army, "thousand_sons_detachments", None)
+        if mgr is None or not getattr(mgr, "is_grand_coven", lambda: False)():
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            raise RuntimeError("Thousand Sons enhancement hooks require a game map.")
+
+        pending_unit_ids = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                req_ctx = dict(getattr(req, "context", {}) or {})
+                if str(req_ctx.get("ability", "") or "").strip().lower() != "umbralefic_crystal":
+                    continue
+                uid = str(req_ctx.get("unit_id", "") or "")
+                if uid:
+                    pending_unit_ids.add(uid)
+
+        roots: list[Any] = []
+        seen_root_ids: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_root_ids:
+                continue
+            seen_root_ids.add(root_id)
+            roots.append(root)
+
+        roots.sort(key=lambda u: str(get_entity_id(u) or ""))
+        for root in roots:
+            if root is None:
+                continue
+            checker = getattr(self, "_unit_on_battlefield_for_reposition", None)
+            if callable(checker) and not bool(checker(root)):
+                continue
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not bool(sr.get("enhancement_umbralefic_crystal")):
+                continue
+            if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)("umbralefic_crystal"):
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in pending_unit_ids:
+                continue
+            bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None:
+                continue
+
+            engaged = False
+            for enemy in list(game_map.get_enemy_units(root) or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                try:
+                    if not getattr(enemy_root, "is_alive", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if game_map.is_within_engagement_range(root, enemy_root):
+                        engaged = True
+                        break
+                except Exception:
+                    continue
+            if engaged:
+                continue
+
+            ability_name = str(getattr(getattr(root, "enhancement", None), "name", "") or "Umbralefic Crystal").strip()
+            message = f"{ability_name}: place {getattr(root, 'name', 'Unit')} into Strategic Reserves?"
+            self._queue_optional_ability_confirmation(
+                player=player,
+                ability_key="umbralefic_crystal",
+                ability_name=ability_name,
+                message=message,
+                context={"unit_id": root_id, "ability_key": "umbralefic_crystal"},
+                payload={"unit_id": root_id, "ability_key": "umbralefic_crystal"},
+                instance_key=f"{root_id}:{int(getattr(self, 'turn', 0) or 0)}:umbralefic_crystal",
+            )
+
     def _on_phase_start_for_the_greater_good(self, player=None, phase=None, **_kwargs) -> None:
         """Prompt Observer selection at the start of the active player's Shooting phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

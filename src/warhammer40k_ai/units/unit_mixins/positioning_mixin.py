@@ -3325,6 +3325,23 @@ class PositioningMixin:
             if isinstance(sr, dict):
                 if sr.get("bearer_unit_deep_strike") or sr.get("realm_of_chaos_temp_deep_strike"):
                     found = True
+                elif sr.get("umbralefic_crystal_temp_deep_strike"):
+                    found = True
+                    try:
+                        army = self.get_parent_army()
+                    except Exception:
+                        army = None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                    owner_id = str(sr.get("umbralefic_crystal_must_arrive_turn_owner", "") or "")
+                    turn = int(sr.get("umbralefic_crystal_must_arrive_turn", 0) or 0)
+                    if game is not None:
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                        cur_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(cur_player, "id", "") or "")
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            found = False
+                        elif turn and cur_turn and turn != cur_turn:
+                            found = False
         except Exception:
             pass
         if not found:

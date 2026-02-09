@@ -2877,6 +2877,7 @@ class GameReactiveDecisionsMixin:
             "power_from_pain_command",
             "power_from_pain_empower",
             "enhancement_fight_first",
+            "umbralefic_crystal",
             "opponent_turn_strategic_reserves",
             "fight_phase_destroyed_strategic_reserves",
             "opponent_turn_destroyed_reposition",
@@ -3753,6 +3754,90 @@ class GameReactiveDecisionsMixin:
             activate = getattr(unit, "activate_enhancement_fight_first", None)
             if callable(activate):
                 activate()
+            return
+
+        if ability_key == "umbralefic_crystal":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            if not self._unit_on_battlefield_for_reposition(root):
+                return
+            if getattr(root, "has_used_unit_once_per_battle", lambda _k: False)("umbralefic_crystal"):
+                return
+            game_map = getattr(self, "map", None)
+            if game_map is None:
+                return
+            for enemy in list(game_map.get_enemy_units(root) or []):
+                if enemy is None:
+                    continue
+                try:
+                    enemy_root = enemy.get_attached_unit_root()
+                except Exception:
+                    enemy_root = enemy
+                if enemy_root is None:
+                    continue
+                try:
+                    if not getattr(enemy_root, "is_alive", lambda: False)():
+                        continue
+                except Exception:
+                    continue
+                try:
+                    if game_map.is_within_engagement_range(root, enemy_root):
+                        return
+                except Exception:
+                    continue
+            used = root.enter_strategic_reserves_midgame(
+                game=self,
+                game_map=game_map,
+                reason="Umbralefic Crystal",
+            )
+            if not used:
+                return
+            player = getattr(root.get_parent_army(), "player", None)
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = [root]
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["umbralefic_crystal_temp_deep_strike"] = True
+                sr["umbralefic_crystal_must_arrive_turn_owner"] = owner_id
+                sr["umbralefic_crystal_must_arrive_turn"] = int(turn or 0)
+                member.special_rules = sr
+                cache = getattr(member, "_ability_cache", None)
+                if isinstance(cache, dict):
+                    cache.pop("deep_strike", None)
+            ability_name = str(ctx.get("ability_name", "") or "Umbralefic Crystal").strip() or "Umbralefic Crystal"
+            root.mark_unit_once_per_battle_used("umbralefic_crystal", ability_name=ability_name)
+            try:
+                from ...utility.event_bus import append_action
+                if player is not None:
+                    append_action(
+                        player,
+                        f"{ability_name}: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.",
+                    )
+            except Exception:
+                pass
             return
 
         if ability_key == "opponent_turn_strategic_reserves":

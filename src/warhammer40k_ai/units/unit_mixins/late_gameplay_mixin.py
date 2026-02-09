@@ -1239,12 +1239,41 @@ class LateGameplayMixin:
                     pass
         except Exception:
             pass
+
+        # Umbralefic Crystal: only this turn's Movement phase on the owner's turn.
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("umbralefic_crystal_temp_deep_strike")):
+                allowed_round = int(sr.get("umbralefic_crystal_must_arrive_turn", 0) or 0)
+                if allowed_round and int(current_turn) != int(allowed_round):
+                    return False
+                owner_id = str(sr.get("umbralefic_crystal_must_arrive_turn_owner", "") or "")
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None:
+                    if not getattr(game, "is_movement_phase", lambda: False)():
+                        return False
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        return False
+        except Exception:
+            pass
         
         allow_turn1 = False
         try:
             allow_turn1 = bool(self._strategic_reserves_round_bonus())
         except Exception:
             allow_turn1 = False
+        if not allow_turn1:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and bool(sr.get("umbralefic_crystal_temp_deep_strike")):
+                    allowed_round = int(sr.get("umbralefic_crystal_must_arrive_turn", 0) or 0)
+                    if not allowed_round or int(current_turn) == int(allowed_round):
+                        allow_turn1 = True
+            except Exception:
+                pass
 
         # Units cannot arrive from reserves on Turn 1 unless a rule permits it.
         if current_turn < 2 and not allow_turn1:
@@ -1434,6 +1463,13 @@ class LateGameplayMixin:
                         "hallowed_beacon_source",
                     ):
                         sr.pop(key, None)
+                if sr.get("umbralefic_crystal_temp_deep_strike") is True or "umbralefic_crystal_must_arrive_turn" in sr:
+                    for key in (
+                        "umbralefic_crystal_temp_deep_strike",
+                        "umbralefic_crystal_must_arrive_turn_owner",
+                        "umbralefic_crystal_must_arrive_turn",
+                    ):
+                        sr.pop(key, None)
                 self.special_rules = sr
                 if hasattr(self, "_ability_cache") and isinstance(getattr(self, "_ability_cache", None), dict):
                     self._ability_cache.pop("deep_strike", None)
@@ -1481,6 +1517,25 @@ class LateGameplayMixin:
                 except Exception:
                     pass
                 return True
+        except Exception:
+            pass
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and bool(sr.get("umbralefic_crystal_temp_deep_strike")):
+                allowed_round = int(sr.get("umbralefic_crystal_must_arrive_turn", 0) or 0)
+                if not allowed_round or int(current_turn) != int(allowed_round):
+                    return False
+                army = self.get_parent_army()
+                game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                if game is not None and not getattr(game, "is_movement_phase", lambda: False)():
+                    return False
+                owner_id = str(sr.get("umbralefic_crystal_must_arrive_turn_owner", "") or "")
+                if owner_id and game is not None:
+                    cur_player = getattr(game, "get_current_player", lambda: None)()
+                    cur_owner = str(getattr(cur_player, "id", "") or "")
+                    if cur_owner and cur_owner != owner_id:
+                        return False
+                return self.is_in_reserves()
         except Exception:
             pass
         # AIRCRAFT returning next turn is mandatory.

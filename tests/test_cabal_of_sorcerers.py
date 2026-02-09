@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from warhammer40k_ai.rules.cabal_of_sorcerers import (
     CabalOfSorcerersManager,
+    RITUAL_DOOMBOLT,
     RITUAL_DESTINYS_RUIN,
     RITUAL_TWIST_OF_FATE,
     RITUAL_TEMPORAL_SURGE,
@@ -275,3 +276,108 @@ def test_cabal_ritual_logs_outcome():
     dice = get_recent_dice(player, limit=5)
     assert actions and "Cabal of Sorcerers" in actions[-1]
     assert dice and "Cabal of Sorcerers" in dice[-1]
+
+
+def test_lord_of_forbidden_lore_adds_ritual_range():
+    army, player, mgr = _make_army()
+
+    caster = _UnitStub("Lord", abilities=["Cabal of Sorcerers"], army=army)
+    caster.special_rules = {
+        "enhancement_lord_of_forbidden_lore": True,
+        "enhancement_bearer_model_id": "m1",
+    }
+    caster_model = SimpleNamespace(id="m1", is_alive=True, parent_unit=caster)
+    caster.models = [caster_model]
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
+
+    game_map = _MapStub(enemies=[target], friendlies=[caster])
+    game = _GameStub(player, game_map)
+    player.game = game
+
+    with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(mgr, "_distance_model_to_unit", return_value=29.0):
+        targets = mgr.get_eligible_targets(RITUAL_DESTINYS_RUIN, caster_model, game_map)
+    assert target in targets
+
+    with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(mgr, "_distance_model_to_unit", return_value=31.0):
+        targets = mgr.get_eligible_targets(RITUAL_DESTINYS_RUIN, caster_model, game_map)
+    assert target not in targets
+
+
+def test_incandaeum_allows_doombolt_override_once_per_battle():
+    army, player, mgr = _make_army()
+
+    caster_a = _UnitStub("Sorcerer A", abilities=["Cabal of Sorcerers"], army=army)
+    model_a = SimpleNamespace(id="a", is_alive=True, parent_unit=caster_a)
+    caster_a.models = [model_a]
+
+    caster_b = _UnitStub("Sorcerer B", abilities=["Cabal of Sorcerers"], army=army)
+    caster_b.special_rules = {
+        "enhancement_incandaeum": True,
+        "enhancement_bearer_model_id": "b",
+    }
+    model_b = SimpleNamespace(id="b", is_alive=True, parent_unit=caster_b)
+    caster_b.models = [model_b]
+
+    caster_c = _UnitStub("Sorcerer C", abilities=["Cabal of Sorcerers"], army=army)
+    model_c = SimpleNamespace(id="c", is_alive=True, parent_unit=caster_c)
+    caster_c.models = [model_c]
+
+    target = _UnitStub("Enemy", army=SimpleNamespace(faction_id="SM", player=SimpleNamespace(name="P2", id="P2")))
+    game_map = _MapStub(enemies=[target], friendlies=[caster_a, caster_b, caster_c])
+    game = _GameStub(player, game_map)
+    player.game = game
+
+    with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(mgr, "_distance_model_to_unit", return_value=12.0):
+        first = mgr.attempt_ritual(
+            game,
+            caster_model=model_a,
+            ritual_key=RITUAL_DOOMBOLT.key,
+            target_unit=target,
+            rolls=[4, 4],
+            channel_decision=False,
+        )
+        second = mgr.attempt_ritual(
+            game,
+            caster_model=model_b,
+            ritual_key=RITUAL_DOOMBOLT.key,
+            target_unit=target,
+            rolls=[5, 4],
+            channel_decision=False,
+        )
+        third = mgr.attempt_ritual(
+            game,
+            caster_model=model_c,
+            ritual_key=RITUAL_DOOMBOLT.key,
+            target_unit=target,
+            rolls=[6, 3],
+            channel_decision=False,
+        )
+
+    assert first["success"] is True
+    assert second["success"] is True
+    assert third["success"] is False
+    assert third["reason"] == "ritual already used"
+    assert "b" in set(caster_b.special_rules.get("enhancement_incandaeum_used_model_ids", []))
+
+    game.turn = 2
+    with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(mgr, "_distance_model_to_unit", return_value=12.0):
+        first_next = mgr.attempt_ritual(
+            game,
+            caster_model=model_a,
+            ritual_key=RITUAL_DOOMBOLT.key,
+            target_unit=target,
+            rolls=[4, 4],
+            channel_decision=False,
+        )
+        second_next = mgr.attempt_ritual(
+            game,
+            caster_model=model_b,
+            ritual_key=RITUAL_DOOMBOLT.key,
+            target_unit=target,
+            rolls=[5, 4],
+            channel_decision=False,
+        )
+
+    assert first_next["success"] is True
+    assert second_next["success"] is False
+    assert second_next["reason"] == "ritual already used"

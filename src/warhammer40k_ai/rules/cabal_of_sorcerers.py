@@ -262,6 +262,84 @@ class CabalOfSorcerersManager:
                 continue
         return False
 
+    @staticmethod
+    def _model_id(model) -> str:
+        if model is None:
+            return ""
+        return str(getattr(model, "id", "") or getattr(model, "_id", "") or "")
+
+    def _model_is_enhancement_bearer(self, model, flag_key: str) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict) or not bool(sr.get(flag_key)):
+            return False
+        bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+        if not bearer_id:
+            return True
+        model_id = self._model_id(model)
+        return bool(model_id and model_id == bearer_id)
+
+    def _ritual_range_bonus_for_model(self, model) -> int:
+        if self._model_is_enhancement_bearer(model, "enhancement_lord_of_forbidden_lore"):
+            return 6
+        return 0
+
+    def _ritual_range_for_model(self, model) -> float:
+        return float(24.0 + self._ritual_range_bonus_for_model(model))
+
+    def _doombolt_lone_operative_range_for_model(self, model) -> float:
+        return float(12.0 + self._ritual_range_bonus_for_model(model))
+
+    @staticmethod
+    def _incandaeum_once_key() -> str:
+        return "incandaeum_doombolt_override"
+
+    def _incandaeum_override_used(self, model) -> bool:
+        if model is None:
+            return True
+        once_key = self._incandaeum_once_key()
+        has_used = getattr(model, "has_used_once_per_battle", None)
+        if callable(has_used):
+            return bool(has_used(once_key))
+        unit = getattr(model, "parent_unit", None)
+        sr = getattr(unit, "special_rules", None) if unit is not None else None
+        if not isinstance(sr, dict):
+            return True
+        used_ids = {str(v) for v in list(sr.get("enhancement_incandaeum_used_model_ids", []) or []) if str(v or "")}
+        model_id = self._model_id(model)
+        return bool(model_id and model_id in used_ids)
+
+    def _mark_incandaeum_override_used(self, model) -> None:
+        if model is None:
+            return
+        once_key = self._incandaeum_once_key()
+        mark = getattr(model, "mark_used_once_per_battle", None)
+        if callable(mark):
+            mark(once_key, ability_name="Incandaeum", source="enhancement")
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        used_ids = {str(v) for v in list(sr.get("enhancement_incandaeum_used_model_ids", []) or []) if str(v or "")}
+        model_id = self._model_id(model)
+        if model_id:
+            used_ids.add(model_id)
+            sr["enhancement_incandaeum_used_model_ids"] = sorted(used_ids)
+            unit.special_rules = sr
+
+    def _incandaeum_can_override(self, model, ritual_key: str) -> bool:
+        if str(ritual_key or "").strip().upper() != RITUAL_DOOMBOLT.key:
+            return False
+        if not self._model_is_enhancement_bearer(model, "enhancement_incandaeum"):
+            return False
+        return not self._incandaeum_override_used(model)
+
     def _log_ritual_result(self, ritual, caster_unit, caster_model, target_unit, result: dict) -> None:
         try:
             from ..utility.event_bus import append_action, append_dice
@@ -348,8 +426,15 @@ class CabalOfSorcerersManager:
             pass
         self._reset_for_shooting_phase(game, player)
 
-    def get_available_rituals(self) -> list[CabalRitual]:
-        return [r for r in DEFAULT_RITUALS if r.key not in self.used_rituals]
+    def get_available_rituals(self, caster_model=None) -> list[CabalRitual]:
+        rituals = [r for r in DEFAULT_RITUALS if r.key not in self.used_rituals]
+        if (
+            caster_model is not None
+            and RITUAL_DOOMBOLT.key in self.used_rituals
+            and self._incandaeum_can_override(caster_model, RITUAL_DOOMBOLT.key)
+        ):
+            rituals.append(RITUAL_DOOMBOLT)
+        return rituals
 
     def _model_is_available(self, model) -> bool:
         if model is None:
@@ -474,6 +559,7 @@ class CabalOfSorcerersManager:
         caster_unit = getattr(caster_model, "parent_unit", None)
         if caster_unit is None:
             return []
+        range_limit = self._ritual_range_for_model(caster_model)
         try:
             enemies = list(game_map.get_enemy_units(caster_unit))
         except Exception:
@@ -485,7 +571,7 @@ class CabalOfSorcerersManager:
             if not self._model_can_see_unit(caster_model, unit, game_map):
                 continue
             dist = self._distance_model_to_unit(caster_model, unit)
-            if dist > 24.0:
+            if dist > range_limit:
                 continue
             out.append(unit)
         return out
@@ -496,6 +582,7 @@ class CabalOfSorcerersManager:
         caster_unit = getattr(caster_model, "parent_unit", None)
         if caster_unit is None:
             return []
+        range_limit = self._ritual_range_for_model(caster_model)
         try:
             friends = list(game_map.get_friendly_units(caster_unit))
         except Exception:
@@ -512,7 +599,7 @@ class CabalOfSorcerersManager:
             if not self._model_can_see_unit(caster_model, unit, game_map):
                 continue
             dist = self._distance_model_to_unit(caster_model, unit)
-            if dist > 24.0:
+            if dist > range_limit:
                 continue
             out.append(unit)
         return out
@@ -544,12 +631,13 @@ class CabalOfSorcerersManager:
         targets = self._eligible_enemy_targets(caster_model, game_map)
         if ritual.key == RITUAL_DOOMBOLT.key:
             # Lone Operative can only be targeted within 12".
+            lone_operative_range = self._doombolt_lone_operative_range_for_model(caster_model)
             filtered = []
             for unit in targets:
                 try:
                     if unit.has_lone_operative():
                         dist = self._distance_model_to_unit(caster_model, unit)
-                        if dist > 12.0:
+                        if dist > lone_operative_range:
                             continue
                 except Exception:
                     pass
@@ -642,9 +730,13 @@ class CabalOfSorcerersManager:
         ):
             result["reason"] = "model already used"
             return result
+        incandaeum_override = False
         if ritual.key in self.used_rituals:
-            result["reason"] = "ritual already used"
-            return result
+            if self._incandaeum_can_override(caster_model, ritual.key):
+                incandaeum_override = True
+            else:
+                result["reason"] = "ritual already used"
+                return result
 
         game_map = getattr(game, "map", None)
         if ritual.target_kind in ("enemy", "friendly"):
@@ -660,6 +752,8 @@ class CabalOfSorcerersManager:
             current = int(self.used_models.get(model_id, 0) or 0)
             self.used_models[model_id] = current + 1
         self.used_rituals.add(ritual.key)
+        if incandaeum_override:
+            self._mark_incandaeum_override_used(caster_model)
 
         # Roll 2D6 first.
         provided_rolls = list(rolls or [])

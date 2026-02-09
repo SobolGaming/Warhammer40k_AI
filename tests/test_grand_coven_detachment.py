@@ -2,6 +2,7 @@ import pytest
 from types import SimpleNamespace
 
 from warhammer40k_ai.roster.army import Army
+from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.unit import Unit
 from warhammer40k_ai.units.wargear import WargearProfile
 from warhammer40k_ai.rules.thousand_sons_detachments import (
@@ -173,3 +174,47 @@ def test_wrath_of_the_immaterium_grants_devastating_wounds():
     )
     assert wound_result["wound"] is True
     assert attack_instance.get("mortal_wound") is True
+
+
+def test_eldritch_vortex_of_etaph_adds_psychic_strength_and_damage_for_bearer():
+    army = Army("Thousand Sons", "Grand Coven")
+    army.faction_id = "TS"
+    army.player = SimpleNamespace(game=SimpleNamespace(turn=1))
+
+    attacker_unit = create_unit("Exalted Sorcerer", keywords=["THOUSAND SONS", "PSYKER"])
+    target_unit = create_unit("Target", keywords=["INFANTRY"], toughness="5")
+    army.add_unit(attacker_unit)
+    army.add_unit(target_unit)
+
+    Enhancement(
+        id="000010193005",
+        name="Eldritch Vortex of E'taph",
+        faction_id="TS",
+        detachment="Grand Coven",
+        points=30,
+        description="",
+    ).apply_to_unit(attacker_unit)
+
+    profile = make_psychic_profile(range_val="18", strength="4")
+    attack_instance = {"_aura_attack_mods": _aura_stub()}
+
+    wound_result = profile._wound_target_with_tracking(
+        target_unit,
+        attacker_unit.models[0],
+        attack_instance,
+        roll_value=4,
+        allow_rerolls=False,
+        log_roll=False,
+    )
+    assert wound_result["wound"] is True
+    assert any("Eldritch Vortex of E'taph" in entry for entry in wound_result.get("modifiers", []))
+
+    target_model = target_unit.models[0]
+    before = int(target_model.wounds)
+    profile._damage_target_with_tracking(
+        target_model,
+        attacker_unit.models[0],
+        {"below_half_distance": False, "mortal_wound": False},
+        game_map=None,
+    )
+    assert int(target_model.wounds) == before - 2
