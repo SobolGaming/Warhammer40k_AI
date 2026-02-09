@@ -335,6 +335,122 @@ class GameMissionsScoringActionsMixin:
                 )
         self._final_scoring_applied = True
 
+    def _queue_dead_reckoning_end_of_turn(self, turn_ending_player) -> None:
+        if turn_ending_player is None:
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if turn <= 0:
+            return
+        turn_owner_id = str(getattr(turn_ending_player, "id", "") or "")
+        if not turn_owner_id:
+            return
+
+        pending_units: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "") or "") != DECISION_CONFIRM_YES_NO:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "dead_reckoning":
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != turn_owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                unit_id = str(ctx.get("unit_id", "") or ctx.get("source_unit_id", "") or "")
+                if unit_id:
+                    pending_units.add(unit_id)
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        for player in list(getattr(self, "players", []) or []):
+            if player is None:
+                continue
+            army = player.get_army()
+            if army is None:
+                continue
+            pe = getattr(army, "prioritised_efficiency", None)
+            if pe is None:
+                continue
+            spent_this_turn = bool(
+                getattr(pe, "spent_yield_points_in_turn", lambda **_kwargs: False)(
+                    game=self,
+                    turn=int(turn or 0),
+                    turn_owner_id=turn_owner_id,
+                )
+            )
+            if spent_this_turn:
+                continue
+
+            seen_units: set[str] = set()
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                unit_id = str(get_entity_id(root) or "")
+                if not unit_id or unit_id in seen_units:
+                    continue
+                seen_units.add(unit_id)
+                if unit_id in pending_units:
+                    continue
+                if not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(root, "deployed", True)):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                sr = getattr(root, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_dead_reckoning"):
+                    continue
+                bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is None:
+                    continue
+                try:
+                    if (
+                        str(sr.get("dead_reckoning_resolved_turn_owner", "") or "") == turn_owner_id
+                        and int(sr.get("dead_reckoning_resolved_turn", 0) or 0) == int(turn or 0)
+                    ):
+                        continue
+                except Exception:
+                    pass
+                self._queue_optional_ability_confirmation(
+                    player=player,
+                    ability_key="dead_reckoning",
+                    ability_name="Dead Reckoning",
+                    message="Dead Reckoning: gain 1 YP?",
+                    context={
+                        "ability_name": "Dead Reckoning",
+                        "phase": "End of turn",
+                        "unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                        "turn_owner": turn_owner_id,
+                        "turn": int(turn or 0),
+                    },
+                    payload={
+                        "unit_id": unit_id,
+                        "source_unit_id": unit_id,
+                    },
+                    instance_key=f"{unit_id}:{turn}:{turn_owner_id}:dead_reckoning",
+                )
+
     def end_of_turn_scoring(self) -> None:
         """Apply end-of-turn scoring for primaries and secondaries, manage discard rules and CP gain."""
         turn_ending_player = self.get_current_player()
@@ -438,6 +554,9 @@ class GameMissionsScoringActionsMixin:
             # a) Tactical: If you scored 1+ VP from a Secondary, discard that card (achieved).
             if (not is_fixed) and total_secondary_vp > 0:
                 scoring_player.discard_achieved_secondaries(achieved)
+
+        # Needgaârd Oathband enhancement: optional YP gain if no YP were spent this turn.
+        self._queue_dead_reckoning_end_of_turn(turn_ending_player)
 
         # End-of-turn cleanup for temporary stratagem effects.
         army = getattr(turn_ending_player, "army", None)

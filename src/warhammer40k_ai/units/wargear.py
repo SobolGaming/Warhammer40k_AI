@@ -11425,6 +11425,42 @@ class WargearProfile:
                     )
         except Exception:
             pass
+        # Iron Ambassador: once per battle, spend up to 3YP for +Damage to bearer ranged weapons until end of phase.
+        try:
+            if self.parent_wargear and self.parent_wargear.is_ranged():
+                sr = self._unit_special_rules(attacker)
+                if isinstance(sr, dict) and sr.get("enhancement_iron_ambassador_active"):
+                    if self._attacker_is_enhancement_bearer(attacker, sr):
+                        owner_id = str(sr.get("enhancement_iron_ambassador_turn_owner", "") or "")
+                        effect_turn = int(sr.get("enhancement_iron_ambassador_turn", 0) or 0)
+                        expires_phase = str(sr.get("enhancement_iron_ambassador_expires_phase", "") or "").strip().upper()
+                        unit = getattr(attacker, "parent_unit", None)
+                        army = unit.get_parent_army() if unit is not None else None
+                        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        attacker_owner = str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                        active = True
+                        if owner_id and attacker_owner and owner_id != attacker_owner:
+                            active = False
+                        if active and effect_turn and current_turn and effect_turn != current_turn:
+                            active = False
+                        if active and expires_phase and phase_name and expires_phase != phase_name:
+                            active = False
+                        if active:
+                            d_bonus = int(sr.get("enhancement_iron_ambassador_damage_bonus", 0) or 0)
+                            if d_bonus:
+                                damage_mods.append(
+                                    Modifier(
+                                        ModifierOp.ADD,
+                                        int(d_bonus),
+                                        source="enhancement:iron_ambassador_ranged_damage_add",
+                                    )
+                                )
+                                source = str(sr.get("enhancement_iron_ambassador_source", "") or "Iron Ambassador").strip() or "Iron Ambassador"
+                                damage_result["special_effects"].append(f"{source} +{d_bonus}D (bearer ranged)")
+        except Exception:
+            pass
 
         # Unit ability: +Damage to melee attacks vs MONSTER/VEHICLE.
         try:

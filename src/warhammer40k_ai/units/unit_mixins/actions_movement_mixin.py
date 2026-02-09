@@ -3338,6 +3338,42 @@ class ActionsMovementMixin:
         except Exception:
             pass
 
+        # Oathbound Speculator: bearer's unit re-rolls wound rolls of 1; optional +1 to wound until end of phase.
+        try:
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_oathbound_speculator"):
+                bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+                if bearer is not None:
+                    source = (
+                        str(sr.get("enhancement_oathbound_speculator_source", "") or "Oathbound Speculator").strip()
+                        or "Oathbound Speculator"
+                    )
+                    reroll_wound_values.add(1)
+                    reroll_wound_reasons.append(f"{source}: re-roll Wound rolls of 1")
+                    if bool(sr.get("enhancement_oathbound_speculator_wound_bonus_active")):
+                        owner_id = str(sr.get("enhancement_oathbound_speculator_turn_owner", "") or "")
+                        effect_turn = int(sr.get("enhancement_oathbound_speculator_turn", 0) or 0)
+                        expires_phase = str(sr.get("enhancement_oathbound_speculator_expires_phase", "") or "").strip().upper()
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper() if game is not None else ""
+                        current_turn = int(getattr(game, "turn", 0) or 0) if game is not None else 0
+                        attacker_owner = (
+                            str(getattr(getattr(army, "player", None), "id", "") or "") if army is not None else ""
+                        )
+                        active = True
+                        if owner_id and attacker_owner and owner_id != attacker_owner:
+                            active = False
+                        if active and effect_turn and current_turn and effect_turn != current_turn:
+                            active = False
+                        if active and expires_phase and phase_name and expires_phase != phase_name:
+                            active = False
+                        if active:
+                            bonus = int(sr.get("enhancement_oathbound_speculator_wound_bonus", 1) or 1)
+                            if bonus:
+                                mods["wound"] += int(bonus)
+                                wound_reasons.append(f"{int(bonus):+d} to wound from {source}")
+        except Exception:
+            pass
+
         mods["reroll_wound_values"] = tuple(sorted(reroll_wound_values))
         mods["reroll_wound_ones"] = bool(1 in reroll_wound_values)
         mods["crit_wound_threshold"] = crit_wound_threshold

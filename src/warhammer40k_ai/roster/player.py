@@ -814,6 +814,27 @@ class Player:
             return True
         return False
 
+    def _target_unit_has_ancestral_crest(self, target_unit) -> bool:
+        if target_unit is None:
+            return False
+        parent = self._target_unit_parent_army(target_unit)
+        if parent is not None and parent is not self.get_army():
+            return False
+        members = self._attached_members(target_unit)
+        for u in members:
+            sr = getattr(u, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            if not sr.get("enhancement_ancestral_crest", False):
+                continue
+            if not self._unit_is_alive_or_unknown(u):
+                continue
+            get_bearer = getattr(u, "_get_enhancement_bearer_model", None)
+            if callable(get_bearer) and get_bearer() is None:
+                continue
+            return True
+        return False
+
     def _target_unit_has_faultless_opportunist(self, target_unit) -> bool:
         if target_unit is None:
             return False
@@ -945,6 +966,31 @@ class Player:
         if br <= 0:
             return 0
         if int(self._ability_used_battle_round.get("GIFT_OF_FORESIGHT", 0) or 0) == br:
+            return 0
+        return 1
+
+    def _preview_ancestral_crest_discount(self, *, stratagem=None, target_unit=None) -> int:
+        """
+        Ancestral Crest (Needgaârd Oathband):
+        Once per turn, when targeting the bearer's unit with Command Re-roll, spend 1YP to reduce CP by 1.
+        """
+        if stratagem is None or target_unit is None:
+            return 0
+        name = str(getattr(stratagem, "name", "") or "").strip().lower()
+        if name not in ("command re-roll", "command reroll"):
+            return 0
+        if self._ability_used_this_turn("ANCESTRAL_CREST"):
+            return 0
+        if not self._target_unit_has_ancestral_crest(target_unit):
+            return 0
+        army = self.get_army()
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return 0
+        try:
+            if int(getattr(pe, "yield_points", 0) or 0) < 1:
+                return 0
+        except Exception:
             return 0
         return 1
 
@@ -1242,6 +1288,18 @@ class Player:
         if gof:
             discount += int(gof)
             logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
+
+        ac = self._preview_ancestral_crest_discount(stratagem=stratagem, target_unit=target_unit)
+        if ac:
+            ctx = {
+                "ability_name": "Ancestral Crest",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            if self._should_preview_optional_ability("ANCESTRAL_CREST", ctx, assume=assume_optional_discounts):
+                discount += int(ac)
+                reasons.append("Ancestral Crest: -1CP (spend 1YP, once per turn)")
 
         mop = self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit)
         if mop:
@@ -1739,6 +1797,36 @@ class Player:
                 if br > 0:
                     self._ability_used_battle_round["GIFT_OF_FORESIGHT"] = br
                 logger.info("Gift of Foresight: %s uses Command Re-roll for 0CP.", self.name)
+
+        # Decide whether to apply Ancestral Crest if available.
+        ac_available = bool(self._preview_ancestral_crest_discount(stratagem=stratagem, target_unit=target_unit))
+        if ac_available:
+            ctx = {
+                "ability_name": "Ancestral Crest",
+                "stratagem": getattr(stratagem, "name", None) or "",
+                "target_unit": getattr(target_unit, "name", None) or "",
+                "base_cp_cost": base,
+            }
+            use_ac = self._should_use_optional_ability("ANCESTRAL_CREST", ctx)
+            if use_ac:
+                army = self.get_army()
+                pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+                spent = bool(pe is not None and getattr(pe, "spend_yield_points", lambda _a, game=None: False)(1, game=self.game))
+                if spent:
+                    applied_discount += 1
+                    reasons.append("Ancestral Crest: -1CP (spent 1YP, used)")
+                    self._mark_ability_used_turn("ANCESTRAL_CREST")
+                    event_system = getattr(self.game, "event_system", None) if self.game is not None else None
+                    if event_system is not None:
+                        event_system.publish(
+                            "prioritised_efficiency_updated",
+                            player=self,
+                            game=self.game,
+                            delta=-1,
+                            mode=getattr(pe, "mode", None),
+                            yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                            reason="Ancestral Crest",
+                        )
 
         # Decide whether to apply Master of the Pageant if available.
         mop_available = bool(self._preview_master_of_the_pageant_discount(stratagem=stratagem, target_unit=target_unit))

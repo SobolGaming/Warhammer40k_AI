@@ -207,6 +207,7 @@ class Enhancement:
         ac_mgr = getattr(army, "adeptus_custodes_detachments", None) if army is not None else None
         orks_mgr = getattr(army, "orks_detachments", None) if army is not None else None
         cd_mgr = getattr(army, "chaos_daemons_detachments", None) if army is not None else None
+        lov_mgr = getattr(army, "leagues_of_votann_detachments", None) if army is not None else None
         try:
             is_berzerker_warband = bool(we_mgr and we_mgr.is_berzerker_warband())
         except Exception:
@@ -264,6 +265,10 @@ class Enhancement:
             is_scintillating_legion = bool(cd_mgr and cd_mgr.is_scintillating_legion_detachment())
         except Exception:
             is_scintillating_legion = False
+        try:
+            is_needgaard_oathband = bool(lov_mgr and lov_mgr.is_needgaard_oathband())
+        except Exception:
+            is_needgaard_oathband = False
         ck_mgr = getattr(army, "chaos_knights_detachments", None) if army is not None else None
         try:
             is_infernal_lance = bool(ck_mgr and ck_mgr.is_infernal_lance())
@@ -554,6 +559,34 @@ class Enhancement:
             if not is_vessels_of_wrath:
                 return
             unit.special_rules["enhancement_gateways_to_glory"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "oathbound speculator" or enh_id == "000010435002":
+            if not is_needgaard_oathband:
+                return
+            unit.special_rules["enhancement_oathbound_speculator"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "dead reckoning" or enh_id == "000010435003":
+            if not is_needgaard_oathband:
+                return
+            unit.special_rules["enhancement_dead_reckoning"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "iron ambassador" or enh_id == "000010435004":
+            if not is_needgaard_oathband:
+                return
+            unit.special_rules["enhancement_iron_ambassador"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "ancestral crest" or enh_id == "000010435005":
+            if not is_needgaard_oathband:
+                return
+            unit.special_rules["enhancement_ancestral_crest"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

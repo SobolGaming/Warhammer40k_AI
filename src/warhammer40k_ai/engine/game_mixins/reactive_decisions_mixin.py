@@ -2916,6 +2916,8 @@ class GameReactiveDecisionsMixin:
             "seized_opportunity",
             "geomantic_hunters",
             "resource_transmutation",
+            "oathbound_speculator",
+            "dead_reckoning",
         ):
             return
         selected = None
@@ -3090,6 +3092,151 @@ class GameReactiveDecisionsMixin:
                     mode=getattr(pe, "mode", None),
                     yield_points=int(getattr(pe, "yield_points", 0) or 0),
                     reason="Resource Transmutation",
+                )
+            return
+
+        if ability_key == "oathbound_speculator":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_oathbound_speculator"):
+                return
+            bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None:
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            try:
+                cost = int(payload.get("cost", ctx.get("cost", 3)) or 3)
+            except Exception:
+                cost = 3
+            cost = max(0, int(cost or 0))
+            if cost <= 0:
+                return
+            if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(cost, game=self)):
+                return
+            owner_id = str(getattr(player, "id", "") or "")
+            turn = int(getattr(self, "turn", 0) or 0)
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            if not phase_name:
+                phase_name = str(ctx.get("phase", "") or "").strip().upper()
+            sr["enhancement_oathbound_speculator_wound_bonus_active"] = True
+            sr["enhancement_oathbound_speculator_wound_bonus"] = 1
+            sr["enhancement_oathbound_speculator_phase_key"] = f"{turn}:{phase_name}:{owner_id}"
+            sr["enhancement_oathbound_speculator_turn_owner"] = owner_id
+            sr["enhancement_oathbound_speculator_turn"] = int(turn or 0)
+            sr["enhancement_oathbound_speculator_expires_phase"] = phase_name
+            sr["enhancement_oathbound_speculator_source"] = (
+                str(ctx.get("ability_name", "") or "Oathbound Speculator").strip() or "Oathbound Speculator"
+            )
+            root.special_rules = sr
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-int(cost),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Oathbound Speculator",
+                )
+            return
+
+        if ability_key == "dead_reckoning":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_dead_reckoning"):
+                return
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                return
+            if not bool(getattr(root, "deployed", True)):
+                return
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    return
+            except Exception:
+                pass
+            bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+            if bearer is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            owner_id = str(getattr(player, "id", "") or "")
+            turn_owner = str(ctx.get("turn_owner", "") or owner_id)
+            try:
+                turn = int(ctx.get("turn", 0) or getattr(self, "turn", 0) or 0)
+            except Exception:
+                turn = int(getattr(self, "turn", 0) or 0)
+            try:
+                if (
+                    str(sr.get("dead_reckoning_resolved_turn_owner", "") or "") == turn_owner
+                    and int(sr.get("dead_reckoning_resolved_turn", 0) or 0) == int(turn or 0)
+                ):
+                    return
+            except Exception:
+                pass
+            spent_this_turn = bool(
+                getattr(pe, "spent_yield_points_in_turn", lambda **_kwargs: False)(
+                    game=self,
+                    turn=int(turn or 0),
+                    turn_owner_id=turn_owner,
+                )
+            )
+            if spent_this_turn:
+                return
+            delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(1, game=self) or 0)
+            if delta <= 0:
+                return
+            sr["dead_reckoning_resolved_turn_owner"] = turn_owner
+            sr["dead_reckoning_resolved_turn"] = int(turn or 0)
+            root.special_rules = sr
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=int(delta or 0),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Dead Reckoning",
                 )
             return
 

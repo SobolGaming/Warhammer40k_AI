@@ -4144,6 +4144,210 @@ class GameShootingFightHandlersMixin:
         except Exception:
             return
 
+    def _queue_oathbound_speculator_confirmation(self, root, *, player, trigger: str) -> None:
+        if root is None or player is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_oathbound_speculator"):
+            return
+        bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        army = root.get_parent_army()
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return
+        try:
+            if int(getattr(pe, "yield_points", 0) or 0) < 3:
+                return
+        except Exception:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if not phase_name or turn <= 0 or not owner_id:
+            return
+        phase_key = f"{turn}:{phase_name}:{owner_id}"
+        if (
+            bool(sr.get("enhancement_oathbound_speculator_wound_bonus_active"))
+            and str(sr.get("enhancement_oathbound_speculator_phase_key", "") or "") == phase_key
+        ):
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        ability_name = "Oathbound Speculator"
+        trigger_label = "shoot" if str(trigger or "").strip().lower() == "shoot" else "fight"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="oathbound_speculator",
+            ability_name=ability_name,
+            message=f"{ability_name}: spend 3 YP for +1 to wound until end of phase?",
+            context={
+                "ability_name": ability_name,
+                "phase": str(getattr(getattr(self, "phase", None), "name", "") or ""),
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "cost": 3,
+                "trigger": trigger_label,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "cost": 3,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:{phase_name}:oathbound_speculator",
+        )
+
+    def _on_shooting_targets_selected_oathbound_speculator(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        self._queue_oathbound_speculator_confirmation(root, player=player, trigger="shoot")
+
+    def _on_fight_unit_selected_oathbound_speculator(self, unit=None, selecting_player=None, **_kwargs) -> None:
+        if unit is None:
+            return
+        if str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper() != "FIGHT_PHASE":
+            return
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        owner = getattr(army, "player", None) if army is not None else None
+        if owner is None:
+            return
+        if selecting_player is not None and selecting_player is not owner:
+            return
+        self._queue_oathbound_speculator_confirmation(root, player=owner, trigger="fight")
+
+    def _on_shooting_targets_selected_iron_ambassador(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_iron_ambassador"):
+            return
+        bearer = getattr(root, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return
+        used_once = getattr(root, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once("iron_ambassador")):
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return
+        try:
+            available_yp = int(getattr(pe, "yield_points", 0) or 0)
+        except Exception:
+            available_yp = 0
+        if available_yp <= 0:
+            return
+        max_spend = max(0, min(3, int(available_yp or 0)))
+        if max_spend <= 0:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        if not owner_id or turn <= 0:
+            return
+        unit_id = str(get_entity_id(root) or "")
+        model_id = str(get_entity_id(bearer) or "")
+        if not unit_id or not model_id:
+            return
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "iron_ambassador":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        options = [DecisionOption.create("None", payload={"action": "skip", "spend_yp": 0})]
+        for spend in range(1, max_spend + 1):
+            options.append(
+                DecisionOption.create(
+                    f"Spend {int(spend)} YP",
+                    payload={"action": "spend", "spend_yp": int(spend)},
+                )
+            )
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Iron Ambassador: spend up to 3 YP for +Damage on the bearer’s ranged weapons until end of phase.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "iron_ambassador",
+                "ability_name": "Iron Ambassador",
+                "phase": "Shooting phase",
+                "optional": True,
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "model_id": model_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+        )
+        self.request_decision(request)
+
     def _on_shooting_targets_selected_geomantic_hunters(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

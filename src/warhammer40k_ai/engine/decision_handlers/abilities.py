@@ -2928,6 +2928,81 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return int(delta)
+    if str(ctx.get("ability", "") or "") == "iron_ambassador":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_iron_ambassador"):
+            return None
+        used_once = getattr(source_root, "has_used_unit_once_per_battle", None)
+        if callable(used_once) and bool(used_once("iron_ambassador")):
+            return None
+        if is_skip_choice(request, result):
+            return None
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in ("spend", "use"):
+            return None
+        try:
+            spend_yp = int(payload.get("spend_yp", payload.get("amount", 0)) or 0)
+        except Exception:
+            spend_yp = 0
+        spend_yp = max(0, min(3, int(spend_yp or 0)))
+        if spend_yp <= 0:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        if player is None:
+            return None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return None
+        if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(int(spend_yp), game=game)):
+            return None
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        ability_name = str(ctx.get("ability_name", "") or "Iron Ambassador").strip() or "Iron Ambassador"
+        sr = dict(sr)
+        sr["enhancement_iron_ambassador_active"] = True
+        sr["enhancement_iron_ambassador_damage_bonus"] = int(spend_yp)
+        sr["enhancement_iron_ambassador_turn_owner"] = owner_id
+        sr["enhancement_iron_ambassador_turn"] = int(turn or 0)
+        sr["enhancement_iron_ambassador_expires_phase"] = "SHOOTING_PHASE"
+        sr["enhancement_iron_ambassador_source"] = ability_name
+        source_root.special_rules = sr
+        mark_used = getattr(source_root, "mark_unit_once_per_battle_used", None)
+        if callable(mark_used):
+            mark_used("iron_ambassador", ability_name=ability_name)
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "prioritised_efficiency_updated",
+                player=player,
+                game=game,
+                delta=-int(spend_yp),
+                mode=getattr(pe, "mode", None),
+                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                reason="Iron Ambassador",
+            )
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: spent {int(spend_yp)} YP (+{int(spend_yp)} Damage to bearer ranged weapons until end of phase).",
+            )
+        except Exception:
+            pass
+        return int(spend_yp)
     if str(ctx.get("ability", "") or "") == "hammer_aflame":
         if is_skip_choice(request, result):
             return None

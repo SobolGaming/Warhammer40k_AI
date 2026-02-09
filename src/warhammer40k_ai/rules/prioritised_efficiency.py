@@ -37,6 +37,8 @@ class PrioritisedEfficiencyManager:
         self.mode: EfficiencyMode = HOSTILE_ACQUISITION
         self.last_mode_turn: Optional[int] = None
         self.last_gain_turn: Optional[int] = None
+        self.last_spend_turn: Optional[int] = None
+        self.last_spend_turn_owner_id: str = ""
 
     def _army_has_rule(self) -> bool:
         if self.army is None:
@@ -242,7 +244,61 @@ class PrioritisedEfficiencyManager:
             pass
         return int(amount)
 
-    def spend_yield_points(self, amount: int) -> bool:
+    def _resolve_turn_context(self, *, game=None, turn_owner=None) -> tuple[int, str]:
+        game_obj = game
+        if game_obj is None:
+            try:
+                game_obj = getattr(getattr(self.army, "player", None), "game", None)
+            except Exception:
+                game_obj = None
+        turn = self._battle_round(game_obj)
+        owner_id = ""
+        if turn_owner is not None:
+            try:
+                owner_id = str(getattr(turn_owner, "id", "") or str(turn_owner) or "")
+            except Exception:
+                owner_id = ""
+        if not owner_id and game_obj is not None:
+            current_player = None
+            try:
+                get_current = getattr(game_obj, "get_current_player", None)
+                if callable(get_current):
+                    current_player = get_current()
+                else:
+                    idx = int(getattr(game_obj, "current_player_index", 0) or 0)
+                    players = list(getattr(game_obj, "players", []) or [])
+                    if 0 <= idx < len(players):
+                        current_player = players[idx]
+            except Exception:
+                current_player = None
+            if current_player is not None:
+                try:
+                    owner_id = str(getattr(current_player, "id", "") or "")
+                except Exception:
+                    owner_id = ""
+        return int(turn or 0), str(owner_id or "")
+
+    def spent_yield_points_in_turn(self, *, game=None, turn: int | None = None, turn_owner_id: str | None = None) -> bool:
+        if not self._army_has_rule():
+            return False
+        check_turn = int(turn or 0)
+        check_owner_id = str(turn_owner_id or "")
+        if check_turn <= 0:
+            resolved_turn, resolved_owner = self._resolve_turn_context(game=game, turn_owner=turn_owner_id)
+            check_turn = int(resolved_turn or 0)
+            if not check_owner_id:
+                check_owner_id = str(resolved_owner or "")
+        try:
+            last_turn = int(self.last_spend_turn or 0)
+        except Exception:
+            last_turn = 0
+        if check_turn <= 0 or last_turn != check_turn:
+            return False
+        if check_owner_id:
+            return str(self.last_spend_turn_owner_id or "") == check_owner_id
+        return True
+
+    def spend_yield_points(self, amount: int, *, game=None, turn_owner=None) -> bool:
         if not self._army_has_rule():
             return False
         try:
@@ -254,6 +310,14 @@ class PrioritisedEfficiencyManager:
         if int(self.yield_points or 0) < amount:
             return False
         self.yield_points = max(0, int(self.yield_points) - amount)
+        try:
+            spend_turn, spend_owner = self._resolve_turn_context(game=game, turn_owner=turn_owner)
+            if int(spend_turn or 0) > 0:
+                self.last_spend_turn = int(spend_turn)
+            if spend_owner:
+                self.last_spend_turn_owner_id = str(spend_owner)
+        except Exception:
+            pass
         return True
 
     def update_mode_for_player(self, game, player) -> bool:
