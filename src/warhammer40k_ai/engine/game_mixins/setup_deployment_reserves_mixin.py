@@ -1772,6 +1772,7 @@ class GameSetupDeploymentReservesMixin:
                 except Exception:
                     cache = {}
                 filters = list(cache.get("redeploy_filters") or [])
+                filter_any_groups = list(cache.get("redeploy_filter_any_groups") or [])
                 ability_name = str(cache.get("redeploy_ability_name") or "")
                 if not ability_name:
                     ability_name = str(getattr(getattr(u, "enhancement", None), "name", "") or "Redeploy")
@@ -1781,6 +1782,7 @@ class GameSetupDeploymentReservesMixin:
                         "remaining": int(count or 0),
                         "can_place_in_reserves": bool(can_place_in_reserves),
                         "filters": list(filters),
+                        "filter_any_groups": [list(group) for group in filter_any_groups],
                         "used_unit_ids": [],
                         "ability_name": ability_name,
                     }
@@ -1871,6 +1873,15 @@ class GameSetupDeploymentReservesMixin:
 
         used = set(str(v) for v in list(token.get("used_unit_ids") or []) if v)
         filters = [str(f or "").strip().upper() for f in list(token.get("filters") or []) if str(f or "").strip()]
+        raw_any_groups = list(token.get("filter_any_groups") or [])
+        filter_any_groups: list[list[str]] = []
+        for raw_group in raw_any_groups:
+            if isinstance(raw_group, str):
+                group = [str(raw_group or "").strip().upper()]
+            else:
+                group = [str(v or "").strip().upper() for v in list(raw_group or []) if str(v or "").strip()]
+            if group:
+                filter_any_groups.append(group)
 
         candidates = []
         seen = set()
@@ -1907,6 +1918,17 @@ class GameSetupDeploymentReservesMixin:
                     if not all(root.has_any_keyword(f) for f in filters):
                         continue
                 except Exception:
+                    continue
+            if filter_any_groups:
+                matched_any_group = False
+                for group in filter_any_groups:
+                    try:
+                        if all(root.has_any_keyword(f) for f in group):
+                            matched_any_group = True
+                            break
+                    except Exception:
+                        continue
+                if not matched_any_group:
                     continue
             candidates.append(root)
 

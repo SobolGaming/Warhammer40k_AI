@@ -289,6 +289,32 @@ class PositioningMixin:
         self._ability_cache[cache_key] = bool(found)
         return bool(found)
 
+    def has_butcher_lord(self) -> bool:
+        """True if this unit has the Butcher Lord enhancement."""
+        cache_key = "butcher_lord"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache[cache_key])
+        found = False
+        try:
+            sr = getattr(self, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_butcher_lord"):
+                found = True
+        except Exception:
+            found = False
+        if not found:
+            try:
+                enh = getattr(self, "enhancement", None)
+                name = str(getattr(enh, "name", "") or "").strip().lower()
+                enh_id = str(getattr(enh, "id", "") or "").strip()
+                if name == "butcher lord" or enh_id == "000010074003":
+                    found = True
+            except Exception:
+                found = False
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
     def _attached_unit_has_enhancement_flag(
         self,
         flag_key: str,
@@ -402,6 +428,69 @@ class PositioningMixin:
         if not self._disciple_of_khorne_is_bearer():
             return False
         return self._disciple_of_khorne_bodyguard_allowed(bodyguard)
+
+    def _butcher_lord_bodyguard_allowed(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        try:
+            if bodyguard.has_any_keyword("JAKHALS"):
+                return True
+        except Exception:
+            pass
+        try:
+            if bodyguard.has_any_keyword("GOREMONGERS"):
+                return True
+        except Exception:
+            pass
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        return name in {"jakhals", "goremongers"}
+
+    def _butcher_lord_is_bearer(self) -> bool:
+        if not self.has_butcher_lord():
+            return False
+        if not bool(getattr(self, "is_leader", False)):
+            return False
+        try:
+            army = self.get_parent_army()
+        except Exception:
+            army = None
+        mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+        if mgr is None:
+            return False
+        try:
+            if not mgr.is_cult_of_blood():
+                return False
+        except Exception:
+            return False
+        return True
+
+    def _butcher_lord_can_attach_to(self, bodyguard) -> bool:
+        if bodyguard is None:
+            return False
+        if not self._butcher_lord_is_bearer():
+            return False
+        return self._butcher_lord_bodyguard_allowed(bodyguard)
+
+    def _butcher_lord_infiltrators_active(self, bodyguard=None) -> bool:
+        if not self._butcher_lord_is_bearer():
+            return False
+        if bodyguard is None:
+            bodyguard = getattr(self, "attached_to", None)
+        if bodyguard is None:
+            return False
+        try:
+            if bodyguard.has_any_keyword("GOREMONGERS"):
+                return True
+        except Exception:
+            pass
+        try:
+            name = self._normalize_attached_unit_name(getattr(bodyguard, "name", ""))
+        except Exception:
+            name = ""
+        return name == "goremongers"
 
     def _disciple_of_khorne_active_leaders(self) -> list["Unit"]:
         try:
@@ -3576,6 +3665,12 @@ class PositioningMixin:
         except Exception:
             found = False
         if not found:
+            try:
+                if self._butcher_lord_infiltrators_active():
+                    found = True
+            except Exception:
+                pass
+        if not found:
             found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
@@ -3781,6 +3876,7 @@ class PositioningMixin:
             pass
 
         redeploy_filters: list[str] = []
+        redeploy_filter_any_groups: list[list[str]] = []
         ability_name = ""
 
         for name, desc in abilities_to_check:
@@ -3818,6 +3914,8 @@ class PositioningMixin:
                     can_place_in_reserves = True
                 if "aeldari vehicle units" in text or "aeldari vehicle unit" in text:
                     redeploy_filters = ["AELDARI", "VEHICLE"]
+                if "jakhals" in text and "goremongers" in text:
+                    redeploy_filter_any_groups = [["JAKHALS"], ["GOREMONGERS"]]
 
         result = (has_redeploy, count, can_place_in_reserves)
         # Cache the result
@@ -3826,6 +3924,8 @@ class PositioningMixin:
         self._ability_cache['redeploy'] = result
         if redeploy_filters:
             self._ability_cache['redeploy_filters'] = list(redeploy_filters)
+        if redeploy_filter_any_groups:
+            self._ability_cache['redeploy_filter_any_groups'] = [list(group) for group in redeploy_filter_any_groups]
         if ability_name:
             self._ability_cache['redeploy_ability_name'] = ability_name
         return result

@@ -194,6 +194,10 @@ class ActionsMovementMixin:
         r"\b(?:while|if)\s+(?:this model|this unit|the bearer)\s+is\s+leading(?:s)?\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
         re.IGNORECASE,
     )
+    _ATTACHED_SPECIFIC_UNIT_RE = re.compile(
+        r"\bif\s+(?:(?:this model|this unit|the bearer)\s+is\s+)?attached\s+to\s+an?\s+(?P<unit>[^.,;:]+?)\s+unit\b",
+        re.IGNORECASE,
+    )
     _LED_BY_MODEL_RE = re.compile(
         r"\b(?:while|if)\s+an?\s+(?P<model>[^.,;:]+?)\s+model\s+is\s+leading\s+(?:this|that)\s+unit\b",
         re.IGNORECASE,
@@ -308,7 +312,7 @@ class ActionsMovementMixin:
         cleaned = self._normalize_rules_text(cleaned)
         if not cleaned:
             return []
-        if not self._LEADING_SPECIFIC_UNIT_RE.search(cleaned):
+        if not self._LEADING_SPECIFIC_UNIT_RE.search(cleaned) and not self._ATTACHED_SPECIFIC_UNIT_RE.search(cleaned):
             return [cleaned]
         parts = [p.strip() for p in re.split(r"[.;]\s*", cleaned) if p.strip()]
         if not parts:
@@ -320,6 +324,30 @@ class ActionsMovementMixin:
                 phrase = str(m.group("unit") or "").strip()
                 if phrase and self._attached_unit_matches_phrase(phrase):
                     segments.append(part)
+                continue
+            m = self._ATTACHED_SPECIFIC_UNIT_RE.search(part)
+            if m:
+                phrase = str(m.group("unit") or "").strip()
+                if phrase and self._attached_unit_matches_phrase(phrase):
+                    segments.append(part)
+                    continue
+                low = part.lower().replace("\u2019", "'").replace("\u0192?T", "'")
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict):
+                    if (
+                        sr.get("attached_possessed_formation_bonus")
+                        and "attached to a world eaters possessed unit" in low
+                    ):
+                        segments.append(part)
+                        continue
+                    if (
+                        sr.get("attached_battleline_infiltrators_scouts")
+                        and "attached to" in low
+                        and "battleline" in low
+                        and ("infiltrators" in low or "scout" in low)
+                    ):
+                        segments.append(part)
+                continue
             else:
                 segments.append(part)
         return segments

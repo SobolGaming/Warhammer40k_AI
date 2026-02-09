@@ -70,6 +70,48 @@ _GORETRACK_ONSLAUGHT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_DESCRIPTORS.values()
 }
 
+_CULT_OF_BLOOD_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010074002": EnhancementToolDescriptor(
+        enhancement_id="000010074002",
+        name="Chosen of the Blood God",
+        timing="passive_aura",
+        target="bearer",
+        duration="constant",
+        effect="bearer_aura_range_bonus",
+        effect_params={"aura_range_bonus": 3},
+    ),
+    "000010074003": EnhancementToolDescriptor(
+        enhancement_id="000010074003",
+        name="Butcher Lord",
+        timing="declare_battle_formations",
+        target="bearer",
+        duration="battle_setup",
+        effect="attach_to_jakhals_or_goremongers_and_goremongers_infiltrators",
+    ),
+    "000010074004": EnhancementToolDescriptor(
+        enhancement_id="000010074004",
+        name="Brazen Form",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="bearer_toughness_and_fnp_bonus",
+        effect_params={"toughness_bonus": 1, "fnp": 5},
+    ),
+    "000010074005": EnhancementToolDescriptor(
+        enhancement_id="000010074005",
+        name="Strategic Slaughter",
+        timing="after_deployment",
+        target="friendly_jakhals_or_goremongers_units",
+        duration="redeploy_step",
+        effect="redeploy_units",
+        effect_params={"max_units": 3, "allow_strategic_reserves": True},
+    ),
+}
+
+_CULT_OF_BLOOD_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _CULT_OF_BLOOD_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009847002": EnhancementToolDescriptor(
         enhancement_id="000009847002",
@@ -379,6 +421,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GORETRACK_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _CULT_OF_BLOOD_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -405,6 +450,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         return None
     return (
         _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
+        or _CULT_OF_BLOOD_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)

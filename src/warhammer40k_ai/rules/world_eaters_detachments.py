@@ -478,7 +478,16 @@ class WorldEatersDetachmentManager(DetachmentManagerBase):
         return True
 
     def _idol_range_for_source(self, source_unit) -> float:
-        return 9.0 if bool(getattr(source_unit, "is_titanic", False)) else 6.0
+        base = 9.0 if bool(getattr(source_unit, "is_titanic", False)) else 6.0
+        try:
+            sr = getattr(source_unit, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_chosen_of_blood_god"):
+                bonus = float(sr.get("enhancement_chosen_of_blood_god_aura_range_bonus", 3) or 3)
+                if bonus > 0:
+                    base += bonus
+        except Exception:
+            pass
+        return float(base)
 
     def _idol_sources_for_unit(self, unit, idol_key: str, *, game_map=None) -> list:
         if unit is None:

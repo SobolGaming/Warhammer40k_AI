@@ -753,6 +753,278 @@ class TestWorldEatersEnhancements(unittest.TestCase):
 
         self.assertTrue(bool(unit.special_rules.get("enhancement_fight_first_once_per_battle")))
 
+    def test_chosen_of_the_blood_god_extends_aura_range(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.utility.aura_effects import get_aura_advance_charge_roll_modifiers
+
+        army = Army("World Eaters", "Cult of Blood")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        bearer = self._make_unit(
+            "Bearer",
+            keywords=["Monster", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        target = self._make_unit(
+            "Target",
+            keywords=["Jakhals"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        bearer.possible_abilities = [
+            SimpleNamespace(
+                name="War Cry (Aura)",
+                description='While a friendly WORLD EATERS unit is within 6" of this model, add 1 to Advance and Charge rolls made for that unit.',
+                type="Datasheet",
+                parameter="",
+            )
+        ]
+
+        army.add_unit(bearer)
+        army.add_unit(target)
+
+        game = Game(
+            Battlefield(BattlefieldSize.STRIKE_FORCE),
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        bearer.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        target.models[0].set_location(19.0, 10.0, 0.0, 0.0)
+        self.assertTrue(game.map.place_unit(bearer))
+        self.assertTrue(game.map.place_unit(target))
+
+        advance_mods, charge_mods = get_aura_advance_charge_roll_modifiers(target, game_map=game.map)
+        self.assertFalse(advance_mods)
+        self.assertFalse(charge_mods)
+
+        enh = Enhancement(
+            id="000010074002",
+            name="Chosen of the Blood God",
+            faction_id="WE",
+            detachment="Cult of Blood",
+            points=15,
+            description='World Eaters Monster model only. Add 3" to the range of the bearers Aura abilities.',
+        )
+        bearer.enhancement = enh
+        enh.apply_to_unit(bearer)
+
+        advance_mods, charge_mods = get_aura_advance_charge_roll_modifiers(target, game_map=game.map)
+        self.assertTrue(any(int(v) == 1 for v, _ in list(advance_mods or [])))
+        self.assertTrue(any(int(v) == 1 for v, _ in list(charge_mods or [])))
+
+    def test_butcher_lord_attachment_and_conditional_infiltrators(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        army = Army("World Eaters", "Cult of Blood")
+        army.faction_id = "WE"
+
+        bearer = self._make_unit(
+            "Bearer",
+            keywords=["Infantry", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        bearer.can_be_attached_to = ["DUMMY"]
+
+        jakhals = self._make_unit(
+            "Jakhals",
+            keywords=["Infantry", "Jakhals"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        goremongers = self._make_unit(
+            "Goremongers",
+            keywords=["Infantry", "Goremongers"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        other = self._make_unit(
+            "Berzerkers",
+            keywords=["Infantry"],
+            faction_keywords=["WORLD EATERS"],
+        )
+
+        army.add_unit(bearer)
+        army.add_unit(jakhals)
+        army.add_unit(goremongers)
+        army.add_unit(other)
+
+        enh = Enhancement(
+            id="000010074003",
+            name="Butcher Lord",
+            faction_id="WE",
+            detachment="Cult of Blood",
+            points=10,
+            description=(
+                "World Eaters Infantry model only. During the Declare Battle Formations step, the bearer can be "
+                "attached to a Jakhals or Goremongers unit. If attached to a GOREMONGERS unit, the bearer has the "
+                "Infiltrators ability."
+            ),
+        )
+        bearer.enhancement = enh
+        enh.apply_to_unit(bearer)
+
+        self.assertTrue(bearer.can_attach_to(jakhals))
+        self.assertTrue(bearer.can_attach_to(goremongers))
+        self.assertFalse(bearer.can_attach_to(other))
+
+        self.assertFalse(bearer.has_infiltrate())
+        bearer.attach_to_unit(jakhals)
+        self.assertFalse(bearer.has_infiltrate())
+        bearer.detach_from_unit()
+        bearer.attach_to_unit(goremongers)
+        self.assertTrue(bearer.has_infiltrate())
+
+    def test_brazen_form_grants_toughness_and_fnp(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        army = Army("World Eaters", "Cult of Blood")
+        army.faction_id = "WE"
+        unit = self._make_unit(
+            "Daemon Engine",
+            keywords=["Monster", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+        bearer = unit.models[0]
+        base_toughness = int(getattr(bearer, "_toughness", 0) or 0)
+
+        enh = Enhancement(
+            id="000010074004",
+            name="Brazen Form",
+            faction_id="WE",
+            detachment="Cult of Blood",
+            points=25,
+            description="World Eaters Monster model only. Add 1 to the bearer’s Toughness characteristic and the bearer has the Feel No Pain 5+ ability.",
+        )
+        unit.enhancement = enh
+        enh.apply_to_unit(unit)
+
+        self.assertEqual(int(getattr(bearer, "_toughness", 0) or 0), base_toughness + 1)
+        fnp = list(unit.has_feel_no_pain(target_model=bearer) or [])
+        self.assertTrue(any(int(v) == 5 for v, _ in fnp))
+
+    def test_strategic_slaughter_redeploy_filters_to_jakhals_or_goremongers(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+        from warhammer40k_ai.engine.decision_kinds import DECISION_CHOOSE_QUARRY
+        from warhammer40k_ai.utility.entity_ids import get_entity_id
+
+        army = Army("World Eaters", "Cult of Blood")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        bearer = self._make_unit(
+            "Bearer",
+            keywords=["Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        jakhals = self._make_unit(
+            "Jakhals",
+            keywords=["Jakhals", "Infantry"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        goremongers = self._make_unit(
+            "Goremongers",
+            keywords=["Goremongers", "Infantry"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        other = self._make_unit(
+            "Berzerkers",
+            keywords=["Infantry"],
+            faction_keywords=["WORLD EATERS"],
+        )
+
+        army.add_unit(bearer)
+        army.add_unit(jakhals)
+        army.add_unit(goremongers)
+        army.add_unit(other)
+
+        enh = Enhancement(
+            id="000010074005",
+            name="Strategic Slaughter",
+            faction_id="WE",
+            detachment="Cult of Blood",
+            points=20,
+            description=(
+                "World Eaters model only. After both players have deployed their armies, select up to three Jakhals "
+                "and/or Goremongers units from your army and redeploy them. When doing so, you can set those units up "
+                "in Strategic Reserves, regardless of how many units are already in Strategic Reserves."
+            ),
+        )
+        bearer.enhancement = enh
+        enh.apply_to_unit(bearer)
+
+        game = Game(
+            Battlefield(BattlefieldSize.STRIKE_FORCE),
+            players=[
+                Player("P1", control=PlayerControl.REMOTE, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+        game.attacker_index = 0
+        game.defender_index = 1
+
+        for unit in [bearer, jakhals, goremongers, other]:
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+
+        bearer.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+        jakhals.models[0].set_location(15.0, 10.0, 0.0, 0.0)
+        goremongers.models[0].set_location(20.0, 10.0, 0.0, 0.0)
+        other.models[0].set_location(25.0, 10.0, 0.0, 0.0)
+        self.assertTrue(game.map.place_unit(bearer))
+        self.assertTrue(game.map.place_unit(jakhals))
+        self.assertTrue(game.map.place_unit(goremongers))
+        self.assertTrue(game.map.place_unit(other))
+        game.rebuild_entity_registry()
+
+        game.execute_redeploy_units_phase()
+
+        pending = [
+            req for req in list(game.decision_queue.list() or [])
+            if str(getattr(req, "decision_type", "")) == DECISION_CHOOSE_QUARRY
+        ]
+        self.assertEqual(len(pending), 1)
+        request = pending[0]
+
+        jakhals_id = str(get_entity_id(jakhals) or "")
+        goremongers_id = str(get_entity_id(goremongers) or "")
+        other_id = str(get_entity_id(other) or "")
+
+        target_ids = {
+            str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or ""))
+            for opt in list(getattr(request, "options", []) or [])
+        }
+        self.assertIn(jakhals_id, target_ids)
+        self.assertIn(goremongers_id, target_ids)
+        self.assertNotIn(other_id, target_ids)
+
+        options = list(getattr(request, "options", []) or [])
+        self.assertTrue(
+            any(
+                str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "")) == jakhals_id
+                and str((dict(getattr(opt, "payload", {}) or {}).get("redeploy_action", "") or "")) == "strategic_reserves"
+                for opt in options
+            )
+        )
+        self.assertTrue(
+            any(
+                str((dict(getattr(opt, "payload", {}) or {}).get("target_unit_id", "") or "")) == goremongers_id
+                and str((dict(getattr(opt, "payload", {}) or {}).get("redeploy_action", "") or "")) == "strategic_reserves"
+                for opt in options
+            )
+        )
+
     def test_archslaughterer_ap_bonus_and_vessel_damage_bonus(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.rules.enhancement import Enhancement

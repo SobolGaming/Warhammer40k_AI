@@ -194,6 +194,52 @@ def _get_battle_round_from_unit(unit) -> int:
         return 0
 
 
+def _chosen_of_blood_god_aura_range_bonus(source_unit, ability) -> float:
+    """
+    Cult of Blood enhancement: Chosen of the Blood God.
+    Add 3" to the range of the bearer's Aura abilities.
+    """
+    if source_unit is None or ability is None:
+        return 0.0
+    try:
+        name = str(getattr(ability, "name", ability) or "")
+    except Exception:
+        name = ""
+    if "(aura" not in _norm(name):
+        return 0.0
+    try:
+        sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(sr, dict) or not sr.get("enhancement_chosen_of_blood_god"):
+            return 0.0
+    except Exception:
+        return 0.0
+    try:
+        army = source_unit.get_parent_army()
+    except Exception:
+        army = None
+    mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+    if mgr is None:
+        return 0.0
+    try:
+        if not mgr.is_cult_of_blood():
+            return 0.0
+    except Exception:
+        return 0.0
+    try:
+        return float(sr.get("enhancement_chosen_of_blood_god_aura_range_bonus", 3) or 3)
+    except Exception:
+        return 3.0
+
+
+def _unit_within_aura_range(source_unit, target_unit, base_range: float, *, ability=None) -> bool:
+    try:
+        rng = float(base_range)
+    except Exception:
+        return False
+    rng += float(_chosen_of_blood_god_aura_range_bonus(source_unit, ability))
+    return unit_within_range_of_unit(source_unit, target_unit, float(rng), use_attached_aggregate=True)
+
+
 def _attacker_in_own_shooting_phase(attacker_unit) -> bool:
     try:
         fn = getattr(attacker_unit, "_is_controlling_players_shooting_phase", None)
@@ -1015,7 +1061,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                         continue
                 except Exception:
                     continue
-                if not unit_within_range_of_unit(source, attacker_unit, 6.0, use_attached_aggregate=True):
+                if not _unit_within_aura_range(source, attacker_unit, 6.0, ability=ab):
                     continue
                 out = out.merge(
                     AuraAttackModifiers(
@@ -1042,7 +1088,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     continue
 
                 # Range restriction (source -> attacker)
-                if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+                if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                     continue
 
                 # Keyword exclusions (best-effort)
@@ -1069,7 +1115,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                     continue
                 if rr.get("excluded_keywords") and _excluded_by_unit_keywords(attacker_unit, rr.get("excluded_keywords", ())):
                     continue
-                if not unit_within_range_of_unit(source, attacker_unit, float(rr["range"]), use_attached_aggregate=True):
+                if not _unit_within_aura_range(source, attacker_unit, float(rr["range"]), ability=ab):
                     continue
                 if rr.get("reroll_hit"):
                     out = out.merge(
@@ -1100,7 +1146,7 @@ def get_aura_attack_modifiers(attacker_unit, target_unit, weapon_profile, *, gam
                         continue
                 if full_hit.get("excluded_keywords") and _excluded_by_unit_keywords(attacker_unit, full_hit.get("excluded_keywords", ())):
                     continue
-                if not unit_within_range_of_unit(source, attacker_unit, float(full_hit["range"]), use_attached_aggregate=True):
+                if not _unit_within_aura_range(source, attacker_unit, float(full_hit["range"]), ability=ab):
                     continue
                 reason = f"Aura: re-roll Hit roll from {ab_name}"
                 out = out.merge(
@@ -1170,7 +1216,7 @@ def get_enemy_aura_psychic_hazardous(attacker_unit, weapon_profile, *, game_map=
                         continue
                 except Exception:
                     continue
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             reasons.append(f"Aura: {ab_name} (Psychic weapons hazardous)")
     return bool(reasons), tuple(reasons)
@@ -1206,7 +1252,7 @@ def get_enemy_aura_psychic_wound_penalties(attacker_unit, weapon_profile, *, gam
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec.get("amount", 0) or 0)
             if amt:
@@ -1243,7 +1289,7 @@ def get_aura_objective_control_bonus(unit, *, game_map=None) -> int:
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             total += int(spec["amount"])
     return int(total)
@@ -1276,7 +1322,7 @@ def get_aura_leadership_bonus(unit, *, game_map=None) -> int:
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             if amt:
@@ -1313,7 +1359,7 @@ def get_aura_advance_charge_roll_modifiers(unit, *, game_map=None) -> tuple[list
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             advance_mods.append((amt, f"Aura: +{amt} to Advance rolls from {ab_name}"))
@@ -1362,7 +1408,7 @@ def get_aura_battleshock_test_modifiers(unit, *, game_map=None) -> list[tuple[in
                 if aura_key in applied_aura_names:
                     continue
                 applied_aura_names.add(aura_key)
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             if amt:
@@ -1398,7 +1444,7 @@ def get_enemy_aura_move_oc_penalties(unit, *, game_map=None) -> tuple[int, int]:
                 applied_aura_names.add(aura_key)
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             move_penalty += int(spec["move"])
             oc_penalty += int(spec["oc"])
@@ -1432,7 +1478,7 @@ def get_enemy_aura_leadership_characteristic_penalty(unit, *, game_map=None) -> 
                 applied_aura_names.add(aura_key)
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec.get("amount", 0) or 0)
             if amt:
@@ -1531,7 +1577,7 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
                         continue
                 except Exception:
                     continue
-                if not unit_within_range_of_unit(source, unit, 6.0, use_attached_aggregate=True):
+                if not _unit_within_aura_range(source, unit, 6.0, ability=ab):
                     continue
                 sources.append(str(ab_name or "Shadow of Khorne (Aura)"))
                 continue
@@ -1550,7 +1596,7 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
                     continue
             if spec.get("excluded_keywords") and _excluded_by_unit_keywords(unit, spec.get("excluded_keywords", ())):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             if not (spec.get("reroll_battleshock") or spec.get("reroll_leadership")):
                 continue
@@ -1639,7 +1685,7 @@ def get_aura_melee_attacks_bonus(attacker_unit, weapon_profile, *, game_map=None
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not attacker_unit.has_any_keyword(spec["faction_keyword"]):
                 continue
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             total += amt
@@ -1678,7 +1724,7 @@ def get_aura_weapon_keyword_bonuses(attacker_unit, weapon_profile, *, game_map=N
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not _unit_matches_keyword_phrase(attacker_unit, spec["faction_keyword"]):
                 continue
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             try:
                 val = int(spec["value"])
@@ -1788,7 +1834,7 @@ def get_aura_stealth(target_unit, *, game_map=None) -> tuple[bool, tuple[str, ..
                     continue
                 if exclude_low.endswith("s") and target_unit.has_any_keyword(exclude_low[:-1]):
                     continue
-            if not unit_within_range_of_unit(source, target_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, target_unit, float(spec["range"]), ability=ab):
                 continue
             reasons.append(f"Aura: Stealth from {ab_name}")
             return True, tuple(reasons)
@@ -1830,7 +1876,7 @@ def get_aura_benefit_of_cover(target_unit, *, game_map=None) -> tuple[bool, tupl
                         matches = False
                 if not matches:
                     continue
-            if not unit_within_range_of_unit(source, target_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, target_unit, float(spec["range"]), ability=ab):
                 continue
             reasons.append(f"Aura: Benefit of Cover from {ab_name}")
             return True, tuple(reasons)
@@ -1871,7 +1917,7 @@ def get_aura_strength_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
                 continue
             if spec.get("attack_type") == "ranged" and _weapon_is_melee(weapon_profile):
                 continue
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             total += amt
@@ -1909,7 +1955,7 @@ def get_aura_toughness_bonus(unit, *, game_map=None) -> tuple[int, tuple[str, ..
                 applied_aura_names.add(aura_key)
             if spec["faction_keyword"] and not unit.has_any_keyword(spec["faction_keyword"]):
                 continue
-            if not unit_within_range_of_unit(source, unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             total += amt
@@ -1953,7 +1999,7 @@ def get_aura_melee_ap_bonus(attacker_unit, weapon_profile, *, game_map=None) -> 
                 continue
             if spec.get("requires_charge") and not charged:
                 continue
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             amt = int(spec["amount"])
             total += amt
@@ -2017,7 +2063,7 @@ def get_aura_ap_bonus(attacker_model, weapon_profile, target_unit, *, game_map=N
                 continue
             if atype == "ranged" and not is_ranged:
                 continue
-            if not unit_within_range_of_unit(source, attacker_unit, float(spec["range"]), use_attached_aggregate=True):
+            if not _unit_within_aura_range(source, attacker_unit, float(spec["range"]), ability=ab):
                 continue
             target_is_closest = False
             if is_ranged and hasattr(attacker_unit, "is_target_closest_eligible"):

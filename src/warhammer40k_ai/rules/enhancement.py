@@ -220,6 +220,10 @@ class Enhancement:
         except Exception:
             is_goretrack_onslaught = False
         try:
+            is_cult_of_blood = bool(we_mgr and we_mgr.is_cult_of_blood())
+        except Exception:
+            is_cult_of_blood = False
+        try:
             is_vessels_of_wrath = bool(we_mgr and we_mgr.is_vessels_of_wrath())
         except Exception:
             is_vessels_of_wrath = False
@@ -430,6 +434,49 @@ class Enhancement:
             if not is_goretrack_onslaught:
                 return
             unit.special_rules["enhancement_infernal_infusion"] = True
+
+        if name == "chosen of the blood god" or enh_id == "000010074002":
+            if not is_cult_of_blood:
+                return
+            unit.special_rules["enhancement_chosen_of_blood_god"] = True
+            unit.special_rules["enhancement_chosen_of_blood_god_aura_range_bonus"] = int(
+                unit.special_rules.get("enhancement_chosen_of_blood_god_aura_range_bonus", 0) or 0
+            ) + 3
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "butcher lord" or enh_id == "000010074003":
+            if not is_cult_of_blood:
+                return
+            unit.special_rules["enhancement_butcher_lord"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "brazen form" or enh_id == "000010074004":
+            if not is_cult_of_blood:
+                return
+            unit.special_rules["enhancement_brazen_form"] = True
+            _ensure_enhancement_fnp_entry(
+                unit,
+                5,
+                source="Brazen Form",
+                tag="brazen_form",
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+            if bearer is not None:
+                try:
+                    bearer._base_toughness = int(getattr(bearer, "_base_toughness", 0)) + 1
+                    bearer._toughness = int(getattr(bearer, "_toughness", 0)) + 1
+                except Exception:
+                    pass
+
+        if name == "strategic slaughter" or enh_id == "000010074005":
+            if not is_cult_of_blood:
+                return
+            unit.special_rules["enhancement_strategic_slaughter"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "archslaughterer" or enh_id == "000009847002":
             if not is_vessels_of_wrath:
