@@ -249,6 +249,58 @@ class TestBearerUnitCommonAbilities(unittest.TestCase):
 
         self.assertIn((5, None), bodyguard.has_feel_no_pain())
 
+    def test_leading_this_unit_fnp_requires_leading_and_applies_when_attached(self):
+        ability = {
+            "name": "Fortify (Psychic)",
+            "description": "While this unit is leading a unit, models in that unit have the Feel No Pain 5+ ability.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        leader = _make_unit("Grimnyr", abilities=[ability], attached_to=["Hearthkyn Warriors"])
+        leader._refresh_bearer_unit_common_modifiers()
+        self.assertNotIn((5, None), leader.has_feel_no_pain())
+
+        bodyguard = _make_unit("Hearthkyn Warriors")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Hearthkyn Warriors"]
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertIn((5, None), bodyguard.has_feel_no_pain())
+
+    def test_bearer_leading_deep_strike_requires_leading_and_applies_when_attached(self):
+        ability = {
+            "name": "Teleport Crest",
+            "description": "While the bearer is leading a unit, models in that unit have the Deep Strike ability.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        leader = _make_unit("Kahl", abilities=[ability], attached_to=["Hearthkyn Warriors"])
+        leader.models[0].optional_wargear.append("Teleport Crest")
+        leader._refresh_bearer_unit_common_modifiers()
+        self.assertFalse(leader.has_deep_strike())
+
+        bodyguard = _make_unit("Hearthkyn Warriors")
+        bodyguard.attached_leaders = [leader]
+        leader.attached_to = bodyguard
+        leader.can_be_attached_to = ["Hearthkyn Warriors"]
+        bodyguard._refresh_bearer_unit_common_modifiers()
+
+        self.assertTrue(bodyguard.has_deep_strike())
+
+    def test_bearer_unit_deep_strike_applies(self):
+        ability = {
+            "name": "Farstrydr Node",
+            "description": "Models in the bearer's unit have the Deep Strike ability.",
+            "type": "Wargear",
+            "parameter": "",
+        }
+        unit = _make_unit("Memnyr Strategist", abilities=[ability])
+        unit.models[0].optional_wargear.append("Farstrydr Node")
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertTrue(unit.has_deep_strike())
+
     def test_leading_unit_other_character_fnp_applies(self):
         ability = {
             "name": "Champion of Souls",

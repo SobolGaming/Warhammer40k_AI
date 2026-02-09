@@ -2386,7 +2386,7 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
         ("GC", "Swift and Deadly"): ("Supported", "Charge-after-Advance eligibility."),
         ("LOV", "Brōkhyr Guild Support"): ("Partial", "Lone Operative applied without 3\" Vehicle/Ironkin proximity or attached-unit restriction."),
         ("LOV", "Science Guild Support"): ("Partial", "Lone Operative applied without 3\" Infantry proximity or exclusion of Lone Operative units."),
-        ("LOV", "Teleport Crest"): ("Partial", "Deep Strike granted; leading restriction not enforced where applicable."),
+        ("LOV", "Teleport Crest"): ("Supported", "Models in the bearer's unit gain Deep Strike; leading-gated variants require the bearer to be leading."),
         ("NEC", "Adaptive Strategy"): ("Supported", "Shoot and charge after Falling Back."),
         ("NEC", "Ghostwalk Mantle"): ("Supported", "Leading: unit gains Fights First."),
         ("NEC", "Illuminor"): ("Supported", "Conditional Lone Operative within 3\" of friendly NECRONS units."),
@@ -3220,7 +3220,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
     low = text.lower()
     notes: List[str] = []
     leading_prefix = ""
-    if re.search(r"while (?:this model|the bearer) is leading a unit", low, flags=re.IGNORECASE):
+    if re.search(r"while (?:this model|this unit|(?:the )?bearer) is leading a unit", low, flags=re.IGNORECASE):
         leading_prefix = "Leading: "
         if "bearer's unit" not in low:
             low = re.sub(r"\bthat unit\b", "the bearer's unit", low)
@@ -3435,6 +3435,20 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
             notes.append(f"Unit gains a {m.group(1)}+ invulnerable save.")
 
     m = re.search(
+        r"models?\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit)\s+have\s+the\s+deep\s+strike\s+ability",
+        low,
+        flags=re.IGNORECASE,
+    )
+    if m:
+        match_text = m.group(0)
+        if leading_prefix:
+            notes.append(f"{leading_prefix}unit gains Deep Strike.")
+        elif "bearer" in match_text:
+            notes.append("Bearer's unit gains Deep Strike.")
+        else:
+            notes.append("Unit gains Deep Strike.")
+
+    m = re.search(
         r"(?:(melee|ranged)\s+)?weapons?\s+equipped\s+by\s+models\s+in\s+(?:the\s+bearer'?s\s+unit|that\s+unit).*?"
         r"sustained\s+hits\s*(\d+)",
         low,
@@ -3541,7 +3555,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         if norm_sentence:
             normalized_sentences.append(norm_sentence)
 
-    lead_prefix = r"(?:while this model is leading a unit )?"
+    lead_prefix = r"(?:(?:while (?:this model|this unit|(?:the )?bearer) is leading a unit )?)"
     unit_ref = r"(?:the )?(?:bearers|that|this) unit"
     patterns = [
         rf"{lead_prefix}add \d+ to charge rolls made for {unit_ref}",
@@ -3569,6 +3583,7 @@ def _bearer_unit_common_support(description: str) -> Optional[Tuple[str, str]]:
         rf"{lead_prefix}(?:you can )?reroll advance rolls? made for {unit_ref} and you can reroll any rolls made for {unit_ref} while it is performing an agile (?:manoeuvre|maneuver)",
         rf"{lead_prefix}models? in {unit_ref} have (?:a|the)? [1-6] invulnerable save",
         rf"{lead_prefix}{unit_ref} has (?:a|the)? [1-6] invulnerable save",
+        rf"{lead_prefix}models? in {unit_ref} have the deep strike ability",
         rf"{lead_prefix}(?:melee |ranged )?weapons equipped by models in {unit_ref} have the sustained hits \d+ ability",
         rf"{lead_prefix}add \d+ to the range characteristic of melta weapons equipped by models in {unit_ref}",
         rf"{lead_prefix}(?:melee |ranged )?(?:weapons equipped by models in|attacks made by models in) {unit_ref} .* ignores cover(?: ability)?",

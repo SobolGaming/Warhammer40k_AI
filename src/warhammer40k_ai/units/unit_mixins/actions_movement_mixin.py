@@ -182,11 +182,11 @@ class ActionsMovementMixin:
 
     # ---------------- Ability helpers (best-effort parsing) ----------------
     _LEADING_ABILITY_PREFIX_RE = re.compile(
-        r"^\W*while this (?:model|unit) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        r"^\W*while (?:this (?:model|unit)|(?:the )?bearer) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
         re.IGNORECASE,
     )
     _LEADING_ABILITY_RE = re.compile(
-        r"\bwhile this (?:model|unit) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
+        r"\bwhile (?:this (?:model|unit)|(?:the )?bearer) is leading(?:s)?(?: a)?(?: [^.,;:]+?)? unit\b",
         re.IGNORECASE,
     )
     _NOT_LEADING_ABILITY_RE = re.compile(r"\bif this (?:model|unit) is not leading a unit\b", re.IGNORECASE)
