@@ -766,6 +766,16 @@ class DamageDeathMixin:
         if not has_deadly_demise:
             return False
 
+        trigger_threshold = 6
+        sr = getattr(self, "special_rules", None)
+        if isinstance(sr, dict) and sr.get("enhancement_violent_demise"):
+            bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+            dying_id = str(get_entity_id(dying_model) or "")
+            if not bearer_id or (dying_id and dying_id == bearer_id):
+                trigger_threshold = int(sr.get("enhancement_violent_demise_trigger_threshold", 2) or 2)
+                damage_expr = str(sr.get("enhancement_violent_demise_damage_dice", "") or "D3+1")
+                damage_dice = DiceCollection.from_string(damage_expr)
+
         print(f"{self.name} has Deadly Demise {damage_dice} - checking for explosion!")
 
         # Roll D6 to see if Deadly Demise triggers
@@ -773,11 +783,13 @@ class DamageDeathMixin:
         try:
             from ...utility.event_bus import append_dice
             pn = self.get_parent_army().player
-            append_dice(pn, f"Deadly Demise trigger: rolled {trigger_roll} (need 6)")
+            append_dice(pn, f"Deadly Demise trigger: rolled {trigger_roll} (need {int(trigger_threshold)}+)")
         except Exception:
             pass
-        if trigger_roll != 6:
-            print(f"Deadly Demise trigger roll: {trigger_roll} (needed 6) - No explosion!")
+        if int(trigger_roll) < int(trigger_threshold):
+            print(
+                f"Deadly Demise trigger roll: {trigger_roll} (needed {int(trigger_threshold)}+) - No explosion!"
+            )
             return False
 
         print(f"Deadly Demise trigger roll: {trigger_roll} - EXPLOSION! ")

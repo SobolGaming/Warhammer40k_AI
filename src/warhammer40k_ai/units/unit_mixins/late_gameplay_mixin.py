@@ -617,9 +617,19 @@ class LateGameplayMixin:
                 - A boolean indicating if the unit has Deadly Demise ability
                 - A DiceCollection object representing the damage value (e.g., "3", "D3", "D6") or None if no Deadly Demise ability
         """
+        def _apply_violent_demise_override(result: Tuple[bool, DiceCollection]) -> Tuple[bool, DiceCollection]:
+            if not result or not bool(result[0]):
+                return result
+            sr = getattr(self, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_violent_demise"):
+                return result
+            damage_expr = str(sr.get("enhancement_violent_demise_damage_dice", "") or "D3+1")
+            return (True, DiceCollection.from_string(damage_expr))
+
         # Use cached result if available
         if 'deadly_demise' in getattr(self, '_ability_cache', {}):
-            return self._ability_cache['deadly_demise']
+            cached = self._ability_cache['deadly_demise']
+            return _apply_violent_demise_override(cached)
         
         found, damage_str = self._find_ability_with_patterns(["deadly demise"], extract_value=True, value_pattern=r'(\d+|D\d+)')
         if found:
@@ -630,6 +640,7 @@ class LateGameplayMixin:
                 raise ValueError(f"Deadly Demise ability found but could not parse damage value '{damage_str}' for unit '{self.name}'")
         else:
             result = (False, None)
+        result = _apply_violent_demise_override(result)
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):

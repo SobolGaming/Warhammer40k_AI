@@ -3888,6 +3888,7 @@ class Game(
         # Skip the generic gain-CP parser for this named source to avoid incorrect auto-grants.
         skip_cp_sources: set[str] = set()
         vox_sources: list = []
+        killing_clarity_sources: list = []
         try:
             members = list(attacker_root.get_attached_unit_members() or [])
         except Exception:
@@ -3898,6 +3899,8 @@ class Game(
             sr = getattr(member, "special_rules", None)
             if isinstance(sr, dict) and sr.get("enhancement_vox_diabolus"):
                 vox_sources.append(member)
+            if isinstance(sr, dict) and sr.get("enhancement_killing_clarity"):
+                killing_clarity_sources.append(member)
         if vox_sources:
             skip_cp_sources.add("vox diabolus")
             wp = destroyed_by_weapon_profile
@@ -3948,6 +3951,33 @@ class Game(
                             roll=int(roll),
                             modified_roll=int(total),
                         )
+        if killing_clarity_sources:
+            skip_cp_sources.add("killing clarity")
+            army = attacker_root.get_parent_army()
+            we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+            if we_mgr is not None and we_mgr.is_possessed_slaughterband():
+                player = getattr(army, "player", None)
+                for source in killing_clarity_sources:
+                    if player is None:
+                        break
+                    source_sr = getattr(source, "special_rules", None)
+                    if not isinstance(source_sr, dict):
+                        continue
+                    threshold = int(source_sr.get("enhancement_killing_clarity_success_on", 4) or 4)
+                    roll = int(get_roll("D6"))
+                    if roll < threshold:
+                        continue
+                    gained = int(player.gain_command_points(1, reason="Killing Clarity") or 0)
+                    self.event_system.publish(
+                        "command_points_gained",
+                        player=player,
+                        amount=gained,
+                        reason="Killing Clarity",
+                        attacker_unit=attacker_root,
+                        target_unit=unit,
+                        attacker_model=destroyed_by_model,
+                        roll=int(roll),
+                    )
 
         specs = destroyed_by_unit.get_kill_reward_specs(model=destroyed_by_model) or []
         target_keywords = {str(k).upper() for k in getattr(unit, "keywords", []) or []}
@@ -6144,12 +6174,32 @@ class Game(
         """Roll Brazen Fury distance (D6)."""
         if unit is None:
             return 0
+        fixed_distance = None
+        try:
+            root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+        except Exception:
+            root = unit
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if not isinstance(sr, dict) or not sr.get("enhancement_malicious_vigour"):
+                continue
+            fixed_distance = int(sr.get("enhancement_malicious_vigour_brazen_fury_distance", 6) or 6)
+            break
         from ..utility.dice import get_roll
-        base_roll = int(get_roll("D6") or 0)
+        base_roll = int(fixed_distance if fixed_distance is not None else (get_roll("D6") or 0))
         from ..utility.event_bus import append_dice
         player = getattr(unit.get_parent_army(), "player", None)
         if player is not None:
-            append_dice(player, f"Brazen Fury roll: {int(base_roll or 0)}\" for {unit.name}")
+            if fixed_distance is not None:
+                append_dice(player, f"Brazen Fury fixed distance: {int(base_roll or 0)}\" for {unit.name}")
+            else:
+                append_dice(player, f"Brazen Fury roll: {int(base_roll or 0)}\" for {unit.name}")
         return int(base_roll or 0)
 
     def roll_horde_move_distance(self, unit: 'Unit') -> int:

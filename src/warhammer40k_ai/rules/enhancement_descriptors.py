@@ -112,6 +112,49 @@ _CULT_OF_BLOOD_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _CULT_OF_BLOOD_DESCRIPTORS.values()
 }
 
+_POSSESSED_SLAUGHTERBAND_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010082002": EnhancementToolDescriptor(
+        enhancement_id="000010082002",
+        name="Malicious Vigour",
+        timing="on_brazen_fury_move",
+        target="bearer_unit",
+        duration="constant",
+        effect="set_brazen_fury_distance",
+        effect_params={"distance": 6},
+    ),
+    "000010082003": EnhancementToolDescriptor(
+        enhancement_id="000010082003",
+        name="Killing Clarity",
+        timing="on_enemy_unit_destroyed",
+        target="bearer_unit",
+        duration="instant",
+        effect="cp_gain_on_kill_roll",
+        effect_params={"cp": 1, "roll": "D6", "success_on": 4},
+    ),
+    "000010082004": EnhancementToolDescriptor(
+        enhancement_id="000010082004",
+        name="Frenzied Focus",
+        timing="passive",
+        target="bearer_unit",
+        duration="constant",
+        effect="critical_hit_threshold_bonus",
+        effect_params={"crit_hit_threshold": 5},
+    ),
+    "000010082005": EnhancementToolDescriptor(
+        enhancement_id="000010082005",
+        name="Violent Demise",
+        timing="on_bearer_destroyed",
+        target="bearer",
+        duration="instant",
+        effect="deadly_demise_trigger_and_damage_bonus",
+        effect_params={"trigger_roll": "D6", "success_on": 2, "damage": "D3+1"},
+    ),
+}
+
+_POSSESSED_SLAUGHTERBAND_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.values()
+}
+
 _VESSELS_OF_WRATH_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009847002": EnhancementToolDescriptor(
         enhancement_id="000009847002",
@@ -424,6 +467,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _CULT_OF_BLOOD_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _POSSESSED_SLAUGHTERBAND_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -451,6 +497,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
     return (
         _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
         or _CULT_OF_BLOOD_BY_NAME.get(key)
+        or _POSSESSED_SLAUGHTERBAND_BY_NAME.get(key)
         or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)

@@ -1025,6 +1025,217 @@ class TestWorldEatersEnhancements(unittest.TestCase):
             )
         )
 
+    def test_malicious_vigour_sets_brazen_fury_distance_to_six(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("World Eaters", "Possessed Slaughterband")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        unit = self._make_unit(
+            "Bearer",
+            keywords=["Character", "Daemon", "Possessed"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+
+        game = Game(
+            Battlefield(BattlefieldSize.STRIKE_FORCE),
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        enh = Enhancement(
+            id="000010082002",
+            name="Malicious Vigour",
+            faction_id="WE",
+            detachment="Possessed Slaughterband",
+            points=20,
+            description="",
+        )
+        unit.enhancement = enh
+        enh.apply_to_unit(unit)
+
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=1):
+            distance = int(game.roll_brazen_fury_distance(unit) or 0)
+
+        self.assertEqual(distance, 6)
+
+    def test_killing_clarity_cp_gain_uses_d6_threshold(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("World Eaters", "Possessed Slaughterband")
+        army.faction_id = "WE"
+        attacker = self._make_unit(
+            "Bearer",
+            keywords=["Character", "Daemon", "Possessed"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(attacker)
+
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+        enemy = self._make_unit(
+            "Enemy",
+            faction_name="Enemy",
+            keywords=["Infantry"],
+            faction_keywords=["ENEMY"],
+        )
+        enemy_army.add_unit(enemy)
+
+        game = Game(
+            Battlefield(BattlefieldSize.STRIKE_FORCE),
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        enh = Enhancement(
+            id="000010082003",
+            name="Killing Clarity",
+            faction_id="WE",
+            detachment="Possessed Slaughterband",
+            points=15,
+            description="",
+        )
+        attacker.enhancement = enh
+        enh.apply_to_unit(attacker)
+
+        weapon_profile = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: False))
+
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=3):
+            game.event_system.publish(
+                "unit_destroyed",
+                unit=enemy,
+                destroyed_by_unit=attacker,
+                destroyed_by_model=attacker.models[0],
+                destroyed_by_weapon_profile=weapon_profile,
+            )
+        self.assertEqual(int(game.players[0].command_points), 0)
+
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=4):
+            game.event_system.publish(
+                "unit_destroyed",
+                unit=enemy,
+                destroyed_by_unit=attacker,
+                destroyed_by_model=attacker.models[0],
+                destroyed_by_weapon_profile=weapon_profile,
+            )
+        self.assertEqual(int(game.players[0].command_points), 1)
+
+    def test_frenzied_focus_sets_critical_hit_threshold_to_five(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+
+        army = Army("World Eaters", "Possessed Slaughterband")
+        army.faction_id = "WE"
+        attacker_unit = self._make_unit(
+            "Bearer",
+            keywords=["Character", "Daemon", "Possessed"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        target_unit = self._make_unit(
+            "Target",
+            faction_name="Enemy",
+            keywords=["Infantry"],
+            faction_keywords=["ENEMY"],
+        )
+        army.add_unit(attacker_unit)
+
+        enh = Enhancement(
+            id="000010082004",
+            name="Frenzied Focus",
+            faction_id="WE",
+            detachment="Possessed Slaughterband",
+            points=20,
+            description="",
+        )
+        attacker_unit.enhancement = enh
+        enh.apply_to_unit(attacker_unit)
+
+        profile = self._make_melee_profile()
+        attack_instance = {"damage_characteristic": 1}
+        hit_result = profile._hit_target_with_tracking(
+            target_unit,
+            attacker_unit.models[0],
+            attack_instance,
+            roll_value=5,
+            allow_rerolls=False,
+            log_roll=False,
+        )
+
+        self.assertEqual(int(hit_result.get("crit_threshold", 0) or 0), 5)
+        self.assertTrue(bool(attack_instance.get("crit_hit")))
+
+    def test_violent_demise_sets_deadly_demise_trigger_and_damage(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("World Eaters", "Possessed Slaughterband")
+        army.faction_id = "WE"
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+
+        unit = self._make_unit(
+            "Bearer",
+            keywords=["Character", "Daemon", "Possessed"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        unit.possible_abilities = [
+            SimpleNamespace(
+                name="Deadly Demise",
+                description="",
+                type="Ability",
+                parameter="D3",
+            )
+        ]
+        army.add_unit(unit)
+
+        game = Game(
+            Battlefield(BattlefieldSize.STRIKE_FORCE),
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+        unit.models[0].set_location(10.0, 10.0, 0.0, 0.0)
+
+        enh = Enhancement(
+            id="000010082005",
+            name="Violent Demise",
+            faction_id="WE",
+            detachment="Possessed Slaughterband",
+            points=10,
+            description="",
+        )
+        unit.enhancement = enh
+        enh.apply_to_unit(unit)
+
+        has_dd, damage_dice = unit.has_deadly_demise()
+        self.assertTrue(bool(has_dd))
+        self.assertEqual(str(damage_dice), "1D3+1")
+
+        with patch.object(unit, "_apply_deadly_demise_explosion") as explode:
+            with patch("warhammer40k_ai.units.unit.get_roll", return_value=1):
+                unit._trigger_deadly_demise(unit.models[0], game.map)
+            explode.assert_not_called()
+
+            with patch("warhammer40k_ai.units.unit.get_roll", return_value=2):
+                unit._trigger_deadly_demise(unit.models[0], game.map)
+            explode.assert_called_once()
+
     def test_archslaughterer_ap_bonus_and_vessel_damage_bonus(self):
         from warhammer40k_ai.roster.army import Army
         from warhammer40k_ai.rules.enhancement import Enhancement

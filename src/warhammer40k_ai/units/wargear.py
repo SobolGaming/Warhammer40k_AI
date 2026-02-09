@@ -7059,6 +7059,23 @@ class WargearProfile:
             unit = getattr(attacker, "parent_unit", None)
             if unit is not None and hasattr(unit, "get_attached_unit_root"):
                 unit = unit.get_attached_unit_root()
+            members = list(unit.get_attached_unit_members() or []) if unit is not None and hasattr(unit, "get_attached_unit_members") else [unit]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_frenzied_focus"):
+                    continue
+                threshold = int(sr.get("enhancement_frenzied_focus_crit_hit_threshold", 5) or 5)
+                crit_threshold = min(int(crit_threshold), int(threshold))
+                crit_hit_reasons.append(f"Frenzied Focus: critical hit on {int(threshold)}+")
+                break
+        except Exception:
+            pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            if unit is not None and hasattr(unit, "get_attached_unit_root"):
+                unit = unit.get_attached_unit_root()
             sr = getattr(unit, "special_rules", None) if unit is not None else None
             is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
             if is_melee and isinstance(sr, dict) and sr.get("unbridled_carnage_active"):

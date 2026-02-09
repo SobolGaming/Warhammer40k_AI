@@ -224,6 +224,10 @@ class Enhancement:
         except Exception:
             is_cult_of_blood = False
         try:
+            is_possessed_slaughterband = bool(we_mgr and we_mgr.is_possessed_slaughterband())
+        except Exception:
+            is_possessed_slaughterband = False
+        try:
             is_vessels_of_wrath = bool(we_mgr and we_mgr.is_vessels_of_wrath())
         except Exception:
             is_vessels_of_wrath = False
@@ -475,6 +479,49 @@ class Enhancement:
             if not is_cult_of_blood:
                 return
             unit.special_rules["enhancement_strategic_slaughter"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "malicious vigour" or enh_id == "000010082002":
+            if not is_possessed_slaughterband:
+                return
+            unit.special_rules["enhancement_malicious_vigour"] = True
+            unit.special_rules["enhancement_malicious_vigour_brazen_fury_distance"] = int(
+                unit.special_rules.get("enhancement_malicious_vigour_brazen_fury_distance", 0) or 6
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "killing clarity" or enh_id == "000010082003":
+            if not is_possessed_slaughterband:
+                return
+            unit.special_rules["enhancement_killing_clarity"] = True
+            unit.special_rules["enhancement_killing_clarity_success_on"] = int(
+                unit.special_rules.get("enhancement_killing_clarity_success_on", 0) or 4
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "frenzied focus" or enh_id == "000010082004":
+            if not is_possessed_slaughterband:
+                return
+            unit.special_rules["enhancement_frenzied_focus"] = True
+            unit.special_rules["enhancement_frenzied_focus_crit_hit_threshold"] = int(
+                unit.special_rules.get("enhancement_frenzied_focus_crit_hit_threshold", 0) or 5
+            )
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "violent demise" or enh_id == "000010082005":
+            if not is_possessed_slaughterband:
+                return
+            unit.special_rules["enhancement_violent_demise"] = True
+            unit.special_rules["enhancement_violent_demise_trigger_threshold"] = int(
+                unit.special_rules.get("enhancement_violent_demise_trigger_threshold", 0) or 2
+            )
+            unit.special_rules["enhancement_violent_demise_damage_dice"] = str(
+                unit.special_rules.get("enhancement_violent_demise_damage_dice", "") or "D3+1"
+            )
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
