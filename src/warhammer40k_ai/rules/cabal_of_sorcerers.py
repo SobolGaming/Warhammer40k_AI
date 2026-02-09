@@ -61,8 +61,181 @@ class CabalOfSorcerersManager:
     def __init__(self, army=None):
         self.army = army
         self.used_rituals: set[str] = set()
-        self.used_models: set[str] = set()
+        self.used_models: dict[str, int] = {}
         self._last_reset_key: Optional[tuple] = None
+
+    @staticmethod
+    def _normalize_text(value: object) -> str:
+        import re
+
+        text = str(value or "").lower()
+        text = text.replace("\u2019", "'").replace("\u0192?T", "'")
+        text = re.sub(r"[^a-z0-9]+", " ", text)
+        return re.sub(r"\s+", " ", text).strip()
+
+    @classmethod
+    def _ability_name_matches(cls, value: object, phrase: str) -> bool:
+        want = cls._normalize_text(phrase)
+        if not want:
+            return False
+        return want in cls._normalize_text(value)
+
+    @staticmethod
+    def _iter_unit_abilities(unit):
+        for ab in (list(getattr(unit, "possible_abilities", []) or []) + list(getattr(unit, "abilities", []) or [])):
+            if isinstance(ab, str):
+                yield ab
+            else:
+                nm = getattr(ab, "name", "")
+                desc = getattr(ab, "description", "")
+                if nm:
+                    yield nm
+                if desc:
+                    yield desc
+
+    @staticmethod
+    def _iter_model_abilities(model):
+        abilities = getattr(model, "abilities", None)
+        if not isinstance(abilities, dict):
+            return
+        for ab in abilities.values():
+            if isinstance(ab, str):
+                yield ab
+            else:
+                nm = getattr(ab, "name", "")
+                desc = getattr(ab, "description", "")
+                if nm:
+                    yield nm
+                if desc:
+                    yield desc
+
+    @classmethod
+    def _unit_has_named_ability(cls, unit, phrase: str) -> bool:
+        if unit is None:
+            return False
+        for text in cls._iter_unit_abilities(unit):
+            if cls._ability_name_matches(text, phrase):
+                return True
+        return False
+
+    @classmethod
+    def _model_has_named_ability(cls, model, phrase: str) -> bool:
+        if model is None:
+            return False
+        for text in cls._iter_model_abilities(model):
+            if cls._ability_name_matches(text, phrase):
+                return True
+        unit = getattr(model, "parent_unit", None)
+        return cls._unit_has_named_ability(unit, phrase)
+
+    def _model_has_keyword(self, model, keyword: str) -> bool:
+        if model is None or not keyword:
+            return False
+        kw = str(keyword).strip().upper()
+        if not kw:
+            return False
+        has_kw = getattr(model, "has_keyword", None)
+        if callable(has_kw):
+            if has_kw(kw):
+                return True
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        has_any_kw = getattr(unit, "has_any_keyword", None)
+        if callable(has_any_kw):
+            if has_any_kw(kw):
+                return True
+        has_kw_u = getattr(unit, "has_keyword", None)
+        if callable(has_kw_u):
+            return bool(has_kw_u(kw))
+        return False
+
+    def _ritual_attempt_limit_for_model(self, model) -> int:
+        if self._model_has_named_ability(model, "Lord of the Planet of the Sorcerers"):
+            return 2
+        return 1
+
+    def _spirit_snare_bonus_for_model(self, model) -> int:
+        if model is None:
+            return 0
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return 0
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        entries = sr.get("spirit_snare_ritual_bonus_by_model_id", {})
+        if not isinstance(entries, dict):
+            return 0
+        model_id = str(getattr(model, "id", "") or getattr(model, "_id", ""))
+        if not model_id:
+            return 0
+        try:
+            value = int(entries.get(model_id, 0) or 0)
+        except Exception:
+            value = 0
+        return max(0, min(2, value))
+
+    def _immaterial_flare_channel_bonus(self, caster_model) -> int:
+        if caster_model is None:
+            return 0
+        if not self._model_has_keyword(caster_model, "THOUSAND SONS"):
+            return 0
+        if not self._model_has_keyword(caster_model, "PSYKER"):
+            return 0
+        if self.army is None:
+            return 0
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return 0
+        caster_unit = getattr(caster_model, "parent_unit", None)
+        for unit in list(getattr(self.army, "units", []) or []):
+            if not self._unit_is_available(unit):
+                continue
+            if not self._unit_has_named_ability(unit, "Immaterial Flare"):
+                # Some model-only abilities are not reflected on unit-level entries.
+                has_model_immaterial = False
+                for model in list(getattr(unit, "models", []) or []):
+                    if getattr(model, "is_alive", True) and self._model_has_named_ability(model, "Immaterial Flare"):
+                        has_model_immaterial = True
+                        break
+                if not has_model_immaterial:
+                    continue
+            for model in list(getattr(unit, "models", []) or []):
+                if not getattr(model, "is_alive", True):
+                    continue
+                if model is caster_model:
+                    return 1
+                # If ability is model-specific, enforce ownership to that model.
+                if not self._model_has_named_ability(model, "Immaterial Flare") and not self._unit_has_named_ability(unit, "Immaterial Flare"):
+                    continue
+                try:
+                    dist = float(distance_between_models_bases_3d(caster_model, model))
+                except Exception:
+                    continue
+                if dist <= 6.0 + 1e-6:
+                    return 1
+            # Fast path for single-model aura units represented at unit level.
+            if unit is caster_unit and self._unit_has_named_ability(unit, "Immaterial Flare"):
+                return 1
+        return 0
+
+    def _ritual_test_bonus_for_model(self, model, *, channel: bool = False) -> int:
+        bonus = 0
+        if self._model_has_named_ability(model, "Arch-Sorcerer of Tzeentch"):
+            bonus += 1
+        if self._model_has_named_ability(model, "Lord of the Planet of the Sorcerers"):
+            bonus += 2
+        bonus += int(self._spirit_snare_bonus_for_model(model) or 0)
+
+        immaterial_bonus = 0
+        if channel:
+            immaterial_bonus = int(self._immaterial_flare_channel_bonus(model) or 0)
+        if immaterial_bonus:
+            # Immaterial Flare is explicitly non-cumulative with other Psychic test modifiers.
+            return int(max(immaterial_bonus, bonus))
+        return int(bonus)
 
     def _army_has_cabal(self) -> bool:
         if self.army is None:
@@ -190,8 +363,10 @@ class CabalOfSorcerersManager:
             model_id = str(getattr(model, "id", "") or getattr(model, "_id", ""))
         except Exception:
             model_id = ""
-        if model_id and model_id in self.used_models:
-            return False
+        if model_id:
+            used = int(self.used_models.get(model_id, 0) or 0)
+            if used >= int(self._ritual_attempt_limit_for_model(model) or 1):
+                return False
         return True
 
     def _unit_is_available(self, unit) -> bool:
@@ -462,7 +637,9 @@ class CabalOfSorcerersManager:
             model_id = str(getattr(caster_model, "id", "") or getattr(caster_model, "_id", ""))
         except Exception:
             model_id = ""
-        if model_id and model_id in self.used_models:
+        if model_id and int(self.used_models.get(model_id, 0) or 0) >= int(
+            self._ritual_attempt_limit_for_model(caster_model) or 1
+        ):
             result["reason"] = "model already used"
             return result
         if ritual.key in self.used_rituals:
@@ -480,7 +657,8 @@ class CabalOfSorcerersManager:
 
         # Mark the model/ritual as used as soon as we attempt the ritual.
         if model_id:
-            self.used_models.add(model_id)
+            current = int(self.used_models.get(model_id, 0) or 0)
+            self.used_models[model_id] = current + 1
         self.used_rituals.add(ritual.key)
 
         # Roll 2D6 first.
@@ -545,6 +723,7 @@ class CabalOfSorcerersManager:
                     pass
 
         total = int(sum(total_rolls))
+        total += int(self._ritual_test_bonus_for_model(caster_model, channel=bool(channel)) or 0)
         result["rolls"] = total_rolls
         result["total"] = total
 

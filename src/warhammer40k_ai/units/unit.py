@@ -582,6 +582,32 @@ class Unit(
                         mods.append(Modifier(ModifierOp.ADD, int(penalty), source="aura:enemy_leadership_penalty"))
                 except Exception:
                     pass
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict):
+                    entries = list(sr.get("bearer_unit_leadership_bonus_controlled_objective", []) or [])
+                else:
+                    entries = []
+                if entries and self._within_controlled_objective_range(game_map=game_map):
+                    for entry in entries:
+                        if not isinstance(entry, dict):
+                            continue
+                        try:
+                            val = int(entry.get("value", 0) or 0)
+                        except Exception:
+                            continue
+                        if not val:
+                            continue
+                        source = str(entry.get("source", "") or "Bearer unit ability").strip() or "Bearer unit ability"
+                        mods.append(
+                            Modifier(
+                                ModifierOp.ADD,
+                                int(val),
+                                source=f"ability:bearer_unit_leadership_objective:{source}",
+                            )
+                        )
+            except Exception:
+                pass
 
         afflicted_plague = None
         try:
@@ -1449,6 +1475,11 @@ class Unit(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+leadership\s+characteristic\s+of\s+(\d+)\+?",
         re.IGNORECASE,
     )
+    _BEARER_UNIT_CONTROLLED_OBJECTIVE_LEADERSHIP_IMPROVE_RE = re.compile(
+        r"while\s+the\s+bearer'?s\s+unit\s+is\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+objective\s+markers?\s+you\s+control,?\s*"
+        r"improve\s+the\s+leadership\s+characteristic\s+of\s+models\s+in\s+the\s+bearer'?s\s+unit\s+by\s+(\d+)",
+        re.IGNORECASE,
+    )
     _BEARER_UNIT_MOVEMENT_SET_RE = re.compile(
         r"models\s+in\s+the\s+bearer'?s\s+unit\s+have\s+a\s+move\s+characteristic\s+of\s+(\d+)",
         re.IGNORECASE,
@@ -1755,6 +1786,13 @@ class Unit(
         r"that (?:enemy )?unit must take a battle shock test "
         r"if one or more of those attacks destroyed a model in that enemy unit "
         r"subtract (?P<pen>\d+) from that test",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_OR_FIGHT_BATTLESHOCK_CONDITIONAL_RE = re.compile(
+        r"in your shooting phase and the fight phase after this (?P<subject>model|unit) has shot or fought "
+        r"select one enemy unit hit by one or more of those attacks that (?:enemy )?unit must take a battle shock test "
+        r"subtracting (?P<pen>\d+) from that test if it is within (?P<range>\d+) of one or more "
+        r"(?P<friendly>[a-z0-9 ]+) units from your army",
         re.IGNORECASE,
     )
     _ON_KILL_BATTLESHOCK_WITHIN_RANGE_RE = re.compile(

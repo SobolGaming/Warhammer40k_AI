@@ -492,6 +492,8 @@ class FightPhaseManager:
                             "fight_attacks_resolved",
                             unit=fighting_unit,
                             target_unit=target_unit,
+                            hits_by_target=attack_summary.get("hits_by_target"),
+                            hit_models_by_target=attack_summary.get("hit_models_by_target"),
                             hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
                         )
                 except Exception:
@@ -574,6 +576,8 @@ class FightPhaseManager:
                         "fight_attacks_resolved",
                         unit=fighting_unit,
                         target_unit=target_unit,
+                        hits_by_target=attack_summary.get("hits_by_target"),
+                        hit_models_by_target=attack_summary.get("hit_models_by_target"),
                         hit_models_by_target_psychic=attack_summary.get("hit_models_by_target_psychic"),
                     )
             except Exception:
@@ -664,6 +668,8 @@ class FightPhaseManager:
                         "fight_attacks_resolved",
                         unit=fighting_unit,
                         target_unit=None,
+                        hits_by_target=hits_by_target_total,
+                        hit_models_by_target=hit_models_by_target_total,
                         hit_models_by_target_psychic=hit_models_by_target_psychic_total,
                     )
             except Exception:

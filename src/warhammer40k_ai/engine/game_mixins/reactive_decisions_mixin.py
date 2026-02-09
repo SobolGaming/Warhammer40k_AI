@@ -2429,6 +2429,104 @@ class GameReactiveDecisionsMixin:
         self.request_decision(request)
         return request
 
+    def _apply_spirit_snare_bonus_to_model(
+        self,
+        *,
+        model,
+        player=None,
+        destroyed_model=None,
+        ability_name: str = "Spirit Snare",
+    ) -> bool:
+        if model is None:
+            return False
+        unit = getattr(model, "parent_unit", None)
+        if unit is None:
+            return False
+        model_id = str(get_entity_id(model) or "")
+        if not model_id:
+            return False
+        sr = getattr(unit, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        entries = sr.get("spirit_snare_ritual_bonus_by_model_id", {})
+        if not isinstance(entries, dict):
+            entries = {}
+        try:
+            current = int(entries.get(model_id, 0) or 0)
+        except Exception:
+            current = 0
+        updated = max(0, min(2, current + 1))
+        if updated == current:
+            return False
+        entries = dict(entries)
+        entries[model_id] = int(updated)
+        sr["spirit_snare_ritual_bonus_by_model_id"] = entries
+        unit.special_rules = sr
+        try:
+            from ...utility.event_bus import append_action
+
+            if player is not None:
+                target_label = str(getattr(destroyed_model, "name", "model") or "model")
+                append_action(
+                    player,
+                    f"{ability_name}: {getattr(model, 'name', 'Model')} gains +1 Ritual test bonus "
+                    f"(now +{updated}) after {target_label} was destroyed.",
+                )
+        except Exception:
+            pass
+        return True
+
+    def _queue_spirit_snare_recipient_decision(
+        self,
+        *,
+        player,
+        candidates: list,
+        destroyed_model=None,
+        ability_name: str = "Spirit Snare",
+    ) -> DecisionRequest | None:
+        if player is None:
+            return None
+        valid = [m for m in list(candidates or []) if m is not None and getattr(m, "is_alive", True)]
+        if not valid:
+            return None
+        try:
+            ordered = sorted(valid, key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            ordered = list(valid)
+        options = []
+        used_labels = set()
+        for model in ordered:
+            model_id = get_entity_id(model)
+            if not model_id:
+                continue
+            unit = getattr(model, "parent_unit", None)
+            unit_name = str(getattr(unit, "name", "Unit") or "Unit")
+            label = f"{unit_name} - {getattr(model, 'name', 'Model')}"
+            base = label
+            idx = 2
+            while label in used_labels:
+                label = f"{base} [{idx}]"
+                idx += 1
+            used_labels.add(label)
+            options.append(DecisionOption.create(label, payload={"model_id": model_id}))
+        if not options:
+            return None
+        ctx = {
+            "selection_kind": "spirit_snare_recipient",
+            "ability_name": str(ability_name or "Spirit Snare"),
+            "destroyed_model_id": get_entity_id(destroyed_model) if destroyed_model is not None else None,
+            "candidate_model_ids": [opt.payload.get("model_id") for opt in options if opt.payload.get("model_id")],
+        }
+        request = DecisionRequest.create(
+            DECISION_ALLOCATE_DAMAGE,
+            f"{ability_name}: select a model to gain the Ritual bonus.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context=ctx,
+        )
+        self.request_decision(request)
+        return request
+
     def _queue_reactive_move_movement_decision(
         self,
         *,
@@ -4239,6 +4337,33 @@ class GameReactiveDecisionsMixin:
             remaining=remaining,
             allowed_model_ids=list(ctx.get("allowed_model_ids") or []),
             allow_skip=bool(ctx.get("allow_skip", True)),
+        )
+
+    def _maybe_apply_spirit_snare_followup(self, request: DecisionRequest, result: DecisionResult) -> None:
+        if request is None or result is None:
+            return
+        if str(getattr(request, "decision_type", "") or "") != DECISION_ALLOCATE_DAMAGE:
+            return
+        ctx = dict(getattr(request, "context", {}) or {})
+        if str(ctx.get("selection_kind", "") or "") != "spirit_snare_recipient":
+            return
+        payload = self._decision_option_payload(request, result)
+        model_id = payload.get("model_id")
+        if model_id in (None, ""):
+            return
+        model = self._resolve_model_by_id(str(model_id))
+        if model is None:
+            return
+        destroyed_model = None
+        destroyed_model_id = str(ctx.get("destroyed_model_id", "") or "")
+        if destroyed_model_id:
+            destroyed_model = self._resolve_model_by_id(destroyed_model_id)
+        player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+        self._apply_spirit_snare_bonus_to_model(
+            model=model,
+            player=player,
+            destroyed_model=destroyed_model,
+            ability_name=str(ctx.get("ability_name", "") or "Spirit Snare"),
         )
 
     def _maybe_apply_mortal_wounds_followup(self, request: DecisionRequest, result: DecisionResult) -> None:

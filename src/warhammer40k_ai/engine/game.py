@@ -3679,6 +3679,108 @@ class Game(
         self.request_decision(req)
         return
 
+    def _on_model_destroyed_spirit_snare(
+        self,
+        attacker_model=None,
+        attacker_unit=None,
+        target_model=None,
+        target_unit=None,
+        game_map=None,
+        **_kwargs,
+    ) -> None:
+        if target_model is None or target_unit is None:
+            return
+        try:
+            owner_army = target_unit.get_parent_army()
+        except Exception:
+            owner_army = None
+        if owner_army is None:
+            return
+        owner_player = getattr(owner_army, "player", None)
+        if owner_player is None:
+            return
+        try:
+            if not target_unit.has_any_keyword("THOUSAND SONS"):
+                return
+        except Exception:
+            return
+        model_has_psyker = False
+        try:
+            has_keyword = getattr(target_model, "has_keyword", None)
+            if callable(has_keyword):
+                model_has_psyker = bool(has_keyword("PSYKER"))
+        except Exception:
+            model_has_psyker = False
+        if not model_has_psyker:
+            try:
+                model_keywords = [str(k).upper() for k in list(getattr(target_model, "keywords", []) or [])]
+            except Exception:
+                model_keywords = []
+            model_has_psyker = "PSYKER" in model_keywords
+        if not model_has_psyker:
+            return
+
+        cabal_mgr = getattr(owner_army, "cabal_of_sorcerers", None)
+        unit_has_cabal = False
+        if cabal_mgr is not None:
+            unit_has_cabal = bool(getattr(cabal_mgr, "_unit_has_cabal", lambda _u: False)(target_unit))
+        if not unit_has_cabal:
+            return
+
+        if game_map is None:
+            game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        try:
+            from ..utility.aura_utils import distance_between_models_bases_3d
+        except Exception:
+            return
+
+        candidates = []
+        seen = set()
+        for unit in list(getattr(owner_army, "units", []) or []):
+            if unit is None or not unit.is_alive():
+                continue
+            try:
+                if not getattr(unit, "deployed", True):
+                    continue
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                continue
+            for model in list(getattr(unit, "models", []) or []):
+                if not getattr(model, "is_alive", True):
+                    continue
+                model_id = str(get_entity_id(model) or "")
+                if not model_id or model_id in seen:
+                    continue
+                if cabal_mgr is None or not bool(getattr(cabal_mgr, "_model_has_named_ability", lambda *_a: False)(model, "Spirit Snare")):
+                    continue
+                try:
+                    if float(distance_between_models_bases_3d(model, target_model)) > 9.0 + 1e-6:
+                        continue
+                except Exception:
+                    continue
+                seen.add(model_id)
+                candidates.append(model)
+
+        if not candidates:
+            return
+        if len(candidates) == 1:
+            self._apply_spirit_snare_bonus_to_model(
+                model=candidates[0],
+                player=owner_player,
+                destroyed_model=target_model,
+                ability_name="Spirit Snare",
+            )
+            return
+        self._queue_spirit_snare_recipient_decision(
+            player=owner_player,
+            candidates=candidates,
+            destroyed_model=target_model,
+            ability_name="Spirit Snare",
+        )
+
     def _on_unit_destroyed_phase_kill_tracking(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
         """Track units that destroyed enemy units during Shooting/Fight phases."""
         if unit is None or destroyed_by_unit is None:
@@ -3773,76 +3875,105 @@ class Game(
             return
 
         specs = destroyed_by_unit.get_kill_reward_specs(model=destroyed_by_model) or []
-
-        if not specs:
-            return
-
         target_keywords = {str(k).upper() for k in getattr(unit, "keywords", []) or []}
 
-        for spec in specs:
-            if spec.get("trigger") != "unit_destroyed":
-                continue
-
-            if not self._kill_reward_spec_is_active_for_phase(spec):
-                continue
-
-            # Optional restriction: melee only
-            if spec.get("requires_melee", False):
-                wp = destroyed_by_weapon_profile
-                pw = getattr(wp, "parent_wargear", None)
-                if wp is None or pw is None or not pw.is_melee():
+        if specs:
+            for spec in specs:
+                if spec.get("trigger") != "unit_destroyed":
                     continue
-            required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
-            mode = (spec.get("target_keyword_mode", "all") or "all").lower()
-            if required:
-                if mode == "any":
-                    if required.isdisjoint(target_keywords):
+
+                if not self._kill_reward_spec_is_active_for_phase(spec):
+                    continue
+
+                # Optional restriction: melee only
+                if spec.get("requires_melee", False):
+                    wp = destroyed_by_weapon_profile
+                    pw = getattr(wp, "parent_wargear", None)
+                    if wp is None or pw is None or not pw.is_melee():
                         continue
+                required = set(spec.get("target_keywords", spec.get("required_target_keywords", set())) or set())
+                mode = (spec.get("target_keyword_mode", "all") or "all").lower()
+                if required:
+                    if mode == "any":
+                        if required.isdisjoint(target_keywords):
+                            continue
+                    else:
+                        if not required.issubset(target_keywords):
+                            continue
+
+                if spec.get("type") == "gain_cp_on_destroy":
+                    cp = int(spec.get("cp", 1) or 1)
+                    player = destroyed_by_unit.get_parent_army().player
+                    if player is None:
+                        continue
+                    gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
+                    self.event_system.publish(
+                        "command_points_gained",
+                        player=player,
+                        amount=gained,
+                        reason=spec.get("source_ability", ""),
+                        attacker_unit=destroyed_by_unit,
+                        target_unit=unit,
+                        attacker_model=destroyed_by_model,
+                    )
+
+                if spec.get("type") == "heal_on_destroy":
+                    if destroyed_by_model is None:
+                        continue
+                    heal_expr = spec.get("heal_expr")
+                    if not heal_expr:
+                        continue
+                    from warhammer40k_ai.utility.dice import get_roll
+                    amount = get_roll(heal_expr)
+                    destroyed_by_model.heal(amount)
+                    self.event_system.publish(
+                        "model_healed",
+                        model=destroyed_by_model,
+                        unit=destroyed_by_unit,
+                        amount=amount,
+                        reason=spec.get("source_ability", ""),
+                    )
+
+                if spec.get("type") == "weapon_attacks_bonus_on_destroy":
+                    self._apply_kill_reward_weapon_attacks_bonus(
+                        attacker_model=destroyed_by_model,
+                        attacker_unit=destroyed_by_unit,
+                        target_unit=unit,
+                        target_model=None,
+                        spec=spec,
+                    )
+
+        hunter_rule = None
+        if destroyed_by_model is not None:
+            get_rule = getattr(destroyed_by_unit, "get_hunter_of_souls_rule", None)
+            if callable(get_rule):
+                hunter_rule = get_rule(destroyed_by_model)
+        if hunter_rule and destroyed_by_model is not None:
+            try:
+                is_character = bool(unit.has_any_keyword("CHARACTER"))
+            except Exception:
+                is_character = False
+            if is_character:
+                try:
+                    is_psyker = bool(unit.has_any_keyword("PSYKER"))
+                except Exception:
+                    is_psyker = False
+                if is_psyker:
+                    amount = int(hunter_rule.get("heal_if_target_psyker", 0) or 0)
                 else:
-                    if not required.issubset(target_keywords):
-                        continue
+                    from warhammer40k_ai.utility.dice import get_roll
 
-            if spec.get("type") == "gain_cp_on_destroy":
-                cp = int(spec.get("cp", 1) or 1)
-                player = destroyed_by_unit.get_parent_army().player
-                if player is None:
-                    continue
-                gained = int(player.gain_command_points(cp, reason=spec.get("source_ability", "")) or 0)
-                self.event_system.publish(
-                    "command_points_gained",
-                    player=player,
-                    amount=gained,
-                    reason=spec.get("source_ability", ""),
-                    attacker_unit=destroyed_by_unit,
-                    target_unit=unit,
-                    attacker_model=destroyed_by_model,
-                )
-
-            if spec.get("type") == "heal_on_destroy":
-                if destroyed_by_model is None:
-                    continue
-                heal_expr = spec.get("heal_expr")
-                if not heal_expr:
-                    continue
-                from warhammer40k_ai.utility.dice import get_roll
-                amount = get_roll(heal_expr)
-                destroyed_by_model.heal(amount)
-                self.event_system.publish(
-                    "model_healed",
-                    model=destroyed_by_model,
-                    unit=destroyed_by_unit,
-                    amount=amount,
-                    reason=spec.get("source_ability", ""),
-                )
-
-            if spec.get("type") == "weapon_attacks_bonus_on_destroy":
-                self._apply_kill_reward_weapon_attacks_bonus(
-                    attacker_model=destroyed_by_model,
-                    attacker_unit=destroyed_by_unit,
-                    target_unit=unit,
-                    target_model=None,
-                    spec=spec,
-                )
+                    heal_expr = str(hunter_rule.get("heal_expr", "") or "").strip().upper()
+                    amount = int(get_roll(heal_expr) or 0) if heal_expr else 0
+                if amount > 0:
+                    destroyed_by_model.heal(int(amount))
+                    self.event_system.publish(
+                        "model_healed",
+                        model=destroyed_by_model,
+                        unit=destroyed_by_unit,
+                        amount=int(amount),
+                        reason=str(hunter_rule.get("source", "") or "Hunter of Souls"),
+                    )
 
     def _on_unit_destroyed_battleshock_on_kill(
         self,
@@ -4956,6 +5087,7 @@ class Game(
             self._maybe_queue_reverberating_summons_followup(request, result)
             self._maybe_apply_optional_ability_confirmation(request, result)
             self._maybe_queue_bodyguard_return_followup(request, result)
+            self._maybe_apply_spirit_snare_followup(request, result)
             self._maybe_apply_mortal_wounds_followup(request, result)
             self._maybe_apply_bodyguard_loss_followup(request, result)
             self._maybe_apply_daemonic_patrons_loss_followup(request, result)

@@ -2,7 +2,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from warhammer40k_ai.engine.decision_kinds import DECISION_CONFIRM_YES_NO
+from warhammer40k_ai.engine.decision_kinds import (
+    DECISION_ALLOCATE_DAMAGE,
+    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+    DECISION_CONFIRM_YES_NO,
+)
+from warhammer40k_ai.engine.phase import BattleRoundPhases
+from warhammer40k_ai.utility.decision_utils import resolve_decision_command
 
 
 class _MockDatasheet:
@@ -326,7 +332,7 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         target.deployed = True
         other_target.deployed = True
         game.turn = 1
-        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
 
         attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_active"] = True
         attacker_unit.special_rules["start_shooting_phase_visible_hit_bonus_owner"] = str(p1.id)
@@ -360,7 +366,7 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         target.deployed = True
         other_target.deployed = True
         game.turn = 1
-        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
 
         disembarked.round_state.disembarked_from_transport_id = str(get_entity_id(transport))
         transport.special_rules["post_shoot_disembark_psychic_hit_wound_bonus_active"] = True
@@ -406,7 +412,7 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         attacker_unit.deployed = True
         target.deployed = True
         game.turn = 1
-        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
 
         profile = _make_profile()
         attacker_model = attacker_unit.models[0]
@@ -472,7 +478,7 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         attacker_unit.deployed = True
         target.deployed = True
         game.turn = 1
-        game.phase = SimpleNamespace(name="SHOOTING_PHASE")
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
 
         profile = _make_profile()
         attacker_model = attacker_unit.models[0]
@@ -500,6 +506,401 @@ class TestThousandSonsBatch1Abilities(unittest.TestCase):
         self.assertTrue(profile._target_cannot_have_cover_this_turn(target))
         game.turn = 2
         self.assertFalse(profile._target_cannot_have_cover_this_turn(target))
+
+    def test_arch_sorcerer_adds_ritual_test_bonus(self):
+        from warhammer40k_ai.rules.cabal_of_sorcerers import RITUAL_DESTINYS_RUIN
+
+        cabal_ability = {
+            "name": "Cabal of Sorcerers",
+            "description": "Can attempt Rituals.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        arch = {
+            "name": "Arch-Sorcerer of Tzeentch (Psychic)",
+            "description": "Each time this model attempts a Ritual, add 1 to the Psychic test result.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, p1, _p2 = _build_game()
+        army1.faction_id = "TS"
+        caster = _make_unit("Ahriman", abilities=[cabal_ability, arch], model_count=1)
+        target = _make_unit("Enemy", model_count=1)
+        army1.add_unit(caster)
+        army2.add_unit(target)
+        caster.deployed = True
+        target.deployed = True
+        game.map.units = [caster, target]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        mgr = army1.cabal_of_sorcerers
+
+        with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(
+            mgr, "_distance_model_to_unit", return_value=12.0
+        ):
+            res = mgr.attempt_ritual(
+                game,
+                caster_model=caster.models[0],
+                ritual_key=RITUAL_DESTINYS_RUIN.key,
+                target_unit=target,
+                rolls=[2, 2],
+                channel_decision=False,
+            )
+        self.assertTrue(bool(res.get("success")))
+        self.assertEqual(int(res.get("total", 0) or 0), 5)
+
+    def test_lord_of_the_planet_allows_two_ritual_attempts(self):
+        from warhammer40k_ai.rules.cabal_of_sorcerers import (
+            RITUAL_DESTINYS_RUIN,
+            RITUAL_DOOMBOLT,
+            RITUAL_TEMPORAL_SURGE,
+        )
+
+        cabal_ability = {
+            "name": "Cabal of Sorcerers",
+            "description": "Can attempt Rituals.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        lord = {
+            "name": "Lord of the Planet of the Sorcerers (Psychic)",
+            "description": (
+                "This model can attempt up to two Rituals per turn instead of one, and each time this model attempts a Ritual, "
+                "add 2 to the Psychic test result."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        army1.faction_id = "TS"
+        caster = _make_unit("Magnus", abilities=[cabal_ability, lord], model_count=1)
+        target_enemy = _make_unit("Enemy", model_count=1)
+        army1.add_unit(caster)
+        army2.add_unit(target_enemy)
+        caster.deployed = True
+        target_enemy.deployed = True
+        caster.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        target_enemy.models[0].set_location(20.0, 0.0, 0.0, 0.0)
+        game.map.units = [caster, target_enemy]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        mgr = army1.cabal_of_sorcerers
+
+        with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(
+            mgr, "_distance_model_to_unit", return_value=12.0
+        ):
+            first = mgr.attempt_ritual(
+                game,
+                caster_model=caster.models[0],
+                ritual_key=RITUAL_DESTINYS_RUIN.key,
+                target_unit=target_enemy,
+                rolls=[2, 1],
+                channel_decision=False,
+            )
+            second = mgr.attempt_ritual(
+                game,
+                caster_model=caster.models[0],
+                ritual_key=RITUAL_TEMPORAL_SURGE.key,
+                target_unit=caster,
+                rolls=[2, 2],
+                channel_decision=False,
+            )
+            third = mgr.attempt_ritual(
+                game,
+                caster_model=caster.models[0],
+                ritual_key=RITUAL_DOOMBOLT.key,
+                target_unit=target_enemy,
+                rolls=[6, 6],
+                channel_decision=False,
+            )
+
+        self.assertTrue(bool(first.get("success")))
+        self.assertTrue(bool(second.get("success")))
+        self.assertFalse(bool(third.get("success")))
+        self.assertIn("model already used", str(third.get("reason", "")).lower())
+
+    def test_immaterial_flare_does_not_stack_with_other_ritual_modifiers(self):
+        from warhammer40k_ai.rules.cabal_of_sorcerers import RITUAL_DESTINYS_RUIN
+
+        cabal_ability = {
+            "name": "Cabal of Sorcerers",
+            "description": "Can attempt Rituals.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        arch = {
+            "name": "Arch-Sorcerer of Tzeentch (Psychic)",
+            "description": "Each time this model attempts a Ritual, add 1 to the Psychic test result.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        flare = {
+            "name": "Immaterial Flare (Aura)",
+            "description": (
+                "While a friendly Thousand Sons Psyker model is within 6\" of this model, each time that model Channels the Warp, "
+                "add 1 to the Psychic test result. This is not cumulative with any other modifiers to the Psychic test result."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        army1.faction_id = "TS"
+        caster = _make_unit("Ahriman", abilities=[cabal_ability, arch], model_count=1)
+        aura = _make_unit("Daemon Prince", abilities=[flare], model_count=1)
+        target = _make_unit("Enemy", model_count=1)
+        army1.add_unit(caster)
+        army1.add_unit(aura)
+        army2.add_unit(target)
+        caster.deployed = True
+        aura.deployed = True
+        target.deployed = True
+        game.map.units = [caster, aura, target]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        mgr = army1.cabal_of_sorcerers
+
+        with patch.object(mgr, "_model_can_see_unit", return_value=True), patch.object(
+            mgr, "_distance_model_to_unit", return_value=12.0
+        ), patch.object(mgr, "_immaterial_flare_channel_bonus", return_value=1):
+            res = mgr.attempt_ritual(
+                game,
+                caster_model=caster.models[0],
+                ritual_key=RITUAL_DESTINYS_RUIN.key,
+                target_unit=target,
+                rolls=[1, 2, 3],
+                channel_decision=True,
+            )
+
+        self.assertTrue(bool(res.get("success")))
+        # Base roll is 6; Arch-Sorcerer +1 and Immaterial Flare +1 are non-cumulative -> still +1 total.
+        self.assertEqual(int(res.get("total", 0) or 0), 7)
+
+    def test_spirit_snare_queues_selection_and_applies_capped_bonus(self):
+        spirit_snare = {
+            "name": "Spirit Snare",
+            "description": (
+                "Each time a friendly Thousand Sons Psyker model with the Cabal of Sorcerers ability is destroyed while within 9\" "
+                "of one or more models with this ability, select one of those models with this ability: until the end of the battle, "
+                "each time the selected model attempts a Ritual, add 1 to the Psychic test result (to a maximum of +2)."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        cabal_ability = {
+            "name": "Cabal of Sorcerers",
+            "description": "Can attempt Rituals.",
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, _army2, p1, _p2 = _build_game()
+        army1.faction_id = "TS"
+        victim = _make_unit("Rubric Marines", abilities=[cabal_ability], model_count=1)
+        victim.models[0].keywords = ["PSYKER"]
+        snare_a = _make_unit("Daemon Prince A", abilities=[spirit_snare], model_count=1)
+        snare_b = _make_unit("Daemon Prince B", abilities=[spirit_snare], model_count=1)
+        army1.add_unit(victim)
+        army1.add_unit(snare_a)
+        army1.add_unit(snare_b)
+        for unit in (victim, snare_a, snare_b):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+        victim.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        snare_a.models[0].set_location(4.0, 0.0, 0.0, 0.0)
+        snare_b.models[0].set_location(5.0, 0.0, 0.0, 0.0)
+        game.map.units = [victim, snare_a, snare_b]
+        game.rebuild_entity_registry()
+
+        game._on_model_destroyed_spirit_snare(
+            target_model=victim.models[0],
+            target_unit=victim,
+            game_map=game.map,
+        )
+        pending = [r for r in game.decision_queue.list() if r.decision_type == DECISION_ALLOCATE_DAMAGE]
+        self.assertTrue(pending)
+        req = pending[0]
+        self.assertEqual(str((req.context or {}).get("selection_kind", "")), "spirit_snare_recipient")
+        self.assertEqual(len(req.options), 2)
+        chosen_option_id = req.options[0].option_id
+        chosen_model_id = str(req.options[0].payload.get("model_id", "") or "")
+        resolve_decision_command(game, req, chosen_option_id, player_id=p1.id)
+
+        chosen_model = game.entity_registry.get(chosen_model_id, kind="model")
+        self.assertIsNotNone(chosen_model)
+        sr = getattr(chosen_model.parent_unit, "special_rules", {}) or {}
+        table = sr.get("spirit_snare_ritual_bonus_by_model_id", {}) or {}
+        self.assertEqual(int(table.get(chosen_model_id, 0) or 0), 1)
+
+        game._apply_spirit_snare_bonus_to_model(model=chosen_model, player=p1, ability_name="Spirit Snare")
+        game._apply_spirit_snare_bonus_to_model(model=chosen_model, player=p1, ability_name="Spirit Snare")
+        sr = getattr(chosen_model.parent_unit, "special_rules", {}) or {}
+        table = sr.get("spirit_snare_ritual_bonus_by_model_id", {}) or {}
+        self.assertEqual(int(table.get(chosen_model_id, 0) or 0), 2)
+
+    def test_rebind_rubricae_parses_and_queues_two_model_return_on_six(self):
+        rebind = {
+            "name": "Rebind Rubricae (Psychic)",
+            "description": (
+                "In your Command phase, if this model is leading a unit, you can roll one D6: on a 1, that unit suffers D3 mortal wounds; "
+                "on a 2-5, you can return 1 destroyed Bodyguard model to that unit; on a 6, you can return up to 2 destroyed Bodyguard models to that unit."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        bodyguard = _make_unit("Rubric Marines", model_count=3)
+        leader = _make_unit("Exalted Sorcerer", abilities=[rebind], model_count=1)
+        game, army1, _army2, p1, _p2 = _build_game()
+        army1.add_unit(bodyguard)
+        army1.add_unit(leader)
+        bodyguard._datasheet.id = "rubric-marines"
+        leader.can_be_attached_to = ["rubric-marines"]
+        leader.attach_to_unit(bodyguard)
+        bodyguard.deployed = True
+        leader.deployed = True
+        bodyguard.reserve_status = "deployed"
+        leader.reserve_status = "deployed"
+        lost = bodyguard.models[0]
+        bodyguard.remove_model(lost)
+        self.assertIn(lost, bodyguard.models_lost)
+        parsed = leader.get_command_phase_bodyguard_return_ability()
+        self.assertIsNotNone(parsed)
+        self.assertEqual(str(parsed.get("table_roll", "")), "D6")
+
+        game.map.units = [bodyguard, leader]
+        game.phase = BattleRoundPhases.COMMAND_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+        with patch("warhammer40k_ai.utility.dice.get_roll", side_effect=[6]):
+            game._on_phase_start_optional_abilities(player=p1, phase=game.phase)
+
+        pending = [r for r in game.decision_queue.list() if r.decision_type == DECISION_ALLOCATE_DAMAGE]
+        self.assertTrue(pending)
+        ctx = pending[0].context or {}
+        self.assertEqual(str(ctx.get("selection_kind", "")), "bodyguard_return")
+        self.assertEqual(int(ctx.get("remaining", 0) or 0), 2)
+
+    def test_herd_banner_improves_leadership_while_controlling_objective(self):
+        herd = {
+            "name": "Herd Banner",
+            "description": (
+                "While the bearer’s unit is within range of one or more objective markers you control, "
+                "improve the Leadership characteristic of models in the bearer’s unit by 1."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, _army2, p1, p2 = _build_game()
+        unit = _make_unit("Tzaangors", abilities=[herd], model_count=1)
+        army1.add_unit(unit)
+        unit.deployed = True
+        unit.reserve_status = "deployed"
+        unit.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        objective_loc = SimpleNamespace(
+            id="objective-marker-1",
+            x=0.0,
+            y=0.0,
+            z=0.0,
+            control_radius=3.0,
+            controlling_player=p1,
+        )
+        objective = SimpleNamespace(id="objective-1", location=objective_loc)
+        game.map.units = [unit]
+        game.map.objectives = [objective]
+        game.rebuild_entity_registry()
+        unit._refresh_bearer_unit_common_modifiers()
+
+        self.assertEqual(int(unit.models[0].leadership), 6)
+        objective_loc.controlling_player = p2
+        self.assertEqual(int(unit.models[0].leadership), 7)
+
+    def test_hunter_of_souls_rerolls_and_heals_on_character_unit_destroyed(self):
+        hunter = {
+            "name": "Hunter of Souls",
+            "description": (
+                "Each time this model makes an attack that targets a CHARACTER unit, re-roll a Hit roll of 1 and re-roll a Wound roll of 1 "
+                "(if that attack targets a PSYKER CHARACTER unit, you can re-roll the Hit roll and you can re-roll the Wound roll instead). "
+                "Each time this model destroys a CHARACTER unit, this model regains up to D3 lost wounds "
+                "(if that CHARACTER unit was a PSYKER unit, this model regains up to 3 lost wounds instead)."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        attacker = _make_unit("Daemon Prince", abilities=[hunter], model_count=1)
+        target_character = _make_unit("Enemy Character", model_count=1)
+        target_character.keywords = ["CHARACTER"]
+        target_psyker_character = _make_unit("Enemy Psyker Character", model_count=1)
+        target_psyker_character.keywords = ["CHARACTER", "PSYKER"]
+        army1.add_unit(attacker)
+        army2.add_unit(target_character)
+        army2.add_unit(target_psyker_character)
+        model = attacker.models[0]
+        model.wounds = 1
+
+        hit_vs_char = attacker.get_model_hit_reroll_modifiers(model, target=target_character)
+        self.assertIn(1, tuple(hit_vs_char.get("reroll_hit_values", ()) or ()))
+        self.assertFalse(bool(hit_vs_char.get("reroll_hit_full", False)))
+        hit_vs_psyker_char = attacker.get_model_hit_reroll_modifiers(model, target=target_psyker_character)
+        self.assertTrue(bool(hit_vs_psyker_char.get("reroll_hit_full", False)))
+        wound_vs_psyker_char = attacker.get_model_wound_reroll_modifiers(model, target=target_psyker_character)
+        self.assertTrue(bool(wound_vs_psyker_char.get("reroll_wound_full", False)))
+
+        game._on_unit_destroyed_rules(
+            unit=target_psyker_character,
+            destroyed_by_unit=attacker,
+            destroyed_by_model=model,
+            destroyed_by_weapon_profile=None,
+        )
+        self.assertEqual(int(model.wounds), int(model._base_wounds))
+
+    def test_terrifying_assault_queues_battleshock_with_psyker_range_modifier(self):
+        ability = {
+            "name": "Terrifying Assault",
+            "description": (
+                "In your Shooting phase and the Fight phase, after this model has shot or fought, select one enemy unit hit by one or more "
+                "of those attacks. That unit must take a Battle-shock test, subtracting 1 from that test if it is within 9\" of one or more "
+                "Thousand Sons Psyker units from your army."
+            ),
+            "type": "Datasheet",
+            "parameter": "",
+        }
+        game, army1, army2, _p1, _p2 = _build_game()
+        attacker = _make_unit("Helbrute", abilities=[ability], model_count=1)
+        ally_psyker = _make_unit("Sorcerer", model_count=1)
+        ally_psyker.keywords = ["THOUSAND SONS", "PSYKER"]
+        target = _make_unit("Enemy", model_count=1)
+        army1.add_unit(attacker)
+        army1.add_unit(ally_psyker)
+        army2.add_unit(target)
+        for unit in (attacker, ally_psyker, target):
+            unit.deployed = True
+            unit.reserve_status = "deployed"
+        attacker.models[0].set_location(0.0, 0.0, 0.0, 0.0)
+        ally_psyker.models[0].set_location(1.0, 0.0, 0.0, 0.0)
+        target.models[0].set_location(2.0, 0.0, 0.0, 0.0)
+        game.map.units = [attacker, ally_psyker, target]
+        game.phase = BattleRoundPhases.SHOOTING_PHASE
+        game.current_player_index = 0
+        game.rebuild_entity_registry()
+
+        game._on_unit_shooting_resolved_post_shoot_battleshock(
+            attacker_unit=attacker,
+            hits_by_target={target: 1},
+            hit_models_by_target={target: {attacker.models[0]}},
+        )
+        pending = [r for r in game.decision_queue.list() if r.decision_type == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET]
+        self.assertTrue(pending)
+        payload = pending[0].options[0].payload or {}
+        self.assertEqual(int(payload.get("battle_shock_test_modifier", 0) or 0), -1)
+
+        game.decision_queue.pop(pending[0].decision_id)
+        game.phase = BattleRoundPhases.FIGHT_PHASE
+        game._on_fight_attacks_resolved_post_fight_battleshock(
+            unit=attacker,
+            hits_by_target={target: 1},
+            hit_models_by_target={target: {attacker.models[0]}},
+        )
+        pending = [r for r in game.decision_queue.list() if r.decision_type == DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET]
+        self.assertTrue(pending)
 
 
 if __name__ == "__main__":

@@ -4338,15 +4338,101 @@ class KeywordsDetachmentsMixin:
             reasons.append(f"{source}: re-roll {roll_key.title()} rolls of 1 vs {keyword.upper()} targets")
         return reasons
 
+    @staticmethod
+    def _target_has_keyword(target: Optional['Unit'], keyword: str) -> bool:
+        if target is None or not keyword:
+            return False
+        kw = str(keyword).strip().upper()
+        if not kw:
+            return False
+        try:
+            has_keyword = getattr(target, "has_keyword", None)
+            if callable(has_keyword) and has_keyword(kw):
+                return True
+        except Exception:
+            pass
+        try:
+            has_any = getattr(target, "has_any_keyword", None)
+            if callable(has_any) and has_any(kw):
+                return True
+        except Exception:
+            pass
+        return False
+
+    def get_hunter_of_souls_rule(self, model: Optional['Model'] = None) -> Optional[dict]:
+        """Parse Hunter of Souls (target CHARACTER rerolls; heal on CHARACTER unit destroyed)."""
+        if model is None:
+            return None
+        cache_key = f"hunter_of_souls_rule:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return self._ability_cache[cache_key]
+
+        rule: Optional[dict] = None
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            low = normalized.lower()
+            if "targets a character unit" not in low:
+                continue
+            if "re-roll a hit roll of 1" not in low and "re roll a hit roll of 1" not in low:
+                continue
+            if "re-roll a wound roll of 1" not in low and "re roll a wound roll of 1" not in low:
+                continue
+            if "targets a psyker character unit" not in low:
+                continue
+            if "can re-roll the hit roll" not in low and "can re roll the hit roll" not in low:
+                continue
+            if "can re-roll the wound roll" not in low and "can re roll the wound roll" not in low:
+                continue
+            if "destroys a character unit" not in low:
+                continue
+            if "regains up to d3 lost wounds" not in low:
+                continue
+            if "regains up to 3 lost wounds" not in low:
+                continue
+            source = str(name or "Hunter of Souls").strip() or "Hunter of Souls"
+            rule = {
+                "source": source,
+                "reroll_vs_character_values": (1,),
+                "reroll_vs_psyker_character_full": True,
+                "heal_expr": "D3",
+                "heal_if_target_psyker": 3,
+                "requires_target_character": True,
+            }
+            break
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = rule
+        return rule
+
     def get_model_hit_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
         mods = self._get_model_reroll_modifiers(model, attack_type=attack_type, target=target, roll="hit")
         reroll_values = set(mods.get("reroll_values", ()) or ())
         reroll_reasons = list(mods.get("reroll_reasons", ()) or ())
         reroll_full_reasons = list(mods.get("reroll_full_reasons", ()) or ())
+        reroll_full = bool(mods.get("reroll_full"))
         extra_reasons = self._start_of_battle_keyword_reroll_ones_reasons(model, target, roll="hit")
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        hunter = self.get_hunter_of_souls_rule(model)
+        if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
+            if self._target_has_keyword(target, "CHARACTER"):
+                source = str(hunter.get("source", "") or "Hunter of Souls").strip() or "Hunter of Souls"
+                if bool(hunter.get("reroll_vs_psyker_character_full")) and self._target_has_keyword(target, "PSYKER"):
+                    reroll_full = True
+                    reroll_full_reasons.append(f"{source}: re-roll Hit rolls vs PSYKER CHARACTER targets")
+                else:
+                    for val in tuple(hunter.get("reroll_vs_character_values", ()) or ()):
+                        try:
+                            reroll_values.add(int(val))
+                        except Exception:
+                            continue
+                    reroll_reasons.append(f"{source}: re-roll Hit rolls of 1 vs CHARACTER targets")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:
@@ -4355,11 +4441,19 @@ class KeywordsDetachmentsMixin:
                 continue
             seen.add(key)
             deduped_reasons.append(str(reason))
+        seen = set()
+        deduped_full_reasons: list[str] = []
+        for reason in reroll_full_reasons:
+            key = str(reason or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped_full_reasons.append(str(reason))
         return {
             "reroll_hit_values": tuple(sorted(reroll_values)),
-            "reroll_hit_full": bool(mods.get("reroll_full")),
+            "reroll_hit_full": bool(reroll_full),
             "reroll_hit_reasons": tuple(deduped_reasons),
-            "reroll_hit_full_reasons": tuple(reroll_full_reasons),
+            "reroll_hit_full_reasons": tuple(deduped_full_reasons),
         }
 
     def get_model_wound_reroll_modifiers(self, model: Optional['Model'] = None, *, attack_type: str = "any", target=None) -> dict:
@@ -4367,10 +4461,25 @@ class KeywordsDetachmentsMixin:
         reroll_values = set(mods.get("reroll_values", ()) or ())
         reroll_reasons = list(mods.get("reroll_reasons", ()) or ())
         reroll_full_reasons = list(mods.get("reroll_full_reasons", ()) or ())
+        reroll_full = bool(mods.get("reroll_full"))
         extra_reasons = self._start_of_battle_keyword_reroll_ones_reasons(model, target, roll="wound")
         if extra_reasons:
             reroll_values.add(1)
             reroll_reasons.extend(extra_reasons)
+        hunter = self.get_hunter_of_souls_rule(model)
+        if hunter and target is not None and bool(hunter.get("requires_target_character", True)):
+            if self._target_has_keyword(target, "CHARACTER"):
+                source = str(hunter.get("source", "") or "Hunter of Souls").strip() or "Hunter of Souls"
+                if bool(hunter.get("reroll_vs_psyker_character_full")) and self._target_has_keyword(target, "PSYKER"):
+                    reroll_full = True
+                    reroll_full_reasons.append(f"{source}: re-roll Wound rolls vs PSYKER CHARACTER targets")
+                else:
+                    for val in tuple(hunter.get("reroll_vs_character_values", ()) or ()):
+                        try:
+                            reroll_values.add(int(val))
+                        except Exception:
+                            continue
+                    reroll_reasons.append(f"{source}: re-roll Wound rolls of 1 vs CHARACTER targets")
         seen = set()
         deduped_reasons: list[str] = []
         for reason in reroll_reasons:
@@ -4379,11 +4488,19 @@ class KeywordsDetachmentsMixin:
                 continue
             seen.add(key)
             deduped_reasons.append(str(reason))
+        seen = set()
+        deduped_full_reasons: list[str] = []
+        for reason in reroll_full_reasons:
+            key = str(reason or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            deduped_full_reasons.append(str(reason))
         return {
             "reroll_wound_values": tuple(sorted(reroll_values)),
-            "reroll_wound_full": bool(mods.get("reroll_full")),
+            "reroll_wound_full": bool(reroll_full),
             "reroll_wound_reasons": tuple(deduped_reasons),
-            "reroll_wound_full_reasons": tuple(reroll_full_reasons),
+            "reroll_wound_full_reasons": tuple(deduped_full_reasons),
         }
 
     def model_hit_bonus_vs_fly(self, model: Optional['Model'] = None, *, attack_type: str = "any") -> tuple[int, Optional[str]]:

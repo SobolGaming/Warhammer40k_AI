@@ -263,6 +263,47 @@ class GameShootingFightHandlersMixin:
             killed_models = killing_models_by_target.get(target)
             return bool(killed_models)
 
+        def _target_within_friendly_keyword_phrase_range(target_unit, *, phrase: str, range_value: float) -> bool:
+            if target_unit is None:
+                return False
+            if range_value <= 0:
+                return False
+            try:
+                from ...utility.aura_utils import unit_within_range_of_unit
+            except Exception:
+                return False
+            phrase_txt = str(phrase or "").strip()
+            if not phrase_txt:
+                return False
+            friends = []
+            try:
+                game_map = getattr(self, "map", None)
+                if game_map is not None:
+                    friends = list(game_map.get_friendly_units(attacker_unit) or [])
+            except Exception:
+                friends = []
+            for friendly in friends:
+                if friendly is None or not friendly.is_alive():
+                    continue
+                try:
+                    if not bool(getattr(friendly, "deployed", True)):
+                        continue
+                    if friendly.is_in_reserves() or friendly.is_embarked:
+                        continue
+                except Exception:
+                    continue
+                matcher = getattr(attacker_unit, "_unit_matches_keyword_phrase", None)
+                if not callable(matcher):
+                    continue
+                if not matcher(friendly, phrase_txt):
+                    continue
+                try:
+                    if unit_within_range_of_unit(friendly, target_unit, float(range_value), use_attached_aggregate=True):
+                        return True
+                except Exception:
+                    continue
+            return False
+
         triggers: list[tuple[Any, dict, list[Any]]] = []
         for model in list(attacker_unit.models or []):
             if not getattr(model, "is_alive", False):
@@ -340,6 +381,22 @@ class GameShootingFightHandlersMixin:
                 except Exception:
                     modifier = 0
                 try:
+                    conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
+                except Exception:
+                    conditional_mod = 0
+                if conditional_mod:
+                    try:
+                        cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
+                    except Exception:
+                        cond_range = 0.0
+                    phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
+                    if _target_within_friendly_keyword_phrase_range(
+                        cand,
+                        phrase=phrase,
+                        range_value=cond_range,
+                    ):
+                        modifier += int(conditional_mod)
+                try:
                     if spec.get("test_modifier_on_kill"):
                         if model is None:
                             if _unit_killed_target(cand):
@@ -372,6 +429,148 @@ class GameShootingFightHandlersMixin:
                 },
             )
             self.request_decision(request)
+
+    def _on_fight_attacks_resolved_post_fight_battleshock(
+        self,
+        unit=None,
+        attacker_unit=None,
+        target_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        attacker_unit = attacker_unit if attacker_unit is not None else unit
+        if attacker_unit is None:
+            return
+        if not self.is_fight_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-fight Battle-shock requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        if not hits_by_target:
+            if target_unit is None:
+                return
+            hits_by_target = {target_unit: 1}
+
+        def _is_enemy_unit(candidate) -> bool:
+            if candidate is None:
+                return False
+            if candidate.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            return bool(candidate.is_alive())
+
+        def _model_hit_target(model, candidate) -> bool:
+            if not isinstance(hit_models_by_target, dict):
+                return True
+            hit_models = hit_models_by_target.get(candidate)
+            if not hit_models:
+                return False
+            return model in hit_models
+
+        def _target_within_friendly_keyword_phrase_range(candidate, *, phrase: str, range_value: float) -> bool:
+            if candidate is None or range_value <= 0:
+                return False
+            try:
+                from ...utility.aura_utils import unit_within_range_of_unit
+            except Exception:
+                return False
+            phrase_txt = str(phrase or "").strip()
+            if not phrase_txt:
+                return False
+            try:
+                friends = list(getattr(self, "map").get_friendly_units(attacker_unit) or [])
+            except Exception:
+                friends = []
+            matcher = getattr(attacker_unit, "_unit_matches_keyword_phrase", None)
+            if not callable(matcher):
+                return False
+            for friendly in friends:
+                if friendly is None or not friendly.is_alive():
+                    continue
+                try:
+                    if not bool(getattr(friendly, "deployed", True)):
+                        continue
+                    if friendly.is_in_reserves() or friendly.is_embarked:
+                        continue
+                except Exception:
+                    continue
+                if not matcher(friendly, phrase_txt):
+                    continue
+                try:
+                    if unit_within_range_of_unit(friendly, candidate, float(range_value), use_attached_aggregate=True):
+                        return True
+                except Exception:
+                    continue
+            return False
+
+        from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET
+
+        for model in list(attacker_unit.models or []):
+            if not getattr(model, "is_alive", False):
+                continue
+            specs = attacker_unit.model_post_fight_battleshock_specs(model) or []
+            if not specs:
+                continue
+            for spec in specs:
+                candidates = []
+                for cand, hits in list((hits_by_target or {}).items()):
+                    if cand is None:
+                        continue
+                    if int(hits or 0) <= 0:
+                        continue
+                    if not _is_enemy_unit(cand):
+                        continue
+                    if not _model_hit_target(model, cand):
+                        continue
+                    candidates.append(cand)
+                if not candidates:
+                    continue
+                ability_name = str(spec.get("source", "") or "Post-fight Battle-shock").strip() or "Post-fight Battle-shock"
+                options = []
+                for cand in list(candidates):
+                    modifier = 0
+                    try:
+                        conditional_mod = int(spec.get("test_modifier_if_target_within_range", 0) or 0)
+                    except Exception:
+                        conditional_mod = 0
+                    if conditional_mod:
+                        try:
+                            cond_range = float(spec.get("test_modifier_range", 0) or 0.0)
+                        except Exception:
+                            cond_range = 0.0
+                        phrase = str(spec.get("test_modifier_friendly_keyword_phrase", "") or "")
+                        if _target_within_friendly_keyword_phrase_range(
+                            cand,
+                            phrase=phrase,
+                            range_value=cond_range,
+                        ):
+                            modifier += int(conditional_mod)
+                    payload = {"unit_id": get_entity_id(cand)}
+                    if modifier:
+                        payload["battle_shock_test_modifier"] = int(modifier)
+                    options.append(
+                        DecisionOption.create(
+                            str(getattr(cand, "name", "Unit") or "Unit"),
+                            payload=payload,
+                        )
+                    )
+                if not options:
+                    continue
+                request = DecisionRequest.create(
+                    DECISION_CHOOSE_POST_SHOOT_BATTLESHOCK_TARGET,
+                    f"{ability_name}: select a unit to take a Battle-shock test.",
+                    player_id=getattr(attacker_player, "id", None),
+                    options=options,
+                    context={
+                        "attacker_unit_id": get_entity_id(attacker_unit),
+                        "model_id": get_entity_id(model),
+                        "ability_name": ability_name,
+                    },
+                )
+                self.request_decision(request)
 
     def _on_unit_shooting_resolved_post_shoot_shoot_again(
         self,

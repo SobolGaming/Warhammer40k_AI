@@ -2476,6 +2476,38 @@ def _datasheet_ability_support_by_name_faction() -> Dict[Tuple[str, str], Tuple[
             "Supported",
             "After shooting with Arcane Fire, hit enemy unit is pinned/ensnared: -2 Move and -2 to Charge rolls until next turn.",
         ),
+        ("TS", "Arch-Sorcerer of Tzeentch (Psychic)"): (
+            "Supported",
+            "When this model attempts a Ritual, add 1 to the Psychic test result.",
+        ),
+        ("TS", "Lord of the Planet of the Sorcerers (Psychic)"): (
+            "Supported",
+            "This model can attempt up to two Rituals per turn and adds 2 to each Ritual Psychic test result.",
+        ),
+        ("TS", "Immaterial Flare (Aura)"): (
+            "Supported",
+            "Friendly Thousand Sons Psykers within 6\" gain +1 to Channel-the-Warp Psychic tests; bonus does not stack with other test modifiers.",
+        ),
+        ("TS", "Spirit Snare"): (
+            "Supported",
+            "When a nearby Thousand Sons Cabal Psyker model is destroyed, choose a Spirit Snare model within 9\" to gain +1 Ritual test bonus (capped at +2).",
+        ),
+        ("TS", "Rebind Rubricae (Psychic)"): (
+            "Supported",
+            "Command phase while leading: roll D6 table (1: D3 mortal wounds to unit, 2-5: return 1 Bodyguard model, 6: return up to 2 Bodyguard models).",
+        ),
+        ("TS", "Herd Banner"): (
+            "Supported",
+            "While the bearer's unit controls an objective within range, improve Leadership by 1.",
+        ),
+        ("TS", "Hunter of Souls"): (
+            "Supported",
+            "Attacks vs CHARACTER units re-roll hit/wound rolls of 1 (full re-rolls vs PSYKER CHARACTER); destroying those units heals this model (D3 or 3).",
+        ),
+        ("TS", "Terrifying Assault"): (
+            "Supported",
+            "After this model shoots or fights, select a hit enemy unit for a Battle-shock test, with an additional -1 modifier while it is within 9\" of friendly Thousand Sons Psyker units.",
+        ),
         ("TS", "Destroyer of Futures"): (
             "Supported",
             "Fire Overwatch hits on 5+, or 4+ when the target is within 9\" of one or more friendly Thousand Sons Psyker units.",

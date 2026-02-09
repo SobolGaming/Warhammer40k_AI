@@ -653,9 +653,52 @@ class GamePhaseHandlersMixin:
                 continue
             if len(bodyguard.models or []) <= 0:
                 continue
-            if not list(bodyguard.models_lost or []):
+
+            table_roll = str(ability.get("table_roll", "") or "").strip().upper()
+            if table_roll == "D6":
+                try:
+                    from ...utility.dice import get_roll
+                    rolled = int(get_roll("D6") or 0)
+                except Exception:
+                    rolled = 0
+                if rolled <= 0:
+                    continue
+                ability = dict(ability or {})
+                ability["table_roll_result"] = int(rolled)
+                if rolled == 1:
+                    try:
+                        mw_expr = str(ability.get("mortal_wounds_roll_on_1", "") or "D3").strip().upper() or "D3"
+                        mortal_wounds = int(get_roll(mw_expr) or 0)
+                    except Exception:
+                        mortal_wounds = 0
+                    if mortal_wounds > 0:
+                        bodyguard._apply_mortal_wounds_to_unit(
+                            bodyguard,
+                            int(mortal_wounds),
+                            game_map=getattr(self, "map", None),
+                            is_psychic_attack=True,
+                        )
+                    continue
+                if rolled <= 5:
+                    amount = int(ability.get("amount_on_2_5", 0) or 0)
+                else:
+                    amount = int(ability.get("amount_on_6", 0) or 0)
+                if amount <= 0:
+                    continue
+                if not list(bodyguard.models_lost or []):
+                    continue
+                self._queue_bodyguard_return_decision(
+                    player=player,
+                    leader_unit=unit,
+                    bodyguard_unit=bodyguard,
+                    ability=ability,
+                    remaining=amount,
+                    allow_skip=bool(ability.get("allow_skip", True)),
+                )
                 continue
 
+            if not list(bodyguard.models_lost or []):
+                continue
             amount_roll = str(ability.get("amount_roll", "") or "").strip().upper()
             amount = int(ability.get("amount", 0) or 0)
             if amount_roll:

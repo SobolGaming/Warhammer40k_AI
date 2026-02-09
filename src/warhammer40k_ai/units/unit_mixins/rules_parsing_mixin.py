@@ -433,6 +433,26 @@ class RulesParsingMixin:
                 and "bearer is leading a unit" not in low
             ):
                 continue
+            # Rebind Rubricae-style D6 table:
+            # 1 = D3 mortals, 2-5 = return 1, 6 = return up to 2.
+            if (
+                "roll one d6" in low
+                and "on a 1" in low
+                and "d3 mortal wounds" in low
+                and "on a 2-5" in low
+                and "destroyed bodyguard model" in low
+                and "on a 6" in low
+                and "up to 2 destroyed bodyguard models" in low
+            ):
+                return {
+                    "name": name or "Bodyguard Return",
+                    "description": desc or "",
+                    "table_roll": "D6",
+                    "mortal_wounds_roll_on_1": "D3",
+                    "amount_on_2_5": 1,
+                    "amount_on_6": 2,
+                    "allow_skip": True,
+                }
             if "can return" not in low:
                 continue
             m = re.search(
@@ -1399,6 +1419,7 @@ class RulesParsingMixin:
                     "attached_character_fnp_entries",
                     "unit_contains_character_fnp_entries",
                     "bearer_unit_invulnerable_save",
+                    "bearer_unit_leadership_bonus_controlled_objective",
                     "bearer_unit_agile_maneuver_reroll",
                     "bearer_unit_sustained_hits_value",
                     "bearer_unit_sustained_hits_value_melee",
@@ -1437,6 +1458,7 @@ class RulesParsingMixin:
         charge_mods: list[tuple[int, str]] = []
         advance_mods: list[tuple[int, str]] = []
         leadership_sets: list[tuple[int, str]] = []
+        leadership_controlled_objective_mods: list[tuple[int, str]] = []
         movement_sets: list[tuple[int, str]] = []
         movement_bonus_mods: list[tuple[int, str]] = []
         oc_mods: list[tuple[int, str]] = []
@@ -1536,6 +1558,17 @@ class RulesParsingMixin:
                         if val:
                             source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
                             leadership_sets.append((val, source))
+
+                    m = self._BEARER_UNIT_CONTROLLED_OBJECTIVE_LEADERSHIP_IMPROVE_RE.search(sentence)
+                    if m:
+                        try:
+                            val = int(m.group(1))
+                        except Exception:
+                            val = None
+                        if val:
+                            source = str(name or "Bearer unit ability").strip() or "Bearer unit ability"
+                            # Lower Leadership characteristic is better in 10e.
+                            leadership_controlled_objective_mods.append((-int(val), source))
 
                     m = self._BEARER_UNIT_MOVEMENT_SET_RE.search(sentence)
                     if m:
@@ -1807,6 +1840,22 @@ class RulesParsingMixin:
                         "leadership",
                         Modifier(ModifierOp.SET, int(val), source=f"ability:bearer_unit_leadership:{source}"),
                     )
+
+        if leadership_controlled_objective_mods:
+            deduped_entries = []
+            seen_entries: set[tuple[int, str]] = set()
+            for val, source in leadership_controlled_objective_mods:
+                key = (int(val), str(source or "").strip())
+                if key in seen_entries:
+                    continue
+                seen_entries.add(key)
+                deduped_entries.append({"value": int(val), "source": key[1] or "Bearer unit ability"})
+            for u in members:
+                sr = getattr(u, "special_rules", None)
+                if not isinstance(sr, dict):
+                    sr = {}
+                sr["bearer_unit_leadership_bonus_controlled_objective"] = list(deduped_entries)
+                u.special_rules = sr
 
         if movement_sets:
             from ...utility.modifiers import Modifier, ModifierOp
