@@ -3390,6 +3390,178 @@ class GamePhaseHandlersMixin:
             )
             self.request_decision(request)
 
+    def _on_phase_end_forgewrought_expertise(self, player=None, phase=None, **_kwargs) -> None:
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "MOVEMENT_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return
+        from ...utility.aura_utils import unit_within_range_of_unit
+
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+
+        pending_sources: set[str] = set()
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "forgewrought_expertise":
+                    continue
+                sid = str(ctx.get("source_unit_id", "") or "")
+                if sid:
+                    pending_sources.add(sid)
+
+        def _unit_sort_key(unit_obj):
+            try:
+                return str(get_entity_id(unit_obj))
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        seen_sources: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            source_id = str(get_entity_id(root) or "")
+            if not source_id or source_id in seen_sources:
+                continue
+            seen_sources.add(source_id)
+            if source_id in pending_sources:
+                continue
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            get_rule = getattr(root, "get_forgewrought_expertise_rule", None)
+            rule = get_rule() if callable(get_rule) else None
+            if not isinstance(rule, dict):
+                has_rule = getattr(root, "has_forgewrought_expertise", None)
+                if not callable(has_rule) or not bool(has_rule()):
+                    continue
+                rule = {
+                    "source": "Forgewrought Expertise",
+                    "range": 3,
+                    "heal_roll": "D3",
+                    "assistant_model_name": "Ironkin Assistant",
+                    "assistant_heal_flat": 3,
+                    "target_keywords": ("VEHICLE", "EXOFRAME", "IRONKIN STEELJACKS"),
+                    "optional": True,
+                }
+            try:
+                selection_range = float(rule.get("range", 3) or 3)
+            except Exception:
+                selection_range = 3.0
+            if selection_range <= 0:
+                selection_range = 3.0
+            ability_name = str(rule.get("source", "") or "Forgewrought Expertise").strip() or "Forgewrought Expertise"
+            heal_roll = str(rule.get("heal_roll", "") or "D3").strip().upper() or "D3"
+            assistant_model_name = str(rule.get("assistant_model_name", "") or "Ironkin Assistant").strip() or "Ironkin Assistant"
+            try:
+                assistant_heal_flat = int(rule.get("assistant_heal_flat", 3) or 3)
+            except Exception:
+                assistant_heal_flat = 3
+            target_keywords = tuple(str(v).strip().upper() for v in tuple(rule.get("target_keywords", ()) or ()) if str(v).strip())
+            if not target_keywords:
+                target_keywords = ("VEHICLE", "EXOFRAME", "IRONKIN STEELJACKS")
+
+            candidates = []
+            seen_targets: set[str] = set()
+            for cand in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if cand is None:
+                    continue
+                try:
+                    target_root = cand.get_attached_unit_root()
+                except Exception:
+                    target_root = cand
+                target_id = str(get_entity_id(target_root) or "")
+                if not target_id or target_id in seen_targets:
+                    continue
+                seen_targets.add(target_id)
+                if target_root is root:
+                    continue
+                if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(target_root, "deployed", True)):
+                    continue
+                try:
+                    if target_root.is_in_reserves() or target_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+                keyword_match = False
+                for keyword in target_keywords:
+                    try:
+                        if bool(getattr(target_root, "has_any_keyword", lambda _k: False)(keyword)):
+                            keyword_match = True
+                            break
+                    except Exception:
+                        continue
+                if not keyword_match:
+                    continue
+                if not unit_within_range_of_unit(root, target_root, selection_range, use_attached_aggregate=True):
+                    continue
+                tsr = getattr(target_root, "special_rules", None)
+                if isinstance(tsr, dict):
+                    if (
+                        str(tsr.get("forgewrought_expertise_repaired_turn_owner", "") or "") == owner_id
+                        and int(tsr.get("forgewrought_expertise_repaired_turn", 0) or 0) == int(turn or 0)
+                    ):
+                        continue
+                candidates.append(target_root)
+
+            if not candidates:
+                continue
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            options.extend(
+                DecisionOption.create(
+                    str(getattr(c, "name", "Unit") or "Unit"),
+                    payload={"target_unit_id": get_entity_id(c)},
+                )
+                for c in sorted(list(candidates), key=_unit_sort_key)
+            )
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a friendly target within {int(selection_range)}\" (or None).",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "forgewrought_expertise",
+                    "ability_name": ability_name,
+                    "phase": "Movement phase",
+                    "optional": True,
+                    "source_unit_id": source_id,
+                    "unit_id": source_id,
+                    "range": int(selection_range),
+                    "heal_roll": heal_roll,
+                    "assistant_model_name": assistant_model_name,
+                    "assistant_heal_flat": int(assistant_heal_flat),
+                    "target_keywords": list(target_keywords),
+                    "turn_owner": owner_id,
+                    "turn": int(turn or 0),
+                },
+            )
+            self.request_decision(request)
+
     def _on_phase_start_opponent_shooting_phase_disrupt(self, player=None, phase=None, **_kwargs) -> None:
         """Start of opponent's Shooting phase: resolve Mischief and Confusion / Horrible Fascination."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

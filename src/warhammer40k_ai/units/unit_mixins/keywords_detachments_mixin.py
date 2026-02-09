@@ -1048,6 +1048,200 @@ class KeywordsDetachmentsMixin:
         self._ability_cache["master_of_mechanisms"] = bool(found)
         return bool(found)
 
+    def _attached_members_for_rule_scan(self) -> tuple["Unit", list]:
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+        return root, list(members)
+
+    def _attached_unit_has_ability_patterns(self, *, cache_key: str, patterns: list[str]) -> bool:
+        root, members = self._attached_members_for_rule_scan()
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return bool(root._ability_cache[cache_key])
+        found = False
+        for member in list(members or []):
+            if member is None:
+                continue
+            has_it, _ = member._find_ability_with_patterns(patterns)
+            if has_it:
+                found = True
+                break
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = bool(found)
+        return bool(found)
+
+    def _iter_attached_models_with_ability_patterns(self, patterns: list[str]):
+        _, members = self._attached_members_for_rule_scan()
+        for member in list(members or []):
+            if member is None:
+                continue
+            has_it, _ = member._find_ability_with_patterns(patterns)
+            if not has_it:
+                continue
+            for model in list(getattr(member, "models", []) or []):
+                try:
+                    alive_attr = getattr(model, "is_alive", False)
+                    alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                except Exception:
+                    alive = False
+                if alive:
+                    yield model
+
+    def has_seized_opportunity(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="seized_opportunity",
+            patterns=["seized opportunity"],
+        )
+
+    def has_computational_mastermind(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="computational_mastermind",
+            patterns=["computational mastermind"],
+        )
+
+    def has_geomantic_hunters(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="geomantic_hunters",
+            patterns=["geomantic hunters"],
+        )
+
+    def has_resource_transmutation(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="resource_transmutation",
+            patterns=["resource transmutation"],
+        )
+
+    def has_multiwave_comms_array(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="multiwave_comms_array",
+            patterns=["multiwave comms array"],
+        )
+
+    def has_unhinged_vengeance(self) -> bool:
+        return self._attached_unit_has_ability_patterns(
+            cache_key="unhinged_vengeance",
+            patterns=["unhinged vengeance"],
+        )
+
+    def get_resource_transmutation_model(self):
+        models = list(self._iter_attached_models_with_ability_patterns(["resource transmutation"]) or [])
+        if not models:
+            return None
+        try:
+            models.sort(key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            pass
+        return models[0]
+
+    def get_unhinged_vengeance_model(self):
+        models = list(self._iter_attached_models_with_ability_patterns(["unhinged vengeance"]) or [])
+        if not models:
+            return None
+        try:
+            models.sort(key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            pass
+        return models[0]
+
+    def get_computational_mastermind_models(self) -> list:
+        models = list(self._iter_attached_models_with_ability_patterns(["computational mastermind"]) or [])
+        try:
+            models.sort(key=lambda m: str(get_entity_id(m) or ""))
+        except Exception:
+            pass
+        return models
+
+    def get_forgewrought_expertise_rule(self) -> Optional[dict]:
+        """
+        Return rule info for Forgewrought Expertise:
+        - End of Movement: repair one friendly LEAGUES OF VOTANN VEHICLE/EXOFRAME/IRONKIN STEELJACKS unit within range.
+        - Heal D3, or flat 3 if this unit contains an Ironkin Assistant model.
+        - Each target unit can only be repaired once per turn.
+        """
+        root, members = self._attached_members_for_rule_scan()
+        cache_key = "forgewrought_expertise_rule"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return root._ability_cache[cache_key]
+
+        rule = None
+        seen: set[tuple[str, str]] = set()
+        for unit in list(members or []):
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized_text = unit._normalize_rules_text(text_src)
+                if not normalized_text:
+                    continue
+                key = (str(name or "").strip().lower(), normalized_text.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                norm = normalized_text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+                norm = re.sub(r"'s\b", "s", norm)
+                norm = re.sub(r"[^a-z0-9]+", " ", norm)
+                norm = re.sub(r"\s+", " ", norm).strip()
+                if "end of your movement phase" not in norm:
+                    continue
+                if "repair one friendly leagues of votann" not in norm:
+                    continue
+                if "vehicle" not in norm or "exoframe" not in norm or "ironkin steeljacks" not in norm:
+                    continue
+                if "regains up to d3 lost wounds" not in norm:
+                    continue
+                if "each unit can only be repaired once per turn" not in norm:
+                    continue
+                range_value = 3
+                m_range = re.search(r"within\s+(\d+)", norm)
+                if m_range:
+                    try:
+                        range_value = int(m_range.group(1) or 3)
+                    except Exception:
+                        range_value = 3
+                source = str(name or "Forgewrought Expertise").strip() or "Forgewrought Expertise"
+                rule = {
+                    "source": source,
+                    "range": int(range_value),
+                    "heal_roll": "D3",
+                    "assistant_model_name": "Ironkin Assistant",
+                    "assistant_heal_flat": 3,
+                    "limit_once_per_turn": True,
+                    "target_keywords": ("VEHICLE", "EXOFRAME", "IRONKIN STEELJACKS"),
+                    "optional": True,
+                }
+                break
+            if rule is not None:
+                break
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = rule
+        return rule
+
+    def has_forgewrought_expertise(self) -> bool:
+        if "forgewrought_expertise" in getattr(self, "_ability_cache", {}):
+            return bool(self._ability_cache["forgewrought_expertise"])
+        found = bool(self.get_forgewrought_expertise_rule())
+        if not found:
+            found = self._attached_unit_has_ability_patterns(
+                cache_key="forgewrought_expertise_name_scan",
+                patterns=["forgewrought expertise"],
+            )
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache["forgewrought_expertise"] = bool(found)
+        return bool(found)
+
     def has_truesilver_aegis_aura(self) -> bool:
         """Return True if this unit has Truesilver Aegis aura."""
         cache_key = "truesilver_aegis_aura"
@@ -3941,6 +4135,9 @@ class KeywordsDetachmentsMixin:
         owner = str(getattr(current_player, "name", "") or "")
         return f"{br}:{pname}:{owner}"
 
+    def _unhinged_vengeance_phase_key(self, game=None) -> str:
+        return self._blood_surge_phase_key(game)
+
     def _guns_blazing_turn_key(self, game=None) -> str:
         if game is None:
             try:
@@ -3988,6 +4185,45 @@ class KeywordsDetachmentsMixin:
         sr["brazen_fury_used_phase_key"] = self._brazen_fury_phase_key(game)
         self.special_rules = sr
 
+    def unhinged_vengeance_used_this_phase(self, game=None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        key = self._unhinged_vengeance_phase_key(game)
+        return str(sr.get("unhinged_vengeance_used_phase_key", "")) == key
+
+    def mark_unhinged_vengeance_used(self, game=None) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["unhinged_vengeance_used_phase_key"] = self._unhinged_vengeance_phase_key(game)
+        self.special_rules = sr
+
+    def geomantic_hunters_uses(self) -> int:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return 0
+        try:
+            return int(sr.get("geomantic_hunters_uses", 0) or 0)
+        except Exception:
+            return 0
+
+    def can_use_geomantic_hunters(self) -> bool:
+        if not self.has_geomantic_hunters():
+            return False
+        return int(self.geomantic_hunters_uses() or 0) < 2
+
+    def mark_geomantic_hunters_used(self) -> None:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        try:
+            used = int(sr.get("geomantic_hunters_uses", 0) or 0)
+        except Exception:
+            used = 0
+        sr["geomantic_hunters_uses"] = max(0, min(2, int(used) + 1))
+        self.special_rules = sr
+
     def guns_blazing_used_this_turn(self, game=None) -> bool:
         sr = getattr(self, "special_rules", None)
         if not isinstance(sr, dict):
@@ -4033,6 +4269,32 @@ class KeywordsDetachmentsMixin:
         if self.is_battle_shocked():
             return False
         if self.brazen_fury_used_this_phase(game):
+            return False
+        if game_map is None:
+            try:
+                game_map = getattr(game, "map", None)
+            except Exception:
+                game_map = None
+        if game_map is not None:
+            try:
+                for enemy in game_map.get_enemy_units(self):
+                    if game_map.is_within_engagement_range(self, enemy):
+                        return False
+            except Exception:
+                pass
+        return True
+
+    def can_unhinged_vengeance(self, game=None, game_map=None) -> bool:
+        if not self.has_unhinged_vengeance():
+            return False
+        if not self.is_alive() or not getattr(self, "deployed", False):
+            return False
+        if self.is_battle_shocked():
+            return False
+        if self.unhinged_vengeance_used_this_phase(game):
+            return False
+        model = self.get_unhinged_vengeance_model()
+        if model is None:
             return False
         if game_map is None:
             try:

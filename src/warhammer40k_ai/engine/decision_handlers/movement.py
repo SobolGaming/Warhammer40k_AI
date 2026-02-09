@@ -864,6 +864,8 @@ def _apply_move_unit(game: object, request: DecisionRequest, result: DecisionRes
             member.mark_blood_surge_used(game)
         if movement_type == "brazen_fury":
             member.mark_brazen_fury_used(game)
+        if movement_type == "unhinged_vengeance":
+            member.mark_unhinged_vengeance_used(game)
     if movement_type == "reactive":
         _clear_battle_focus_reactive_flags(unit)
         if str(ctx.get("reactive_move_kind", "") or "").strip() in ("tactical_acumen", "post_shoot_no_charge"):

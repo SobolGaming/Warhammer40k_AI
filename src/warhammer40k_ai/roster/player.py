@@ -10,6 +10,7 @@ from ..battlefield.map import Objective
 from ..engine.mission_cards import PrimaryMissionCard, SecondaryMissionCard, default_secondary_deck
 from ..utility.rng import resolve_rng
 from warhammer40k_ai.utility.calcs import get_dist
+from ..utility.entity_ids import get_entity_id
 
 logging.basicConfig(format="%(asctime)s %(levelname)-8s %(message)s")
 logger = logging.getLogger(__name__)
@@ -61,6 +62,8 @@ class Player:
         self._ability_used_battle_round: dict[str, int] = {}
         # Generic per-turn ability usage (keyed by ability string).
         self._ability_used_turn: dict[str, tuple[int, int]] = {}
+        # Generic per-phase ability usage (keyed by ability string).
+        self._ability_used_phase: dict[str, tuple[int, str, int]] = {}
         # One-shot overrides that dialogs can set to drive immediate decisions without requiring
         # a persistent controller. Entries are consumed on first read.
         self._next_optional_decisions: dict[str, bool] = {}
@@ -68,6 +71,9 @@ class Player:
         self._next_optional_selections: dict[str, object] = {}
         # Optional controller hook for reactive move placement (non-local control).
         self.reactive_move_position_hook = None
+        # Stratagem-spend context (set by apply_stratagem_cp_cost, consumed by spend_command_points).
+        self._pending_stratagem_target_unit_id: str = ""
+        self._pending_stratagem_name: str = ""
         #print(f"Player {self.name} created with army: {self.army}")
 
     @property
@@ -208,6 +214,8 @@ class Player:
         reason_text = str(reason or "")
         reason_lower = reason_text.lower()
         is_stratagem_spend = str(source or "").strip().lower() == "stratagem" or "stratagem:" in reason_lower
+        pending_target_unit_id = str(getattr(self, "_pending_stratagem_target_unit_id", "") or "")
+        pending_stratagem_name = str(getattr(self, "_pending_stratagem_name", "") or "")
         pending = getattr(self, "_pending_stratagem_cp_increase", None)
         pending_increase = 0
         pending_name = ""
@@ -221,7 +229,14 @@ class Player:
             pending_increase = 0
         if amount == 0:
             if is_stratagem_spend:
+                self._maybe_apply_multiwave_comms_array_cp_refund(
+                    target_unit_id=pending_target_unit_id,
+                    stratagem_name=(pending_stratagem_name or reason_name),
+                )
+            if is_stratagem_spend:
                 self._pending_stratagem_cp_increase = None
+                self._pending_stratagem_target_unit_id = ""
+                self._pending_stratagem_name = ""
             return True
         if self.command_points >= amount:
             self.command_points -= amount
@@ -236,7 +251,14 @@ class Player:
                 else:
                     append_action(self, f"Stratagem used ({amount} CP)")
             if is_stratagem_spend:
+                self._maybe_apply_multiwave_comms_array_cp_refund(
+                    target_unit_id=pending_target_unit_id,
+                    stratagem_name=(pending_stratagem_name or reason_name),
+                )
+            if is_stratagem_spend:
                 self._pending_stratagem_cp_increase = None
+                self._pending_stratagem_target_unit_id = ""
+                self._pending_stratagem_name = ""
             return True
         if is_stratagem_spend and pending_increase > 0:
             key = (reason_name or pending_name).strip().upper()
@@ -247,6 +269,8 @@ class Player:
             self._last_stratagem_spend_failed_due_to_increase = True
         if is_stratagem_spend:
             self._pending_stratagem_cp_increase = None
+            self._pending_stratagem_target_unit_id = ""
+            self._pending_stratagem_name = ""
         return False
 
     def _record_cp_change(self, delta: int, *, reason: str | None = None, source: str | None = None) -> None:
@@ -292,6 +316,22 @@ class Player:
             return (0, -1)
         return (int(getattr(game, "turn", 0) or 0), int(getattr(game, "current_player_index", 0) or 0))
 
+    def _phase_key(self) -> tuple[int, str, int]:
+        game = getattr(self, "game", None)
+        if game is None:
+            return (0, "", -1)
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        phase_obj = getattr(game, "phase", None)
+        phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+        try:
+            player_idx = int(getattr(game, "current_player_index", -1) or -1)
+        except Exception:
+            player_idx = -1
+        return (turn, phase_name, player_idx)
+
     def _mark_ability_used_turn(self, key: str) -> None:
         k = str(key or "").strip().upper()
         if not k:
@@ -303,6 +343,82 @@ class Player:
         if not k:
             return False
         return self._ability_used_turn.get(k) == self._turn_key()
+
+    def _mark_ability_used_phase(self, key: str) -> None:
+        k = str(key or "").strip().upper()
+        if not k:
+            return
+        self._ability_used_phase[k] = self._phase_key()
+
+    def _ability_used_this_phase(self, key: str) -> bool:
+        k = str(key or "").strip().upper()
+        if not k:
+            return False
+        return self._ability_used_phase.get(k) == self._phase_key()
+
+    def _resolve_owned_unit_root_by_id(self, unit_id: str):
+        key = str(unit_id or "").strip()
+        if not key:
+            return None
+        army = self.get_army()
+        if army is None:
+            return None
+        seen: set[str] = set()
+        for unit in list(getattr(army, "units", []) or []):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            rid = str(get_entity_id(root) or "")
+            if not rid or rid in seen:
+                continue
+            seen.add(rid)
+            if rid == key:
+                return root
+        return None
+
+    def _maybe_apply_multiwave_comms_array_cp_refund(self, *, target_unit_id: str, stratagem_name: str = "") -> None:
+        root = self._resolve_owned_unit_root_by_id(target_unit_id)
+        if root is None:
+            return
+        has_rule = getattr(root, "has_multiwave_comms_array", None)
+        if not callable(has_rule) or not bool(has_rule()):
+            return
+        try:
+            from ..utility.dice import get_roll
+            roll = int(get_roll("D6") or 0)
+        except Exception:
+            roll = 0
+        gained = 0
+        if roll >= 5:
+            gained = int(self.gain_command_points(1, reason="Multiwave Comms Array") or 0)
+        try:
+            from ..utility.event_bus import append_dice, append_action
+
+            append_dice(self, f"Multiwave Comms Array roll: {int(roll)}")
+            if gained > 0:
+                append_action(self, f"Multiwave Comms Array: gained {int(gained)} CP.")
+            else:
+                append_action(self, "Multiwave Comms Array: no CP gained.")
+        except Exception:
+            pass
+        game = getattr(self, "game", None)
+        event_system = getattr(game, "event_system", None) if game is not None else None
+        if event_system is not None:
+            try:
+                event_system.publish(
+                    "command_points_gained",
+                    player=self,
+                    amount=int(gained or 0),
+                    reason="Multiwave Comms Array",
+                    target_unit=root,
+                    roll=int(roll),
+                    stratagem_name=str(stratagem_name or ""),
+                )
+            except Exception:
+                pass
 
     def _get_opponent_player(self):
         game = getattr(self, "game", None)
@@ -1141,6 +1257,19 @@ class Player:
         """
         base = int(getattr(stratagem, "cp_cost", 0) or 0)
         name_u = str(getattr(stratagem, "name", "") or "").strip().upper()
+        target_root_id = ""
+        if target_unit is not None:
+            try:
+                get_root = getattr(target_unit, "get_attached_unit_root", None)
+                root = get_root() if callable(get_root) else target_unit
+            except Exception:
+                root = target_unit
+            try:
+                target_root_id = str(get_entity_id(root) or "")
+            except Exception:
+                target_root_id = ""
+        self._pending_stratagem_target_unit_id = str(target_root_id or "")
+        self._pending_stratagem_name = str(getattr(stratagem, "name", "") or "").strip()
         faultless = self._preview_faultless_opportunist_discount(stratagem=stratagem, target_unit=target_unit)
         if faultless:
             cost = 0

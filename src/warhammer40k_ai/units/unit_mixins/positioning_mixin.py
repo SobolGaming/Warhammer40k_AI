@@ -2028,6 +2028,43 @@ class PositioningMixin:
         except Exception:
             pass
         try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("resource_transmutation_active_model_id"):
+                model_id = str(get_entity_id(model) or "")
+                active_model_id = str(sr.get("resource_transmutation_active_model_id", "") or "")
+                apply_bonus = bool(model_id and model_id == active_model_id)
+                if apply_bonus:
+                    owner_id = str(sr.get("resource_transmutation_owner", "") or "")
+                    turn = int(sr.get("resource_transmutation_turn", 0) or 0)
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                    if game is not None:
+                        try:
+                            cur_turn = int(getattr(game, "turn", 0) or 0)
+                        except Exception:
+                            cur_turn = 0
+                        try:
+                            cur_owner = str(getattr(game.get_current_player(), "id", "") or "")
+                        except Exception:
+                            cur_owner = ""
+                        try:
+                            phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                        except Exception:
+                            phase = ""
+                        if turn and cur_turn and turn != cur_turn:
+                            apply_bonus = False
+                        if owner_id and cur_owner and owner_id != cur_owner:
+                            apply_bonus = False
+                        if phase and phase != "SHOOTING_PHASE":
+                            apply_bonus = False
+                if apply_bonus:
+                    source = str(sr.get("resource_transmutation_source", "") or "Resource Transmutation").strip() or "Resource Transmutation"
+                    rules = list(rules or []) + [
+                        {"attack_type": "ranged", "keyword": "SUSTAINED HITS 1", "source": source}
+                    ]
+        except Exception:
+            pass
+        try:
             if target is not None:
                 root = self.get_attached_unit_root()
                 prey_ids = getattr(root, "_prey_selection_prey_ids", None)

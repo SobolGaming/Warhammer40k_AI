@@ -4144,6 +4144,245 @@ class GameShootingFightHandlersMixin:
         except Exception:
             return
 
+    def _on_shooting_targets_selected_geomantic_hunters(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        if not bool(getattr(root, "has_geomantic_hunters", lambda: False)()):
+            return
+        if not bool(getattr(root, "can_use_geomantic_hunters", lambda: False)()):
+            return
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="geomantic_hunters",
+            ability_name="Geomantic Hunters",
+            message=f"Geomantic Hunters: activate for {getattr(root, 'name', 'Unit')}?",
+            context={
+                "ability_name": "Geomantic Hunters",
+                "phase": "Shooting phase",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:geomantic_hunters",
+        )
+
+    def _on_shooting_targets_selected_resource_transmutation(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            root = attacking_unit
+        if root is None:
+            return
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(root, "is_alive", lambda: False)()):
+            return
+        if not bool(getattr(root, "deployed", True)):
+            return
+        try:
+            if root.is_in_reserves() or root.is_embarked:
+                return
+        except Exception:
+            pass
+        if not bool(getattr(root, "has_resource_transmutation", lambda: False)()):
+            return
+        model = getattr(root, "get_resource_transmutation_model", lambda: None)()
+        if model is None or not getattr(model, "is_alive", True):
+            return
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        try:
+            if int(getattr(pe, "yield_points", 0) or 0) < 1:
+                return
+        except Exception:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        sr = getattr(root, "special_rules", None)
+        if isinstance(sr, dict):
+            try:
+                if (
+                    str(sr.get("resource_transmutation_used_turn_owner", "") or "") == owner_id
+                    and int(sr.get("resource_transmutation_used_turn", 0) or 0) == int(turn or 0)
+                ):
+                    return
+            except Exception:
+                pass
+        unit_id = str(get_entity_id(root) or "")
+        model_id = str(get_entity_id(model) or "")
+        if not unit_id or not model_id:
+            return
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="resource_transmutation",
+            ability_name="Resource Transmutation",
+            message=f"Resource Transmutation: spend 1 YP for {getattr(model, 'name', 'Model')}?",
+            context={
+                "ability_name": "Resource Transmutation",
+                "phase": "Shooting phase",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "model_id": model_id,
+                "cost": 1,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+            },
+            payload={
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "model_id": model_id,
+                "cost": 1,
+            },
+            instance_key=f"{unit_id}:{turn}:{owner_id}:resource_transmutation",
+        )
+
+    def _on_unit_shooting_resolved_resource_transmutation(self, attacker_unit=None, killing_models_by_target=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        try:
+            root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            root = attacker_unit
+        if root is None:
+            return
+        sr = getattr(root, "special_rules", None)
+        if not isinstance(sr, dict):
+            return
+        model_id = str(sr.get("resource_transmutation_active_model_id", "") or "")
+        owner_id = str(sr.get("resource_transmutation_owner", "") or "")
+        try:
+            source_turn = int(sr.get("resource_transmutation_turn", 0) or 0)
+        except Exception:
+            source_turn = 0
+        if not model_id or not owner_id or source_turn <= 0:
+            return
+        turn = int(getattr(self, "turn", 0) or 0)
+        if source_turn != turn:
+            return
+        current_player = self.get_current_player()
+        if current_player is None or str(getattr(current_player, "id", "") or "") != owner_id:
+            return
+        phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+        if phase_name != "SHOOTING_PHASE":
+            return
+
+        killed_by_active_model = False
+        kills_map = dict(killing_models_by_target or {})
+        for target_unit, killer_models in list(kills_map.items()):
+            if target_unit is None:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                continue
+            if bool(getattr(target_root, "is_alive", lambda: True)()):
+                continue
+            for killer in list(killer_models or []):
+                killer_id = str(get_entity_id(killer) or "")
+                if killer_id and killer_id == model_id:
+                    killed_by_active_model = True
+                    break
+            if killed_by_active_model:
+                break
+        if not killed_by_active_model:
+            return
+        try:
+            if (
+                str(sr.get("resource_transmutation_gain_resolved_turn_owner", "") or "") == owner_id
+                and int(sr.get("resource_transmutation_gain_resolved_turn", 0) or 0) == int(turn or 0)
+            ):
+                return
+        except Exception:
+            pass
+
+        unit_id = str(get_entity_id(root) or "")
+        if not unit_id:
+            return
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "resource_transmutation_gain":
+                    continue
+                if str(ctx.get("unit_id", "") or "") != unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        army = root.get_parent_army()
+        player = getattr(army, "player", None) if army is not None else None
+        if player is None:
+            return
+        ability_name = str(sr.get("resource_transmutation_source", "") or "Resource Transmutation").strip() or "Resource Transmutation"
+        options = [
+            DecisionOption.create("None", payload={"action": "skip", "gain_yp": 0}),
+            DecisionOption.create("Gain 1 YP", payload={"action": "gain", "gain_yp": 1}),
+            DecisionOption.create("Gain 2 YP", payload={"action": "gain", "gain_yp": 2}),
+        ]
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            f"{ability_name}: gain up to 2 YP.",
+            player_id=getattr(player, "id", None),
+            options=options,
+            context={
+                "ability": "resource_transmutation_gain",
+                "ability_name": ability_name,
+                "phase": "Shooting phase",
+                "unit_id": unit_id,
+                "source_unit_id": unit_id,
+                "model_id": model_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "optional": True,
+            },
+        )
+        self.request_decision(request)
+
     def _on_shooting_targets_selected_blood_surge(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return
@@ -4233,6 +4472,120 @@ class GameShootingFightHandlersMixin:
                 max_dist = int(self.roll_blood_surge_distance(target) or 0)
                 move_fn(getattr(self, "map", None), max_dist)
                 target.mark_blood_surge_used(self)
+
+    def _on_shooting_targets_selected_unhinged_vengeance(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None:
+            return
+        if not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        attacker_army = attacker_root.get_parent_army() if attacker_root is not None else None
+        snapshot = dict(getattr(self, "_unhinged_vengeance_shooting_snapshot", {}).get(attacking_unit, {}) or {})
+        for target in list(target_units or []):
+            if target is None:
+                continue
+            try:
+                root = target.get_attached_unit_root()
+            except Exception:
+                root = target
+            if root is None:
+                continue
+            if attacker_army is not None and root.get_parent_army() is attacker_army:
+                continue
+            try:
+                if not root.has_unhinged_vengeance():
+                    continue
+            except Exception:
+                continue
+            can_fn = getattr(root, "can_unhinged_vengeance", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            model = getattr(root, "get_unhinged_vengeance_model", lambda: None)()
+            if model is None or not getattr(model, "is_alive", True):
+                continue
+            try:
+                before = int(getattr(model, "wounds", 0) or 0)
+            except Exception:
+                before = 0
+            if before <= 0:
+                continue
+            snapshot[root] = int(before)
+        if snapshot:
+            if not hasattr(self, "_unhinged_vengeance_shooting_snapshot") or not isinstance(
+                getattr(self, "_unhinged_vengeance_shooting_snapshot", None), dict
+            ):
+                self._unhinged_vengeance_shooting_snapshot = {}
+            self._unhinged_vengeance_shooting_snapshot[attacking_unit] = snapshot
+
+    def _on_unit_shooting_resolved_unhinged_vengeance(self, attacker_unit=None, **_kwargs) -> None:
+        if attacker_unit is None:
+            return
+        snapshots = getattr(self, "_unhinged_vengeance_shooting_snapshot", None)
+        if not isinstance(snapshots, dict):
+            return
+        snapshot = snapshots.pop(attacker_unit, {})
+        if not snapshot:
+            return
+        if not self.is_shooting_phase():
+            return
+        current_player = self.get_current_player()
+        for target, before in snapshot.items():
+            if target is None:
+                continue
+            try:
+                target_player = target.get_parent_army().player
+            except Exception:
+                target_player = None
+            if target_player is None or target_player is current_player:
+                continue
+            model = getattr(target, "get_unhinged_vengeance_model", lambda: None)()
+            if model is None or not getattr(model, "is_alive", True):
+                continue
+            try:
+                after = int(getattr(model, "wounds", 0) or 0)
+            except Exception:
+                after = int(before or 0)
+            if after >= int(before or 0):
+                continue
+            can_fn = getattr(target, "can_unhinged_vengeance", None)
+            if callable(can_fn):
+                if not can_fn(game=self, game_map=getattr(self, "map", None)):
+                    continue
+            player = target_player
+            is_human = bool(getattr(player, "has_control", lambda: False)()) if player is not None else False
+            es = getattr(self, "event_system", None)
+            subs = getattr(es, "subscribers", None) if es is not None else None
+            has_sub = bool(isinstance(subs, dict) and subs.get("unhinged_vengeance_prompt"))
+            if is_human and es is not None:
+                es.publish(
+                    "unhinged_vengeance_prompt",
+                    player=player,
+                    unit=target,
+                    attacker_unit=attacker_unit,
+                    game=self,
+                )
+                if has_sub:
+                    continue
+            msg = (
+                "Unhinged Vengeance: Move D6+2\" as close as possible to the closest non-AIRCRAFT enemy unit.\n"
+                "This model can end this move within Engagement Range of that enemy unit."
+            )
+            self._queue_reactive_move_confirmation(
+                player=player,
+                unit=target,
+                kind="unhinged_vengeance",
+                movement_type="unhinged_vengeance",
+                source="Unhinged Vengeance",
+                message=msg,
+                attacker_unit=attacker_unit,
+                allow_engagement_range=True,
+            )
 
     def _on_shooting_targets_selected_guns_blazing(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:

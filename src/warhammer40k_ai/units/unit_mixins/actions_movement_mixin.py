@@ -1396,6 +1396,7 @@ class ActionsMovementMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             limit = ""
+            yield_points_cost = 0
             if self._MODEL_ONCE_PER_BATTLE_ROUND_UNMODIFIED_SIX_RE.fullmatch(normalized):
                 limit = "battle_round"
             elif (
@@ -1404,6 +1405,12 @@ class ActionsMovementMixin:
                 in normalized
             ):
                 limit = "battle_round"
+                m_cost = re.search(r"spend\s+(\d+)\s*yp", normalized)
+                if m_cost:
+                    try:
+                        yield_points_cost = int(m_cost.group(1) or 0)
+                    except Exception:
+                        yield_points_cost = 0
             elif self._MODEL_ONCE_PER_BATTLE_UNMODIFIED_SIX_RE.fullmatch(normalized):
                 limit = "battle"
             if not limit:
@@ -1419,6 +1426,7 @@ class ActionsMovementMixin:
                     "source": source,
                     "key": key,
                     "limit": limit,
+                    "yield_points_cost": int(max(0, int(yield_points_cost or 0))),
                 }
             )
 

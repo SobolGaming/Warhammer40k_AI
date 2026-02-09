@@ -3504,6 +3504,22 @@ class WargearProfile:
                         continue
             except Exception:
                 continue
+            try:
+                yp_cost = int(spec.get("yield_points_cost", 0) or 0)
+            except Exception:
+                yp_cost = 0
+            if yp_cost > 0:
+                try:
+                    army = unit.get_parent_army()
+                except Exception:
+                    army = None
+                mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+                try:
+                    current_yp = int(getattr(mgr, "yield_points", 0) or 0)
+                except Exception:
+                    current_yp = 0
+                if mgr is None or current_yp < int(yp_cost):
+                    continue
             available.append(spec)
 
         if not available:
@@ -3676,6 +3692,32 @@ class WargearProfile:
             return roll_value, "skip"
 
         try:
+            yp_cost = int(spec.get("yield_points_cost", 0) or 0)
+        except Exception:
+            yp_cost = 0
+        if yp_cost > 0:
+            try:
+                army = unit.get_parent_army()
+            except Exception:
+                army = None
+            mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if mgr is None or not bool(getattr(mgr, "spend_yield_points", lambda _a: False)(int(yp_cost))):
+                return roll_value, "skip"
+            try:
+                if game is not None and hasattr(game, "event_system"):
+                    game.event_system.publish(
+                        "prioritised_efficiency_updated",
+                        player=player,
+                        game=game,
+                        delta=int(-yp_cost),
+                        mode=getattr(mgr, "mode", None),
+                        yield_points=int(getattr(mgr, "yield_points", 0) or 0),
+                        reason=str(spec.get("source", "") or "Unmodified 6"),
+                    )
+            except Exception:
+                pass
+
+        try:
             ability_name = str(spec.get("source", "") or "Ability").strip()
             limit = str(spec.get("limit", "") or "battle").strip().lower()
             if limit == "battle_round":
@@ -3696,7 +3738,13 @@ class WargearProfile:
                 label = "Save roll"
             append_dice(player, f"{label} made {int(roll_value)}, ability used to change value to 6")
             source = str(spec.get("source", "") or "Ability")
-            append_action(player, f"{getattr(model, 'name', 'Model')}: {source} used to change {label} {int(roll_value)} to 6")
+            if yp_cost > 0:
+                append_action(
+                    player,
+                    f"{getattr(model, 'name', 'Model')}: {source} spent {int(yp_cost)} YP to change {label} {int(roll_value)} to 6",
+                )
+            else:
+                append_action(player, f"{getattr(model, 'name', 'Model')}: {source} used to change {label} {int(roll_value)} to 6")
         except Exception:
             pass
 
@@ -8637,6 +8685,51 @@ class WargearProfile:
                 if mgr.methodical_annihilation_reroll_wound_ones(attacker, self, target, game_map=game_map):
                     reroll_wound_values.add(1)
                     reroll_value_reasons.append("Methodical Annihilation: re-roll Wound roll of 1")
+        except Exception:
+            pass
+        # Leagues of Votann: Geomantic Hunters (optional activation, up to twice per battle).
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            root = unit.get_attached_unit_root() if unit is not None and hasattr(unit, "get_attached_unit_root") else unit
+            sr = getattr(root, "special_rules", None) if root is not None else None
+            if isinstance(sr, dict) and sr.get("geomantic_hunters_active"):
+                apply_bonus = True
+                owner_id = str(sr.get("geomantic_hunters_owner", "") or "")
+                phase_key = str(sr.get("geomantic_hunters_phase_key", "") or "")
+                source = str(sr.get("geomantic_hunters_source", "") or "Geomantic Hunters").strip() or "Geomantic Hunters"
+                game = None
+                try:
+                    army = root.get_parent_army() if root is not None else None
+                    game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+                except Exception:
+                    game = None
+                if game is not None:
+                    try:
+                        cur_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        cur_turn = 0
+                    try:
+                        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        phase_name = ""
+                    try:
+                        current_player = getattr(game, "get_current_player", lambda: None)()
+                        cur_owner = str(getattr(current_player, "id", "") or "")
+                    except Exception:
+                        cur_owner = ""
+                    current_phase_key = f"{cur_turn}:{phase_name}:{cur_owner}"
+                    if phase_key and current_phase_key != phase_key:
+                        apply_bonus = False
+                    if owner_id and cur_owner and owner_id != cur_owner:
+                        apply_bonus = False
+                    if phase_name and phase_name != "SHOOTING_PHASE":
+                        apply_bonus = False
+                weapon_name = str(getattr(getattr(self, "parent_wargear", None), "name", "") or "").strip().lower()
+                profile_name = str(getattr(self, "name", "") or "").strip().lower()
+                if "breacher ordnance" not in f"{weapon_name} {profile_name}":
+                    apply_bonus = False
+                if apply_bonus:
+                    reroll_full_reasons.append(source)
         except Exception:
             pass
         # Contextual reroll sources carried on the attack instance (best-effort).

@@ -367,6 +367,13 @@ def build_default_rule_providers() -> List[RuleProvider]:
             ),
             subscriptions=[
                 ("unit_destroyed", "_on_unit_destroyed_martial_leverage"),
+                ("unit_destroyed", "_on_unit_destroyed_seized_opportunity"),
+                ("phase_end", "_on_phase_end_forgewrought_expertise"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_geomantic_hunters"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_resource_transmutation"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_resource_transmutation"),
+                ("shooting_targets_selected", "_on_shooting_targets_selected_unhinged_vengeance"),
+                ("unit_shooting_resolved", "_on_unit_shooting_resolved_unhinged_vengeance"),
             ],
         )
     )

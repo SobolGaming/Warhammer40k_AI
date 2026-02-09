@@ -2307,6 +2307,7 @@ class GameReactiveDecisionsMixin:
         moving_unit=None,
         attacker_unit=None,
         range_value: int | None = None,
+        allow_engagement_range: bool | None = None,
     ) -> DecisionRequest | None:
         if player is None or unit is None:
             return None
@@ -2334,6 +2335,7 @@ class GameReactiveDecisionsMixin:
             moving_unit_id=moving_unit_id,
             attacker_unit_id=attacker_unit_id,
             range_value=range_value,
+            allow_engagement_range=allow_engagement_range,
         )
         if message:
             ctx["message"] = message
@@ -2667,7 +2669,7 @@ class GameReactiveDecisionsMixin:
         if decision_type == DECISION_CONFIRM_YES_NO:
             ctx = dict(getattr(request, "context", {}) or {})
             kind = str(ctx.get("reactive_move_kind", "") or "").strip()
-            if kind not in ("loping_speed", "blood_surge", "brazen_fury", "horde_move"):
+            if kind not in ("loping_speed", "blood_surge", "brazen_fury", "horde_move", "unhinged_vengeance"):
                 return
             opt = None
             for candidate in list(getattr(request, "options", []) or []):
@@ -2766,6 +2768,25 @@ class GameReactiveDecisionsMixin:
                     kind=kind,
                     movement_type=movement_type or "horde_move",
                     source=source,
+                )
+                return
+            if kind == "unhinged_vengeance":
+                if not unit.can_unhinged_vengeance(game=self, game_map=getattr(self, "map", None)):
+                    return
+                max_distance = int(self.roll_unhinged_vengeance_distance(unit) or 0)
+                if max_distance <= 0:
+                    return
+                attacker_unit_id = str(ctx.get("reactive_move_attacker_unit_id") or "")
+                attacker_unit = self._resolve_unit_by_id(attacker_unit_id)
+                self._queue_reactive_move_movement_decision(
+                    player=player,
+                    unit=unit,
+                    attacker_unit=attacker_unit,
+                    max_distance=max_distance,
+                    kind=kind,
+                    movement_type=movement_type or "unhinged_vengeance",
+                    source=source,
+                    allow_engagement_range=True,
                 )
                 return
         if decision_type == DECISION_SELECT_OVERWATCH_SHOOTER:
@@ -2892,6 +2913,9 @@ class GameReactiveDecisionsMixin:
             "sweeping_advance",
             "daemonic_ordnance",
             "warp_rift_firepower",
+            "seized_opportunity",
+            "geomantic_hunters",
+            "resource_transmutation",
         ):
             return
         selected = None
@@ -2932,6 +2956,141 @@ class GameReactiveDecisionsMixin:
             if not mgr.can_call_now(game=self, player=player):
                 return
             mgr.call_waaagh(game=self, player=player)
+            return
+
+        if ability_key == "seized_opportunity":
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                return
+            used_this_phase = getattr(player, "_ability_used_this_phase", None)
+            if callable(used_this_phase) and bool(used_this_phase("seized_opportunity")):
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(1, game=self) or 0)
+            if delta <= 0:
+                return
+            mark_used = getattr(player, "_mark_ability_used_phase", None)
+            if callable(mark_used):
+                mark_used("seized_opportunity")
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=int(delta or 0),
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Seized Opportunity",
+                )
+            return
+
+        if ability_key == "geomantic_hunters":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            if not unit_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            if not bool(getattr(root, "has_geomantic_hunters", lambda: False)()):
+                return
+            if not bool(getattr(root, "can_use_geomantic_hunters", lambda: False)()):
+                return
+            mark_used = getattr(root, "mark_geomantic_hunters_used", None)
+            if callable(mark_used):
+                mark_used()
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = root.get_parent_army().player
+                except Exception:
+                    player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            phase_name = str(getattr(getattr(self, "phase", None), "name", "") or "").strip().upper()
+            turn = int(getattr(self, "turn", 0) or 0)
+            phase_key = f"{turn}:{phase_name}:{owner_id}"
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["geomantic_hunters_active"] = True
+            sr["geomantic_hunters_phase_key"] = phase_key
+            sr["geomantic_hunters_owner"] = owner_id
+            sr["geomantic_hunters_source"] = str(ctx.get("ability_name", "") or "Geomantic Hunters").strip() or "Geomantic Hunters"
+            root.special_rules = sr
+            return
+
+        if ability_key == "resource_transmutation":
+            unit_id = str(payload.get("unit_id") or ctx.get("unit_id") or ctx.get("source_unit_id") or "")
+            model_id = str(payload.get("model_id") or ctx.get("model_id") or "")
+            if not unit_id or not model_id:
+                return
+            unit = self._resolve_unit_by_id(unit_id)
+            if unit is None:
+                return
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                return
+            if not bool(getattr(root, "has_resource_transmutation", lambda: False)()):
+                return
+            player = self._resolve_player_by_id(getattr(request, "player_id", None) or getattr(result, "player_id", None))
+            if player is None:
+                try:
+                    player = root.get_parent_army().player
+                except Exception:
+                    player = None
+            if player is None:
+                return
+            army = player.get_army()
+            pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+            if pe is None:
+                return
+            owner_id = str(getattr(player, "id", "") or "")
+            turn = int(getattr(self, "turn", 0) or 0)
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            try:
+                if (
+                    str(sr.get("resource_transmutation_used_turn_owner", "") or "") == owner_id
+                    and int(sr.get("resource_transmutation_used_turn", 0) or 0) == int(turn or 0)
+                ):
+                    return
+            except Exception:
+                pass
+            if not bool(getattr(pe, "spend_yield_points", lambda _a: False)(1)):
+                return
+            sr["resource_transmutation_active_model_id"] = model_id
+            sr["resource_transmutation_owner"] = owner_id
+            sr["resource_transmutation_turn"] = int(turn or 0)
+            sr["resource_transmutation_source"] = str(ctx.get("ability_name", "") or "Resource Transmutation").strip() or "Resource Transmutation"
+            sr["resource_transmutation_used_turn_owner"] = owner_id
+            sr["resource_transmutation_used_turn"] = int(turn or 0)
+            sr.pop("resource_transmutation_gain_resolved_turn_owner", None)
+            sr.pop("resource_transmutation_gain_resolved_turn", None)
+            root.special_rules = sr
+            event_system = getattr(self, "event_system", None)
+            if event_system is not None:
+                event_system.publish(
+                    "prioritised_efficiency_updated",
+                    player=player,
+                    game=self,
+                    delta=-1,
+                    mode=getattr(pe, "mode", None),
+                    yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                    reason="Resource Transmutation",
+                )
             return
 
         if ability_key == "possessed_lord":

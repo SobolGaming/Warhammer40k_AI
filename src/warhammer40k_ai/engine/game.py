@@ -212,6 +212,8 @@ class Game(
         self._brazen_fury_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # Horde Move shooting snapshots (attacker -> {target: model_count})
         self._horde_move_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
+        # Leagues of Votann: Unhinged Vengeance snapshots (attacker -> {target: tracked_model_wounds})
+        self._unhinged_vengeance_shooting_snapshot: Dict['Unit', Dict['Unit', int]] = {}
         # CSM: Guns Blazing trigger snapshots (attacker -> [reactive shooters])
         self._guns_blazing_shooting_targets: Dict['Unit', List['Unit']] = {}
         # World Eaters: Frenzy (Helbrute) target snapshots (attacker -> [targets])
@@ -4718,6 +4720,70 @@ class Game(
             except Exception:
                 continue
 
+    def _on_unit_destroyed_seized_opportunity(self, unit=None, destroyed_by_unit=None, **_kwargs) -> None:
+        if unit is None or destroyed_by_unit is None:
+            return
+        try:
+            if destroyed_by_unit.get_parent_army() is unit.get_parent_army():
+                return
+        except Exception:
+            return
+        try:
+            source_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            source_root = destroyed_by_unit
+        if source_root is None:
+            return
+        has_rule = getattr(source_root, "has_seized_opportunity", None)
+        if not callable(has_rule) or not bool(has_rule()):
+            return
+        source_army = source_root.get_parent_army()
+        if source_army is None:
+            return
+        player = getattr(source_army, "player", None)
+        if player is None:
+            return
+        pe = getattr(source_army, "prioritised_efficiency", None)
+        if pe is None:
+            return
+        used_this_phase = getattr(player, "_ability_used_this_phase", None)
+        if callable(used_this_phase) and bool(used_this_phase("seized_opportunity")):
+            return
+        phase_fn = getattr(player, "_phase_key", None)
+        phase_key = ""
+        if callable(phase_fn):
+            try:
+                phase_key = ":".join(str(v) for v in tuple(phase_fn()))
+            except Exception:
+                phase_key = ""
+        if not phase_key:
+            phase_obj = getattr(self, "phase", None)
+            phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+            phase_key = f"{int(getattr(self, 'turn', 0) or 0)}:{phase_name}:{int(getattr(self, 'current_player_index', -1) or -1)}"
+        source_unit_id = str(get_entity_id(source_root) or "")
+        destroyed_unit_id = str(get_entity_id(unit) or "")
+        ability_name = "Seized Opportunity"
+        self._queue_optional_ability_confirmation(
+            player=player,
+            ability_key="seized_opportunity",
+            ability_name=ability_name,
+            message=f"{ability_name}: gain 1 YP?",
+            context={
+                "ability_name": ability_name,
+                "phase": str(getattr(getattr(self, "phase", None), "name", "") or ""),
+                "unit_id": source_unit_id,
+                "source_unit_id": source_unit_id,
+                "destroyed_unit_id": destroyed_unit_id,
+                "destroyed_unit": str(getattr(unit, "name", "") or "Unit"),
+            },
+            payload={
+                "unit_id": source_unit_id,
+                "source_unit_id": source_unit_id,
+                "destroyed_unit_id": destroyed_unit_id,
+            },
+            instance_key=f"{phase_key}:seized_opportunity",
+        )
+
     def _on_unit_destroyed_cult_ambush(self, unit=None, **_kwargs) -> None:
         if unit is None:
             return
@@ -5643,6 +5709,247 @@ class Game(
             }
             self.request_dice_roll(player_id=getattr(player, "id", None), spec=roll_spec, prompt=roll_spec["reason"])
 
+    @staticmethod
+    def _model_within_objective_marker(model, objective_point) -> bool:
+        if model is None or objective_point is None:
+            return False
+        try:
+            from shapely.geometry import Point as _ShPoint
+            area = _ShPoint(objective_point.x, objective_point.y).buffer(
+                float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+            )
+        except Exception:
+            area = None
+        try:
+            if area is not None:
+                base = model.model_base.get_base_shape()
+                if base.intersects(area):
+                    return True
+        except Exception:
+            pass
+        try:
+            pos = model.get_location()
+        except Exception:
+            pos = None
+        if not pos:
+            return False
+        try:
+            dx = float(pos[0]) - float(getattr(objective_point, "x", 0.0))
+            dy = float(pos[1]) - float(getattr(objective_point, "y", 0.0))
+            radius = float(getattr(objective_point, "control_radius", 0.0) or 0.0)
+            base_r = float(getattr(model.model_base, "get_radius", lambda: 1.0)())
+            return (dx * dx + dy * dy) ** 0.5 <= (radius + base_r)
+        except Exception:
+            return False
+
+    def _resolve_computational_mastermind_before_mode(self, player: Player) -> int:
+        if player is None or player is not self.get_current_player():
+            return 0
+        phase_obj = getattr(self, "phase", None)
+        phase_name = str(getattr(phase_obj, "name", "") or phase_obj or "").strip().upper()
+        if phase_name != "COMMAND_PHASE":
+            return 0
+        army = self._get_player_army(player)
+        if army is None:
+            return 0
+        pe = getattr(army, "prioritised_efficiency", None)
+        if pe is None:
+            return 0
+        game_map = getattr(self, "map", None)
+        if game_map is None:
+            return 0
+        objectives = list(getattr(game_map, "objectives", []) or [])
+        if not objectives:
+            return 0
+
+        def _unit_sort_key(unit_obj) -> str:
+            try:
+                return str(get_entity_id(unit_obj) or "")
+            except Exception:
+                return str(getattr(unit_obj, "name", "") or "")
+
+        def _model_sort_key(model_obj) -> str:
+            try:
+                return str(get_entity_id(model_obj) or "")
+            except Exception:
+                return str(getattr(model_obj, "name", "") or "")
+
+        ability_models_by_root: dict = {}
+        seen_roots: set[str] = set()
+        for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen_roots:
+                continue
+            seen_roots.add(root_id)
+            if not bool(getattr(root, "is_alive", lambda: False)()):
+                continue
+            if not bool(getattr(root, "deployed", True)):
+                continue
+            try:
+                if root.is_in_reserves() or root.is_embarked:
+                    continue
+            except Exception:
+                pass
+            has_fn = getattr(root, "has_computational_mastermind", None)
+            if not callable(has_fn) or not bool(has_fn()):
+                continue
+            get_models = getattr(root, "get_computational_mastermind_models", None)
+            if not callable(get_models):
+                continue
+            models = [m for m in list(get_models() or []) if m is not None and getattr(m, "is_alive", True)]
+            if not models:
+                continue
+            models.sort(key=_model_sort_key)
+            ability_models_by_root[root] = list(models)
+
+        if not ability_models_by_root:
+            return 0
+
+        entries: list[tuple[int, object, object, object, object]] = []
+        for idx, objective in enumerate(objectives):
+            loc = getattr(objective, "location", None)
+            if loc is None or getattr(loc, "removed", False):
+                continue
+            update_control = getattr(loc, "update_control", None)
+            if callable(update_control):
+                update_control(self)
+            if getattr(loc, "controlling_player", None) is not player:
+                continue
+            selected_root = None
+            selected_model = None
+            for root, models in ability_models_by_root.items():
+                found = None
+                for model in list(models):
+                    if self._model_within_objective_marker(model, loc):
+                        found = model
+                        break
+                if found is None:
+                    continue
+                selected_root = root
+                selected_model = found
+                break
+            if selected_root is None or selected_model is None:
+                continue
+            entries.append((idx, objective, loc, selected_root, selected_model))
+
+        if not entries:
+            return 0
+
+        from ..utility.decision_utils import resolve_decision_value
+
+        def _choice_from_overrides(objective_key: str) -> str:
+            selections = getattr(player, "_next_optional_selections", None)
+            if not isinstance(selections, dict):
+                return ""
+            raw_key = None
+            if "COMPUTATIONAL_MASTERMIND" in selections:
+                raw_key = "COMPUTATIONAL_MASTERMIND"
+            elif "computational_mastermind" in selections:
+                raw_key = "computational_mastermind"
+            if raw_key is None:
+                return ""
+            raw = selections.get(raw_key)
+            chosen = ""
+            if isinstance(raw, dict):
+                chosen = str(raw.get(objective_key) or raw.get("*") or "").strip().lower()
+            elif isinstance(raw, list):
+                if raw:
+                    chosen = str(raw.pop(0) or "").strip().lower()
+                if not raw:
+                    selections.pop(raw_key, None)
+            else:
+                chosen = str(raw or "").strip().lower()
+            if chosen in ("gain", "spend", "skip", "none"):
+                return "skip" if chosen == "none" else chosen
+            return ""
+
+        total_delta = 0
+        owner_id = str(getattr(player, "id", "") or "")
+        turn = int(getattr(self, "turn", 0) or 0)
+        for idx, objective, _loc, source_root, source_model in list(entries):
+            objective_id = str(get_entity_id(objective) or f"objective_{idx}")
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                already_pending = False
+                for pending in list(queue.list() or []):
+                    if str(getattr(pending, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    pctx = dict(getattr(pending, "context", {}) or {})
+                    if str(pctx.get("ability", "") or "") != "computational_mastermind":
+                        continue
+                    if str(pctx.get("objective_id", "") or "") != objective_id:
+                        continue
+                    if str(pctx.get("turn_owner", "") or "") != owner_id:
+                        continue
+                    if int(pctx.get("turn", 0) or 0) != turn:
+                        continue
+                    already_pending = True
+                    break
+                if already_pending:
+                    continue
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            options.append(DecisionOption.create("Gain 1 YP", payload={"action": "gain", "amount": 1}))
+            if int(getattr(pe, "yield_points", 0) or 0) >= 1:
+                options.append(DecisionOption.create("Spend 1 YP", payload={"action": "spend", "amount": 1}))
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Computational Mastermind: choose Spend 1 YP, Gain 1 YP, or None.",
+                player_id=getattr(player, "id", None),
+                options=options,
+                context={
+                    "ability": "computational_mastermind",
+                    "ability_name": "Computational Mastermind",
+                    "phase": "Command phase",
+                    "optional": True,
+                    "source_unit_id": str(get_entity_id(source_root) or ""),
+                    "unit_id": str(get_entity_id(source_root) or ""),
+                    "model_id": str(get_entity_id(source_model) or ""),
+                    "objective_id": objective_id,
+                    "objective_index": int(idx),
+                    "turn_owner": owner_id,
+                    "turn": int(turn),
+                },
+            )
+            self.request_decision(request)
+            desired = _choice_from_overrides(objective_id)
+            if not desired:
+                desired = "gain"
+            option_id = None
+            for opt in list(getattr(request, "options", []) or []):
+                action = str((getattr(opt, "payload", {}) or {}).get("action", "") or "").strip().lower()
+                if action == desired:
+                    option_id = getattr(opt, "option_id", None)
+                    break
+            if option_id is None:
+                for opt in list(getattr(request, "options", []) or []):
+                    action = str((getattr(opt, "payload", {}) or {}).get("action", "") or "").strip().lower()
+                    if action == "skip":
+                        option_id = getattr(opt, "option_id", None)
+                        break
+            if option_id is None:
+                continue
+            value, apply_result = resolve_decision_value(
+                self,
+                request,
+                option_id,
+                player_id=getattr(player, "id", None),
+            )
+            if apply_result is not None and getattr(apply_result, "ok", False):
+                try:
+                    total_delta += int(value or 0)
+                except Exception:
+                    pass
+        return int(total_delta)
+
     def start_command_phase(self) -> None:
         """Start the command phase: active player gains normal CP, then resolves any bonus CP sources."""
         # Battle-shock expires at the start of *your* next Command phase (even if the unit was later destroyed).
@@ -5862,6 +6169,7 @@ class Game(
             delta = mgr.gain_yield_points(self)
             mode_changed = False
             if p is current_player:
+                self._resolve_computational_mastermind_before_mode(p)
                 mode_changed = mgr.update_mode_for_player(self, p)
             if delta or mode_changed:
                 self.event_system.publish(
@@ -6223,6 +6531,19 @@ class Game(
             tag = "Blood Surge reroll" if reroll_used else "Blood Surge roll"
             append_dice(player, f"{tag}: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
 
+        return int(max_distance)
+
+    def roll_unhinged_vengeance_distance(self, unit: 'Unit') -> int:
+        """Roll Unhinged Vengeance distance (D6+2)."""
+        if unit is None:
+            return 0
+        from ..utility.dice import get_roll
+        base_roll = int(get_roll("D6") or 0)
+        max_distance = int(base_roll + 2)
+        from ..utility.event_bus import append_dice
+        player = getattr(unit.get_parent_army(), "player", None)
+        if player is not None:
+            append_dice(player, f"Unhinged Vengeance roll: {int(base_roll or 0)} (move {max_distance}\") for {unit.name}")
         return int(max_distance)
 
     def roll_brazen_fury_distance(self, unit: 'Unit') -> int:

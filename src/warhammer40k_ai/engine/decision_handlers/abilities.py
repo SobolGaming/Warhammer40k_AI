@@ -2698,6 +2698,236 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
             f"{ability_name}: {tname} regains up to {int(heal)} wounds and gets +{int(hit_bonus)} to hit until next Command phase.",
         )
         return target_root
+    if str(ctx.get("ability", "") or "") == "forgewrought_expertise":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        target_unit = resolve_unit(game, payload.get("target_unit_id") or payload.get("unit_id") or ctx.get("target_unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        owner_id = str(getattr(player, "id", "") or str(ctx.get("turn_owner", "") or ""))
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        if is_skip_choice(request, result):
+            return None
+        if target_unit is None:
+            return None
+        target_root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
+        if target_root is None:
+            return None
+        ability_name = str(ctx.get("ability_name", "") or "Forgewrought Expertise").strip() or "Forgewrought Expertise"
+        assistant_model_name = str(ctx.get("assistant_model_name", "") or "Ironkin Assistant").strip() or "Ironkin Assistant"
+        try:
+            assistant_heal_flat = int(ctx.get("assistant_heal_flat", 3) or 3)
+        except Exception:
+            assistant_heal_flat = 3
+        heal_roll = str(ctx.get("heal_roll", "") or "D3").strip().upper() or "D3"
+        has_assistant = False
+        try:
+            source_models = (
+                list(source_root.get_attached_unit_models() or [])
+                if hasattr(source_root, "get_attached_unit_models")
+                else list(getattr(source_root, "models", []) or [])
+            )
+            for model in list(source_models or []):
+                alive_attr = getattr(model, "is_alive", True)
+                alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not alive:
+                    continue
+                model_name = str(getattr(model, "name", "") or "").strip().lower()
+                if assistant_model_name.lower() in model_name:
+                    has_assistant = True
+                    break
+        except Exception:
+            has_assistant = False
+
+        heal = 0
+        if has_assistant and assistant_heal_flat > 0:
+            heal = int(assistant_heal_flat)
+        else:
+            try:
+                from ...utility.dice import get_roll
+                heal = int(get_roll(heal_roll) or 0)
+            except Exception:
+                heal = 0
+            try:
+                from ...utility.event_bus import append_dice
+                if player is not None:
+                    append_dice(player, f"{ability_name} roll: {int(heal)}")
+            except Exception:
+                pass
+
+        tsr = getattr(target_root, "special_rules", None)
+        if not isinstance(tsr, dict):
+            tsr = {}
+        tsr["forgewrought_expertise_repaired_turn_owner"] = owner_id
+        tsr["forgewrought_expertise_repaired_turn"] = int(turn or 0)
+        tsr["forgewrought_expertise_repaired_source"] = ability_name
+        target_root.special_rules = tsr
+
+        if heal > 0:
+            try:
+                models = (
+                    list(target_root.get_attached_unit_models() or [])
+                    if hasattr(target_root, "get_attached_unit_models")
+                    else list(getattr(target_root, "models", []) or [])
+                )
+            except Exception:
+                models = list(getattr(target_root, "models", []) or [])
+            wounded = []
+            for m in models:
+                alive_attr = getattr(m, "is_alive", True)
+                is_alive = bool(alive_attr() if callable(alive_attr) else alive_attr)
+                if not is_alive:
+                    continue
+                base = getattr(m, "_base_wounds", getattr(m, "wounds", 0))
+                if int(getattr(m, "wounds", 0) or 0) < int(base or 0):
+                    wounded.append(m)
+            if wounded:
+                try:
+                    wounded.sort(key=lambda m: str(getattr(m, "id", getattr(m, "_id", "")) or ""))
+                except Exception:
+                    wounded = list(wounded)
+                target_model = wounded[0]
+                heal_fn = getattr(target_model, "heal", None)
+                if callable(heal_fn):
+                    heal_fn(int(heal))
+        try:
+            tname = str(getattr(target_root, "name", "Unit") or "Unit")
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: {tname} regains up to {int(heal)} wounds.",
+            )
+        except Exception:
+            pass
+        return target_root
+    if str(ctx.get("ability", "") or "") == "computational_mastermind":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return None
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action in ("none", "skip"):
+            return None
+        try:
+            amount = int(payload.get("amount", 1) or 1)
+        except Exception:
+            amount = 1
+        amount = max(0, amount)
+        if amount <= 0:
+            return None
+        delta = 0
+        if action == "gain":
+            delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(int(amount), game=game) or 0)
+        elif action == "spend":
+            spent = bool(getattr(pe, "spend_yield_points", lambda _a: False)(int(amount)))
+            delta = -int(amount) if spent else 0
+        else:
+            return None
+        if not delta:
+            return None
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "prioritised_efficiency_updated",
+                player=player,
+                game=game,
+                delta=int(delta or 0),
+                mode=getattr(pe, "mode", None),
+                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                reason="Computational Mastermind",
+            )
+        try:
+            objective_id = str(ctx.get("objective_id", "") or "")
+            objective_label = objective_id if objective_id else f"objective {int(ctx.get('objective_index', 0) or 0) + 1}"
+            if int(delta or 0) > 0:
+                _log_action_for_players(game, player, f"Computational Mastermind: gained {int(delta)} YP at {objective_label}.")
+            else:
+                _log_action_for_players(game, player, f"Computational Mastermind: spent {int(abs(delta))} YP at {objective_label}.")
+        except Exception:
+            pass
+        return int(delta)
+    if str(ctx.get("ability", "") or "") == "resource_transmutation_gain":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["resource_transmutation_gain_resolved_turn_owner"] = owner_id
+        sr["resource_transmutation_gain_resolved_turn"] = int(turn or 0)
+        source_root.special_rules = sr
+
+        if is_skip_choice(request, result):
+            return None
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action != "gain":
+            return None
+        try:
+            gain_yp = int(payload.get("gain_yp", payload.get("amount", 0)) or 0)
+        except Exception:
+            gain_yp = 0
+        gain_yp = max(0, min(2, int(gain_yp or 0)))
+        if gain_yp <= 0:
+            return None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return None
+        delta = int(getattr(pe, "add_yield_points", lambda _a, game=None: 0)(int(gain_yp), game=game) or 0)
+        if not delta:
+            return None
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "prioritised_efficiency_updated",
+                player=player,
+                game=game,
+                delta=int(delta or 0),
+                mode=getattr(pe, "mode", None),
+                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                reason="Resource Transmutation",
+            )
+        try:
+            ability_name = str(ctx.get("ability_name", "") or "Resource Transmutation").strip() or "Resource Transmutation"
+            _log_action_for_players(game, player, f"{ability_name}: gained {int(delta)} YP.")
+        except Exception:
+            pass
+        return int(delta)
     if str(ctx.get("ability", "") or "") == "hammer_aflame":
         if is_skip_choice(request, result):
             return None
