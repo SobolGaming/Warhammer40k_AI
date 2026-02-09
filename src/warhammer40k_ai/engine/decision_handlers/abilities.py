@@ -3003,6 +3003,103 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return int(spend_yp)
+    if str(ctx.get("ability", "") or "") == "bastion_shield":
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        if is_skip_choice(request, result):
+            return None
+        action = str(payload.get("action", "") or "").strip().lower()
+        if action not in ("spend", "use"):
+            return None
+        try:
+            spend_yp = int(payload.get("spend_yp", payload.get("amount", 0)) or 0)
+        except Exception:
+            spend_yp = 0
+        if int(spend_yp) != 1:
+            return None
+        player = _resolve_player(game, request, payload)
+        if player is None:
+            source_army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+            player = getattr(source_army, "player", None) if source_army is not None else None
+        if player is None:
+            return None
+        army = source_root.get_parent_army() if hasattr(source_root, "get_parent_army") else None
+        pe = getattr(army, "prioritised_efficiency", None) if army is not None else None
+        if pe is None:
+            return None
+        if not bool(getattr(pe, "spend_yield_points", lambda _a, game=None: False)(1, game=game)):
+            return None
+        owner_id = str(ctx.get("turn_owner", "") or getattr(player, "id", "") or "")
+        try:
+            turn = int(ctx.get("turn", 0) or getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = int(getattr(game, "turn", 0) or 0)
+        ability_name = str(ctx.get("ability_name", "") or "Bastion Shield").strip() or "Bastion Shield"
+
+        source_member = resolve_unit(game, ctx.get("source_member_unit_id"))
+        source_member_root = None
+        if source_member is not None:
+            source_member_root = (
+                source_member.get_attached_unit_root() if hasattr(source_member, "get_attached_unit_root") else source_member
+            )
+        target_holder = None
+        sr = None
+        if source_member is not None and source_member_root is source_root:
+            member_sr = getattr(source_member, "special_rules", None)
+            if isinstance(member_sr, dict) and member_sr.get("enhancement_bastion_shield"):
+                target_holder = source_member
+                sr = member_sr
+        if target_holder is None:
+            try:
+                members = list(source_root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [source_root]
+            for member in list(members or []):
+                if member is None:
+                    continue
+                member_sr = getattr(member, "special_rules", None)
+                if isinstance(member_sr, dict) and member_sr.get("enhancement_bastion_shield"):
+                    target_holder = member
+                    sr = member_sr
+                    break
+        if target_holder is None or not isinstance(sr, dict):
+            return None
+
+        sr = dict(sr)
+        sr["enhancement_bastion_shield_extended_active"] = True
+        sr["enhancement_bastion_shield_extended_turn_owner"] = owner_id
+        sr["enhancement_bastion_shield_extended_turn"] = int(turn or 0)
+        sr["enhancement_bastion_shield_extended_expires_phase"] = "SHOOTING_PHASE"
+        sr["enhancement_bastion_shield_extended_source"] = ability_name
+        target_holder.special_rules = sr
+
+        event_system = getattr(game, "event_system", None)
+        if event_system is not None:
+            event_system.publish(
+                "prioritised_efficiency_updated",
+                player=player,
+                game=game,
+                delta=-1,
+                mode=getattr(pe, "mode", None),
+                yield_points=int(getattr(pe, "yield_points", 0) or 0),
+                reason=ability_name,
+            )
+        try:
+            _log_action_for_players(
+                game,
+                player,
+                f"{ability_name}: spent 1 YP (AP worsening extends to 18\" until end of phase).",
+            )
+        except Exception:
+            pass
+        return 1
     if str(ctx.get("ability", "") or "") == "hammer_aflame":
         if is_skip_choice(request, result):
             return None

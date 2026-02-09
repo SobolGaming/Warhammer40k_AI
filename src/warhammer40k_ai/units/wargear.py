@@ -1001,6 +1001,95 @@ class WargearProfile:
             return False
         return target_dist <= closest + 1e-6
 
+    def _bastion_shield_ap_worsen(self, attacker: Optional['Model'], target_unit: Optional['Unit']) -> int:
+        """
+        Hearthband enhancement: Bastion Shield.
+
+        - Always active within 12" of the bearer's unit against ranged attacks.
+        - Optional spend (handled via decision flow) extends to 18" for the current Shooting phase.
+        """
+        if attacker is None or target_unit is None:
+            return 0
+        try:
+            if not (self.parent_wargear and self.parent_wargear.is_ranged()):
+                return 0
+        except Exception:
+            return 0
+        from ..utility.aura_utils import model_within_range_of_unit
+
+        try:
+            target_root = target_unit.get_attached_unit_root()
+        except Exception:
+            target_root = target_unit
+        if target_root is None:
+            return 0
+        try:
+            members = list(target_root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [target_root]
+
+        source_sr: Optional[dict] = None
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_bastion_shield"):
+                source_sr = sr
+                break
+        if source_sr is None:
+            return 0
+
+        try:
+            base_range = int(source_sr.get("enhancement_bastion_shield_base_range", 12) or 12)
+        except Exception:
+            base_range = 12
+        try:
+            extended_range = int(source_sr.get("enhancement_bastion_shield_extended_range", 18) or 18)
+        except Exception:
+            extended_range = 18
+
+        if model_within_range_of_unit(attacker, target_root, float(base_range), use_attached_aggregate=True):
+            return 1
+        if not model_within_range_of_unit(attacker, target_root, float(extended_range), use_attached_aggregate=True):
+            return 0
+
+        if not bool(source_sr.get("enhancement_bastion_shield_extended_active")):
+            return 0
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+        except Exception:
+            attacker_unit = None
+        try:
+            army = attacker_unit.get_parent_army() if attacker_unit is not None else None
+        except Exception:
+            army = None
+        game = getattr(getattr(army, "player", None), "game", None) if army is not None else None
+        if game is None:
+            return 0
+        phase_name = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+        expires_phase = str(source_sr.get("enhancement_bastion_shield_extended_expires_phase", "") or "").strip().upper()
+        if expires_phase and phase_name and phase_name != expires_phase:
+            return 0
+        try:
+            effect_turn = int(source_sr.get("enhancement_bastion_shield_extended_turn", 0) or 0)
+        except Exception:
+            effect_turn = 0
+        try:
+            current_turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            current_turn = 0
+        if effect_turn and current_turn and effect_turn != current_turn:
+            return 0
+        effect_owner = str(source_sr.get("enhancement_bastion_shield_extended_turn_owner", "") or "")
+        if effect_owner:
+            current_player = getattr(game, "get_current_player", lambda: None)()
+            current_owner = str(getattr(current_player, "id", "") or "")
+            if current_owner and effect_owner != current_owner:
+                return 0
+        return 1
+
     def get_effective_ap(self, attacker: 'Model', target: 'Unit') -> int:
         """Return AP after applying global modifiers like Plunging Fire."""
         from ..utility.modifiers import apply_characteristic_caps
@@ -1488,6 +1577,7 @@ class WargearProfile:
                             ap_val += int(entry.get("value", 0) or 0)
                         except Exception:
                             continue
+                    ap_val += int(self._bastion_shield_ap_worsen(attacker, target_root) or 0)
         except Exception:
             pass
         return int(apply_characteristic_caps("ap", int(ap_val), base_raw=getattr(self, "_raw_ap", None)))

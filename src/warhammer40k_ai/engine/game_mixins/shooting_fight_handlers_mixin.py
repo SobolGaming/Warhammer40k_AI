@@ -4348,6 +4348,342 @@ class GameShootingFightHandlersMixin:
         )
         self.request_decision(request)
 
+    def _attached_member_with_enhancement_flag(self, unit, flag_key: str):
+        try:
+            root = unit.get_attached_unit_root()
+        except Exception:
+            root = unit
+        if root is None:
+            return None, None, {}
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = []
+        if not members:
+            members = [root]
+        try:
+            members = sorted(members, key=lambda u: str(get_entity_id(u) or ""))
+        except Exception:
+            members = list(members)
+        key = str(flag_key or "").strip()
+        if not key:
+            return root, None, {}
+        for member in members:
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and sr.get(key):
+                return root, member, sr
+        return root, None, {}
+
+    @staticmethod
+    def _unit_is_titanic(unit) -> bool:
+        if unit is None:
+            return False
+        if bool(getattr(unit, "is_titanic", False)):
+            return True
+        has_keyword = getattr(unit, "has_keyword", None)
+        if callable(has_keyword):
+            return bool(has_keyword("TITANIC"))
+        return False
+
+    def _on_unit_shooting_resolved_quake_multigenerator(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target=None,
+        **_kwargs,
+    ) -> None:
+        from ..decision_kinds import DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET
+
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacker_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacker_unit
+        if attacker_root is None:
+            return
+        attacker_player = attacker_root.get_parent_army().player
+        if attacker_player is None or attacker_player is not self.get_current_player():
+            return
+        root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+            attacker_root,
+            "enhancement_quake_multigenerator",
+        )
+        if source_member is None:
+            return
+
+        bearer = getattr(source_member, "_get_enhancement_bearer_model", lambda: None)()
+        if bearer is None:
+            return
+        bearer_id = str(get_entity_id(bearer) or "")
+        if not bearer_id:
+            return
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+        attacker_unit_id = str(get_entity_id(root) or "")
+        if not attacker_unit_id:
+            return
+
+        queue = getattr(self, "decision_queue", None)
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "quake_multigenerator":
+                    continue
+                if str(ctx.get("attacker_unit_id", "") or "") != attacker_unit_id:
+                    continue
+                if str(ctx.get("turn_owner", "") or "") != owner_id:
+                    continue
+                if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                    continue
+                return
+
+        by_target = hit_models_by_target if isinstance(hit_models_by_target, dict) else {}
+
+        def _bearer_hit_target(target_obj) -> bool:
+            if not by_target:
+                return True
+            hit_models = by_target.get(target_obj)
+            if hit_models is None:
+                try:
+                    target_root_local = target_obj.get_attached_unit_root()
+                except Exception:
+                    target_root_local = target_obj
+                hit_models = by_target.get(target_root_local)
+            if not hit_models:
+                return False
+            for hit_model in list(hit_models or []):
+                if str(get_entity_id(hit_model) or "") == bearer_id:
+                    return True
+            return False
+
+        candidates: list[Any] = []
+        seen_targets: set[str] = set()
+        for target_unit, hits in (hits_by_target or {}).items():
+            if target_unit is None or int(hits or 0) <= 0:
+                continue
+            try:
+                target_root = target_unit.get_attached_unit_root()
+            except Exception:
+                target_root = target_unit
+            if target_root is None:
+                continue
+            target_id = str(get_entity_id(target_root) or "")
+            if not target_id or target_id in seen_targets:
+                continue
+            seen_targets.add(target_id)
+            if target_root.get_parent_army() == attacker_root.get_parent_army():
+                continue
+            if not target_root.is_alive():
+                continue
+            if self._unit_is_titanic(target_root):
+                continue
+            if not _bearer_hit_target(target_unit):
+                continue
+            candidates.append(target_root)
+
+        if not candidates:
+            return
+
+        ability_name = str(source_sr.get("enhancement_quake_multigenerator_source", "") or "Quake Multigenerator").strip()
+        if not ability_name:
+            ability_name = "Quake Multigenerator"
+        options = [
+            DecisionOption.create(
+                str(getattr(cand, "name", "Unit") or "Unit"),
+                payload={"unit_id": get_entity_id(cand)},
+            )
+            for cand in list(candidates)
+        ]
+        if not options:
+            return
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_POST_SHOOT_SUPPRESSION_TARGET,
+            f"{ability_name}: select a non-TITANIC unit to suppress.",
+            player_id=getattr(attacker_player, "id", None),
+            options=options,
+            context={
+                "ability": "quake_multigenerator",
+                "ability_name": ability_name,
+                "attacker_unit_id": attacker_unit_id,
+                "model_id": bearer_id,
+                "turn_owner": owner_id,
+                "turn": int(turn or 0),
+                "source_key": "enhancement_quake_multigenerator",
+            },
+        )
+        self.request_decision(request)
+
+    def _on_shooting_targets_selected_bastion_shield(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
+        if attacking_unit is None or not target_units:
+            return
+        if not self.is_shooting_phase():
+            return
+        try:
+            attacker_root = attacking_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = attacking_unit
+        if attacker_root is None:
+            return
+        attacker_army = attacker_root.get_parent_army()
+        attacker_player = getattr(attacker_army, "player", None) if attacker_army is not None else None
+        if attacker_player is None or attacker_player is not self.get_current_player():
+            return
+        try:
+            attacker_models = list(attacker_root.get_attached_unit_models() or [])
+        except Exception:
+            attacker_models = list(getattr(attacker_root, "models", []) or [])
+        attacker_models = [m for m in list(attacker_models or []) if bool(getattr(m, "is_alive", True))]
+        if not attacker_models:
+            return
+
+        from ...utility.aura_utils import model_within_range_of_unit
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+        owner_id = str(getattr(attacker_player, "id", "") or "")
+        if turn <= 0 or not owner_id:
+            return
+
+        try:
+            unique_targets = sorted(
+                {
+                    str(get_entity_id(t.get_attached_unit_root() if hasattr(t, "get_attached_unit_root") else t) or ""):
+                    (t.get_attached_unit_root() if hasattr(t, "get_attached_unit_root") else t)
+                    for t in list(target_units or [])
+                    if t is not None
+                }.values(),
+                key=lambda u: str(get_entity_id(u) or ""),
+            )
+        except Exception:
+            unique_targets = []
+
+        for target_root in list(unique_targets or []):
+            if target_root is None:
+                continue
+            if target_root.get_parent_army() == attacker_root.get_parent_army():
+                continue
+            if not target_root.is_alive():
+                continue
+            try:
+                if not bool(getattr(target_root, "deployed", True)):
+                    continue
+                if target_root.is_in_reserves() or target_root.is_embarked:
+                    continue
+            except Exception:
+                pass
+
+            _target_root, source_member, source_sr = self._attached_member_with_enhancement_flag(
+                target_root,
+                "enhancement_bastion_shield",
+            )
+            if source_member is None:
+                continue
+            try:
+                base_range = int(source_sr.get("enhancement_bastion_shield_base_range", 12) or 12)
+            except Exception:
+                base_range = 12
+            try:
+                extended_range = int(source_sr.get("enhancement_bastion_shield_extended_range", 18) or 18)
+            except Exception:
+                extended_range = 18
+
+            has_between = False
+            for model in list(attacker_models or []):
+                if not model_within_range_of_unit(model, target_root, float(extended_range), use_attached_aggregate=True):
+                    continue
+                if model_within_range_of_unit(model, target_root, float(base_range), use_attached_aggregate=True):
+                    continue
+                has_between = True
+                break
+            if not has_between:
+                continue
+
+            if bool(source_sr.get("enhancement_bastion_shield_extended_active")):
+                sr_owner = str(source_sr.get("enhancement_bastion_shield_extended_turn_owner", "") or "")
+                try:
+                    sr_turn = int(source_sr.get("enhancement_bastion_shield_extended_turn", 0) or 0)
+                except Exception:
+                    sr_turn = 0
+                phase_key = str(source_sr.get("enhancement_bastion_shield_extended_expires_phase", "") or "").strip().upper()
+                if (not sr_owner or sr_owner == owner_id) and (not sr_turn or sr_turn == turn):
+                    if not phase_key or phase_key == "SHOOTING_PHASE":
+                        continue
+
+            target_army = target_root.get_parent_army()
+            target_player = getattr(target_army, "player", None) if target_army is not None else None
+            if target_player is None:
+                continue
+            pe = getattr(target_army, "prioritised_efficiency", None) if target_army is not None else None
+            if pe is None:
+                continue
+            try:
+                if int(getattr(pe, "yield_points", 0) or 0) < 1:
+                    continue
+            except Exception:
+                continue
+
+            target_root_id = str(get_entity_id(target_root) or "")
+            source_member_id = str(get_entity_id(source_member) or "")
+            if not target_root_id:
+                continue
+            queue = getattr(self, "decision_queue", None)
+            if queue is not None and hasattr(queue, "list"):
+                exists = False
+                for req in list(queue.list() or []):
+                    if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                        continue
+                    ctx = dict(getattr(req, "context", {}) or {})
+                    if str(ctx.get("ability", "") or "") != "bastion_shield":
+                        continue
+                    if str(ctx.get("source_unit_id", "") or "") != target_root_id:
+                        continue
+                    if str(ctx.get("turn_owner", "") or "") != owner_id:
+                        continue
+                    if int(ctx.get("turn", 0) or 0) != int(turn or 0):
+                        continue
+                    exists = True
+                    break
+                if exists:
+                    continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Bastion Shield: spend 1 YP to extend AP worsening to 18\" for this Shooting phase?",
+                player_id=getattr(target_player, "id", None),
+                options=[
+                    DecisionOption.create("None", payload={"action": "skip", "spend_yp": 0}),
+                    DecisionOption.create("Spend 1 YP", payload={"action": "spend", "spend_yp": 1}),
+                ],
+                context={
+                    "ability": "bastion_shield",
+                    "ability_name": "Bastion Shield",
+                    "phase": "Shooting phase",
+                    "optional": True,
+                    "unit_id": target_root_id,
+                    "source_unit_id": target_root_id,
+                    "source_member_unit_id": source_member_id,
+                    "attacker_unit_id": str(get_entity_id(attacker_root) or ""),
+                    "turn_owner": owner_id,
+                    "turn": int(turn or 0),
+                },
+            )
+            self.request_decision(request)
+
     def _on_shooting_targets_selected_geomantic_hunters(self, attacking_unit=None, target_units=None, **_kwargs) -> None:
         if attacking_unit is None:
             return

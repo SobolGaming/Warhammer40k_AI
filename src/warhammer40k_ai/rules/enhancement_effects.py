@@ -533,6 +533,9 @@ def apply_enhancement_effects(unit, effects: List[EnhancementEffectSpec]) -> Non
                 try:
                     m._base_wounds = int(getattr(m, "_base_wounds", 0)) + eff.value
                     m._wounds = int(getattr(m, "_wounds", 0)) + eff.value
+                    base_unmod = getattr(m, "_base_wounds_unmodified", None)
+                    if base_unmod is not None:
+                        m._base_wounds_unmodified = int(base_unmod) + eff.value
                 except Exception:
                     continue
             try:

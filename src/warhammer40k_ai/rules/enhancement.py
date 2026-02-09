@@ -266,6 +266,10 @@ class Enhancement:
         except Exception:
             is_scintillating_legion = False
         try:
+            is_hearthband = bool(lov_mgr and lov_mgr.is_hearthband())
+        except Exception:
+            is_hearthband = False
+        try:
             is_needgaard_oathband = bool(lov_mgr and lov_mgr.is_needgaard_oathband())
         except Exception:
             is_needgaard_oathband = False
@@ -559,6 +563,29 @@ class Enhancement:
             if not is_vessels_of_wrath:
                 return
             unit.special_rules["enhancement_gateways_to_glory"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "bastion shield" or enh_id == "000009823002":
+            if not is_hearthband:
+                return
+            unit.special_rules["enhancement_bastion_shield"] = True
+            unit.special_rules["enhancement_bastion_shield_base_range"] = 12
+            unit.special_rules["enhancement_bastion_shield_extended_range"] = 18
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "quake multigenerator" or enh_id == "000009823003":
+            if not is_hearthband:
+                return
+            unit.special_rules["enhancement_quake_multigenerator"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "high kahl" or enh_id == "000009823005":
+            if not is_hearthband:
+                return
+            unit.special_rules["enhancement_high_kahl"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

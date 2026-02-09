@@ -573,6 +573,40 @@ class KeywordsDetachmentsMixin:
             except Exception:
                 rule = None
 
+        # Enhancement: High Kahl (Hearthband) applies to models in the bearer's current unit.
+        if rule is None and model is not None:
+            try:
+                root = self.get_attached_unit_root()
+            except Exception:
+                root = self
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            try:
+                attached_models = list(root.get_attached_unit_models() or [])
+            except Exception:
+                attached_models = list(getattr(root, "models", []) or [])
+            attached_model_ids = {
+                str(getattr(m, "id", getattr(m, "_id", "")) or "")
+                for m in list(attached_models or [])
+                if m is not None
+            }
+            current_model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not (isinstance(sr, dict) and sr.get("enhancement_high_kahl")):
+                    continue
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                if bearer_id and bearer_id not in attached_model_ids and bearer_id != current_model_id:
+                    continue
+                rule = {"threshold": 4, "source": "High Kâhl"}
+                break
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule
