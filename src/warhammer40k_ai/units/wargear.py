@@ -4188,7 +4188,8 @@ class WargearProfile:
 
     def _ignore_hit_modifier_rule(self, attacker: 'Model') -> Optional[dict]:
         """
-        Detect unit/leader abilities that allow ignoring BS/WS and Hit roll modifiers.
+        Detect unit/leader abilities that allow ignoring Hit roll modifiers and,
+        when present in text, BS/WS modifiers.
         Returns a rule dict with:
             - name: ability name
             - attack_type: "ranged"|"melee"|"any"
@@ -4236,8 +4237,6 @@ class WargearProfile:
                 continue
             has_bs = "ballistic skill" in low
             has_ws = "weapon skill" in low
-            if not has_bs and not has_ws:
-                continue
             attack_type = "any"
             if ("ranged attack" in low) or ("ranged attacks" in low) or ("ranged weapon" in low):
                 attack_type = "ranged"
@@ -5887,7 +5886,13 @@ class WargearProfile:
             rule = attack_instance.get("closest_enemy_hit_reroll_rule")
             if rule:
                 reason = str(rule.get("source", "") or "Closest enemy unit").strip() or "Closest enemy unit"
-                reroll_full_reasons.append(reason)
+                values = tuple(int(v) for v in list(rule.get("reroll_values", ()) or ()))
+                if values:
+                    reroll_hit_values.update(values)
+                    shown = ", ".join(str(v) for v in sorted(set(values)))
+                    reroll_value_reasons.append(f"{reason}: re-roll Hit rolls of {shown}")
+                if bool(rule.get("reroll_full", not bool(values))):
+                    reroll_full_reasons.append(reason)
         except Exception:
             pass
         try:
@@ -6052,7 +6057,7 @@ class WargearProfile:
         # Closest enemy unit: re-roll Hit roll (optional).
         try:
             rule = attack_instance.get("closest_enemy_hit_reroll_rule")
-            if rerolls_allowed and rule and "reroll" not in hit_result:
+            if rerolls_allowed and rule and bool(rule.get("reroll_full", True)) and "reroll" not in hit_result:
                 try:
                     success = (dice_roll != 1) and (self.skill > 0) and (dice_roll >= final_needed)
                 except Exception:

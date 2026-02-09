@@ -131,6 +131,8 @@ def _normalize_text(text: str) -> str:
         return ""
     t = _HTML_RE.sub(" ", str(text))
     t = t.replace("\u2019", "'").replace("\u2018", "'")
+    t = re.sub(r"\ba model in the bearer'?s unit\b", "a model in this unit", t, flags=re.IGNORECASE)
+    t = re.sub(r"\bmodels in the bearer'?s unit\b", "models in this unit", t, flags=re.IGNORECASE)
     t = t.replace("unmodifed", "unmodified")
     t = t.replace("re-roll", "reroll")
     t = t.replace("\n", " ").replace("\r", " ")

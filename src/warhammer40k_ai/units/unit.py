@@ -1784,6 +1784,7 @@ class Unit(
     _POST_SHOOT_BATTLESHOCK_PENALTY_RE = re.compile(
         r"in your shooting phase after this (?P<subject>model|unit) has shot select one enemy unit "
         r"(?:excluding monsters and vehicles )?hit by one or more of those attacks "
+        r"(?:made with (?:a|an|the|its) [a-z0-9 ]+ )?"
         r"that (?:enemy )?unit must take a battle shock test subtracting (?P<pen>\d+) from the result",
         re.IGNORECASE,
     )
@@ -1907,7 +1908,8 @@ class Unit(
         re.IGNORECASE,
     )
     _PROPHETIC_SENTINELS_STRATAGEM_RE = re.compile(
-        r"once per battle round you can target this unit with the fire overwatch or heroic intervention stratagem for 0cp",
+        r"once per battle round (?:this (?:model|unit) can use this ability if it does )?"
+        r"you can target this unit with the fire overwatch or heroic intervention stratagem for 0cp",
         re.IGNORECASE,
     )
     _SNARLING_PROTECTOR_HEROIC_RE = re.compile(
@@ -2042,8 +2044,9 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_SUPPRESSION_RE = re.compile(
-        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit hit by one or more of those attacks "
-        r"(?:(?P<exclude>excluding monsters and vehicles) )?until the start of your next turn that enemy unit is suppressed "
+        r"in your shooting phase after this (?:model|unit) has shot select one enemy unit "
+        r"(?:(?P<exclude>excluding monsters and vehicles) )?hit by one or more of those attacks "
+        r"(?:excluding monsters and vehicles )?until the start of your next turn that enemy unit is suppressed "
         r"while a unit is suppressed each time a model in that unit makes an attack subtract 1 from the hit roll",
         re.IGNORECASE,
     )

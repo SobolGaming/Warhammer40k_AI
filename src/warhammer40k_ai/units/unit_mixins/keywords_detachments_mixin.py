@@ -2960,6 +2960,8 @@ class KeywordsDetachmentsMixin:
         Return rule info for abilities like:
         "Each time a model in this unit makes a ranged attack that targets the closest enemy unit,
         you can re-roll the Hit roll."
+        Also supports closest-target variants that only re-roll specific values
+        (e.g. "re-roll a Hit roll of 1").
         """
         if model is None:
             return None
@@ -2984,12 +2986,23 @@ class KeywordsDetachmentsMixin:
                     continue
                 if ("re-roll" not in low) and ("reroll" not in low):
                     continue
-                if not re.search(r"re-?roll\s+the\s+hit\s+roll", low) and not re.search(
-                    r"re-?roll\s+the\s+hit\s+roll\s+instead", low
-                ):
+                m_full = re.search(r"re-?roll\s+the\s+hit\s+roll(?:\s+instead)?", low)
+                m_value = re.search(r"re-?roll\s+a\s+hit\s+roll\s+of\s+(?P<val>\d+)", low)
+                if not m_full and not m_value:
                     continue
                 source = str(name or "Closest enemy unit").strip() or "Closest enemy unit"
                 rule = {"source": source}
+                if m_full:
+                    rule["reroll_full"] = True
+                elif m_value:
+                    try:
+                        roll_value = int(m_value.group("val") or 0)
+                    except Exception:
+                        roll_value = 0
+                    if roll_value <= 0:
+                        continue
+                    rule["reroll_full"] = False
+                    rule["reroll_values"] = (int(roll_value),)
                 break
         except Exception:
             rule = None

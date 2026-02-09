@@ -1833,16 +1833,23 @@ class LateGameplayMixin:
                 if "lone operative" not in norm:
                     continue
                 m = re.search(
-                    r"while (?:this model|the bearer) is within (?P<range>\d+) of one or more (?P<other>other )?friendly (?P<keywords>.+?) units? "
-                    r"(?:this model|the bearer|it) has (?:the )?lone operative ability",
+                    r"while (?:this model|the bearer|this unit) is within (?P<range>\d+) of one or more "
+                    r"(?P<other>other )?friendly (?P<keywords>.+?) units?"
+                    r"(?P<exclude> excluding units with the lone operative ability)?"
+                    r"(?P<not_attached> if this unit is not an attached unit)? "
+                    r"(?:this model|the bearer|this unit|it) has (?:the )?lone operative ability",
                     norm,
                     flags=re.IGNORECASE,
                 )
                 if m:
                     kw_phrase = str(m.group("keywords") or "").strip()
-                    if " or " in kw_phrase or " excluding " in kw_phrase:
-                        base_found = True
+                    if not kw_phrase:
                         continue
+                    keyword_options = [kw_phrase]
+                    if " or " in kw_phrase:
+                        keyword_options = [part.strip() for part in kw_phrase.split(" or ") if part.strip()]
+                        if not keyword_options:
+                            keyword_options = [kw_phrase]
                     try:
                         rng = int(m.group("range") or 0)
                     except Exception:
@@ -1853,7 +1860,10 @@ class LateGameplayMixin:
                         {
                             "range": int(rng),
                             "keywords": kw_phrase,
+                            "keyword_options": tuple(keyword_options),
                             "requires_other": bool(m.group("other")),
+                            "exclude_lone_operative": bool(m.group("exclude")),
+                            "requires_not_attached": bool(m.group("not_attached")),
                             "source": str(name or "Lone Operative").strip() or "Lone Operative",
                         }
                     )
@@ -1866,6 +1876,26 @@ class LateGameplayMixin:
             conditional_rules = list(conditional_rules or [])
 
         if conditional_rules:
+            def _unit_mentions_lone_operative(unit_obj) -> bool:
+                try:
+                    iter_entries = getattr(unit_obj, "_iter_ability_entries_for_rules", None)
+                    if callable(iter_entries):
+                        entries = iter_entries(model=None)
+                    else:
+                        entries = (
+                            (getattr(ability, "name", None), getattr(ability, "description", None))
+                            for ability in list(getattr(unit_obj, "possible_abilities", []) or [])
+                        )
+                    for n_name, n_desc in entries:
+                        text = strip_eligibility_prefix(f"{n_name or ''} {n_desc or ''}")
+                        if not text:
+                            continue
+                        if "lone operative" in _normalize_lo_text(text):
+                            return True
+                except Exception:
+                    return False
+                return False
+
             game_map = None
             try:
                 game_map = self.get_parent_army().player.game.map
@@ -1881,8 +1911,23 @@ class LateGameplayMixin:
                             rng = 0.0
                         if rng <= 0:
                             continue
+                        if bool(rule.get("requires_not_attached")):
+                            is_attached = bool(getattr(self, "attached_to", None))
+                            if not is_attached:
+                                leaders = list(getattr(self, "attached_leaders", []) or [])
+                                is_attached = bool(leaders)
+                            if is_attached:
+                                continue
                         kw_phrase = str(rule.get("keywords") or "").strip()
+                        kw_options = [kw_phrase]
+                        try:
+                            parsed = tuple(rule.get("keyword_options", ()) or ())
+                            if parsed:
+                                kw_options = [str(v).strip() for v in parsed if str(v).strip()]
+                        except Exception:
+                            kw_options = [kw_phrase]
                         requires_other = bool(rule.get("requires_other"))
+                        exclude_lone_operative = bool(rule.get("exclude_lone_operative"))
                         for other in list(game_map.get_friendly_units(self)):
                             if other is None:
                                 continue
@@ -1890,7 +1935,9 @@ class LateGameplayMixin:
                                 continue
                             if not getattr(other, "is_alive", lambda: True)():
                                 continue
-                            if not unit_matches_keyword_phrase(other, kw_phrase):
+                            if exclude_lone_operative and _unit_mentions_lone_operative(other):
+                                continue
+                            if not any(unit_matches_keyword_phrase(other, option) for option in kw_options):
                                 continue
                             if unit_within_range_of_unit(self, other, rng, use_attached_aggregate=True):
                                 return True
