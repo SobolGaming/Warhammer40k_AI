@@ -4645,6 +4645,16 @@ class WargearProfile:
                     attack_instance["bonus_devastating_wounds"] = True
         except Exception:
             pass
+        try:
+            unit = getattr(attacker, "parent_unit", None)
+            sr = getattr(unit, "special_rules", None) if unit is not None else None
+            is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+            if is_melee and isinstance(sr, dict) and sr.get("enhancement_the_stave_abominus"):
+                if self._attacker_is_enhancement_bearer(attacker, sr):
+                    _set_bonus_sustained_dice("D3", "The Stave Abominus")
+                    attack_instance["bonus_devastating_wounds"] = True
+        except Exception:
+            pass
 
         try:
             sr = getattr(attacker.parent_unit, "special_rules", None)
@@ -5326,6 +5336,52 @@ class WargearProfile:
                 bonus = int(sr.get("enhancement_bearer_melee_hit_bonus", 0) or 0)
                 if bonus and self._attacker_is_enhancement_bearer(attacker, sr):
                     _add_hit_mod(bonus, f"+{bonus} to hit from Enhancement bearer (melee)")
+        except Exception:
+            pass
+        # Thousand Sons: Lord of the Rubricae.
+        try:
+            attacker_unit = getattr(attacker, "parent_unit", None)
+            root = attacker_unit.get_attached_unit_root() if attacker_unit is not None and hasattr(attacker_unit, "get_attached_unit_root") else attacker_unit
+            if attacker_unit is root and root is not None:
+                is_rubricae_model = False
+                try:
+                    is_rubricae_model = bool(getattr(attacker, "has_any_keyword", lambda *_a, **_k: False)("RUBRICAE"))
+                except Exception:
+                    is_rubricae_model = False
+                if not is_rubricae_model:
+                    try:
+                        is_rubricae_model = bool(getattr(attacker, "has_keyword", lambda *_a, **_k: False)("RUBRICAE"))
+                    except Exception:
+                        is_rubricae_model = False
+                if not is_rubricae_model:
+                    try:
+                        is_rubricae_model = bool(getattr(root, "has_any_keyword", lambda *_a, **_k: False)("RUBRICAE"))
+                    except Exception:
+                        is_rubricae_model = False
+                if is_rubricae_model:
+                    for leader in list(getattr(root, "attached_leaders", []) or []):
+                        lsr = getattr(leader, "special_rules", None)
+                        if not isinstance(lsr, dict) or not lsr.get("enhancement_lord_of_the_rubricae"):
+                            continue
+                        if getattr(leader, "attached_to", None) is not root:
+                            continue
+                        bearer_id = str(lsr.get("enhancement_bearer_model_id", "") or "")
+                        if bearer_id:
+                            bearer_alive = False
+                            for model in list(getattr(leader, "models", []) or []):
+                                try:
+                                    if not getattr(model, "is_alive", True):
+                                        continue
+                                except Exception:
+                                    continue
+                                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                                if model_id == bearer_id:
+                                    bearer_alive = True
+                                    break
+                            if not bearer_alive:
+                                continue
+                        _add_hit_mod(1, "+1 to hit from Lord of the Rubricae")
+                        break
         except Exception:
             pass
         attacker_unit = getattr(attacker, "parent_unit", None)

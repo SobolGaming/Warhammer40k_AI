@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import combinations
 from typing import Iterable, List, Optional
 
 from .decisions import DecisionOption, DecisionRequest
@@ -7,6 +8,7 @@ from .decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_SCOUT_MOVE,
@@ -40,6 +42,83 @@ def _player_for_unit(unit: object):
     if army is None:
         return None
     return getattr(army, "player", None)
+
+
+def _unit_has_special_rule_flag(unit: object, flag_key: str) -> bool:
+    sr = getattr(unit, "special_rules", None)
+    return bool(isinstance(sr, dict) and sr.get(flag_key))
+
+
+def _unit_has_enhancement(unit: object, *, flag_key: str, enhancement_id: str, enhancement_name: str) -> bool:
+    if _unit_has_special_rule_flag(unit, flag_key):
+        return True
+    enh = getattr(unit, "enhancement", None)
+    if enh is None:
+        return False
+    try:
+        if str(getattr(enh, "id", "") or "").strip() == str(enhancement_id or "").strip():
+            return True
+    except Exception:
+        pass
+    try:
+        lhs = str(getattr(enh, "name", "") or "").strip().lower()
+        rhs = str(enhancement_name or "").strip().lower()
+        return bool(lhs and rhs and lhs == rhs)
+    except Exception:
+        return False
+
+
+def _unit_is_rubricae(unit: object) -> bool:
+    if unit is None:
+        return False
+    has_any = getattr(unit, "has_any_keyword", None)
+    if callable(has_any):
+        try:
+            return bool(has_any("RUBRICAE"))
+        except Exception:
+            return False
+    return False
+
+
+def _unit_is_battleline(unit: object) -> bool:
+    if unit is None:
+        return False
+    fn = getattr(unit, "is_battleline", None)
+    if callable(fn):
+        try:
+            return bool(fn())
+        except Exception:
+            return False
+    has_any = getattr(unit, "has_any_keyword", None)
+    if callable(has_any):
+        try:
+            return bool(has_any("BATTLELINE"))
+        except Exception:
+            return False
+    return False
+
+
+def _unique_army_root_units(units: Iterable[object]) -> list[object]:
+    roots: dict[str, object] = {}
+    for unit in _iter_units(units):
+        if bool(getattr(unit, "is_attached_leader", False)):
+            continue
+        if bool(getattr(unit, "is_joined_support", False)):
+            continue
+        root = unit
+        get_root = getattr(unit, "get_attached_unit_root", None)
+        if callable(get_root):
+            try:
+                root = get_root() or unit
+            except Exception:
+                root = unit
+        if root is None:
+            continue
+        root_id = str(get_entity_id(root) or "")
+        if not root_id:
+            continue
+        roots[root_id] = root
+    return [roots[k] for k in sorted(roots.keys())]
 
 
 def _leader_attachment_options(leader, bodyguards: List[object]) -> List[DecisionOption]:
@@ -275,6 +354,128 @@ def build_hover_mode_requests(
         requests.append(request)
         if queue_requests and hasattr(game, "request_decision"):
             game.request_decision(request)
+    return requests
+
+
+def build_risen_rubricae_requests(
+    game: object,
+    units: Iterable[object],
+    *,
+    queue_requests: bool = True,
+) -> List[DecisionRequest]:
+    all_units = _iter_units(units)
+    requests: List[DecisionRequest] = []
+    if not all_units:
+        return requests
+
+    pending_by_source: set[str] = set()
+    queue = getattr(game, "decision_queue", None)
+    if queue is not None and hasattr(queue, "list"):
+        for req in list(queue.list() or []):
+            if getattr(req, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+                continue
+            ctx = dict(getattr(req, "context", {}) or {})
+            if str(ctx.get("ability", "") or "") != "risen_rubricae":
+                continue
+            source_id = str(ctx.get("source_unit_id", "") or "")
+            if source_id:
+                pending_by_source.add(source_id)
+
+    source_units = [
+        u for u in all_units
+        if _unit_has_enhancement(
+            u,
+            flag_key="enhancement_risen_rubricae",
+            enhancement_id="000010205002",
+            enhancement_name="Risen Rubricae",
+        )
+    ]
+    source_units.sort(key=lambda u: str(get_entity_id(u) or ""))
+
+    for source_unit in source_units:
+        source_id = str(get_entity_id(source_unit) or "")
+        if not source_id:
+            continue
+        if source_id in pending_by_source:
+            continue
+        if _unit_has_special_rule_flag(source_unit, "enhancement_risen_rubricae_used"):
+            continue
+
+        try:
+            source_army = source_unit.get_parent_army()
+        except Exception:
+            source_army = None
+        if source_army is None:
+            continue
+        mgr = getattr(source_army, "thousand_sons_detachments", None)
+        if mgr is None or not bool(getattr(mgr, "is_rubricae_phalanx", lambda: False)()):
+            continue
+
+        army_units = [
+            u for u in all_units
+            if getattr(u, "get_parent_army", lambda: None)() is source_army
+        ]
+        roots = _unique_army_root_units(army_units)
+        rubricae = [u for u in roots if _unit_is_rubricae(u)]
+        battleline = [u for u in rubricae if _unit_is_battleline(u)]
+        other = [u for u in rubricae if not _unit_is_battleline(u)]
+        if len(battleline) < 2 and not other:
+            continue
+
+        options: List[DecisionOption] = []
+        for first, second in combinations(battleline, 2):
+            first_id = str(get_entity_id(first) or "")
+            second_id = str(get_entity_id(second) or "")
+            if not first_id or not second_id:
+                continue
+            if first_id > second_id:
+                first, second = second, first
+                first_id, second_id = second_id, first_id
+            label = f"{getattr(first, 'name', 'Unit')} + {getattr(second, 'name', 'Unit')}"
+            options.append(
+                DecisionOption.create(
+                    label,
+                    payload={
+                        "source_unit_id": source_id,
+                        "selected_unit_ids": [first_id, second_id],
+                        "selection_kind": "two_battleline",
+                    },
+                )
+            )
+        for unit in other:
+            unit_id = str(get_entity_id(unit) or "")
+            if not unit_id:
+                continue
+            options.append(
+                DecisionOption.create(
+                    str(getattr(unit, "name", "Unit") or "Unit"),
+                    payload={
+                        "source_unit_id": source_id,
+                        "selected_unit_ids": [unit_id],
+                        "selection_kind": "one_other",
+                    },
+                )
+            )
+
+        if not options:
+            continue
+        request = DecisionRequest.create(
+            DECISION_CHOOSE_QUARRY,
+            "Risen Rubricae: select two Rubricae Battleline units or one other Rubricae unit.",
+            player_id=_player_id_for_unit(source_unit),
+            options=options,
+            context={
+                "ability": "risen_rubricae",
+                "ability_name": "Risen Rubricae",
+                "source_unit_id": source_id,
+                "enhancement_id": "000010205002",
+            },
+        )
+        requests.append(request)
+        if queue_requests and hasattr(game, "request_decision"):
+            game.request_decision(request)
+            pending_by_source.add(source_id)
+
     return requests
 
 

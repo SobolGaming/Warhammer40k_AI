@@ -3551,8 +3551,32 @@ class PositioningMixin:
         # Use cached result if available
         if 'infiltrate' in getattr(self, '_ability_cache', {}):
             return self._ability_cache['infiltrate']
-        
-        found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
+
+        found = False
+        # Rubricae Phalanx (Risen Rubricae): selected unit models gain Infiltrators.
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        try:
+            rsr = getattr(root, "special_rules", None)
+            if isinstance(rsr, dict) and rsr.get("risen_rubricae_infiltrators"):
+                if self is root:
+                    found = True
+                else:
+                    members = []
+                    try:
+                        members = list(root.get_attached_unit_members() or [])
+                    except Exception:
+                        members = []
+                    if not members:
+                        members = [root]
+                    if self in members:
+                        found = True
+        except Exception:
+            found = False
+        if not found:
+            found, _ = self._find_ability_with_patterns(["infiltrators", "infiltrate"])
         
         # Cache the result
         if not hasattr(self, '_ability_cache'):

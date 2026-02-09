@@ -22,6 +22,7 @@ from ..engine.decision_kinds import (
     DECISION_ATTACH_LEADER,
     DECISION_ATTACH_SUPPORT_ARTILLERY,
     DECISION_ASSIGN_TRANSPORT,
+    DECISION_CHOOSE_QUARRY,
     DECISION_CONFIRM_YES_NO,
     DECISION_DECLARE_RESERVES,
     DECISION_CHOOSE_PLAGUE,
@@ -31,6 +32,7 @@ from ..engine.decision_kinds import (
 from ..engine.decisions import DecisionOption, DecisionRequest
 from ..engine.decision_requests import (
     build_leader_attachment_requests,
+    build_risen_rubricae_requests,
     build_support_artillery_attachment_requests,
     build_hover_mode_requests,
     build_transport_assignment_requests,
@@ -493,6 +495,7 @@ class NetworkServer:
         pending_reserves = self._pending_by_context(DECISION_DECLARE_RESERVES, "army_id")
         pending_plague = self._pending_by_context(DECISION_CHOOSE_PLAGUE, "army_id")
         pending_hover = self._pending_hover_by_unit()
+        pending_risen = self._pending_risen_rubricae_by_source()
 
         created: list[DecisionRequest] = []
 
@@ -516,6 +519,14 @@ class NetworkServer:
             for req in leader_requests:
                 leader_id = str(getattr(req, "context", {}).get("leader_id", "") or "")
                 if leader_id and leader_id in pending_attach:
+                    continue
+                await self._send_decision_request(req)
+                created.append(req)
+
+            risen_requests = build_risen_rubricae_requests(game, units, queue_requests=False)
+            for req in risen_requests:
+                source_id = str(getattr(req, "context", {}).get("source_unit_id", "") or "")
+                if source_id and source_id in pending_risen:
                     continue
                 await self._send_decision_request(req)
                 created.append(req)
@@ -582,6 +593,21 @@ class NetworkServer:
                 pending[unit_id] = req
         return pending
 
+    def _pending_risen_rubricae_by_source(self) -> dict[str, DecisionRequest]:
+        pending: dict[str, DecisionRequest] = {}
+        if self._game is None:
+            return pending
+        queue = getattr(self._game, "decision_queue", None)
+        if queue is None or not hasattr(queue, "list"):
+            return pending
+        for req in list(queue.list() or []):
+            if not self._is_risen_rubricae_request(req):
+                continue
+            source_id = str(getattr(req, "context", {}).get("source_unit_id", "") or "")
+            if source_id:
+                pending[source_id] = req
+        return pending
+
     def _is_hover_mode_request(self, request: DecisionRequest | None) -> bool:
         if request is None:
             return False
@@ -590,10 +616,20 @@ class NetworkServer:
         ctx = getattr(request, "context", {}) or {}
         return str(ctx.get("ability", "") or "") == "hover_mode"
 
+    def _is_risen_rubricae_request(self, request: DecisionRequest | None) -> bool:
+        if request is None:
+            return False
+        if getattr(request, "decision_type", None) != DECISION_CHOOSE_QUARRY:
+            return False
+        ctx = dict(getattr(request, "context", {}) or {})
+        return str(ctx.get("ability", "") or "") == "risen_rubricae"
+
     def _is_formation_decision(self, request: DecisionRequest | None) -> bool:
         if request is None:
             return False
         if getattr(request, "decision_type", None) in self._formation_decision_types:
+            return True
+        if self._is_risen_rubricae_request(request):
             return True
         return self._is_hover_mode_request(request)
 

@@ -5103,7 +5103,7 @@ class GameView:
                 return
 
             ability = str(ctx.get("ability", "") or "")
-            if ability in ("opponent_shooting_phase_disrupt", "unearthly_power"):
+            if ability in ("opponent_shooting_phase_disrupt", "unearthly_power", "risen_rubricae"):
                 from ..utility.decision_utils import resolve_decision_command
                 from .decision_ui_utils import option_id_for_action, first_option_id
 
@@ -5139,6 +5139,13 @@ class GameView:
                     else:
                         header = "Choose a Crimson King ability."
                     subtitle = "Effect lasts until the start of the next battle round."
+                elif ability == "risen_rubricae":
+                    source = self._resolve_unit_by_id(ctx.get("source_unit_id") or ctx.get("unit_id"))
+                    if source is not None:
+                        header = f"{getattr(source, 'name', 'Unit')} selects Risen Rubricae targets."
+                    else:
+                        header = "Select Risen Rubricae targets."
+                    subtitle = "Select either two Rubricae Battleline units or one other Rubricae unit."
                 else:
                     model_name = str(ctx.get("model", "") or "").strip()
                     unit_name = str(ctx.get("unit", "") or "").strip()

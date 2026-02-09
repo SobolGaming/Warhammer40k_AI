@@ -1800,6 +1800,129 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "risen_rubricae":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        if source_unit is None:
+            return None
+        try:
+            source_army = source_unit.get_parent_army()
+        except Exception:
+            source_army = None
+
+        selected_vals = payload.get("selected_unit_ids")
+        if not isinstance(selected_vals, list):
+            selected_vals = []
+        if not selected_vals:
+            one_target = payload.get("target_unit_id") or payload.get("unit_id")
+            if one_target:
+                selected_vals = [one_target]
+
+        selected_roots = []
+        seen: set[str] = set()
+        for val in list(selected_vals or []):
+            unit = resolve_unit(game, val)
+            if unit is None:
+                continue
+            try:
+                root = unit.get_attached_unit_root() if hasattr(unit, "get_attached_unit_root") else unit
+            except Exception:
+                root = unit
+            if root is None:
+                continue
+            if source_army is not None:
+                try:
+                    if root.get_parent_army() is not source_army:
+                        continue
+                except Exception:
+                    continue
+            root_id = str(get_entity_id(root) or "")
+            if not root_id or root_id in seen:
+                continue
+            seen.add(root_id)
+            selected_roots.append(root)
+
+        def _is_rubricae(unit_obj) -> bool:
+            has_any = getattr(unit_obj, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    return bool(has_any("RUBRICAE"))
+                except Exception:
+                    return False
+            return False
+
+        def _is_battleline(unit_obj) -> bool:
+            fn = getattr(unit_obj, "is_battleline", None)
+            if callable(fn):
+                try:
+                    return bool(fn())
+                except Exception:
+                    return False
+            has_any = getattr(unit_obj, "has_any_keyword", None)
+            if callable(has_any):
+                try:
+                    return bool(has_any("BATTLELINE"))
+                except Exception:
+                    return False
+            return False
+
+        valid = False
+        if len(selected_roots) == 2:
+            valid = all(_is_rubricae(unit_obj) and _is_battleline(unit_obj) for unit_obj in selected_roots)
+        elif len(selected_roots) == 1:
+            valid = _is_rubricae(selected_roots[0]) and (not _is_battleline(selected_roots[0]))
+        if not valid:
+            return None
+
+        for root in selected_roots:
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["risen_rubricae_infiltrators"] = True
+            sr["risen_rubricae_source_unit_id"] = str(get_entity_id(source_unit) or "")
+            root.special_rules = sr
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            for member in members:
+                try:
+                    invalidate = getattr(member, "_invalidate_ability_cache", None)
+                    if callable(invalidate):
+                        invalidate()
+                except Exception:
+                    continue
+
+        source_sr = getattr(source_unit, "special_rules", None)
+        if not isinstance(source_sr, dict):
+            source_sr = {}
+        source_sr["enhancement_risen_rubricae_used"] = True
+        source_unit.special_rules = source_sr
+        try:
+            mark_used = getattr(source_unit, "mark_unit_once_per_battle_used", None)
+            if callable(mark_used):
+                mark_used("risen_rubricae", ability_name=str(ctx.get("ability_name", "") or "Risen Rubricae"))
+        except Exception:
+            pass
+
+        try:
+            player = getattr(getattr(source_unit, "get_parent_army", lambda: None)(), "player", None)
+        except Exception:
+            player = None
+        try:
+            names = ", ".join(str(getattr(unit_obj, "name", "Unit") or "Unit") for unit_obj in selected_roots)
+            _log_action_for_players(
+                game,
+                player,
+                f"Risen Rubricae: {getattr(source_unit, 'name', 'Unit')} selected {names}.",
+            )
+        except Exception:
+            pass
+        return None
     if ability == "cankerblight":
         payload = _option_payload(request, result)
         target_val = payload.get("target_unit_id", payload.get("unit_id", ctx.get("target_unit_id")))

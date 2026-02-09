@@ -1638,6 +1638,18 @@ class GameSetupDeploymentReservesMixin:
         # Hover mode declarations must happen before any other formation steps.
         self._apply_hover_declarations()
 
+        # Thousand Sons: Risen Rubricae selections are made at the start of this step.
+        from ..decision_requests import build_risen_rubricae_requests
+
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Missing player during Declare Battle Formations.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Missing army for {p.name} during Declare Battle Formations.")
+            units = list(getattr(army, "units", []) or [])
+            build_risen_rubricae_requests(self, units, queue_requests=True)
+
         # Validate leader attachment limits per army
         for p in list(self.players or []):
             if p is None:

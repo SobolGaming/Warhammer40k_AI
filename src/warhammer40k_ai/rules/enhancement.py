@@ -267,6 +267,10 @@ class Enhancement:
             is_grand_coven = bool(ts_mgr and ts_mgr.is_grand_coven())
         except Exception:
             is_grand_coven = False
+        try:
+            is_rubricae_phalanx = bool(ts_mgr and ts_mgr.is_rubricae_phalanx())
+        except Exception:
+            is_rubricae_phalanx = False
 
         bearer = None
         bearer_id = ""
@@ -345,6 +349,34 @@ class Enhancement:
             unit.special_rules["enhancement_bearer_psychic_damage_bonus"] = int(
                 unit.special_rules.get("enhancement_bearer_psychic_damage_bonus", 0) or 0
             ) + 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "risen rubricae" or enh_id == "000010205002":
+            if not is_rubricae_phalanx:
+                return
+            unit.special_rules["enhancement_risen_rubricae"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "arcane thralls (aura)" or enh_id == "000010205003":
+            if not is_rubricae_phalanx:
+                return
+            unit.special_rules["enhancement_arcane_thralls"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "lord of the rubricae" or enh_id == "000010205004":
+            if not is_rubricae_phalanx:
+                return
+            unit.special_rules["enhancement_lord_of_the_rubricae"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "the stave abominus" or enh_id == "000010205005":
+            if not is_rubricae_phalanx:
+                return
+            unit.special_rules["enhancement_the_stave_abominus"] = True
             if bearer_id:
                 unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 

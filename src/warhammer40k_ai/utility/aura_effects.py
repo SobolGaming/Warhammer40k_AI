@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from .aura_utils import unit_within_range_of_unit
+from .aura_utils import model_within_range_of_unit, unit_within_range_of_unit
 from .entity_ids import get_entity_id
 
 
@@ -1454,6 +1454,65 @@ def get_aura_battleshock_test_reroll_sources(unit, *, game_map=None) -> list[str
 
     sources: list[str] = []
     applied_aura_names: set[str] = set()
+    # Rubricae Phalanx: Arcane Thralls (Aura) from enhancement bearers.
+    try:
+        rubricae_match = _unit_matches_keyword_phrase(unit, "RUBRICAE")
+        if not rubricae_match:
+            rubricae_match = bool(getattr(unit, "has_any_keyword", lambda *_a, **_k: False)("RUBRICAE"))
+    except Exception:
+        rubricae_match = False
+    if rubricae_match:
+        explicit_key = _norm_name("Arcane Thralls (Aura)")
+        seen_roots: set[str] = set()
+        for source in list(game_map.get_friendly_units(unit)):
+            try:
+                root = source.get_attached_unit_root() if hasattr(source, "get_attached_unit_root") else source
+            except Exception:
+                root = source
+            root_key = str(get_entity_id(root) or "")
+            if root_key and root_key in seen_roots:
+                continue
+            if root_key:
+                seen_roots.add(root_key)
+            try:
+                members = list(root.get_attached_unit_members() or [])
+            except Exception:
+                members = []
+            if not members:
+                members = [root]
+            for member in members:
+                if member is None:
+                    continue
+                sr = getattr(member, "special_rules", None)
+                if not isinstance(sr, dict) or not sr.get("enhancement_arcane_thralls"):
+                    continue
+                bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                bearer_model = None
+                for model in list(getattr(member, "models", []) or []):
+                    try:
+                        if not getattr(model, "is_alive", True):
+                            continue
+                    except Exception:
+                        continue
+                    model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if bearer_id and model_id != bearer_id:
+                        continue
+                    bearer_model = model
+                    break
+                if bearer_model is None:
+                    continue
+                if not model_within_range_of_unit(
+                    bearer_model,
+                    unit,
+                    9.0,
+                    use_attached_aggregate=True,
+                ):
+                    continue
+                if explicit_key not in applied_aura_names:
+                    applied_aura_names.add(explicit_key)
+                    sources.append("Arcane Thralls (Aura)")
+                break
+
     for source in list(game_map.get_friendly_units(unit)):
         for ab in _iter_possible_abilities(source):
             if not _is_aura_ability(ab):

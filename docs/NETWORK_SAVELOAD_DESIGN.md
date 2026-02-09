@@ -371,6 +371,7 @@ Faction / Detachment / Ability choices:
 - nurgles_gift_plague_dialog: CHOOSE_PLAGUE {choice_id}
 - pledge_selection_dialog: CHOOSE_PLEDGE {choice_id} (context `army_id`, `battle_round`, `max_value`, `ability_name="Pledges to the Dark Prince"`)
 - quarry_selection_dialog: CHOOSE_QUARRY {target_unit_id} (context may include `ability`, `ability_name`, `effect_key`, `source_unit_id`, `prey_reroll_hit`, `prey_reroll_wound`, `prey_melee_only`, `prey_keyword`, `prey_repick_on_destroyed`)
+- quarry_selection_dialog (Risen Rubricae): CHOOSE_QUARRY {selected_unit_ids[]} (context `ability="risen_rubricae"`, `ability_name="Risen Rubricae"`, `source_unit_id`, `enhancement_id`)
 - modifier_ignore_dialog: CHOOSE_HIT_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`)
 - modifier_ignore_dialog: CHOOSE_SKILL_MODIFIER_IGNORES {choice} (context `attacker_model_id`, `target_unit_id`, `wargear_id`, `profile_name`, `ability_name`, `modifier_kind="weapon_skill"`)
 - modifier_ignore_dialog: CHOOSE_MOVE_MODIFIER_IGNORES {choice} (context `unit_id`, `action_type`, `ability_name`)

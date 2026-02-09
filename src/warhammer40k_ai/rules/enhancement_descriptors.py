@@ -230,6 +230,55 @@ _GRAND_COVEN_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GRAND_COVEN_DESCRIPTORS.values()
 }
 
+_RUBRICAE_PHALANX_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000010205002": EnhancementToolDescriptor(
+        enhancement_id="000010205002",
+        name="Risen Rubricae",
+        timing="declare_battle_formations_start",
+        target="friendly_rubricae_units",
+        duration="during_deployment",
+        effect="grant_infiltrators_to_selected_units",
+        effect_params={
+            "selection_modes": (
+                "two_rubricae_battleline_units",
+                "one_other_rubricae_unit",
+            ),
+        },
+    ),
+    "000010205003": EnhancementToolDescriptor(
+        enhancement_id="000010205003",
+        name="Arcane Thralls (Aura)",
+        timing="passive_aura",
+        target="friendly_rubricae_units_within_range",
+        duration="constant",
+        effect="reroll_battleshock_tests",
+        range_in=9.0,
+        effect_params={"keyword": "RUBRICAE"},
+    ),
+    "000010205004": EnhancementToolDescriptor(
+        enhancement_id="000010205004",
+        name="Lord of the Rubricae",
+        timing="passive_while_leading",
+        target="rubricae_models_in_bearer_unit",
+        duration="constant",
+        effect="hit_roll_bonus",
+        effect_params={"hit_bonus": 1, "model_keyword": "RUBRICAE"},
+    ),
+    "000010205005": EnhancementToolDescriptor(
+        enhancement_id="000010205005",
+        name="The Stave Abominus",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant",
+        effect="grant_weapon_keywords",
+        effect_params={"sustained_hits_dice": "D3", "devastating_wounds": True},
+    ),
+}
+
+_RUBRICAE_PHALANX_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _RUBRICAE_PHALANX_DESCRIPTORS.values()
+}
+
 _WARPBANE_TASK_FORCE_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000009777002": EnhancementToolDescriptor(
         enhancement_id="000009777002",
@@ -295,6 +344,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GRAND_COVEN_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _RUBRICAE_PHALANX_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _WARPBANE_TASK_FORCE_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -307,5 +359,6 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
         or _GRAND_COVEN_BY_NAME.get(key)
+        or _RUBRICAE_PHALANX_BY_NAME.get(key)
         or _WARPBANE_TASK_FORCE_BY_NAME.get(key)
     )
