@@ -3874,6 +3874,81 @@ class Game(
         if destroyed_by_unit.get_parent_army() == unit.get_parent_army():
             return
 
+        def _norm_ability_name(value: str) -> str:
+            text = str(value or "").replace("\u2019", "'").replace("\u2018", "'").lower()
+            text = re.sub(r"[^a-z0-9]+", " ", text)
+            return re.sub(r"\s+", " ", text).strip()
+
+        try:
+            attacker_root = destroyed_by_unit.get_attached_unit_root()
+        except Exception:
+            attacker_root = destroyed_by_unit
+
+        # Custom: Vox-diabolus (Vessels of Wrath) has a conditional D6 roll gate.
+        # Skip the generic gain-CP parser for this named source to avoid incorrect auto-grants.
+        skip_cp_sources: set[str] = set()
+        vox_sources: list = []
+        try:
+            members = list(attacker_root.get_attached_unit_members() or [])
+        except Exception:
+            members = [attacker_root]
+        for member in list(members or []):
+            if member is None:
+                continue
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_vox_diabolus"):
+                vox_sources.append(member)
+        if vox_sources:
+            skip_cp_sources.add("vox diabolus")
+            wp = destroyed_by_weapon_profile
+            pw = getattr(wp, "parent_wargear", None)
+            is_melee = bool(wp is not None and pw is not None and pw.is_melee())
+            if is_melee:
+                army = attacker_root.get_parent_army()
+                we_mgr = getattr(army, "world_eaters_detachments", None) if army is not None else None
+                if we_mgr is not None and we_mgr.is_vessels_of_wrath():
+                    player = getattr(army, "player", None)
+                    for source in vox_sources:
+                        if player is None:
+                            break
+                        source_sr = getattr(source, "special_rules", None)
+                        if not isinstance(source_sr, dict):
+                            continue
+                        bearer = None
+                        bearer_id = str(source_sr.get("enhancement_bearer_model_id", "") or "")
+                        if bearer_id:
+                            for model in list(getattr(source, "models", []) or []):
+                                model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                                if model_id and model_id == bearer_id:
+                                    bearer = model
+                                    break
+                        if bearer is None:
+                            get_bearer = getattr(source, "_get_enhancement_bearer_model", None)
+                            if callable(get_bearer):
+                                bearer = get_bearer()
+                        is_vessel = False
+                        if bearer is not None:
+                            try:
+                                is_vessel = bool(getattr(bearer, "has_keyword", lambda _k: False)("VESSEL OF WRATH"))
+                            except Exception:
+                                is_vessel = False
+                        roll = int(get_roll("D6"))
+                        total = int(roll + (1 if is_vessel else 0))
+                        if total < 4:
+                            continue
+                        gained = int(player.gain_command_points(1, reason="Vox-diabolus") or 0)
+                        self.event_system.publish(
+                            "command_points_gained",
+                            player=player,
+                            amount=gained,
+                            reason="Vox-diabolus",
+                            attacker_unit=attacker_root,
+                            target_unit=unit,
+                            attacker_model=destroyed_by_model,
+                            roll=int(roll),
+                            modified_roll=int(total),
+                        )
+
         specs = destroyed_by_unit.get_kill_reward_specs(model=destroyed_by_model) or []
         target_keywords = {str(k).upper() for k in getattr(unit, "keywords", []) or []}
 
@@ -3902,6 +3977,9 @@ class Game(
                             continue
 
                 if spec.get("type") == "gain_cp_on_destroy":
+                    source_norm = _norm_ability_name(spec.get("source_ability", ""))
+                    if source_norm in skip_cp_sources:
+                        continue
                     cp = int(spec.get("cp", 1) or 1)
                     player = destroyed_by_unit.get_parent_army().player
                     if player is None:
@@ -3923,7 +4001,6 @@ class Game(
                     heal_expr = spec.get("heal_expr")
                     if not heal_expr:
                         continue
-                    from warhammer40k_ai.utility.dice import get_roll
                     amount = get_roll(heal_expr)
                     destroyed_by_model.heal(amount)
                     self.event_system.publish(
@@ -3961,8 +4038,6 @@ class Game(
                 if is_psyker:
                     amount = int(hunter_rule.get("heal_if_target_psyker", 0) or 0)
                 else:
-                    from warhammer40k_ai.utility.dice import get_roll
-
                     heal_expr = str(hunter_rule.get("heal_expr", "") or "").strip().upper()
                     amount = int(get_roll(heal_expr) or 0) if heal_expr else 0
                 if amount > 0:

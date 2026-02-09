@@ -753,6 +753,250 @@ class TestWorldEatersEnhancements(unittest.TestCase):
 
         self.assertTrue(bool(unit.special_rules.get("enhancement_fight_first_once_per_battle")))
 
+    def test_archslaughterer_ap_bonus_and_vessel_damage_bonus(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        army = Army("World Eaters", "Vessels of Wrath")
+        army.faction_id = "WE"
+        unit = self._make_unit(
+            "Bearer",
+            keywords=["Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+
+        enh = Enhancement(
+            id="000009847002",
+            name="Archslaughterer",
+            faction_id="WE",
+            detachment="Vessels of Wrath",
+            points=25,
+            description="",
+        )
+        unit.enhancement = enh
+        enh.apply_to_unit(unit)
+
+        attacker = unit.models[0]
+        profile = self._make_melee_profile(attacks="1", damage="1")
+        target_unit = self._make_unit(
+            "Target",
+            faction_name="Enemy",
+            keywords=["Infantry"],
+            faction_keywords=["ENEMY"],
+        )
+
+        self.assertEqual(int(profile.get_effective_ap(attacker, target_unit)), -1)
+
+        target_stub_unit = SimpleNamespace(
+            special_rules={},
+            models=[],
+            has_feel_no_pain=lambda: [],
+            damaged_profile=None,
+            damaged_profile_desc=None,
+        )
+        target_model = Model(
+            name="Target",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=5,
+            leadership=6,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        target_model.set_parent_unit(target_stub_unit)
+        target_stub_unit.models = [target_model]
+
+        before = target_model.wounds
+        profile._damage_target_with_tracking(
+            target_model,
+            attacker,
+            {"below_half_distance": False, "mortal_wound": False},
+            game_map=None,
+        )
+        self.assertEqual(target_model.wounds, before - 1)
+
+        attacker.keywords = list(getattr(attacker, "keywords", []) or []) + ["Vessel of Wrath"]
+
+        target_model_vessel = Model(
+            name="Target",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=5,
+            leadership=6,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        target_model_vessel.set_parent_unit(target_stub_unit)
+        target_stub_unit.models = [target_model_vessel]
+
+        before_vessel = target_model_vessel.wounds
+        profile._damage_target_with_tracking(
+            target_model_vessel,
+            attacker,
+            {"below_half_distance": False, "mortal_wound": False},
+            game_map=None,
+        )
+        self.assertEqual(target_model_vessel.wounds, before_vessel - 2)
+
+    def test_vox_diabolus_cp_gain_uses_roll_and_vessel_bonus(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.engine.game import Battlefield, BattlefieldSize, Game
+        from warhammer40k_ai.roster.player import Player, PlayerControl
+
+        army = Army("World Eaters", "Vessels of Wrath")
+        army.faction_id = "WE"
+        attacker = self._make_unit(
+            "Bearer",
+            keywords=["Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(attacker)
+
+        enemy_army = Army("Enemy", "Other")
+        enemy_army.faction_id = "EN"
+        enemy = self._make_unit(
+            "Enemy",
+            faction_name="Enemy",
+            keywords=["Infantry"],
+            faction_keywords=["ENEMY"],
+        )
+        enemy_army.add_unit(enemy)
+
+        bf = Battlefield(BattlefieldSize.STRIKE_FORCE)
+        game = Game(
+            bf,
+            players=[
+                Player("P1", control=PlayerControl.LOCAL, army=army),
+                Player("P2", control=PlayerControl.REMOTE, army=enemy_army),
+            ],
+        )
+
+        enh = Enhancement(
+            id="000009847003",
+            name="Vox-diabolus",
+            faction_id="WE",
+            detachment="Vessels of Wrath",
+            points=20,
+            description="",
+        )
+        attacker.enhancement = enh
+        enh.apply_to_unit(attacker)
+
+        weapon_profile = SimpleNamespace(parent_wargear=SimpleNamespace(is_melee=lambda: True))
+
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=3):
+            game.event_system.publish(
+                "unit_destroyed",
+                unit=enemy,
+                destroyed_by_unit=attacker,
+                destroyed_by_model=attacker.models[0],
+                destroyed_by_weapon_profile=weapon_profile,
+            )
+        self.assertEqual(int(game.players[0].command_points), 0)
+
+        attacker.models[0].keywords = list(getattr(attacker.models[0], "keywords", []) or []) + ["Vessel of Wrath"]
+        with patch("warhammer40k_ai.engine.game.get_roll", return_value=3):
+            game.event_system.publish(
+                "unit_destroyed",
+                unit=enemy,
+                destroyed_by_unit=attacker,
+                destroyed_by_model=attacker.models[0],
+                destroyed_by_weapon_profile=weapon_profile,
+            )
+        self.assertEqual(int(game.players[0].command_points), 1)
+
+    def test_avengers_crown_sets_bearer_melee_fight_on_death_rule(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.units.model import Model
+        from warhammer40k_ai.utility.model_base import Base, BaseType
+
+        army = Army("World Eaters", "Vessels of Wrath")
+        army.faction_id = "WE"
+        unit = self._make_unit(
+            "Bearer",
+            keywords=["Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+
+        enh = Enhancement(
+            id="000009847004",
+            name="Avenger's Crown",
+            faction_id="WE",
+            detachment="Vessels of Wrath",
+            points=15,
+            description="",
+        )
+        unit.enhancement = enh
+        enh.apply_to_unit(unit)
+
+        bearer = unit.models[0]
+        rule = unit.get_melee_fight_on_death_after_attacks_rule(model=bearer)
+        self.assertIsNotNone(rule)
+        self.assertEqual(int(rule.get("threshold", 0) or 0), 2)
+
+        not_bearer = Model(
+            name="Other",
+            movement=6,
+            toughness=4,
+            save=3,
+            wounds=5,
+            leadership=6,
+            objective_control=1,
+            model_base=Base(BaseType.CIRCULAR, 1.0),
+        )
+        not_bearer.set_parent_unit(unit)
+        self.assertIsNone(unit.get_melee_fight_on_death_after_attacks_rule(model=not_bearer))
+
+    def test_gateways_to_glory_grants_move_through_rules(self):
+        from warhammer40k_ai.roster.army import Army
+        from warhammer40k_ai.rules.enhancement import Enhancement
+        from warhammer40k_ai.utility.calcs import MovementType, get_validation_rules
+
+        army = Army("World Eaters", "Vessels of Wrath")
+        army.faction_id = "WE"
+        unit = self._make_unit(
+            "Daemon Prince",
+            keywords=["Monster", "Character"],
+            faction_keywords=["WORLD EATERS"],
+        )
+        army.add_unit(unit)
+
+        enh = Enhancement(
+            id="000009847005",
+            name="Gateways to Glory",
+            faction_id="WE",
+            detachment="Vessels of Wrath",
+            points=10,
+            description="",
+        )
+        unit.enhancement = enh
+        enh.apply_to_unit(unit)
+
+        move_rules = get_validation_rules(MovementType.MOVE, moving_unit=unit)
+        self.assertTrue(bool(move_rules.get("can_move_through_enemy_models")))
+        self.assertTrue(bool(move_rules.get("can_move_through_terrain")))
+        self.assertFalse(bool(move_rules.get("cannot_move_within_engagement_range")))
+        self.assertTrue(bool(move_rules.get("cannot_end_in_engagement_range")))
+
+        advance_rules = get_validation_rules(MovementType.ADVANCE, moving_unit=unit)
+        self.assertTrue(bool(advance_rules.get("can_move_through_enemy_models")))
+        self.assertTrue(bool(advance_rules.get("can_move_through_terrain")))
+        self.assertFalse(bool(advance_rules.get("cannot_move_within_engagement_range")))
+        self.assertTrue(bool(advance_rules.get("cannot_end_in_engagement_range")))
+
+        charge_rules = get_validation_rules(MovementType.CHARGE, moving_unit=unit)
+        self.assertTrue(bool(charge_rules.get("can_move_through_enemy_models")))
+        self.assertTrue(bool(charge_rules.get("can_move_through_terrain")))
+        self.assertFalse(bool(charge_rules.get("cannot_end_in_engagement_range")))
+
 
 if __name__ == "__main__":
     unittest.main()

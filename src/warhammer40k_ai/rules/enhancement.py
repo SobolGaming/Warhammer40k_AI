@@ -220,6 +220,10 @@ class Enhancement:
         except Exception:
             is_goretrack_onslaught = False
         try:
+            is_vessels_of_wrath = bool(we_mgr and we_mgr.is_vessels_of_wrath())
+        except Exception:
+            is_vessels_of_wrath = False
+        try:
             is_warhost = bool(ae_mgr and ae_mgr.is_warhost_detachment())
         except Exception:
             is_warhost = False
@@ -426,6 +430,38 @@ class Enhancement:
             if not is_goretrack_onslaught:
                 return
             unit.special_rules["enhancement_infernal_infusion"] = True
+
+        if name == "archslaughterer" or enh_id == "000009847002":
+            if not is_vessels_of_wrath:
+                return
+            unit.special_rules["enhancement_archslaughterer"] = True
+            unit.special_rules["enhancement_bearer_melee_ap_bonus"] = int(
+                unit.special_rules.get("enhancement_bearer_melee_ap_bonus", 0) or 0
+            ) + 1
+            unit.special_rules["enhancement_archslaughterer_vessel_melee_damage_bonus"] = 1
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "vox-diabolus" or enh_id == "000009847003":
+            if not is_vessels_of_wrath:
+                return
+            unit.special_rules["enhancement_vox_diabolus"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "avenger's crown" or enh_id == "000009847004":
+            if not is_vessels_of_wrath:
+                return
+            unit.special_rules["enhancement_avengers_crown"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
+
+        if name == "gateways to glory" or enh_id == "000009847005":
+            if not is_vessels_of_wrath:
+                return
+            unit.special_rules["enhancement_gateways_to_glory"] = True
+            if bearer_id:
+                unit.special_rules["enhancement_bearer_model_id"] = bearer_id
 
         if name == "carmine reliquary" or enh_id == "000010645002":
             unit.special_rules["enhancement_carmine_reliquary"] = True

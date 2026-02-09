@@ -554,6 +554,18 @@ class KeywordsDetachmentsMixin:
         except Exception:
             rule = None
 
+        # Enhancement: Avenger's Crown (Vessels of Wrath) bearer-only melee fight-on-death on 2+.
+        if rule is None and model is not None:
+            try:
+                sr = getattr(self, "special_rules", None)
+                if isinstance(sr, dict) and sr.get("enhancement_avengers_crown"):
+                    bearer_id = str(sr.get("enhancement_bearer_model_id", "") or "")
+                    model_id = str(getattr(model, "id", getattr(model, "_id", "")) or "")
+                    if not bearer_id or (model_id and model_id == bearer_id):
+                        rule = {"threshold": 2, "source": "Avenger's Crown"}
+            except Exception:
+                rule = None
+
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}
         self._ability_cache[cache_key] = rule

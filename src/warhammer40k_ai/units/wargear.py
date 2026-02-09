@@ -11157,6 +11157,27 @@ class WargearProfile:
                     Modifier(ModifierOp.ADD, int(bearer_d_bonus), source="enhancement:bearer_melee_damage_add")
                 )
                 damage_result['special_effects'].append(f"Enhancement bearer +{bearer_d_bonus}D (melee)")
+        if self.parent_wargear and self.parent_wargear.is_melee():
+            sr = self._unit_special_rules(attacker)
+            if isinstance(sr, dict) and sr.get("enhancement_archslaughterer"):
+                if self._attacker_is_enhancement_bearer(attacker, sr):
+                    try:
+                        is_vessel = bool(getattr(attacker, "has_keyword", lambda _k: False)("VESSEL OF WRATH"))
+                    except Exception:
+                        is_vessel = False
+                    if is_vessel:
+                        vessel_d_bonus = int(sr.get("enhancement_archslaughterer_vessel_melee_damage_bonus", 1) or 1)
+                        if vessel_d_bonus:
+                            damage_mods.append(
+                                Modifier(
+                                    ModifierOp.ADD,
+                                    int(vessel_d_bonus),
+                                    source="enhancement:archslaughterer_vessel_melee_damage_add",
+                                )
+                            )
+                            damage_result['special_effects'].append(
+                                f"Archslaughterer +{vessel_d_bonus}D (while VESSEL OF WRATH)"
+                            )
         # Temporary melee damage bonuses (once-per-battle buffs).
         try:
             if self.parent_wargear and self.parent_wargear.is_melee():

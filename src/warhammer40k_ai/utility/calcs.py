@@ -1368,6 +1368,33 @@ def get_validation_rules(
             base_rules['cannot_move_within_engagement_range'] = False
             base_rules['cannot_end_in_engagement_range'] = True
 
+    # World Eaters enhancement (Vessels of Wrath): Gateways to Glory.
+    # Normal/Advance/Charge: move horizontally through models and terrain.
+    # Normal/Advance only: cannot end within Engagement Range.
+    try:
+        sr = getattr(moving_unit, "special_rules", None)
+        has_gateways_to_glory = bool(isinstance(sr, dict) and sr.get("enhancement_gateways_to_glory"))
+    except Exception:
+        has_gateways_to_glory = False
+    if not has_gateways_to_glory and moving_unit is not None:
+        try:
+            members = list(getattr(moving_unit, "get_attached_unit_members", lambda: [])() or [])
+        except Exception:
+            members = []
+        for member in members:
+            sr = getattr(member, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("enhancement_gateways_to_glory"):
+                has_gateways_to_glory = True
+                break
+    if has_gateways_to_glory and movement_type in [MovementType.MOVE, MovementType.ADVANCE, MovementType.CHARGE]:
+        base_rules['can_move_through_enemy_models'] = True
+        base_rules['can_move_through_friendly_models'] = True
+        base_rules['can_move_through_terrain'] = True
+        base_rules['ignore_enemy_models_blocking'] = True
+        if movement_type in [MovementType.MOVE, MovementType.ADVANCE]:
+            base_rules['cannot_move_within_engagement_range'] = False
+            base_rules['cannot_end_in_engagement_range'] = True
+
     def _coerce_move_types(value) -> set[str]:
         types: set[str] = set()
         if isinstance(value, str) and value:

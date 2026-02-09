@@ -70,6 +70,53 @@ _GORETRACK_ONSLAUGHT_BY_NAME = {
     _normalize_name(desc.name): desc for desc in _GORETRACK_ONSLAUGHT_DESCRIPTORS.values()
 }
 
+_VESSELS_OF_WRATH_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
+    "000009847002": EnhancementToolDescriptor(
+        enhancement_id="000009847002",
+        name="Archslaughterer",
+        timing="passive",
+        target="bearer_melee_weapons",
+        duration="constant_conditional",
+        effect="bearer_melee_ap_and_vessel_damage_bonus",
+        effect_params={"ap_bonus": 1, "vessel_of_wrath_damage_bonus": 1},
+    ),
+    "000009847003": EnhancementToolDescriptor(
+        enhancement_id="000009847003",
+        name="Vox-diabolus",
+        timing="on_enemy_unit_destroyed_by_melee",
+        target="bearer_unit",
+        duration="instant",
+        effect="cp_gain_on_melee_kill_roll",
+        effect_params={"cp": 1, "roll": "D6", "success_on": 4, "vessel_of_wrath_roll_bonus": 1},
+    ),
+    "000009847004": EnhancementToolDescriptor(
+        enhancement_id="000009847004",
+        name="Avenger's Crown",
+        timing="on_bearer_destroyed_by_melee",
+        target="bearer",
+        duration="instant",
+        effect="melee_fight_on_death_after_attacks",
+        effect_params={"roll": "D6", "success_on": 2},
+    ),
+    "000009847005": EnhancementToolDescriptor(
+        enhancement_id="000009847005",
+        name="Gateways to Glory",
+        timing="passive",
+        target="bearer",
+        duration="constant",
+        effect="move_through_models_and_terrain",
+        effect_params={
+            "move_types": ("move", "advance", "charge"),
+            "horizontal_only": True,
+            "cannot_end_engagement_on": ("move", "advance"),
+        },
+    ),
+}
+
+_VESSELS_OF_WRATH_BY_NAME = {
+    _normalize_name(desc.name): desc for desc in _VESSELS_OF_WRATH_DESCRIPTORS.values()
+}
+
 _DAEMONIC_INCURSION_DESCRIPTORS: dict[str, EnhancementToolDescriptor] = {
     "000008438002": EnhancementToolDescriptor(
         enhancement_id="000008438002",
@@ -332,6 +379,9 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         desc = _GORETRACK_ONSLAUGHT_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
+        desc = _VESSELS_OF_WRATH_DESCRIPTORS.get(str(enhancement_id))
+        if desc is not None:
+            return desc
         desc = _DAEMONIC_INCURSION_DESCRIPTORS.get(str(enhancement_id))
         if desc is not None:
             return desc
@@ -355,6 +405,7 @@ def get_enhancement_tool_descriptor(*, enhancement_id: str = "", name: str = "")
         return None
     return (
         _GORETRACK_ONSLAUGHT_BY_NAME.get(key)
+        or _VESSELS_OF_WRATH_BY_NAME.get(key)
         or _DAEMONIC_INCURSION_BY_NAME.get(key)
         or _PLAGUE_LEGION_BY_NAME.get(key)
         or _SCINTILLATING_LEGION_BY_NAME.get(key)
