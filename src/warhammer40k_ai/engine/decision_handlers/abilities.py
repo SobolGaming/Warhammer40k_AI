@@ -3246,15 +3246,65 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
                 turn = int(getattr(game, "turn", 0) or 0)
             except Exception:
                 turn = 0
+            expires_timing = str(ctx.get("expires_timing", "") or "PHASE_END").strip().upper() or "PHASE_END"
             expires_phase = str(ctx.get("expires_phase", "") or "SHOOTING_PHASE").strip().upper() or "SHOOTING_PHASE"
-            sr["post_shoot_no_cover_expires_phase"] = expires_phase
+            if expires_timing == "OWNER_NEXT_SHOOTING_START":
+                sr.pop("post_shoot_no_cover_expires_phase", None)
+                sr["post_shoot_no_cover_expires_timing"] = "OWNER_NEXT_SHOOTING_START"
+            else:
+                sr["post_shoot_no_cover_expires_phase"] = expires_phase
+                sr.pop("post_shoot_no_cover_expires_timing", None)
             sr["post_shoot_no_cover_source"] = str(ctx.get("ability_name", "") or "No Cover").strip()
             sr["post_shoot_no_cover_owner"] = owner_id
             sr["post_shoot_no_cover_turn"] = int(turn or 0)
             target_root.special_rules = sr
             try:
                 tname = str(getattr(target_root, "name", "Unit") or "Unit")
-                _log_action_for_players(game, player, f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.")
+                if expires_timing == "OWNER_NEXT_SHOOTING_START":
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover until the start of your next Shooting phase.",
+                    )
+                else:
+                    _log_action_for_players(
+                        game,
+                        player,
+                        f"{sr['post_shoot_no_cover_source']}: {tname} cannot gain Benefit of Cover this phase.",
+                    )
+            except Exception:
+                pass
+    if str(ctx.get("ability", "") or "") == "post_shoot_no_overwatch":
+        if chosen is not None:
+            try:
+                target_root = chosen.get_attached_unit_root()
+            except Exception:
+                target_root = chosen
+            sr = getattr(target_root, "special_rules", None)
+            if not isinstance(sr, dict):
+                sr = {}
+            sr["post_shoot_no_overwatch_active"] = True
+            attacker_unit = resolve_unit(game, ctx.get("attacker_unit_id"))
+            try:
+                player = getattr(attacker_unit.get_parent_army(), "player", None) if attacker_unit is not None else None
+            except Exception:
+                player = None
+            owner_id = str(getattr(player, "id", "") or "")
+            try:
+                turn = int(getattr(game, "turn", 0) or 0)
+            except Exception:
+                turn = 0
+            sr["post_shoot_no_overwatch_source"] = str(ctx.get("ability_name", "") or "No Overwatch").strip()
+            sr["post_shoot_no_overwatch_owner"] = owner_id
+            sr["post_shoot_no_overwatch_turn"] = int(turn or 0)
+            target_root.special_rules = sr
+            try:
+                tname = str(getattr(target_root, "name", "Unit") or "Unit")
+                _log_action_for_players(
+                    game,
+                    player,
+                    f"{sr['post_shoot_no_overwatch_source']}: {tname} cannot be targeted with Fire Overwatch until the start of your next Shooting phase.",
+                )
             except Exception:
                 pass
     if str(ctx.get("ability", "") or "") == "start_shooting_phase_visible_hit_bonus":

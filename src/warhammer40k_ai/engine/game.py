@@ -1203,6 +1203,7 @@ class Game(
         game_map = self.map
         if game_map is None:
             raise RuntimeError("Strategic reserves prompt requires a game map.")
+        edge_zones_by_distance: dict[float, object] = {}
 
         for opp in list(self.players or []):
             if opp is None:
@@ -1249,6 +1250,53 @@ class Game(
                         break
                 if engaged:
                     continue
+                min_edge_distance = float(ability.get("min_battlefield_edge_distance_horiz", 0) or 0)
+                if min_edge_distance > 0:
+                    try:
+                        from shapely.geometry import box
+                        from shapely.ops import unary_union
+                    except Exception:
+                        continue
+                    edge_zone = edge_zones_by_distance.get(float(min_edge_distance))
+                    if edge_zone is None:
+                        try:
+                            width = float(getattr(game_map, "width", 0.0) or 0.0)
+                            height = float(getattr(game_map, "height", 0.0) or 0.0)
+                        except Exception:
+                            width = 0.0
+                            height = 0.0
+                        if width <= 0 or height <= 0:
+                            continue
+                        d = float(max(0.0, min_edge_distance))
+                        left = box(0.0, 0.0, min(d, width), height)
+                        right = box(max(0.0, width - d), 0.0, width, height)
+                        bottom = box(0.0, 0.0, width, min(d, height))
+                        top = box(0.0, max(0.0, height - d), width, height)
+                        edge_zone = unary_union([left, right, bottom, top])
+                        edge_zones_by_distance[float(min_edge_distance)] = edge_zone
+                    try:
+                        root_models = list(root.get_attached_unit_models() or [])
+                    except Exception:
+                        root_models = list(getattr(root, "models", []) or [])
+                    root_models = [m for m in list(root_models or []) if bool(getattr(m, "is_alive", True))]
+                    if not root_models:
+                        continue
+                    all_within_edge = True
+                    for model in list(root_models or []):
+                        base = getattr(model, "model_base", None)
+                        if base is None:
+                            all_within_edge = False
+                            break
+                        shape = None
+                        try:
+                            shape = base.get_base_shape()
+                        except Exception:
+                            shape = None
+                        if shape is None or not edge_zone.covers(shape):
+                            all_within_edge = False
+                            break
+                    if not all_within_edge:
+                        continue
                 min_enemy_distance = float(ability.get("min_enemy_distance_horiz", 0) or 0)
                 if min_enemy_distance > 0:
                     from ..utility.aura_utils import horizontal_distance_between_bases_2d
@@ -2346,6 +2394,13 @@ class Game(
             if 2 <= roll <= 3:
                 total_mw = 1
             elif 4 <= roll <= 5:
+                total_mw = int(get_roll("D3") or 0)
+            elif roll >= 6:
+                total_mw = int(get_roll("D3") or 0) + 3
+            roll_summary = f"roll={roll}"
+        elif kind == "table_d6_2_5_6":
+            roll = int(get_roll("D6") or 0)
+            if 2 <= roll <= 5:
                 total_mw = int(get_roll("D3") or 0)
             elif roll >= 6:
                 total_mw = int(get_roll("D3") or 0) + 3

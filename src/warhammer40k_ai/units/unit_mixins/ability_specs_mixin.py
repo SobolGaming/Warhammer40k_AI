@@ -1430,13 +1430,14 @@ class AbilitySpecsMixin:
 
     def unit_post_shoot_no_cover_specs(self) -> List[dict]:
         """
-        Unit-specific rule: after this unit has shot, select a hit enemy unit; target loses Benefit of Cover until phase end.
+        Unit-specific rule: after this unit has shot, select a hit enemy unit; target loses Benefit of Cover.
 
         Returns a list of specs with keys:
             - source: ability name
             - weapon_key: Optional[str] (normalized; None means any weapon)
             - weapon_name: str (display)
             - any_weapon: bool
+            - duration: str ("phase_end" | "owner_next_shooting_start")
         """
         try:
             root = self.get_attached_unit_root()
@@ -1454,7 +1455,7 @@ class AbilitySpecsMixin:
             members = [root]
 
         specs: list[dict] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str, str]] = set()
         for unit in members:
             if unit is None:
                 continue
@@ -1471,17 +1472,24 @@ class AbilitySpecsMixin:
                 weapon_raw = ""
                 weapon_key = ""
                 any_weapon = False
+                duration = "phase_end"
                 if m:
                     weapon_raw = str(m.group("weapon") or "").strip()
                     if weapon_raw:
                         weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                    duration_raw = str(m.group("duration") or "").strip().lower()
+                    if "start of your next shooting phase" in duration_raw:
+                        duration = "owner_next_shooting_start"
                 else:
                     m = unit._POST_SHOOT_NO_COVER_RE.fullmatch(normalized)
                     if not m:
                         continue
                     any_weapon = True
+                    duration_raw = str(m.group("duration") or "").strip().lower()
+                    if "start of your next shooting phase" in duration_raw:
+                        duration = "owner_next_shooting_start"
                 source = str(name or "Post-shoot no cover").strip() or "Post-shoot no cover"
-                key = (source.lower(), weapon_key or "any")
+                key = (source.lower(), weapon_key or "any", duration)
                 if key in seen:
                     continue
                 seen.add(key)
@@ -1491,6 +1499,7 @@ class AbilitySpecsMixin:
                         "weapon_key": weapon_key or None,
                         "weapon_name": weapon_raw,
                         "any_weapon": bool(any_weapon),
+                        "duration": str(duration),
                     }
                 )
 
@@ -3672,6 +3681,72 @@ class AbilitySpecsMixin:
                         "source": source,
                         "move_penalty": int(move_penalty),
                         "charge_penalty": int(charge_penalty),
+                        "exclude_monster_vehicle": bool(exclude_mv),
+                    }
+                )
+
+        if not hasattr(root, "_ability_cache"):
+            root._ability_cache = {}
+        root._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def unit_post_shoot_no_overwatch_specs(self) -> List[dict]:
+        """
+        Unit-specific rule: after this unit has shot, select a hit enemy unit that cannot be targeted with Fire Overwatch.
+
+        Returns a list of specs with keys:
+            - source: ability name
+            - weapon_key: Optional[str] (normalized)
+            - weapon_name: str (display)
+            - exclude_monster_vehicle: bool
+        """
+        try:
+            root = self.get_attached_unit_root()
+        except Exception:
+            root = self
+        cache_key = "unit_post_shoot_no_overwatch_specs"
+        if cache_key in getattr(root, "_ability_cache", {}):
+            return list(root._ability_cache[cache_key])
+
+        try:
+            members = list(root.get_attached_unit_members() or [])
+        except Exception:
+            members = [root]
+        if not members:
+            members = [root]
+
+        specs: list[dict] = []
+        seen: set[tuple[str, str, bool]] = set()
+        for unit in members:
+            if unit is None:
+                continue
+            for name, desc in unit._iter_ability_entries_for_rules(model=None):
+                text_src = unit._strip_eligibility_prefix(desc or name or "")
+                if not text_src:
+                    continue
+                normalized = unit._normalize_rules_text(text_src)
+                normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+                normalized = normalized.lower()
+                normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+                normalized = re.sub(r"\s+", " ", normalized).strip()
+                m = unit._POST_SHOOT_NO_OVERWATCH_WEAPON_RE.fullmatch(normalized)
+                if not m:
+                    continue
+                weapon_raw = str(m.group("weapon") or "").strip()
+                if not weapon_raw:
+                    continue
+                weapon_key = unit._normalize_keyword_phrase(weapon_raw) or weapon_raw.lower()
+                exclude_mv = "excluding monsters and vehicles" in normalized
+                source = str(name or "Post-shoot no Overwatch").strip() or "Post-shoot no Overwatch"
+                key = (source.lower(), weapon_key, bool(exclude_mv))
+                if key in seen:
+                    continue
+                seen.add(key)
+                specs.append(
+                    {
+                        "source": source,
+                        "weapon_key": weapon_key,
+                        "weapon_name": weapon_raw,
                         "exclude_monster_vehicle": bool(exclude_mv),
                     }
                 )

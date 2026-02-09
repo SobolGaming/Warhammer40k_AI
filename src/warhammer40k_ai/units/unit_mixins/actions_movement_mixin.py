@@ -1671,7 +1671,8 @@ class ActionsMovementMixin:
 
         Returns list of specs with keys:
             - source: ability name
-            - range: int
+            - range: int (max distance for placement generation; D6 resolves to 6 here)
+            - range_roll: str (e.g. "D6") or ""
             - requires_not_engaged: bool
         """
         try:
@@ -1707,15 +1708,22 @@ class ActionsMovementMixin:
                 m = member._POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE.fullmatch(normalized)
                 if not m:
                     continue
-                try:
-                    rng = int(m.group("range") or 0)
-                except Exception:
-                    rng = 0
+                range_expr = str(m.group("range_expr") or "").strip().upper()
+                range_roll = ""
+                rng = 0
+                if range_expr == "D6":
+                    range_roll = "D6"
+                    rng = 6
+                else:
+                    try:
+                        rng = int(range_expr or 0)
+                    except Exception:
+                        rng = 0
                 if rng <= 0:
                     continue
                 source = str(name or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
                 requires_not_engaged = "not within engagement range" in normalized
-                key = (source.lower(), int(rng), bool(requires_not_engaged))
+                key = (source.lower(), int(rng), str(range_roll), bool(requires_not_engaged))
                 if key in seen:
                     continue
                 seen.add(key)
@@ -1723,6 +1731,7 @@ class ActionsMovementMixin:
                     {
                         "source": source,
                         "range": int(rng),
+                        "range_roll": str(range_roll),
                         "requires_not_engaged": bool(requires_not_engaged),
                     }
                 )
@@ -4983,7 +4992,17 @@ class ActionsMovementMixin:
                 return False
         return True
 
+    def _post_shoot_no_overwatch_active(self, *, game: Optional['Game'] = None) -> bool:
+        sr = getattr(self, "special_rules", None)
+        if not isinstance(sr, dict):
+            return False
+        if not sr.get("post_shoot_no_overwatch_active"):
+            return False
+        return True
+
     def is_overwatch_prevented_against(self, target_unit: 'Unit', *, game: Optional['Game'] = None) -> bool:
+        if self._post_shoot_no_overwatch_active(game=game):
+            return True
         if self._murderous_onslaught_no_overwatch_active(game=game):
             return True
         entry = self._get_wargear_charge_keyword_effects(target_unit, game=game)

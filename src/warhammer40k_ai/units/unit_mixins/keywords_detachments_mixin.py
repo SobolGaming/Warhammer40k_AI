@@ -549,7 +549,14 @@ class KeywordsDetachmentsMixin:
                 if threshold < 2 or threshold > 6:
                     continue
                 source = str(name or "Fight on death").strip() or "Fight on death"
-                rule = {"threshold": threshold, "source": source}
+                fortify_bonus = 0
+                if "adding 1 to the result if units from your army have fortify takeover" in low:
+                    fortify_bonus = 1
+                rule = {
+                    "threshold": threshold,
+                    "source": source,
+                    "fortify_takeover_bonus": int(fortify_bonus),
+                }
                 break
         except Exception:
             rule = None
@@ -1923,28 +1930,48 @@ class KeywordsDetachmentsMixin:
                 normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
                 normalized = re.sub(r"\s+", " ", normalized).strip()
                 m = u._DESTROYER_OF_FUTURES_OVERWATCH_RE.fullmatch(normalized)
-                if not m:
+                if m:
+                    try:
+                        base_threshold = int(m.group("base") or 0)
+                    except Exception:
+                        base_threshold = 0
+                    try:
+                        near_threshold = int(m.group("near") or 0)
+                    except Exception:
+                        near_threshold = 0
+                    try:
+                        range_value = float(m.group("range") or 0)
+                    except Exception:
+                        range_value = 0.0
+                    if base_threshold <= 0 or near_threshold <= 0:
+                        continue
+                    source = str(name or "Destroyer of Futures").strip() or "Destroyer of Futures"
+                    rule = {
+                        "source": source,
+                        "base_threshold": int(base_threshold),
+                        "near_threshold": int(near_threshold),
+                        "range": float(range_value or 0.0),
+                    }
+                    break
+
+                m_fortify = u._FORTIFY_OVERWATCH_RE.fullmatch(normalized)
+                if not m_fortify:
                     continue
                 try:
-                    base_threshold = int(m.group("base") or 0)
+                    base_threshold = int(m_fortify.group("base") or 0)
                 except Exception:
                     base_threshold = 0
                 try:
-                    near_threshold = int(m.group("near") or 0)
+                    fortify_threshold = int(m_fortify.group("fortify") or 0)
                 except Exception:
-                    near_threshold = 0
-                try:
-                    range_value = float(m.group("range") or 0)
-                except Exception:
-                    range_value = 0.0
-                if base_threshold <= 0 or near_threshold <= 0:
+                    fortify_threshold = 0
+                if base_threshold <= 0 or fortify_threshold <= 0:
                     continue
-                source = str(name or "Destroyer of Futures").strip() or "Destroyer of Futures"
+                source = str(name or "Overwatch").strip() or "Overwatch"
                 rule = {
                     "source": source,
                     "base_threshold": int(base_threshold),
-                    "near_threshold": int(near_threshold),
-                    "range": float(range_value or 0.0),
+                    "fortify_takeover_threshold": int(fortify_threshold),
                 }
                 break
             if rule is not None:
@@ -1973,6 +2000,25 @@ class KeywordsDetachmentsMixin:
             base_threshold = 0
         if base_threshold <= 0:
             return 0
+        try:
+            near_threshold = int(rule.get("near_threshold", 0) or 0)
+        except Exception:
+            near_threshold = 0
+        fortify_threshold = int(rule.get("fortify_takeover_threshold", 0) or 0)
+        if near_threshold <= 0:
+            if fortify_threshold > 0:
+                try:
+                    army = root.get_parent_army()
+                except Exception:
+                    army = None
+                eff_mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+                if eff_mgr is not None and callable(getattr(eff_mgr, "is_fortify_takeover", None)):
+                    try:
+                        if eff_mgr.is_fortify_takeover():
+                            return int(fortify_threshold)
+                    except Exception:
+                        pass
+            return int(base_threshold)
         if enemy_unit is None:
             return int(base_threshold)
         try:
@@ -1995,12 +2041,6 @@ class KeywordsDetachmentsMixin:
         except Exception:
             near_range = 0.0
         if near_range <= 0:
-            return int(base_threshold)
-        try:
-            near_threshold = int(rule.get("near_threshold", 0) or 0)
-        except Exception:
-            near_threshold = 0
-        if near_threshold <= 0:
             return int(base_threshold)
 
         try:

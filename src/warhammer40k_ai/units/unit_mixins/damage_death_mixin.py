@@ -505,13 +505,33 @@ class DamageDeathMixin:
                     is_melee = False
                 if is_melee:
                     roll = int(get_roll("D6"))
+                    total = int(roll)
+                    fortify_bonus = int(rule.get("fortify_takeover_bonus", 0) or 0)
+                    if fortify_bonus > 0:
+                        try:
+                            army = self.get_parent_army()
+                        except Exception:
+                            army = None
+                        mgr = getattr(army, "prioritised_efficiency", None) if army is not None else None
+                        if mgr is not None and callable(getattr(mgr, "is_fortify_takeover", None)):
+                            try:
+                                if mgr.is_fortify_takeover():
+                                    total += int(fortify_bonus)
+                            except Exception:
+                                pass
                     try:
                         from ...utility.event_bus import append_dice
                         pn = self.get_parent_army().player
-                        append_dice(pn, f"{rule.get('source', 'Fight on death')} roll: {roll} for {self.name}")
+                        if total != int(roll):
+                            append_dice(
+                                pn,
+                                f"{rule.get('source', 'Fight on death')} roll: {roll}+{int(total - int(roll))}={total} for {self.name}",
+                            )
+                        else:
+                            append_dice(pn, f"{rule.get('source', 'Fight on death')} roll: {roll} for {self.name}")
                     except Exception:
                         pass
-                    if roll >= int(rule.get("threshold", 0) or 0):
+                    if total >= int(rule.get("threshold", 0) or 0):
                         pending = getattr(root, "_melee_fight_on_death_pending_models", None)
                         if not isinstance(pending, list):
                             pending = []

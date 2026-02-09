@@ -959,6 +959,48 @@ class GamePhaseHandlersMixin:
                 if sr.get("post_shoot_leadership_debuff_active"):
                     unit.clear_post_shoot_leadership_debuff()
 
+    def _on_phase_start_post_shoot_duration_cleanup(self, player=None, phase=None, **_kwargs) -> None:
+        """Clear owner-next-Shooting-phase post-shoot markers."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "SHOOTING_PHASE":
+            return
+        if player is None:
+            return
+        owner_id = str(getattr(player, "id", "") or "")
+        if not owner_id:
+            return
+        for p in list(self.players or []):
+            if p is None:
+                raise RuntimeError("Post-shoot duration cleanup requires players.")
+            army = p.get_army()
+            if army is None:
+                raise RuntimeError(f"Post-shoot duration cleanup requires an army for {p.name}.")
+            for unit in list(army.units):
+                sr = getattr(unit, "special_rules", None)
+                if not isinstance(sr, dict):
+                    continue
+                if (
+                    str(sr.get("post_shoot_no_cover_owner", "") or "") == owner_id
+                    and str(sr.get("post_shoot_no_cover_expires_timing", "") or "").strip().upper() == "OWNER_NEXT_SHOOTING_START"
+                ):
+                    for key in (
+                        "post_shoot_no_cover_active",
+                        "post_shoot_no_cover_expires_timing",
+                        "post_shoot_no_cover_source",
+                        "post_shoot_no_cover_owner",
+                        "post_shoot_no_cover_turn",
+                    ):
+                        sr.pop(key, None)
+                if str(sr.get("post_shoot_no_overwatch_owner", "") or "") == owner_id:
+                    for key in (
+                        "post_shoot_no_overwatch_active",
+                        "post_shoot_no_overwatch_source",
+                        "post_shoot_no_overwatch_owner",
+                        "post_shoot_no_overwatch_turn",
+                    ):
+                        sr.pop(key, None)
+                unit.special_rules = sr
+
     def _on_phase_start_wracked_with_agonies_cleanup(self, player=None, phase=None, **_kwargs) -> None:
         """Clear Wracked with Agonies effects at the start of the owner's Command phase."""
         pname = str(getattr(phase, "name", "") or "").strip().upper()

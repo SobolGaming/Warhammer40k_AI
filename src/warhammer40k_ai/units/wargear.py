@@ -9993,6 +9993,37 @@ class WargearProfile:
                 except Exception:
                     return False
 
+            def _apply_critical_wound_keyword_bonuses() -> None:
+                """Apply keyword bonuses that trigger on critical wounds (e.g. Precision)."""
+                try:
+                    unit = getattr(attacker, "parent_unit", None)
+                except Exception:
+                    unit = None
+                if unit is None or not hasattr(unit, "get_attack_keyword_bonuses_on_critical_wound"):
+                    return
+                try:
+                    is_melee = bool(getattr(self.parent_wargear, "is_melee", lambda: False)())
+                except Exception:
+                    is_melee = False
+                attack_type = "melee" if is_melee else "ranged"
+                game_map = self._get_game_map_from_model(attacker)
+                try:
+                    bonuses = unit.get_attack_keyword_bonuses_on_critical_wound(
+                        target=target,
+                        attack_type=attack_type,
+                        model=attacker,
+                        game_map=game_map,
+                    )
+                except Exception:
+                    bonuses = {}
+                if not isinstance(bonuses, dict) or not bonuses:
+                    return
+                if bool(bonuses.get("precision", False)):
+                    attack_instance["bonus_precision"] = True
+                    wound_result.setdefault("special_effects", []).append("Precision")
+                if bool(bonuses.get("devastating_wounds", False)):
+                    attack_instance["bonus_devastating_wounds"] = True
+
             # Natural 1 always fails
             if roll == 1:
                 return False
@@ -10000,6 +10031,7 @@ class WargearProfile:
             if roll == 6:
                 wound_result['special_effects'].append("Natural 6 (auto-wound)")
                 attack_instance['crit_wound'] = True
+                _apply_critical_wound_keyword_bonuses()
                 has_temp_dev = False
                 try:
                     has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
@@ -10044,6 +10076,7 @@ class WargearProfile:
                     if roll >= anti_value:
                         wound_result['special_effects'].append(f"Anti-{anti_keyword} {anti_value}+")
                         attack_instance['crit_wound'] = True
+                        _apply_critical_wound_keyword_bonuses()
                         has_temp_dev = False
                         try:
                             has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())
@@ -10097,6 +10130,7 @@ class WargearProfile:
                     if crit_wound_reasons:
                         wound_result['special_effects'].extend(list(crit_wound_reasons))
                     attack_instance['crit_wound'] = True
+                    _apply_critical_wound_keyword_bonuses()
                     has_temp_dev = False
                     try:
                         has_temp_dev = bool(getattr(attacker, "has_temporary_devastating_wounds_melee", lambda: False)())

@@ -1904,6 +1904,15 @@ class StratagemManager(
             if callable(no_overwatch) and no_overwatch():
                 result["reason"] = "Target cannot be overwatched"
                 return result
+            shooter_unit = context.get("shooter_unit") or context.get("target_unit") or context.get("unit")
+            blocked_fn = getattr(enemy_unit, "is_overwatch_prevented_against", None)
+            if callable(blocked_fn):
+                try:
+                    if blocked_fn(shooter_unit, game=self.game):
+                        result["reason"] = "Target cannot be overwatched"
+                        return result
+                except Exception:
+                    raise
         phase_ok = stratagem.is_phase_allowed(phase_name)
         if name_u == "FLICKERING REALITY":
             if phase_name and str(phase_name).strip().lower() == "fight phase":

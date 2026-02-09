@@ -593,16 +593,22 @@ class RulesParsingMixin:
             m = pattern.fullmatch(norm)
             if m:
                 min_enemy_distance = 0
+                min_edge_distance = 0
                 try:
                     min_enemy_distance = int(m.group("min_dist") or 0)
                 except Exception:
                     min_enemy_distance = 0
+                try:
+                    min_edge_distance = int(m.group("edge_dist") or m.group("edge_dist_alt") or 0)
+                except Exception:
+                    min_edge_distance = 0
                 return {
                     "name": name or "Strategic Reserves",
                     "description": desc or "",
                     "once_per_battle": "once per battle" in norm,
                     "ability_key": "opponent_turn_strategic_reserves",
                     "min_enemy_distance_horiz": int(min_enemy_distance or 0),
+                    "min_battlefield_edge_distance_horiz": int(min_edge_distance or 0),
                 }
         return None
 
@@ -1258,6 +1264,8 @@ class RulesParsingMixin:
                     kind = "per_remaining_wounds_4plus_1_max6"
                 elif self._CHARGE_END_MORTAL_TABLE_RE.search(text):
                     kind = "table_d6_2_3_4_5_6"
+                elif self._CHARGE_END_MORTAL_TABLE_2_5_D3_RE.search(text):
+                    kind = "table_d6_2_5_6"
                 if not kind:
                     continue
                 source = str(name or "Charge Mortals").strip() or "Charge Mortals"

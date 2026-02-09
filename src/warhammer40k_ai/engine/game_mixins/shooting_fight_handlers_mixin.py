@@ -185,10 +185,23 @@ class GameShootingFightHandlersMixin:
         for spec in unit_specs:
             if bool(spec.get("requires_not_engaged", False)) and engaged:
                 continue
-            try:
-                max_distance = int(spec.get("range", 0) or 0)
-            except Exception:
-                max_distance = 0
+            range_roll = str(spec.get("range_roll", "") or "").strip().upper()
+            if range_roll == "D6":
+                try:
+                    from ...utility.dice import get_roll
+                    max_distance = int(get_roll("D6") or 0)
+                except Exception:
+                    max_distance = 0
+                try:
+                    from ...utility.event_bus import append_dice
+                    append_dice(attacker_player, f"{str(spec.get('source', '') or 'Reactive move').strip()}: {max_distance}")
+                except Exception:
+                    pass
+            else:
+                try:
+                    max_distance = int(spec.get("range", 0) or 0)
+                except Exception:
+                    max_distance = 0
             if max_distance <= 0:
                 continue
             source = str(spec.get("source", "") or "Post-shoot reactive move").strip() or "Post-shoot reactive move"
@@ -1889,6 +1902,12 @@ class GameShootingFightHandlersMixin:
             if not options:
                 continue
             ability_name = str(spec.get("source", "") or "No Cover").strip() or "No Cover"
+            duration = str(spec.get("duration", "") or "phase_end").strip().lower()
+            expires_phase = "SHOOTING_PHASE"
+            expires_timing = "PHASE_END"
+            if duration == "owner_next_shooting_start":
+                expires_phase = ""
+                expires_timing = "OWNER_NEXT_SHOOTING_START"
             request = DecisionRequest.create(
                 DECISION_CHOOSE_QUARRY,
                 f"{ability_name}: select a unit.",
@@ -1900,6 +1919,8 @@ class GameShootingFightHandlersMixin:
                     "ability_name": ability_name,
                     "weapon_key": weapon_key,
                     "weapon_name": str(spec.get("weapon_name", "") or ""),
+                    "expires_phase": expires_phase,
+                    "expires_timing": expires_timing,
                 },
             )
             self.request_decision(request)
@@ -2020,6 +2041,104 @@ class GameShootingFightHandlersMixin:
                     "attack_type": attack_type,
                     "ap_bonus": int(ap_bonus),
                     "limit_scope": limit_scope,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_unit_shooting_resolved_post_shoot_no_overwatch(
+        self,
+        attacker_unit=None,
+        hits_by_target=None,
+        hit_models_by_target_weapon=None,
+        **_kwargs,
+    ) -> None:
+        if attacker_unit is None or not hits_by_target:
+            return
+        if not self.is_shooting_phase():
+            return
+        attacker_player = attacker_unit.get_parent_army().player
+        if attacker_player is None:
+            raise RuntimeError("Post-shoot no-overwatch requires an attacker player.")
+        if attacker_player is not self.get_current_player():
+            return
+
+        def _is_enemy_unit(unit) -> bool:
+            if unit is None:
+                return False
+            if unit.get_parent_army() == attacker_unit.get_parent_army():
+                return False
+            if not unit.is_alive():
+                return False
+            return True
+
+        def _target_hit_with_weapon(target, weapon_key: str) -> bool:
+            if not isinstance(hit_models_by_target_weapon, dict):
+                return False
+            target_map = hit_models_by_target_weapon.get(target)
+            if not isinstance(target_map, dict):
+                return False
+            models = target_map.get(weapon_key)
+            if models:
+                return True
+            if weapon_key.endswith("s"):
+                alt_key = weapon_key[:-1]
+                models = target_map.get(alt_key)
+                if models:
+                    return True
+            return False
+
+        specs = attacker_unit.unit_post_shoot_no_overwatch_specs() or []
+        if not specs:
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+
+        for spec in specs:
+            weapon_key = str(spec.get("weapon_key", "") or "")
+            if not weapon_key:
+                continue
+            exclude_mv = bool(spec.get("exclude_monster_vehicle", False))
+            candidates: list[Any] = []
+            for target_unit, hits in (hits_by_target or {}).items():
+                if target_unit is None:
+                    continue
+                if int(hits or 0) <= 0:
+                    continue
+                if not _is_enemy_unit(target_unit):
+                    continue
+                if exclude_mv and (bool(getattr(target_unit, "is_monster", False)) or bool(getattr(target_unit, "is_vehicle", False))):
+                    continue
+                if not _target_hit_with_weapon(target_unit, weapon_key):
+                    continue
+                candidates.append(target_unit)
+            if not candidates:
+                continue
+            try:
+                candidates = sorted(candidates, key=lambda u: str(maybe_entity_id(u) or ""))
+            except Exception:
+                candidates = list(candidates)
+            options = []
+            for cand in list(candidates):
+                options.append(
+                    DecisionOption.create(
+                        str(getattr(cand, "name", "Unit") or "Unit"),
+                        payload={"target_unit_id": get_entity_id(cand)},
+                    )
+                )
+            if not options:
+                continue
+            ability_name = str(spec.get("source", "") or "No Overwatch").strip() or "No Overwatch"
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                f"{ability_name}: select a unit.",
+                player_id=getattr(attacker_player, "id", None),
+                options=options,
+                context={
+                    "attacker_unit_id": get_entity_id(attacker_unit),
+                    "ability": "post_shoot_no_overwatch",
+                    "ability_name": ability_name,
+                    "weapon_key": weapon_key,
+                    "weapon_name": str(spec.get("weapon_name", "") or ""),
                 },
             )
             self.request_decision(request)

@@ -1616,9 +1616,11 @@ class Unit(
         re.IGNORECASE,
     )
     _OPPONENT_TURN_STRATEGIC_RESERVES_RE = re.compile(
-        r"(?:once per battle(?:,)?\s+)?(?:while this model is leading a unit )?at the end of your opponents turn if "
+        r"(?:once per battle(?:,)?\s+)?(?:while this model is leading a unit )?at the end of your opponent(?:s|\s+s) turn if "
         r"(?:this unit|that unit|this model s unit|this models unit|the bearer s unit) "
-        r"(?:is not within engagement range of one or more enemy units?|is more than (?P<min_dist>\d+) horizontally away from all enemy units?) "
+        r"(?:(?:is wholly within (?P<edge_dist>\d+) of one or more battlefield edges? and )?"
+        r"(?:(?:is\s+)?not within engagement range of one or more enemy units?|is more than (?P<min_dist>\d+) horizontally away from all enemy units?)"
+        r"|(?:(?:is\s+)?not within engagement range of one or more enemy units?) and is wholly within (?P<edge_dist_alt>\d+) of one or more battlefield edges?) "
         r"you can remove (?:it|that unit|this unit) from the battlefield and place it into strategic reserves?",
         re.IGNORECASE,
     )
@@ -1690,6 +1692,13 @@ class Unit(
         r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+this\s+unit)\s+makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+"
         r"that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+that\s+is\s+within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+"
         r"objective\s+marker(?:s)?(?:,|\s+).*?that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
+        re.IGNORECASE,
+    )
+    _ATTACK_TARGET_OBJECTIVE_KEYWORD_ON_CRIT_WOUND_RE = re.compile(
+        r"each\s+time\s+(?:this\s+(?:model|unit)|a\s+model\s+in\s+(?:this\s+unit|that\s+unit|the\s+bearer'?s\s+unit))\s+"
+        r"makes\s+(?:a|an)\s+(?:(?P<atype>melee|ranged)\s+)?attack\s+that\s+targets\s+(?:an?\s+)?(?:enemy\s+)?unit\s+"
+        r"(?:that\s+is\s+)?within\s+range\s+of\s+(?:an|one\s+or\s+more)\s+objective\s+marker(?:s)?(?:\s*,\s*|\s+)"
+        r"on\s+(?:a|an)\s+critical\s+wound(?:\s*,\s*|\s+)\s+that\s+attack\s+has\s+the\s+\[(?P<keyword>[^\]]+)\]\s+ability",
         re.IGNORECASE,
     )
     _ATTACK_TARGET_KEYWORD_BONUS_RE = re.compile(
@@ -1902,9 +1911,15 @@ class Unit(
         re.IGNORECASE,
     )
     _DESTROYER_OF_FUTURES_OVERWATCH_RE = re.compile(
-        r"each time you target this unit with the fire overwatch stratagem hits are scored on unmodified hit rolls of (?P<base>\d)\+ "
+        r"each time you target this unit with the fire overwatch stratagem hits are scored on unmodified hit rolls of (?P<base>\d)(?:\+)? "
         r"when resolving that stratagem for each of those attacks that targets an enemy unit within (?P<range>\d+) "
-        r"of one or more thousand sons psyker units from your army a hit is scored on an unmodified hit roll of (?P<near>\d)\+ instead",
+        r"of one or more thousand sons psyker units from your army a hit is scored on an unmodified hit roll of (?P<near>\d)(?:\+)? instead",
+        re.IGNORECASE,
+    )
+    _FORTIFY_OVERWATCH_RE = re.compile(
+        r"each time you target this unit with the fire overwatch stratagem hits are scored on unmodified hit rolls of (?P<base>\d)(?:\+)? "
+        r"(?:when|while) resolving that stratagem if units from your army have fortify takeover hits are scored on unmodified hit rolls "
+        r"of (?P<fortify>\d)(?:\+)? while resolving that stratagem instead",
         re.IGNORECASE,
     )
     _PROPHETIC_SENTINELS_STRATAGEM_RE = re.compile(
@@ -2028,8 +2043,8 @@ class Unit(
         re.IGNORECASE,
     )
     _POST_SHOOT_REACTIVE_MOVE_NO_CHARGE_RE = re.compile(
-        r"in your shooting phase after this unit has shot if it is not within engagement range of one or more enemy units "
-        r"it can make a normal move of up to (?P<range>\d+)\s*\"?\s*if it does until the end of the turn this unit is not eligible to declare a charge",
+        r"in your shooting phase after this unit has shot(?: if it is not within engagement range of one or more enemy units)? "
+        r"it can make a normal move of up to (?P<range_expr>d6|\d+)\s*\"?\s*if it does until the end of the turn this unit is not eligible to declare a charge",
         re.IGNORECASE,
     )
     _SHADOW_FIELD_RE = re.compile(
@@ -2094,12 +2109,19 @@ class Unit(
     )
     _POST_SHOOT_NO_COVER_WEAPON_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks made with "
-        r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the end of the phase that enemy unit cannot have the benefit of cover",
+        r"(?:a|an|the) (?P<weapon>[a-z0-9 ]+) until the (?P<duration>end of the phase|start of your next shooting phase) "
+        r"that enemy unit cannot have the benefit of cover",
         re.IGNORECASE,
     )
     _POST_SHOOT_NO_COVER_RE = re.compile(
         r"in your shooting phase after this (?:model|unit) has shot select one enemy unit (?:that was )?hit by one or more of those attacks "
-        r"until the end of the phase that (?:enemy )?unit cannot have the benefit of cover",
+        r"until the (?P<duration>end of the phase|start of your next shooting phase) that (?:enemy )?unit cannot have the benefit of cover",
+        re.IGNORECASE,
+    )
+    _POST_SHOOT_NO_OVERWATCH_WEAPON_RE = re.compile(
+        r"in your shooting phase after this unit has shot select one enemy unit (?:excluding monsters and vehicles )?"
+        r"hit by one or more of those attacks made with (?:a|an|the|its) (?P<weapon>[a-z0-9 ]+) "
+        r"until the start of your next shooting phase that enemy unit cannot be targeted with the fire overwatch stratagem",
         re.IGNORECASE,
     )
     _POST_SHOOT_KEYWORD_WOUND_REROLL_RE = re.compile(
@@ -2553,6 +2575,13 @@ class Unit(
         r"roll\s+one\s+d6.*?on\s+a\s+2\s*-\s*3.*?mortal\s+wound.*?"
         r"on\s+a\s+4\s*-\s*5.*?d3\s+mortal\s+wounds?.*?"
         r"on\s+a\s+6.*?d3\s*\+\s*3\s+mortal\s+wounds?",
+        re.IGNORECASE,
+    )
+    _CHARGE_END_MORTAL_TABLE_2_5_D3_RE = re.compile(
+        r"each\s+time\s+this\s+model\s+ends?\s+a\s+charge\s+move.*?"
+        r"(?:you\s+can\s+)?(?:select|choose)\s+one\s+enemy\s+unit\s+within\s+engagement\s+range\s+of\s+(?:this\s+model|it)\s+"
+        r"and\s+roll\s+one\s+d6.*?on\s+a\s+2\s*-\s*5.*?suffers?\s+d3\s+mortal\s+wounds?.*?"
+        r"on\s+a\s+6.*?suffers?\s+d3\s*\+\s*3\s+mortal\s+wounds?",
         re.IGNORECASE,
     )
     _DAEMONIC_ALLEGIANCE_WARGEAR_HEADER_TOKENS = (

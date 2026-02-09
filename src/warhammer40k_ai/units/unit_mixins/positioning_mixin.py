@@ -1597,6 +1597,26 @@ class PositioningMixin:
                         "requires_objective": True,
                     }
                 )
+            for match in self._ATTACK_TARGET_OBJECTIVE_KEYWORD_ON_CRIT_WOUND_RE.finditer(text):
+                keyword = str(match.group("keyword") or "").strip()
+                if not keyword:
+                    continue
+                atype = str(match.group("atype") or "").strip().lower()
+                if atype not in ("melee", "ranged"):
+                    atype = "any"
+                key = ("objective_crit_wound", atype, keyword.lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rules.append(
+                    {
+                        "attack_type": atype,
+                        "keyword": keyword,
+                        "source": str(name or "Ability"),
+                        "requires_objective": True,
+                        "requires_critical_wound": True,
+                    }
+                )
             for match in self._ATTACK_TARGET_KEYWORD_BONUS_RE.finditer(text):
                 target_raw = str(match.group("target") or "").strip()
                 target_keywords = _parse_target_keywords(target_raw)
@@ -2081,6 +2101,54 @@ class PositioningMixin:
                     return False
 
         for rule in list(rules or []):
+            if bool(rule.get("requires_critical_wound", False)):
+                continue
+            if rule.get("requires_objective"):
+                try:
+                    if not self._target_within_objective_range(target, game_map):
+                        continue
+                except Exception:
+                    continue
+            target_keywords_any = tuple(rule.get("target_keywords_any") or ())
+            if target_keywords_any:
+                if not any(_target_has_keyword(k) for k in target_keywords_any):
+                    continue
+            filtered.append(rule)
+        if not filtered:
+            return {}
+        return self._resolve_attack_keyword_bonuses_from_rules(filtered, attack_type=attack_type)
+
+    def get_attack_keyword_bonuses_on_critical_wound(
+        self,
+        *,
+        target=None,
+        attack_type: Optional[str] = None,
+        model: Optional['Model'] = None,
+        game_map=None,
+    ) -> dict:
+        """
+        Return attack keyword bonuses that are applied only when a critical wound is scored.
+        """
+        rules = list(self._get_attack_keyword_bonus_rules(model=model) or [])
+        if not rules or target is None:
+            return {}
+        filtered = []
+
+        def _target_has_keyword(val: str) -> bool:
+            key = str(val or "").strip()
+            if not key:
+                return False
+            try:
+                return bool(target.has_keyword(key.upper()))
+            except Exception:
+                try:
+                    return bool(target.has_any_keyword(key.upper()))
+                except Exception:
+                    return False
+
+        for rule in list(rules or []):
+            if not bool(rule.get("requires_critical_wound", False)):
+                continue
             if rule.get("requires_objective"):
                 try:
                     if not self._target_within_objective_range(target, game_map):
