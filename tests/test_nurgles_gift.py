@@ -71,6 +71,28 @@ class TestNurglesGift(unittest.TestCase):
         self.assertEqual(mgr.get_contagion_range(2), 6.0)
         self.assertEqual(mgr.get_contagion_range(3), 9.0)
 
+    def test_gift_of_poxes_extends_contagion_range_when_source_is_active(self):
+        from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager
+
+        player_dg = SimpleNamespace(name="DG")
+        dg_army = SimpleNamespace(faction_id="DG", units=[], player=player_dg)
+        gift_ability = SimpleNamespace(name="Gift of Poxes")
+        source_unit = _UnitStub(
+            keywords=["DEATH GUARD"],
+            models=[SimpleNamespace(is_alive=True)],
+            army=dg_army,
+        )
+        source_unit.possible_abilities = [gift_ability]
+        source_unit.is_in_reserves = lambda: False
+        source_unit.is_embarked = False
+        dg_army.units = [source_unit]
+
+        mgr = NurglesGiftManager(dg_army)
+        self.assertEqual(mgr.get_contagion_range(2), 9.0)
+
+        source_unit.is_in_reserves = lambda: True
+        self.assertEqual(mgr.get_contagion_range(2), 6.0)
+
     def test_skullsquirm_blight_hit_penalty(self):
         from warhammer40k_ai.rules.nurgles_gift import NurglesGiftManager, PLAGUE_SKULLSQUIRM
 

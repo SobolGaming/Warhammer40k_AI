@@ -1792,6 +1792,13 @@ def _parse_benefit_of_cover_aura(ability) -> Optional[dict]:
             flags=re.IGNORECASE,
         )
     if not m:
+        m = re.search(
+            r'While a friendly (?P<faction_kw>.+?) (?:unit|model) is within (?P<rng>\d+)" of this (?:model|unit|the bearer), '
+            r"each time a ranged attack targets that unit, models in that unit have the Benefit of Cover against that attack",
+            desc,
+            flags=re.IGNORECASE,
+        )
+    if not m:
         return None
     return {
         "faction_keyword": str(m.group("faction_kw") or "").strip(),

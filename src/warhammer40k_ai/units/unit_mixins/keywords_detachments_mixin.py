@@ -231,6 +231,58 @@ class KeywordsDetachmentsMixin:
                 return True
         except Exception:
             pass
+        # Datasheet activation: Blinding Spray (Fight phase only, selected unit gains Fights First).
+        try:
+            root = self.get_attached_unit_root()
+            sr = getattr(root, "special_rules", None)
+            if isinstance(sr, dict) and sr.get("blinding_spray_fight_first_active"):
+                valid = True
+                owner_id = str(sr.get("blinding_spray_owner", "") or "")
+                try:
+                    turn = int(sr.get("blinding_spray_turn", 0) or 0)
+                except Exception:
+                    turn = 0
+                expires_phase = str(sr.get("blinding_spray_expires_phase", "") or "FIGHT_PHASE").strip().upper()
+                game = None
+                current_owner = ""
+                current_phase = ""
+                current_turn = 0
+                try:
+                    game = getattr(getattr(root.get_parent_army(), "player", None), "game", None)
+                except Exception:
+                    game = None
+                if game is not None:
+                    try:
+                        current_phase = str(getattr(getattr(game, "phase", None), "name", "") or "").strip().upper()
+                    except Exception:
+                        current_phase = ""
+                    try:
+                        current_turn = int(getattr(game, "turn", 0) or 0)
+                    except Exception:
+                        current_turn = 0
+                    try:
+                        current_owner = str(getattr(game.get_current_player(), "id", "") or "")
+                    except Exception:
+                        current_owner = ""
+                if expires_phase and current_phase and current_phase != expires_phase:
+                    valid = False
+                if owner_id and current_owner and owner_id != current_owner:
+                    valid = False
+                if turn and current_turn and turn != current_turn:
+                    valid = False
+                if valid:
+                    return True
+                for key in (
+                    "blinding_spray_fight_first_active",
+                    "blinding_spray_owner",
+                    "blinding_spray_turn",
+                    "blinding_spray_source",
+                    "blinding_spray_expires_phase",
+                ):
+                    sr.pop(key, None)
+                root.special_rules = sr
+        except Exception:
+            pass
         # Conditional Fight First (Empowered by Death).
         try:
             root = self.get_attached_unit_root()
@@ -251,6 +303,24 @@ class KeywordsDetachmentsMixin:
             "swift strike",
             "martial prowess"
         ]
+
+        def _is_blinding_spray_text(value: str) -> bool:
+            if not value:
+                return False
+            try:
+                norm = self._normalize_rules_text(value or "")
+            except Exception:
+                return False
+            if not norm:
+                return False
+            norm = norm.replace("\u2019", "'").replace("\u0192?T", "'")
+            norm = re.sub(r"'s\b", "s", norm, flags=re.IGNORECASE)
+            norm = re.sub(r"[^a-z0-9]+", " ", norm.lower())
+            norm = re.sub(r"\s+", " ", norm).strip()
+            try:
+                return bool(self._BLINDING_SPRAY_RE.fullmatch(norm))
+            except Exception:
+                return False
 
         def _is_empowered_by_death_text(value: str) -> bool:
             if not value:
@@ -286,6 +356,8 @@ class KeywordsDetachmentsMixin:
                     if not any(pat in low for pat in patterns):
                         continue
                     if _is_empowered_by_death_text(text):
+                        continue
+                    if _is_blinding_spray_text(text):
                         continue
                     found = True
                     break

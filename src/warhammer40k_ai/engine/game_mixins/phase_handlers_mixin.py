@@ -4,6 +4,100 @@ from ._shared import *  # noqa: F401,F403
 
 
 class GamePhaseHandlersMixin:
+    def _on_phase_start_command_phase_cp_rolls(self, player=None, phase=None, **_kwargs) -> None:
+        """Command phase start: resolve CP gain dice-roll abilities (e.g., Sevenfold Chant)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+        army = self._get_player_army(player)
+        if army is None:
+            return
+
+        from ...utility.event_bus import append_action, append_dice
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        processed: set[str] = set()
+        for unit in sorted(list(army.units or []), key=_unit_sort_key):
+            if unit is None:
+                continue
+            if not getattr(unit, "is_alive", lambda: False)():
+                continue
+            if not getattr(unit, "deployed", True):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            try:
+                root = unit.get_attached_unit_root()
+            except Exception:
+                root = unit
+            if root is None or not getattr(root, "is_alive", lambda: False)():
+                continue
+            rid = str(get_entity_id(root) or "")
+            if rid and rid in processed:
+                continue
+            if rid:
+                processed.add(rid)
+
+            sr = getattr(root, "special_rules", None)
+            if not isinstance(sr, dict):
+                continue
+            specs = list(sr.get("command_phase_bonus_cp_roll_specs", []) or [])
+            if not specs:
+                continue
+            for spec in specs:
+                if not isinstance(spec, dict):
+                    continue
+                try:
+                    dice_count = int(spec.get("dice_count", 0) or 0)
+                except Exception:
+                    dice_count = 0
+                try:
+                    threshold = int(spec.get("threshold", 0) or 0)
+                except Exception:
+                    threshold = 0
+                try:
+                    cp_gain = int(spec.get("cp", 0) or 0)
+                except Exception:
+                    cp_gain = 0
+                if dice_count <= 0 or threshold <= 0 or cp_gain <= 0:
+                    continue
+                source = str(spec.get("source", "") or "Command phase CP roll").strip() or "Command phase CP roll"
+                roll_spec = f"{int(dice_count)}D6"
+                try:
+                    rolled = int(get_roll(roll_spec) or 0)
+                except Exception:
+                    rolled = 0
+                append_dice(
+                    player,
+                    f"{source}: rolled {roll_spec}={int(rolled)} (need {int(threshold)}+).",
+                )
+                if int(rolled) < int(threshold):
+                    append_action(
+                        player,
+                        f"{source}: failed to gain CP ({int(rolled)} < {int(threshold)}).",
+                    )
+                    continue
+                try:
+                    gained = int(player.gain_command_points(int(cp_gain), reason=source) or 0)
+                except Exception:
+                    gained = 0
+                append_action(
+                    player,
+                    f"{source}: gained {int(gained)}CP.",
+                )
+
     def _on_phase_start_optional_abilities(self, player=None, phase=None, **_kwargs) -> None:
         """
         Hook point for optional, player-decided abilities that trigger at specific timing windows.
@@ -1778,6 +1872,296 @@ class GamePhaseHandlersMixin:
                     },
                 )
                 self.request_decision(request)
+
+    def _on_phase_start_blinding_spray(self, player=None, phase=None, **_kwargs) -> None:
+        """Fight phase start: optional once-per-battle Blinding Spray selection (single dialog with None)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "FIGHT_PHASE":
+            return
+        if not bool(getattr(self, "is_authoritative", True)):
+            return
+
+        from ..decision_kinds import DECISION_CHOOSE_QUARRY
+        from ..decisions import DecisionOption, DecisionRequest
+
+        queue = getattr(self, "decision_queue", None)
+        pending_players: set[str] = set()
+        if queue is not None and hasattr(queue, "list"):
+            for req in list(queue.list() or []):
+                if str(getattr(req, "decision_type", "")) != DECISION_CHOOSE_QUARRY:
+                    continue
+                ctx = dict(getattr(req, "context", {}) or {})
+                if str(ctx.get("ability", "") or "") != "blinding_spray":
+                    continue
+                pid = str(getattr(req, "player_id", "") or "")
+                if pid:
+                    pending_players.add(pid)
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        for p in list(getattr(self, "players", []) or []):
+            if p is None:
+                continue
+            pid = str(getattr(p, "id", "") or "")
+            if pid and pid in pending_players:
+                continue
+            army = self._get_player_army(p)
+            if army is None:
+                continue
+
+            seen_roots: set[str] = set()
+            seen_models: set[str] = set()
+            eligible: list[dict] = []
+
+            for unit in sorted(list(getattr(army, "units", []) or []), key=_unit_sort_key):
+                if unit is None:
+                    continue
+                try:
+                    root = unit.get_attached_unit_root()
+                except Exception:
+                    root = unit
+                if root is None:
+                    continue
+                rid = str(get_entity_id(root) or "")
+                if not rid or rid in seen_roots:
+                    continue
+                seen_roots.add(rid)
+                if not bool(getattr(root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(root, "deployed", False)):
+                    continue
+                try:
+                    if root.is_in_reserves() or root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                try:
+                    models = list(root.get_attached_unit_models() or [])
+                except Exception:
+                    models = list(getattr(root, "models", []) or [])
+                for model in sorted([m for m in list(models or []) if getattr(m, "is_alive", False)], key=_model_sort_key):
+                    mid = str(get_entity_id(model) or "")
+                    if not mid or mid in seen_models:
+                        continue
+                    spec_fn = getattr(root, "model_start_fight_phase_blinding_spray_specs", None)
+                    specs = list(spec_fn(model) or []) if callable(spec_fn) else []
+                    if not specs:
+                        continue
+                    spec = dict(specs[0] or {})
+                    ability_key = str(spec.get("ability_key", "") or "").strip().lower()
+                    if not ability_key:
+                        ability_key = f"blinding_spray:{mid}"
+                    if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+                        continue
+                    seen_models.add(mid)
+                    eligible.append(
+                        {
+                            "model_id": mid,
+                            "model_name": str(getattr(model, "name", "Model") or "Model"),
+                            "unit_id": rid,
+                            "unit_name": str(getattr(root, "name", "Unit") or "Unit"),
+                            "ability_key": ability_key,
+                            "ability_name": str(spec.get("source", "") or "Blinding Spray").strip() or "Blinding Spray",
+                        }
+                    )
+
+            if not eligible:
+                continue
+
+            options = [DecisionOption.create("None", payload={"action": "skip"})]
+            for entry in sorted(list(eligible), key=lambda e: str(e.get("model_id", ""))):
+                options.append(
+                    DecisionOption.create(
+                        f"{entry['model_name']} ({entry['unit_name']})",
+                        payload={
+                            "model_id": entry["model_id"],
+                            "unit_id": entry["unit_id"],
+                            "source_unit_id": entry["unit_id"],
+                            "ability_key": entry["ability_key"],
+                            "ability_name": entry["ability_name"],
+                        },
+                    )
+                )
+            if len(options) <= 1:
+                continue
+
+            request = DecisionRequest.create(
+                DECISION_CHOOSE_QUARRY,
+                "Blinding Spray: select one model to activate this phase (or None).",
+                player_id=getattr(p, "id", None),
+                options=options,
+                context={
+                    "ability": "blinding_spray",
+                    "ability_name": "Blinding Spray",
+                    "phase": "Fight phase",
+                    "optional": True,
+                },
+            )
+            self.request_decision(request)
+
+    def _on_phase_start_tocsin_of_misery(self, player=None, phase=None, **_kwargs) -> None:
+        """Opponent Command phase: below-Starting enemy units in range must take Battle-shock (Tocsin of Misery)."""
+        pname = str(getattr(phase, "name", "") or "").strip().upper()
+        if pname != "COMMAND_PHASE":
+            return
+        if player is None or player is not self.get_current_player():
+            return
+        current_army = self._get_player_army(player)
+        if current_army is None:
+            return
+
+        from ...utility.event_bus import append_action
+
+        def _unit_sort_key(u):
+            try:
+                return str(get_entity_id(u))
+            except Exception:
+                return str(getattr(u, "name", "") or "")
+
+        def _model_sort_key(m):
+            try:
+                return str(get_entity_id(m))
+            except Exception:
+                return str(getattr(m, "name", "") or "")
+
+        try:
+            turn = int(getattr(self, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        tested_targets: set[str] = set()
+
+        for opp in list(getattr(self, "players", []) or []):
+            if opp is None or opp is player:
+                continue
+            opp_army = self._get_player_army(opp)
+            if opp_army is None:
+                continue
+            seen_source_roots: set[str] = set()
+            for source_unit in sorted(list(getattr(opp_army, "units", []) or []), key=_unit_sort_key):
+                if source_unit is None:
+                    continue
+                try:
+                    source_root = source_unit.get_attached_unit_root()
+                except Exception:
+                    source_root = source_unit
+                if source_root is None:
+                    continue
+                source_root_id = str(get_entity_id(source_root) or "")
+                if not source_root_id or source_root_id in seen_source_roots:
+                    continue
+                seen_source_roots.add(source_root_id)
+                if not bool(getattr(source_root, "is_alive", lambda: False)()):
+                    continue
+                if not bool(getattr(source_root, "deployed", False)):
+                    continue
+                try:
+                    if source_root.is_in_reserves() or source_root.is_embarked:
+                        continue
+                except Exception:
+                    pass
+
+                try:
+                    source_models = list(source_root.get_attached_unit_models() or [])
+                except Exception:
+                    source_models = list(getattr(source_root, "models", []) or [])
+                source_models = [m for m in list(source_models or []) if getattr(m, "is_alive", False)]
+                for source_model in sorted(source_models, key=_model_sort_key):
+                    spec_fn = getattr(source_root, "model_opponent_command_phase_below_starting_battleshock_specs", None)
+                    specs = list(spec_fn(source_model) or []) if callable(spec_fn) else []
+                    if not specs:
+                        continue
+                    for spec in specs:
+                        try:
+                            range_value = float(int(spec.get("range", 0) or 0))
+                        except Exception:
+                            range_value = 0.0
+                        try:
+                            psyker_penalty = int(spec.get("psyker_penalty", 0) or 0)
+                        except Exception:
+                            psyker_penalty = 0
+                        if range_value <= 0:
+                            continue
+                        source_name = str(spec.get("source", "") or "Tocsin of Misery").strip() or "Tocsin of Misery"
+
+                        seen_targets_in_army: set[str] = set()
+                        for target_unit in sorted(list(getattr(current_army, "units", []) or []), key=_unit_sort_key):
+                            if target_unit is None:
+                                continue
+                            try:
+                                target_root = target_unit.get_attached_unit_root()
+                            except Exception:
+                                target_root = target_unit
+                            if target_root is None:
+                                continue
+                            target_id = str(get_entity_id(target_root) or "")
+                            if not target_id or target_id in seen_targets_in_army or target_id in tested_targets:
+                                continue
+                            seen_targets_in_army.add(target_id)
+                            if not bool(getattr(target_root, "is_alive", lambda: False)()):
+                                continue
+                            if not bool(getattr(target_root, "deployed", False)):
+                                continue
+                            try:
+                                if target_root.is_in_reserves() or target_root.is_embarked:
+                                    continue
+                            except Exception:
+                                pass
+                            try:
+                                if not target_root.is_below_starting_strength():
+                                    continue
+                            except Exception:
+                                continue
+                            try:
+                                in_range = bool(source_root._model_within_range_of_unit(source_model, target_root, range_value))
+                            except Exception:
+                                in_range = False
+                            if not in_range:
+                                continue
+
+                            is_psyker = False
+                            if psyker_penalty > 0:
+                                try:
+                                    is_psyker = bool(target_root.has_any_keyword("PSYKER"))
+                                except Exception:
+                                    try:
+                                        is_psyker = bool(target_root.has_keyword("PSYKER"))
+                                    except Exception:
+                                        is_psyker = False
+                            if is_psyker and psyker_penalty > 0:
+                                sr = getattr(target_root, "special_rules", None)
+                                if not isinstance(sr, dict):
+                                    sr = {}
+                                try:
+                                    existing = int(sr.get("battle_shock_test_modifier", 0) or 0)
+                                except Exception:
+                                    existing = 0
+                                sr["battle_shock_test_modifier"] = int(existing - abs(int(psyker_penalty)))
+                                reasons = list(sr.get("battle_shock_test_modifier_reasons", []) or [])
+                                reasons.append(f"{source_name}: -{abs(int(psyker_penalty))} vs PSYKER")
+                                sr["battle_shock_test_modifier_reasons"] = reasons
+                                target_root.special_rules = sr
+
+                            try:
+                                target_root.take_battle_shock_test(int(turn or 1))
+                            except Exception:
+                                continue
+                            append_action(
+                                player,
+                                f"{source_name}: {getattr(target_root, 'name', 'Unit')} takes a Battle-shock test.",
+                            )
+                            tested_targets.add(target_id)
 
     def _on_phase_start_empowered_by_death(self, player=None, phase=None, **_kwargs) -> None:
         """Fight phase: below Starting Strength units with Empowered by Death gain Fight First until end of phase."""
@@ -4836,6 +5220,16 @@ class GamePhaseHandlersMixin:
                         "start_shooting_phase_visible_hit_bonus_target_id",
                         "start_shooting_phase_visible_hit_bonus_value",
                         "start_shooting_phase_visible_hit_bonus_expires_phase",
+                    ):
+                        sr.pop(k, None)
+                exp = str(sr.get("blinding_spray_expires_phase", "") or "").strip().upper()
+                if exp and exp == pname:
+                    for k in (
+                        "blinding_spray_fight_first_active",
+                        "blinding_spray_owner",
+                        "blinding_spray_turn",
+                        "blinding_spray_source",
+                        "blinding_spray_expires_phase",
                     ):
                         sr.pop(k, None)
                 exp = str(sr.get("post_shoot_disembark_wound_reroll_expires_phase", "") or "").strip().upper()

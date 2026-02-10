@@ -667,18 +667,29 @@ class AbilitySpecsMixin:
             normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
             normalized = re.sub(r"\s+", " ", normalized).strip()
             m = self._POST_SHOOT_WRACKING_AGONIES_RE.fullmatch(normalized)
+            enf = None
             if not m:
+                enf = self._POST_SHOOT_ENFEEBLED_RE.fullmatch(normalized)
+            if not m and not enf:
                 continue
-            weapon_raw = str(m.group("weapon") or "agonising energies").strip()
+            if enf is not None:
+                weapon_raw = str(enf.group("weapon") or "plague wind").strip()
+                try:
+                    move_penalty = -int(enf.group("move") or 0)
+                except Exception:
+                    move_penalty = -2
+                charge_penalty = 0
+            else:
+                weapon_raw = str(m.group("weapon") or "agonising energies").strip()
+                try:
+                    move_penalty = -int(m.group("move") or 0)
+                except Exception:
+                    move_penalty = -2
+                try:
+                    charge_penalty = -int(m.group("charge") or 0)
+                except Exception:
+                    charge_penalty = -2
             weapon_key = self._normalize_keyword_phrase(weapon_raw) or "agonising energies"
-            try:
-                move_penalty = -int(m.group("move") or 0)
-            except Exception:
-                move_penalty = -2
-            try:
-                charge_penalty = -int(m.group("charge") or 0)
-            except Exception:
-                charge_penalty = -2
             source = str(name or "Wracking Agonies").strip() or "Wracking Agonies"
             key = (source.lower(), weapon_key, int(move_penalty), int(charge_penalty))
             if key in seen:
@@ -691,6 +702,69 @@ class AbilitySpecsMixin:
                     "move_penalty": int(move_penalty),
                     "charge_penalty": int(charge_penalty),
                     "source": source,
+                }
+            )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_opponent_command_phase_below_starting_battleshock_specs(
+        self,
+        model: Optional['Model'] = None,
+    ) -> List[dict]:
+        """
+        Model-specific rule: in opponent Command phase Battle-shock step, below-Starting enemy units in range test.
+
+        Returns specs with keys:
+            - source: ability name
+            - range: int
+            - psyker_penalty: int
+        """
+        if model is None:
+            return []
+        cache_key = f"model_opponent_command_phase_below_starting_battleshock:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[tuple[str, int, int]] = set()
+
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            m = self._OPPONENT_COMMAND_PHASE_BELOW_STARTING_BATTLESHOCK_RE.fullmatch(normalized)
+            if not m:
+                continue
+            try:
+                range_value = int(m.group("range") or 0)
+            except Exception:
+                range_value = 0
+            try:
+                psyker_penalty = int(m.group("pen") or 0)
+            except Exception:
+                psyker_penalty = 0
+            if range_value <= 0:
+                continue
+            psyker_penalty = max(0, int(psyker_penalty))
+            source = str(name or "Opponent Command phase Battle-shock").strip() or "Opponent Command phase Battle-shock"
+            key = (source.lower(), int(range_value), int(psyker_penalty))
+            if key in seen:
+                continue
+            seen.add(key)
+            specs.append(
+                {
+                    "source": source,
+                    "range": int(range_value),
+                    "psyker_penalty": int(psyker_penalty),
                 }
             )
 
@@ -1907,6 +1981,51 @@ class AbilitySpecsMixin:
                     "ap_bonus": 1,
                 }
             )
+
+        if not hasattr(self, "_ability_cache"):
+            self._ability_cache = {}
+        self._ability_cache[cache_key] = list(specs)
+        return list(specs)
+
+    def model_start_fight_phase_blinding_spray_specs(self, model: Optional['Model'] = None) -> List[dict]:
+        """
+        Model-specific rule: once per battle in the Fight phase, optional activation grants Fights First to its unit.
+
+        Returns specs with keys:
+            - source: ability name
+            - ability_key: per-model once-per-battle key
+        """
+        if model is None:
+            return []
+        cache_key = f"model_start_fight_phase_blinding_spray:{get_entity_id(model)}"
+        if cache_key in getattr(self, "_ability_cache", {}):
+            return list(self._ability_cache[cache_key])
+
+        specs: list[dict] = []
+        seen: set[str] = set()
+        model_id = str(get_entity_id(model) or "")
+        for name, desc in self._iter_model_specific_ability_entries(model):
+            text_src = desc or name or ""
+            if not text_src:
+                continue
+            text_src = self._strip_eligibility_prefix(text_src)
+            normalized = self._normalize_rules_text(text_src)
+            normalized = normalized.replace("\u2019", "'").replace("\u0192?T", "'")
+            normalized = normalized.lower()
+            normalized = re.sub(r"'s\b", "s", normalized)
+            normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+            normalized = re.sub(r"\s+", " ", normalized).strip()
+            if not self._BLINDING_SPRAY_RE.fullmatch(normalized):
+                continue
+            source = str(name or "Blinding Spray").strip() or "Blinding Spray"
+            key = "blinding_spray"
+            if model_id:
+                key = f"blinding_spray:{model_id}"
+            dedupe_key = f"{source.lower()}:{key}"
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            specs.append({"source": source, "ability_key": key})
 
         if not hasattr(self, "_ability_cache"):
             self._ability_cache = {}

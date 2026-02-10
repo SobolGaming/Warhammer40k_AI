@@ -1492,7 +1492,8 @@ class Unit(
         re.IGNORECASE,
     )
     _BEARER_UNIT_MOVEMENT_BONUS_RE = re.compile(
-        r"add\s+(\d+)\s*(?:\"|inches)?\s+to\s+the\s+move\s+characteristic\s+of\s+models\s+in\s+the\s+bearer'?s\s+unit",
+        r"add\s+(\d+)\s*(?:\"|inches)?\s+to\s+the\s+move\s+characteristic\s+of\s+"
+        r"(?:models\s+in\s+)?(?:the\s+bearer'?s\s+unit|that\s+unit|this\s+unit|this\s+model'?s\s+unit)",
         re.IGNORECASE,
     )
     _BEARER_UNIT_OC_BONUS_RE = re.compile(
@@ -1524,8 +1525,10 @@ class Unit(
         re.IGNORECASE,
     )
     _ATTACHED_CHARACTER_FNP_RE = re.compile(
-        r"other\s+character\s+models\s+attached\s+to\s+(?:that\s+unit|the\s+bearer'?s\s+unit|this\s+unit)\s+"
-        r"have\s+(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+",
+        r"(?:other\s+character\s+models\s+attached\s+to\s+(?:that\s+unit|the\s+bearer'?s\s+unit|this\s+unit)\s*,?\s+"
+        r"have\s+(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+)|"
+        r"(?:while\s+a\s+character\s+model\s+is\s+leading\s+this\s+unit(?:\s*,\s*|\s+)that\s+character\s+model\s+has\s+"
+        r"(?:the\s+)?feel\s+no\s+pain\s*([1-6])\+)",
         re.IGNORECASE,
     )
     _UNIT_CONTAINS_CHARACTER_FNP_RE = re.compile(
@@ -1609,6 +1612,11 @@ class Unit(
     _BEARER_SMOKE_KEYWORD_TOKENS = "bearer has the smoke keyword"
     _COMMAND_PHASE_BONUS_CP_RE = re.compile(
         r"(?:at\s+the\s+)?start\s+of\s+(?:each\s+of\s+)?your\s+command\s+phase[s]?\b.*?\bgain\s+(\d+)\s*(?:cp|command point(?:s)?)",
+        re.IGNORECASE,
+    )
+    _COMMAND_PHASE_CP_ROLL_RE = re.compile(
+        r"in\s+your\s+command\s+phase\s+if\s+this\s+(?:model|unit)\s+is\s+on\s+the\s+battlefield\s+roll\s+(?P<dice>\d+)d6\s+"
+        r"on\s+a\s+(?P<threshold>\d+)\+?\s+you\s+gain\s+(?P<cp>\d+)\s*(?:cp|command\s+points?)",
         re.IGNORECASE,
     )
     _COMMAND_PHASE_REGAIN_WOUND_RE = re.compile(
@@ -2144,6 +2152,12 @@ class Unit(
         r"from charge rolls made for it",
         re.IGNORECASE,
     )
+    _POST_SHOOT_ENFEEBLED_RE = re.compile(
+        r"in your shooting phase after this model has shot select one enemy infantry unit hit by one or more of those attacks "
+        r"made with (?:its|this model s) (?P<weapon>[a-z0-9 ]+) until the end of your opponent s next turn that unit is enfeebled "
+        r"while a unit is enfeebled subtract (?P<move>\d+) from the move characteristic of models in that unit",
+        re.IGNORECASE,
+    )
     _POST_SHOOT_LEADERSHIP_DEBUFF_RE = re.compile(
         r"in your shooting phase after this unit has shot select one enemy unit hit by one or more of those attacks "
         r"until the start of your next shooting phase each time a battle shock or leadership test is taken for that "
@@ -2188,6 +2202,12 @@ class Unit(
     _FIGHT_PHASE_RANGE_BATTLESHOCK_RE = re.compile(
         r"at the start of the fight phase (?:each|every) enemy unit(?: excluding (?P<exclude>[a-z0-9 ]+?))? within "
         r"(?P<range>\d+)\s*\"?\s*of this model must take a battle shock test",
+        re.IGNORECASE,
+    )
+    _OPPONENT_COMMAND_PHASE_BELOW_STARTING_BATTLESHOCK_RE = re.compile(
+        r"in the battle shock step of your opponent s command phase if an enemy unit that is below its starting strength is within "
+        r"(?P<range>\d+)\s*\"?\s*of this model that enemy unit must take a battle shock test subtracting (?P<pen>\d+) from that test "
+        r"if it is a psyker unit",
         re.IGNORECASE,
     )
     _CHARGE_END_ENGAGEMENT_BATTLESHOCK_RE = re.compile(
@@ -2533,11 +2553,18 @@ class Unit(
         re.IGNORECASE,
     )
     _RETURN_ON_DEATH_RE = re.compile(
-        r"the first time (?:this model|the bearer) is destroyed(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
+        r"the first time (?:(?:this model|the bearer) is destroyed|a model with this ability is destroyed in a battle round)"
+        r"(?: remove it from play without resolving its deadly demise ability)?(?: then)? "
         r"(?:at the end of the phase roll one d6|roll one d6 at the end of the phase) on a (?P<roll>\d+) "
-        r"set (?:this model|the bearer) back up on the battlefield(?: as close as possible to where it was destroyed)? "
-        r"and not within engagement range of (?:one or more|any) enemy (?:units|models) with "
+        r"set (?:this model|the bearer|that model) back up on the battlefield(?: as close as possible to where it was destroyed)? "
+        r"and not within engagement range of (?:one or more|any) enemy (?:units|models)(?: with)? "
         r"(?P<wounds>its full wounds remaining|(?:d3|d6|\d+) wounds? remaining)",
+        re.IGNORECASE,
+    )
+    _BLINDING_SPRAY_RE = re.compile(
+        r"in the fight phase you can select one model from your army with this ability to use this ability "
+        r"if you do until the end of the phase that model(?:\s+s|s)? unit has the fights first ability "
+        r"each model can only be selected for this ability once per battle",
         re.IGNORECASE,
     )
     _FIGHT_WITHIN_3_RE = re.compile(

@@ -77,8 +77,58 @@ class NurglesGiftManager:
             return False
         return True
 
+    @staticmethod
+    def _unit_has_named_ability(unit, ability_name: str) -> bool:
+        name_key = str(ability_name or "").strip().lower()
+        if not name_key or unit is None:
+            return False
+        try:
+            for ab in list(getattr(unit, "possible_abilities", []) or []):
+                if isinstance(ab, str):
+                    nm = str(ab or "").strip().lower()
+                else:
+                    nm = str(getattr(ab, "name", "") or "").strip().lower()
+                if nm == name_key:
+                    return True
+        except Exception:
+            pass
+        try:
+            for model in list(getattr(unit, "models", []) or []):
+                abilities = getattr(model, "abilities", None)
+                if not isinstance(abilities, dict):
+                    continue
+                for ab in list(abilities.values()):
+                    if isinstance(ab, str):
+                        nm = str(ab or "").strip().lower()
+                    else:
+                        nm = str(getattr(ab, "name", "") or "").strip().lower()
+                    if nm == name_key:
+                        return True
+        except Exception:
+            pass
+        return False
+
+    def _army_has_gift_of_poxes_source(self) -> bool:
+        if self.army is None:
+            return False
+        for unit in list(getattr(self.army, "units", []) or []):
+            if unit is None:
+                continue
+            if not self._unit_is_valid_contagion_source(unit):
+                continue
+            try:
+                if unit.is_in_reserves() or unit.is_embarked:
+                    continue
+            except Exception:
+                pass
+            if self._unit_has_named_ability(unit, "Gift of Poxes"):
+                return True
+        return False
+
     def get_contagion_range(self, battle_round: int) -> float:
-        return float(nurgles_gift_contagion_range(battle_round))
+        base = float(nurgles_gift_contagion_range(battle_round))
+        bonus = 3.0 if self._army_has_gift_of_poxes_source() else 0.0
+        return float(base + bonus)
 
     def get_active_plague(self) -> Optional[NurglesPlague]:
         if not self.active_plague_key:

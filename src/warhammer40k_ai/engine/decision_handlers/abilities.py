@@ -1746,6 +1746,72 @@ def _apply_choose_quarry(game: object, request: DecisionRequest, result: Decisio
         except Exception:
             pass
         return None
+    if ability == "blinding_spray":
+        if is_skip_choice(request, result):
+            return None
+        payload = _option_payload(request, result)
+        model_id = payload.get("model_id") or ctx.get("model_id")
+        source_unit = resolve_unit(game, payload.get("source_unit_id") or payload.get("unit_id") or ctx.get("source_unit_id") or ctx.get("unit_id"))
+        model = resolve_model(game, model_id)
+        if model is None:
+            return None
+        if source_unit is None:
+            source_unit = getattr(model, "parent_unit", None)
+        if source_unit is None:
+            return None
+        source_root = source_unit.get_attached_unit_root() if hasattr(source_unit, "get_attached_unit_root") else source_unit
+        if source_root is None:
+            return None
+        model_root = getattr(getattr(model, "parent_unit", None), "get_attached_unit_root", None)
+        if callable(model_root):
+            try:
+                if model_root() is not source_root:
+                    return None
+            except Exception:
+                pass
+
+        ability_key = str(payload.get("ability_key", "") or ctx.get("ability_key", "") or "").strip().lower()
+        if not ability_key:
+            ability_key = f"blinding_spray:{str(get_entity_id(model) or '')}"
+        if getattr(model, "has_used_once_per_battle", lambda _k: False)(ability_key):
+            return None
+
+        try:
+            player = getattr(source_root.get_parent_army(), "player", None)
+        except Exception:
+            player = None
+        owner_id = str(getattr(player, "id", "") or "")
+        try:
+            turn = int(getattr(game, "turn", 0) or 0)
+        except Exception:
+            turn = 0
+
+        ability_name = str(payload.get("ability_name", "") or ctx.get("ability_name", "") or "Blinding Spray").strip() or "Blinding Spray"
+        sr = getattr(source_root, "special_rules", None)
+        if not isinstance(sr, dict):
+            sr = {}
+        sr["blinding_spray_fight_first_active"] = True
+        sr["blinding_spray_owner"] = owner_id
+        sr["blinding_spray_turn"] = int(turn)
+        sr["blinding_spray_source"] = ability_name
+        sr["blinding_spray_expires_phase"] = "FIGHT_PHASE"
+        source_root.special_rules = sr
+
+        try:
+            getattr(model, "mark_used_once_per_battle", lambda _k, **_kw: None)(
+                ability_key,
+                ability_name=ability_name,
+            )
+        except Exception:
+            pass
+
+        try:
+            sname = str(getattr(model, "name", "Model") or "Model")
+            uname = str(getattr(source_root, "name", "Unit") or "Unit")
+            _log_action_for_players(game, player, f"{ability_name}: {sname} ({uname}) grants Fights First until end of phase.")
+        except Exception:
+            pass
+        return None
     if ability == "unearthly_power":
         if is_skip_choice(request, result):
             return None

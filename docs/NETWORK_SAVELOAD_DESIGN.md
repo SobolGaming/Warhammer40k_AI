@@ -302,6 +302,7 @@ Fight:
 - harbinger_of_death_dialog: CHOOSE_HARBINGER_OF_DEATH {choice} (context `unit_id`, `model_id`, `weapon_name`, `ability_name`)
 - herald_of_ynnead_target_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="herald_of_ynnead"`, `attacker_unit_id`, `model_id`, `keyword`, `ability_name`)
 - fight_phase_target_attack_bonus_dialog: CHOOSE_QUARRY {target_unit_id} (context `ability="fight_phase_target_attack_bonus"`, `source_unit_id`, `model_id`, `range`, `keyword`, `attack_type`, `strength_bonus`, `ap_bonus`, `damage_bonus`, `wound_bonus`, `enemy_melee_wound_penalty`)
+- blinding_spray_dialog: CHOOSE_QUARRY {model_id | skip} (context `ability="blinding_spray"`, `ability_name`, `phase`, `optional=true`)
 - malign_sacrifice_dialog: CHOOSE_QUARRY {target_unit_id, model_id | skip} (context `ability="malign_sacrifice"`, `source_unit_id`, `ability_name`)
 - fight_phase_melee_ap_boost_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="fight_phase_melee_ap_boost"`, `unit_id`, `model_id`)
 - chance_for_glory_prompt (yes_no_dialog): CONFIRM_YES_NO {choice} (context `ability="chance_for_glory"`, `unit_id`, `model_id`, `buff_key`, `bonus`)

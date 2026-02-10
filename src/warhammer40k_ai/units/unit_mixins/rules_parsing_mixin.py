@@ -776,6 +776,8 @@ class RulesParsingMixin:
         try:
             if "command_phase_bonus_cp" in sr:
                 del sr["command_phase_bonus_cp"]
+            if "command_phase_bonus_cp_roll_specs" in sr:
+                del sr["command_phase_bonus_cp_roll_specs"]
             if "sticky_objectives" in sr:
                 del sr["sticky_objectives"]
         except Exception:
@@ -788,11 +790,15 @@ class RulesParsingMixin:
             pass
 
         bonus_cp = 0
+        cp_roll_specs: list[dict] = []
+        seen_roll_specs: set[tuple[str, int, int, int]] = set()
         for ab in self._iter_active_abilities():
             try:
                 desc = ab if isinstance(ab, str) else (getattr(ab, "description", "") or getattr(ab, "name", ""))
+                name = ab if isinstance(ab, str) else (getattr(ab, "name", "") or "")
             except Exception:
                 desc = ""
+                name = ""
             text = self._normalize_rules_text(desc or "")
             if not text:
                 continue
@@ -802,9 +808,47 @@ class RulesParsingMixin:
                     bonus_cp += int(m.group(1))
                 except Exception:
                     continue
+            norm = text.replace("\u2019", "'").replace("\u0192?T", "'").lower()
+            norm = re.sub(r"'s\b", "s", norm)
+            norm = re.sub(r"[^a-z0-9+]+", " ", norm)
+            norm = re.sub(r"\s+", " ", norm).strip()
+            if not norm:
+                continue
+            m_roll = self._COMMAND_PHASE_CP_ROLL_RE.fullmatch(norm)
+            if not m_roll:
+                continue
+            try:
+                dice_count = int(m_roll.group("dice") or 0)
+            except Exception:
+                dice_count = 0
+            try:
+                threshold = int(m_roll.group("threshold") or 0)
+            except Exception:
+                threshold = 0
+            try:
+                cp_gain = int(m_roll.group("cp") or 0)
+            except Exception:
+                cp_gain = 0
+            if dice_count <= 0 or threshold <= 0 or cp_gain <= 0:
+                continue
+            source = str(name or "Command phase CP roll").strip() or "Command phase CP roll"
+            key = (source.lower(), int(dice_count), int(threshold), int(cp_gain))
+            if key in seen_roll_specs:
+                continue
+            seen_roll_specs.add(key)
+            cp_roll_specs.append(
+                {
+                    "source": source,
+                    "dice_count": int(dice_count),
+                    "threshold": int(threshold),
+                    "cp": int(cp_gain),
+                }
+            )
 
         if bonus_cp > 0:
             sr["command_phase_bonus_cp"] = int(bonus_cp)
+        if cp_roll_specs:
+            sr["command_phase_bonus_cp_roll_specs"] = list(cp_roll_specs)
 
         if self._scan_command_phase_sticky_objective():
             sr["sticky_objectives"] = True
@@ -1643,7 +1687,15 @@ class RulesParsingMixin:
                     m = self._ATTACHED_CHARACTER_FNP_RE.search(sentence)
                     if m:
                         try:
-                            val = int(m.group(1))
+                            g1 = m.group(1)
+                        except Exception:
+                            g1 = None
+                        try:
+                            g2 = m.group(2)
+                        except Exception:
+                            g2 = None
+                        try:
+                            val = int(g1 or g2 or 0)
                         except Exception:
                             val = None
                         if val:
