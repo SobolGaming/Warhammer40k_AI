@@ -2,6 +2,8 @@ import sys
 import os
 import warnings
 from bs4 import GuessedAtParserWarning, MarkupResemblesLocatorWarning
+import logging
+logger = logging.getLogger(__name__)
 
 # Suppress specific warnings
 warnings.filterwarnings("ignore", category=RuntimeWarning, message=".*found in sys.modules.*")
@@ -64,10 +66,10 @@ class WahapediaUI(QMainWindow):
         datasheet = self.waha_helper.get_full_datasheet_info_by_name(datasheet_name)
         
         if datasheet:
-            print(f"Found datasheet: {datasheet.name}")  # Use dot notation here
+            logger.info(f"Found datasheet: {datasheet.name}")  # Use dot notation here
             self.display_datasheet(datasheet)
         else:
-            print(f"Datasheet not found: {datasheet_name}")
+            logger.info(f"Datasheet not found: {datasheet_name}")
             self.display_not_found()
 
     def display_datasheet(self, datasheet):

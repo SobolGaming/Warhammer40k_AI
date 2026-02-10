@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class StateAttachmentMixin:
@@ -1088,20 +1090,16 @@ class StateAttachmentMixin:
             dice_note = ""
         if mod:
             if passed:
-                print(
-                    f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
-                    f"-> {mod_roll} vs Ld {leadership_value} - PASSED! "
-                )
+                logger.info(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - PASSED! ")
             else:
-                print(
-                    f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
-                    f"-> {mod_roll} vs Ld {leadership_value} - FAILED! "
-                )
+                logger.error(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - FAILED! ")
         else:
             if passed:
-                print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
+                logger.info(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
             else:
-                print(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+                logger.error(f"{self.name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
 
         if reroll_sources and not passed:
             want_reroll = True
@@ -1170,15 +1168,11 @@ class StateAttachmentMixin:
                 except Exception:
                     pass
                 if mod:
-                    print(
-                        f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} (mod {mod:+}) "
-                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                    )
+                    logger.info(f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} (mod {mod:+}) "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
                 else:
-                    print(
-                        f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} "
-                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}"
-                    )
+                    logger.info(f"{self.name} Leadership test re-roll: 2D6 rolled {roll_result} "
+                        f"-> {mod_roll} vs Ld {leadership_value} - {'PASSED' if passed else 'FAILED'}")
         
         return passed
 
@@ -1231,20 +1225,16 @@ class StateAttachmentMixin:
         model_name = getattr(model, "name", "Model")
         if mod:
             if passed:
-                print(
-                    f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
-                    f"-> {mod_roll} vs Ld {leadership_value} - PASSED! "
-                )
+                logger.info(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - PASSED! ")
             else:
-                print(
-                    f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
-                    f"-> {mod_roll} vs Ld {leadership_value} - FAILED! "
-                )
+                logger.error(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} (mod {mod:+}) "
+                    f"-> {mod_roll} vs Ld {leadership_value} - FAILED! ")
         else:
             if passed:
-                print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
+                logger.info(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - PASSED! ")
             else:
-                print(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
+                logger.error(f"{model_name} Leadership test: 2D6 rolled {roll_result}{dice_note} vs Ld {leadership_value} - FAILED! ")
 
         return passed
 
@@ -3031,7 +3021,7 @@ class StateAttachmentMixin:
 
     def print_unit(self):
         for model in self.models:
-            print(f"\n{model}")
+            logger.info(f"\n{model}")
 
     def get_unique_model_names(self) -> List[str]:
         return list(set(model.name for model in self.models))
@@ -3213,7 +3203,7 @@ class StateAttachmentMixin:
                 cost = self.models_cost[len(self.models) - 1]
                 cost += self.models_cost["extra"]
             except KeyError:
-                print(f"No cost found for {self.name}")
+                logger.info(f"No cost found for {self.name}")
                 cost = 1000
         return ranged_threat / cost, melee_threat / cost
 

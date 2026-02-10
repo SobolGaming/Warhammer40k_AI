@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup, MarkupResemblesLocatorWarning
 from types import SimpleNamespace
 from warhammer40k_ai.rules.enhancement import Enhancement
 from warhammer40k_ai.units.ability import Ability
+import logging
+logger = logging.getLogger(__name__)
 
 # Suppress the specific warnings at the module level
 warnings.filterwarnings("ignore", category=MarkupResemblesLocatorWarning)
@@ -54,7 +56,7 @@ class WahaHelper:
 
     def load_data(self):
         if not os.path.exists(self.data_dir):
-            print(f"Error: Directory '{self.data_dir}' does not exist.")
+            logger.error(f"Error: Directory '{self.data_dir}' does not exist.")
             return
 
         self.load_json_file('Abilities.json', self.abilities, 'id')
@@ -70,7 +72,7 @@ class WahaHelper:
 
         datasheets_path = os.path.join(self.data_dir, 'Datasheets.json')
         if not os.path.exists(datasheets_path):
-            print(f"Error: Datasheets.json not found in {self.data_dir}")
+            logger.error(f"Error: Datasheets.json not found in {self.data_dir}")
             return
 
         try:
@@ -79,7 +81,7 @@ class WahaHelper:
             self.datasheets = {sheet['id']: self.clean_data(sheet) for sheet in datasheets}
             self.merge_additional_data()
         except Exception as e:
-            print(f"Error loading data: {str(e)}")
+            logger.exception(f"Error loading data: {str(e)}")
 
     def get_stratagems_for_faction(self, faction_id: str | None = None, detachment: str | None = None) -> list[dict]:
         """
@@ -115,19 +117,19 @@ class WahaHelper:
                 data = json.load(f)
             target_dict.update({item[key]: self.clean_data(item) for item in data})
         else:
-            print(f"Warning: {filename} not found in {self.data_dir}")
+            logger.warning(f"Warning: {filename} not found in {self.data_dir}")
 
     def load_datasheets_leaders(self) -> None:
         """Load leader->bodyguard relationships (many attached_id per leader_id)."""
         file_path = os.path.join(self.data_dir, 'Datasheets_leader.json')
         if not os.path.exists(file_path):
-            print(f"Warning: Datasheets_leader.json not found in {self.data_dir}")
+            logger.warning(f"Warning: Datasheets_leader.json not found in {self.data_dir}")
             return
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            print(f"Error loading Datasheets_leader.json: {str(e)}")
+            logger.exception(f"Error loading Datasheets_leader.json: {str(e)}")
             return
 
         self.datasheets_leaders = {}
@@ -163,7 +165,7 @@ class WahaHelper:
                     self.datasheets_enhancements[datasheet_id] = []
                 self.datasheets_enhancements[datasheet_id].append(self.clean_data(item['enhancement_id']))
         else:
-            print(f"Warning: Datasheets_enhancements.json not found in {self.data_dir}")
+            logger.warning(f"Warning: Datasheets_enhancements.json not found in {self.data_dir}")
 
     def merge_additional_data(self):
         for filename in os.listdir(self.data_dir):
@@ -338,7 +340,7 @@ class WahaHelper:
             try:
                 return Enhancement.from_waha_dict(enhancement_data)
             except Exception as exc:
-                print(f"Error parsing enhancement id {enhancement_id}: {exc}")
+                logger.exception(f"Error parsing enhancement id {enhancement_id}: {exc}")
                 return None
         return None
 
@@ -352,7 +354,7 @@ class WahaHelper:
                     return Enhancement.from_waha_dict(enhancement)
                 except Exception as exc:
                     enh_name = enhancement.get("name", "") or name
-                    print(f"Error parsing enhancement {enh_name}: {exc}")
+                    logger.exception(f"Error parsing enhancement {enh_name}: {exc}")
                     return None
         return None
 
@@ -377,7 +379,7 @@ def get_all_data():
     return helper.get_all_data()
 
 def main():
-    print("Starting main function...")
+    logger.info("Starting main function...")
     
     # Create an instance of WahaHelper
     waha = WahaHelper()
@@ -385,17 +387,17 @@ def main():
     # Get a specific datasheet by name
     datasheet = waha.get_datasheet("Bloodletters")
     if datasheet:
-        print(json.dumps(datasheet, indent=2, ensure_ascii=False))
+        logger.info(json.dumps(datasheet, indent=2, ensure_ascii=False))
     else:
-        print("Datasheet not found")
+        logger.info("Datasheet not found")
 
     # If the above search fails, try a broader search
     if not datasheet:
-        print("\nPerforming a broader search:")
+        logger.info("\nPerforming a broader search:")
         results = waha.search_datasheets("Bloodletters")
-        print(f"Search results: {results}")
+        logger.info(f"Search results: {results}")
 
-    print("Main function completed.")
+    logger.info("Main function completed.")
 
 if __name__ == "__main__":
     main()

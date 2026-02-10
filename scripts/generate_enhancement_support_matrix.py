@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Tuple
 
 import re
+import logging
+logger = logging.getLogger(__name__)
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -229,9 +231,10 @@ def main() -> None:
         rows = [r for r in rows if (r.detachment_id or "").strip() not in ba_ids]
         excluded = before - len(rows)
     _write_md(rows, factions, excluded=excluded)
-    print(f"Wrote {OUT_PATH} ({len(rows)} enhancements).")
+    logger.info(f"Wrote {OUT_PATH} ({len(rows)} enhancements).")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
 

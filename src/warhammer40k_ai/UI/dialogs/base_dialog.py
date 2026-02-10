@@ -4,6 +4,8 @@ from typing import Callable, Optional, Dict, Any
 from abc import ABC, abstractmethod
 
 from ..ui_fonts import get_ui_font
+import logging
+logger = logging.getLogger(__name__)
 
 # Font sizes
 FONT_LARGE = 20
@@ -274,12 +276,12 @@ class BaseDialog(ABC):
         preferred_x = (self.screen_width - self.width) // 2
         preferred_y = (self.screen_height - self.height) // 2
 
-        print(f"DEBUG: Dialog positioning - preferred position: ({preferred_x}, {preferred_y})")
-        print(f"DEBUG: Dialog positioning - {len(existing_dialogs)} existing dialogs to avoid")
+        logger.debug(f"DEBUG: Dialog positioning - preferred position: ({preferred_x}, {preferred_y})")
+        logger.debug(f"DEBUG: Dialog positioning - {len(existing_dialogs)} existing dialogs to avoid")
 
         # If no existing dialogs, use preferred position
         if not existing_dialogs:
-            print(f"DEBUG: Dialog positioning - no existing dialogs, using preferred position")
+            logger.debug(f"DEBUG: Dialog positioning - no existing dialogs, using preferred position")
             return preferred_x, preferred_y
 
         # Get rectangles of all visible dialogs

@@ -8007,7 +8007,7 @@ class StratagemManager(
                     ):
                         pass
                     else:
-                        print(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")
+                        logger.error(f"ERROR: Cannot use {s.name} more than once in the same phase (core rules)")
                         return False
         except Exception:
             raise
@@ -8022,13 +8022,13 @@ class StratagemManager(
                     # Only bypass battle-shock restriction, not embarked restriction.
                     try:
                         if bool(getattr(tgt, "is_embarked", False)):
-                            print("ERROR: Cannot target an embarked unit with a Stratagem")
+                            logger.error("ERROR: Cannot target an embarked unit with a Stratagem")
                             return False
                     except Exception:
                         raise
                     try:
                         if getattr(tgt, "embarked_in", None) is not None:
-                            print("ERROR: Cannot target an embarked unit with a Stratagem")
+                            logger.error("ERROR: Cannot target an embarked unit with a Stratagem")
                             return False
                     except Exception:
                         raise
@@ -8042,7 +8042,7 @@ class StratagemManager(
                     except Exception:
                         raise
                 else:
-                    print("ERROR: Cannot target a Battle-shocked or embarked unit with a Stratagem")
+                    logger.error("ERROR: Cannot target a Battle-shocked or embarked unit with a Stratagem")
                     return False
         except Exception:
             raise
@@ -8061,7 +8061,7 @@ class StratagemManager(
                 game=self.game,
             )
             if prepared is None:
-                print("ERROR: GILDED CHAMPION: invalid target or context")
+                logger.error("ERROR: GILDED CHAMPION: invalid target or context")
                 return False
             target_unit = prepared.get("target_unit")
             eff_cost = s.cp_cost
@@ -8081,24 +8081,24 @@ class StratagemManager(
             self._used_stratagems_this_phase.add(name_u)
             ability_label = str(prepared.get("ability_name", "") or prepared.get("ability_key", "") or "ability")
             model_name = str(getattr(model_obj, "name", "Model") or "Model")
-            print(f"INFO: GILDED CHAMPION: {model_name} can use {ability_label} one additional time (not this phase).")
+            logger.info(f"INFO: GILDED CHAMPION: {model_name} can use {ability_label} one additional time (not this phase).")
             return True
         # Adeptus Custodes (Lions of the Emperor): UNLEASH THE LIONS
         if name_u == "UNLEASH THE LIONS":
             target_unit = kwargs.get("target_unit") or kwargs.get("unit")
             if target_unit is None:
-                print("ERROR: UNLEASH THE LIONS: no target unit provided")
+                logger.error("ERROR: UNLEASH THE LIONS: no target unit provided")
                 return False
             if self._unleash_lions_detachment_manager() is None:
-                print("ERROR: UNLEASH THE LIONS: wrong detachment")
+                logger.error("ERROR: UNLEASH THE LIONS: wrong detachment")
                 return False
             if not self._unleash_lions_is_valid_target(target_unit):
-                print("ERROR: UNLEASH THE LIONS: invalid target (must be Allarus/Aquilon on battlefield)")
+                logger.error("ERROR: UNLEASH THE LIONS: invalid target (must be Allarus/Aquilon on battlefield)")
                 return False
             if "phase_name" not in kwargs:
                 kwargs["phase_name"] = self._current_phase_name
             if not s.can_use(self.player, self.game, **kwargs):
-                print("ERROR: UNLEASH THE LIONS: cannot be used in current state")
+                logger.error("ERROR: UNLEASH THE LIONS: cannot be used in current state")
                 return False
             eff_cost = s.cp_cost
             apply_fn = getattr(self.player, "apply_stratagem_cp_cost", None)
@@ -8112,14 +8112,14 @@ class StratagemManager(
             root = target_unit.get_attached_unit_root() if hasattr(target_unit, "get_attached_unit_root") else target_unit
             resulting = split_unit_into_single_model_units(root, game=self.game)
             if not resulting:
-                print("WARN: UNLEASH THE LIONS: no units created during split")
+                logger.warning("WARN: UNLEASH THE LIONS: no units created during split")
             if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
             self._used_stratagems_this_phase.add(name_u)
             try:
                 count = len(resulting) if resulting is not None else 0
                 root_name = getattr(root, "name", "Unit") if root is not None else "Unit"
-                print(f"INFO: UNLEASH THE LIONS: {root_name} split into {max(1, count)} unit(s).")
+                logger.info(f"INFO: UNLEASH THE LIONS: {root_name} split into {max(1, count)} unit(s).")
             except Exception:
                 pass
             return True
@@ -8137,7 +8137,7 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or r.get("target_units") or [])
                         break
             if unit is None:
-                print("ERROR: DEFIANT TO THE LAST: missing target unit context")
+                logger.error("ERROR: DEFIANT TO THE LAST: missing target unit context")
                 return False
             if self._gilded_champion_detachment_manager() is None:
                 return False
@@ -8151,28 +8151,28 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: DEFIANT TO THE LAST: wrong phase")
+                logger.error("ERROR: DEFIANT TO THE LAST: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: DEFIANT TO THE LAST: not opponent's Fight phase")
+                logger.error("ERROR: DEFIANT TO THE LAST: not opponent's Fight phase")
                 return False
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: DEFIANT TO THE LAST: target was not selected by attacker")
+                        logger.error("ERROR: DEFIANT TO THE LAST: target was not selected by attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
-                    print("ERROR: DEFIANT TO THE LAST: attacker is not enemy")
+                    logger.error("ERROR: DEFIANT TO THE LAST: attacker is not enemy")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: DEFIANT TO THE LAST: target cannot be selected")
+                    logger.error("ERROR: DEFIANT TO THE LAST: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -8200,13 +8200,13 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DEFIANT TO THE LAST: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            logger.info(f"INFO: DEFIANT TO THE LAST: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
         # Adeptus Custodes (Lions of the Emperor): MANOEUVRE AND FIRE
         if name_u == "MANOEUVRE AND FIRE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: MANOEUVRE AND FIRE: no target unit provided")
+                logger.error("ERROR: MANOEUVRE AND FIRE: no target unit provided")
                 return False
             if self._gilded_champion_detachment_manager() is None:
                 return False
@@ -8220,15 +8220,15 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: MANOEUVRE AND FIRE: wrong phase")
+                logger.error("ERROR: MANOEUVRE AND FIRE: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: MANOEUVRE AND FIRE: not your turn")
+                logger.error("ERROR: MANOEUVRE AND FIRE: not your turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: MANOEUVRE AND FIRE: target cannot be selected")
+                    logger.error("ERROR: MANOEUVRE AND FIRE: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -8257,7 +8257,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: MANOEUVRE AND FIRE: {getattr(root, 'name', 'Unit')} can shoot after falling back this turn.")
+            logger.info(f"INFO: MANOEUVRE AND FIRE: {getattr(root, 'name', 'Unit')} can shoot after falling back this turn.")
             return True
         # Adeptus Custodes (Lions of the Emperor): PEERLESS WARRIOR
         if name_u == "PEERLESS WARRIOR":
@@ -8271,7 +8271,7 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or r.get("target_units") or [])
                         break
             if unit is None:
-                print("ERROR: PEERLESS WARRIOR: missing target unit context")
+                logger.error("ERROR: PEERLESS WARRIOR: missing target unit context")
                 return False
             if self._gilded_champion_detachment_manager() is None:
                 return False
@@ -8285,22 +8285,22 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: PEERLESS WARRIOR: wrong phase")
+                logger.error("ERROR: PEERLESS WARRIOR: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: PEERLESS WARRIOR: not your Fight phase")
+                logger.error("ERROR: PEERLESS WARRIOR: not your Fight phase")
                 return False
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: PEERLESS WARRIOR: target was not selected to fight")
+                        logger.error("ERROR: PEERLESS WARRIOR: target was not selected to fight")
                         return False
                 except Exception:
                     raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: PEERLESS WARRIOR: target cannot be selected")
+                    logger.error("ERROR: PEERLESS WARRIOR: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -8328,7 +8328,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: PEERLESS WARRIOR: {getattr(root, 'name', 'Unit')} gains +1 Attacks on melee weapons until end of phase.")
+            logger.info(f"INFO: PEERLESS WARRIOR: {getattr(root, 'name', 'Unit')} gains +1 Attacks on melee weapons until end of phase.")
             return True
         # Adeptus Custodes (Lions of the Emperor): SWIFT AS THE EAGLE
         if name_u == "SWIFT AS THE EAGLE":
@@ -8348,7 +8348,7 @@ class StratagemManager(
                                 unit = candidates[0]
                             break
             if unit is None:
-                print("ERROR: SWIFT AS THE EAGLE: no target unit provided")
+                logger.error("ERROR: SWIFT AS THE EAGLE: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -8360,28 +8360,28 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: SWIFT AS THE EAGLE: wrong phase")
+                logger.error("ERROR: SWIFT AS THE EAGLE: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: SWIFT AS THE EAGLE: not opponent's Shooting phase")
+                logger.error("ERROR: SWIFT AS THE EAGLE: not opponent's Shooting phase")
                 return False
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: SWIFT AS THE EAGLE: target was not selected by the attacker")
+                        logger.error("ERROR: SWIFT AS THE EAGLE: target was not selected by the attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: SWIFT AS THE EAGLE: target unit is not yours")
+                    logger.error("ERROR: SWIFT AS THE EAGLE: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: SWIFT AS THE EAGLE: target cannot be selected")
+                    logger.error("ERROR: SWIFT AS THE EAGLE: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -8408,13 +8408,13 @@ class StratagemManager(
             if enemy_unit is not None:
                 try:
                     if enemy_unit.get_parent_army().player is self.player:
-                        print("ERROR: SWIFT AS THE EAGLE: attacker is not enemy")
+                        logger.error("ERROR: SWIFT AS THE EAGLE: attacker is not enemy")
                         return False
                 except Exception:
                     raise
             game_map = getattr(self.game, "map", None)
             if game_map is None:
-                print("ERROR: SWIFT AS THE EAGLE: no map context")
+                logger.error("ERROR: SWIFT AS THE EAGLE: no map context")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -8457,16 +8457,16 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: SWIFT AS THE EAGLE: {getattr(root, 'name', 'Unit')} can move {int(move_max)}\".")
+            logger.info(f"INFO: SWIFT AS THE EAGLE: {getattr(root, 'name', 'Unit')} can move {int(move_max)}\".")
             return True
         # Core: INSANE BRAVERY (auto-pass a Battle-shock test about to be taken; once per battle)
         if s.name.upper() == "INSANE BRAVERY":
             if self._used_once_per_battle.get("INSANE BRAVERY", False):
-                print("WARN: INSANE BRAVERY can only be used once per battle")
+                logger.warning("WARN: INSANE BRAVERY can only be used once per battle")
                 return False
             target = kwargs.get("unit")
             if not target:
-                print("ERROR: INSANE BRAVERY: no target unit provided")
+                logger.error("ERROR: INSANE BRAVERY: no target unit provided")
                 return False
             # Spend CP
             eff_cost = s.cp_cost
@@ -8494,7 +8494,7 @@ class StratagemManager(
                 raise
             self._used_once_per_battle["INSANE BRAVERY"] = True
             try:
-                print(f"INFO: INSANE BRAVERY used on {getattr(target, 'name', 'Unit')}: next Battle-shock test auto-passes (once per battle)")
+                logger.info(f"INFO: INSANE BRAVERY used on {getattr(target, 'name', 'Unit')}: next Battle-shock test auto-passes (once per battle)")
             except Exception:
                 raise
             if kwargs.get('dequeue') is True:
@@ -8516,10 +8516,10 @@ class StratagemManager(
                             target_unit = cands[0]
                         break
             if target_unit is None:
-                print("ERROR: COUNTER-OFFENSIVE: no target unit provided")
+                logger.error("ERROR: COUNTER-OFFENSIVE: no target unit provided")
                 return False
             if (self._current_phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: COUNTER-OFFENSIVE: not in Fight phase")
+                logger.error("ERROR: COUNTER-OFFENSIVE: not in Fight phase")
                 return False
             fight_mgr = getattr(self.game, "fight_phase_manager", None)
             try:
@@ -8529,35 +8529,35 @@ class StratagemManager(
                 raise
             try:
                 if target_unit.get_parent_army().player is not self.player:
-                    print("ERROR: COUNTER-OFFENSIVE: target unit is not yours")
+                    logger.error("ERROR: COUNTER-OFFENSIVE: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if fight_mgr and hasattr(fight_mgr, "fought_units") and target_unit in fight_mgr.fought_units:
-                    print("ERROR: COUNTER-OFFENSIVE: target unit already fought this phase")
+                    logger.error("ERROR: COUNTER-OFFENSIVE: target unit already fought this phase")
                     return False
             except Exception:
                 raise
             try:
                 if getattr(target_unit, "round_state", None) and getattr(target_unit.round_state, "fought_this_phase", False):
-                    print("ERROR: COUNTER-OFFENSIVE: target unit already fought this phase")
+                    logger.error("ERROR: COUNTER-OFFENSIVE: target unit already fought this phase")
                     return False
             except Exception:
                 raise
             try:
                 if hasattr(target_unit, "is_eligible_to_fight") and callable(target_unit.is_eligible_to_fight):
                     if not target_unit.is_eligible_to_fight(self.game.map):
-                        print("ERROR: COUNTER-OFFENSIVE: target unit is not eligible to fight")
+                        logger.error("ERROR: COUNTER-OFFENSIVE: target unit is not eligible to fight")
                         return False
             except Exception:
                 raise
             if not fight_mgr or not hasattr(fight_mgr, "force_next_unit"):
-                print("ERROR: WARNING: COUNTER-OFFENSIVE: fight phase manager not available")
+                logger.warning("ERROR: WARNING: COUNTER-OFFENSIVE: fight phase manager not available")
                 return False
             try:
                 if not fight_mgr.force_next_unit(target_unit, self.player):
-                    print("ERROR: COUNTER-OFFENSIVE: could not force unit to fight next")
+                    logger.error("ERROR: COUNTER-OFFENSIVE: could not force unit to fight next")
                     return False
             except Exception:
                 raise
@@ -8567,7 +8567,7 @@ class StratagemManager(
                 if hasattr(self.player, "apply_stratagem_cp_cost"):
                     apply_info = dict(self.player.apply_stratagem_cp_cost(s, target_unit=target_unit) or {})
                     if bool(apply_info.get("denied", False)):
-                        print(f"ERROR: COUNTER-OFFENSIVE: {str(apply_info.get('reason', '') or 'denied')}")
+                        logger.error(f"ERROR: COUNTER-OFFENSIVE: {str(apply_info.get('reason', '') or 'denied')}")
                         try:
                             fight_mgr._forced_next_unit = None
                             fight_mgr._forced_next_player = None
@@ -8614,12 +8614,12 @@ class StratagemManager(
                             target_unit = cands[0]
                         break
             if not target_unit:
-                print("ERROR: SMOKESCREEN: missing target unit")
+                logger.error("ERROR: SMOKESCREEN: missing target unit")
                 return False
             # Target must be SMOKE
             try:
                 if not (hasattr(target_unit, "has_keyword") and target_unit.has_keyword("SMOKE")):
-                    print("ERROR: SMOKESCREEN: target is not a SMOKE unit")
+                    logger.error("ERROR: SMOKESCREEN: target is not a SMOKE unit")
                     return False
             except Exception:
                 raise
@@ -8645,7 +8645,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: SMOKESCREEN: {getattr(target_unit, 'name', 'Unit')} gains Benefit of Cover + Stealth until end of phase.")
+            logger.info(f"INFO: SMOKESCREEN: {getattr(target_unit, 'name', 'Unit')} gains Benefit of Cover + Stealth until end of phase.")
             return True
 
         # Armour of Contempt / The Foe Foreseen: worsen AP by 1 vs a selected ADEPTUS ASTARTES unit.
@@ -8661,27 +8661,27 @@ class StratagemManager(
                         attacker_unit = attacker_unit or r.get("attacking_unit")
                         break
             if target_unit is None or attacker_unit is None:
-                print(f"ERROR: {s.name}: missing target context")
+                logger.error(f"ERROR: {s.name}: missing target context")
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() not in ("shooting phase", "fight phase"):
-                print(f"ERROR: {s.name}: wrong phase")
+                logger.error(f"ERROR: {s.name}: wrong phase")
                 return False
             try:
                 if attacker_unit.get_parent_army().player is self.player:
-                    print(f"INFO: {s.name}: must be used in opponent's phase")
+                    logger.info(f"INFO: {s.name}: must be used in opponent's phase")
                     return False
             except Exception:
                 raise
             try:
                 if target_unit.get_parent_army().player is not self.player:
-                    print(f"ERROR: {s.name}: target unit is not yours")
+                    logger.error(f"ERROR: {s.name}: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if not target_unit.has_any_keyword("ADEPTUS ASTARTES"):
-                    print(f"ERROR: {s.name}: target is not ADEPTUS ASTARTES")
+                    logger.error(f"ERROR: {s.name}: target is not ADEPTUS ASTARTES")
                     return False
             except Exception:
                 raise
@@ -8701,7 +8701,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: {s.name}: {getattr(target_unit, 'name', 'Unit')} worsens AP by 1 vs {getattr(attacker_unit, 'name', 'attacker')}.")
+            logger.info(f"INFO: {s.name}: {getattr(target_unit, 'name', 'Unit')} worsens AP by 1 vs {getattr(attacker_unit, 'name', 'attacker')}.")
             return True
         # Special-case: FIRE OVERWATCH full resolution
         if s.name.upper() in ("FIRE OVERWATCH", "OVERWATCH"):
@@ -8714,7 +8714,7 @@ class StratagemManager(
                             enemy_unit = r.get('enemy_unit')
                             break
             if not enemy_unit:
-                print("ERROR: Overwatch: no enemy unit context")
+                logger.error("ERROR: Overwatch: no enemy unit context")
                 return False
             # Choose shooter unit
             shooter = kwargs.get("shooter_unit")
@@ -8744,11 +8744,11 @@ class StratagemManager(
                 if candidates:
                     shooter = max(candidates, key=lambda u: sum(1 for m in u.models for w in getattr(m, 'wargear', []) if getattr(w, 'is_ranged', lambda: False)()))
             if not shooter:
-                print("ERROR: Overwatch: no eligible shooter in 24\"")
+                logger.error("ERROR: Overwatch: no eligible shooter in 24\"")
                 return False
             # Even if a shooter was explicitly provided, enforce battle-shock restriction.
             if _unit_cannot_be_target_of_stratagem(shooter):
-                print("ERROR: Overwatch: cannot target a Battle-shocked unit")
+                logger.error("ERROR: Overwatch: cannot target a Battle-shocked unit")
                 return False
             eff_cost = s.cp_cost
             apply_info = {}
@@ -8759,11 +8759,11 @@ class StratagemManager(
             except Exception:
                 raise
             if apply_info.get("denied"):
-                print(f"ERROR: Overwatch: {apply_info.get('reason', 'not allowed')}")
+                logger.error(f"ERROR: Overwatch: {apply_info.get('reason', 'not allowed')}")
                 return False
             traitor_overwatch = bool(apply_info.get("traitor_enforcer_overwatch_use", False))
             if self._used_this_turn.get("OVERWATCH", False) and not traitor_overwatch:
-                print("ERROR: Overwatch already used this turn")
+                logger.error("ERROR: Overwatch already used this turn")
                 return False
             if int(getattr(self.player, "command_points", 0) or 0) < int(eff_cost or 0):
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
@@ -8792,7 +8792,7 @@ class StratagemManager(
             for profile, models in profile_to_models.items():
                 declarations.append({'weapon_profile': profile, 'target_unit': enemy_unit, 'models': models})
             if not declarations:
-                print("ERROR: Overwatch: no ranged weapons eligible")
+                logger.error("ERROR: Overwatch: no ranged weapons eligible")
                 return False
             # Apply Overwatch hit restriction: only unmodified 6 hits
             ok = False
@@ -8809,7 +8809,7 @@ class StratagemManager(
             try:
                 setattr(shooter, '_overwatch_sixes_only', True)
                 setattr(shooter, '_overwatch_hit_threshold', int(overwatch_threshold))
-                print(f"INFO: Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
+                logger.info(f"INFO: Overwatch: {shooter.name} firing at {enemy_unit.name} ({len(declarations)} weapons)")
                 ok = shooter.execute_shooting_declarations(declarations, self.game.map, out_of_phase=out_of_phase)
             finally:
                 try:
@@ -8831,7 +8831,7 @@ class StratagemManager(
                     self._dequeue_reaction_by_name(s.name)
                 # Spend CP and return through normal use path (so CP is deducted consistently)
                 if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
-                    print("ERROR: Overwatch succeeded but CP spend failed; adjusting CP manually")
+                    logger.error("ERROR: Overwatch succeeded but CP spend failed; adjusting CP manually")
                 try:
                     self._used_stratagems_this_phase.add((s.name or "").strip().upper())
                 except Exception:
@@ -8857,7 +8857,7 @@ class StratagemManager(
                         pass
                 return True
             else:
-                print("ERROR: Overwatch: shooting failed or invalid")
+                logger.error("ERROR: Overwatch: shooting failed or invalid")
                 return False
 
         # Special-case: COMMAND RE-ROLL
@@ -8878,7 +8878,7 @@ class StratagemManager(
                         value = value or r.get('value')
                         break
             if not callable(reroll_cb):
-                print("ERROR: Command Re-roll: no reroll callback available")
+                logger.error("ERROR: Command Re-roll: no reroll callback available")
                 return False
             # Spend CP first per rules, then perform the reroll
             eff_cost = s.cp_cost
@@ -8895,16 +8895,16 @@ class StratagemManager(
                 try:
                     name = getattr(unit, 'name', 'Unit') if unit else 'Unit'
                     if roll_type == 'advance':
-                        print(f"INFO: Command Re-roll: {name} new advance roll -> {result}")
+                        logger.info(f"INFO: Command Re-roll: {name} new advance roll -> {result}")
                     elif roll_type == 'charge':
                         total = result[0] if isinstance(result, (list, tuple)) else result
-                        print(f"INFO: Command Re-roll: {name} new charge roll -> {total}")
+                        logger.info(f"INFO: Command Re-roll: {name} new charge roll -> {total}")
                     elif roll_type == 'hazardous':
-                        print(f"INFO: Command Re-roll: {name} new hazardous roll -> {result}")
+                        logger.info(f"INFO: Command Re-roll: {name} new hazardous roll -> {result}")
                     elif roll_type in ('hit','wound','save','damage','attacks'):
-                        print(f"INFO: Command Re-roll: {name} new {roll_type} roll -> {result}")
+                        logger.info(f"INFO: Command Re-roll: {name} new {roll_type} roll -> {result}")
                     else:
-                        print(f"INFO: Command Re-roll executed ({roll_type})")
+                        logger.info(f"INFO: Command Re-roll executed ({roll_type})")
                 except Exception:
                     raise
                 # Remove the matching pending reaction if present
@@ -8932,7 +8932,7 @@ class StratagemManager(
                         model = model or (elig[0] if elig else None)
                         break
             if unit is None or model is None:
-                print("ERROR: EPIC CHALLENGE: missing unit/model context")
+                logger.error("ERROR: EPIC CHALLENGE: missing unit/model context")
                 return False
             # Must be a CHARACTER model in your unit
             try:
@@ -8983,7 +8983,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: EPIC CHALLENGE: {getattr(model, 'name', 'Character')} gains [PRECISION] on melee attacks until end of phase.")
+            logger.info(f"INFO: EPIC CHALLENGE: {getattr(model, 'name', 'Character')} gains [PRECISION] on melee attacks until end of phase.")
             return True
 
         # EMPEROR'S CHILDREN: UNBOUND ARROGANCE
@@ -8995,7 +8995,7 @@ class StratagemManager(
                         unit = r.get("unit") or r.get("target_unit")
                         break
             if unit is None:
-                print("ERROR: UNBOUND ARROGANCE: missing target unit context")
+                logger.error("ERROR: UNBOUND ARROGANCE: missing target unit context")
                 return False
             try:
                 army = self.player.get_army()
@@ -9041,12 +9041,12 @@ class StratagemManager(
                 raise
             if new_val is None:
                 try:
-                    print("INFO: UNBOUND ARROGANCE: pledge increased by 1")
+                    logger.info("INFO: UNBOUND ARROGANCE: pledge increased by 1")
                 except Exception:
                     raise
             else:
                 try:
-                    print(f"INFO: UNBOUND ARROGANCE: pledge increased to {new_val}")
+                    logger.info(f"INFO: UNBOUND ARROGANCE: pledge increased to {new_val}")
                 except Exception:
                     raise
             return True
@@ -9065,7 +9065,7 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or r.get("target_units") or [])
                         break
             if unit is None:
-                print("ERROR: DEATHLESS DUTY: missing target unit context")
+                logger.error("ERROR: DEATHLESS DUTY: missing target unit context")
                 return False
             try:
                 army = self.player.get_army()
@@ -9081,24 +9081,24 @@ class StratagemManager(
                 raise
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: DEATHLESS DUTY: wrong phase")
+                logger.error("ERROR: DEATHLESS DUTY: wrong phase")
                 return False
             if candidates:
                 try:
                     if unit not in list(candidates or []):
-                        print("ERROR: DEATHLESS DUTY: target was not selected by attacker")
+                        logger.error("ERROR: DEATHLESS DUTY: target was not selected by attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
-                    print("ERROR: DEATHLESS DUTY: attacker is not enemy")
+                    logger.error("ERROR: DEATHLESS DUTY: attacker is not enemy")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("ERROR: DEATHLESS DUTY: target cannot be selected")
+                    logger.error("ERROR: DEATHLESS DUTY: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -9132,7 +9132,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DEATHLESS DUTY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            logger.info(f"INFO: DEATHLESS DUTY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
 
         # ORKS: ORKS IS NEVER BEATEN
@@ -9149,7 +9149,7 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or r.get("target_units") or [])
                         break
             if unit is None:
-                print("ERROR: ORKS IS NEVER BEATEN: missing target unit context")
+                logger.error("ERROR: ORKS IS NEVER BEATEN: missing target unit context")
                 return False
             if not self._is_war_horde_detachment():
                 return False
@@ -9157,24 +9157,24 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: ORKS IS NEVER BEATEN: wrong phase")
+                logger.error("ERROR: ORKS IS NEVER BEATEN: wrong phase")
                 return False
             if candidates:
                 try:
                     if unit not in list(candidates or []):
-                        print("ERROR: ORKS IS NEVER BEATEN: target was not selected by attacker")
+                        logger.error("ERROR: ORKS IS NEVER BEATEN: target was not selected by attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
-                    print("ERROR: ORKS IS NEVER BEATEN: attacker is not enemy")
+                    logger.error("ERROR: ORKS IS NEVER BEATEN: attacker is not enemy")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("ERROR: ORKS IS NEVER BEATEN: target cannot be selected")
+                    logger.error("ERROR: ORKS IS NEVER BEATEN: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -9223,7 +9223,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: ORKS IS NEVER BEATEN: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            logger.info(f"INFO: ORKS IS NEVER BEATEN: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
 
         # EMPEROR'S CHILDREN: DEATH ECSTASY
@@ -9240,7 +9240,7 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or r.get("target_units") or [])
                         break
             if unit is None:
-                print("ERROR: DEATH ECSTASY: missing target unit context")
+                logger.error("ERROR: DEATH ECSTASY: missing target unit context")
                 return False
             try:
                 army = self.player.get_army()
@@ -9256,24 +9256,24 @@ class StratagemManager(
                 raise
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: DEATH ECSTASY: wrong phase")
+                logger.error("ERROR: DEATH ECSTASY: wrong phase")
                 return False
             if candidates:
                 try:
                     if unit not in list(candidates or []):
-                        print("ERROR: DEATH ECSTASY: target was not selected by attacker")
+                        logger.error("ERROR: DEATH ECSTASY: target was not selected by attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
-                    print("ERROR: DEATH ECSTASY: attacker is not enemy")
+                    logger.error("ERROR: DEATH ECSTASY: attacker is not enemy")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("ERROR: DEATH ECSTASY: target cannot be selected")
+                    logger.error("ERROR: DEATH ECSTASY: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -9307,14 +9307,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DEATH ECSTASY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
+            logger.info(f"INFO: DEATH ECSTASY: {getattr(root, 'name', 'Unit')} will fight on death after attacks resolve this phase.")
             return True
 
         # EMPEROR'S CHILDREN: TERRIFYING SPECTACLE
         if s.name.upper() == "TERRIFYING SPECTACLE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: TERRIFYING SPECTACLE: missing target unit context")
+                logger.error("ERROR: TERRIFYING SPECTACLE: missing target unit context")
                 return False
             try:
                 army = self.player.get_army()
@@ -9330,11 +9330,11 @@ class StratagemManager(
                 raise
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "command phase":
-                print("ERROR: TERRIFYING SPECTACLE: wrong phase")
+                logger.error("ERROR: TERRIFYING SPECTACLE: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("ERROR: TERRIFYING SPECTACLE: target cannot be selected")
+                    logger.error("ERROR: TERRIFYING SPECTACLE: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -9348,7 +9348,7 @@ class StratagemManager(
             if not isinstance(sr_root, dict):
                 sr_root = {}
             if not bool(sr_root.get("ec_last_turn_charged", False)) or not bool(sr_root.get("ec_last_turn_destroyed_enemy_in_fight", False)):
-                print("ERROR: TERRIFYING SPECTACLE: target did not charge and destroy in previous turn")
+                logger.error("ERROR: TERRIFYING SPECTACLE: target did not charge and destroy in previous turn")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -9384,7 +9384,7 @@ class StratagemManager(
                     continue
                 affected.append(enemy)
             if not affected:
-                print("ERROR: TERRIFYING SPECTACLE: no enemy units within 6\"")
+                logger.error("ERROR: TERRIFYING SPECTACLE: no enemy units within 6\"")
                 return False
             for enemy in affected:
                 try:
@@ -9410,7 +9410,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: TERRIFYING SPECTACLE: {len(affected)} enemy unit(s) tested for Battle-shock.")
+            logger.info(f"INFO: TERRIFYING SPECTACLE: {len(affected)} enemy unit(s) tested for Battle-shock.")
             return True
 
         # EMPEROR'S CHILDREN: CUT DOWN THE WEAK
@@ -9425,17 +9425,17 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or [])
                         break
             if enemy is None:
-                print("ERROR: CUT DOWN THE WEAK: no enemy unit context")
+                logger.error("ERROR: CUT DOWN THE WEAK: no enemy unit context")
                 return False
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None and candidates:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: CUT DOWN THE WEAK: no eligible unit selected")
+                logger.error("ERROR: CUT DOWN THE WEAK: no eligible unit selected")
                 return False
             try:
                 if unit.get_parent_army().player is not self.player:
-                    print("ERROR: CUT DOWN THE WEAK: target unit does not belong to player")
+                    logger.error("ERROR: CUT DOWN THE WEAK: target unit does not belong to player")
                     return False
             except Exception:
                 raise
@@ -9453,7 +9453,7 @@ class StratagemManager(
                 raise
             try:
                 if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
-                    print("WARN: CUT DOWN THE WEAK: only WALKER vehicles can be selected")
+                    logger.warning("WARN: CUT DOWN THE WEAK: only WALKER vehicles can be selected")
                     return False
             except Exception:
                 raise
@@ -9464,11 +9464,11 @@ class StratagemManager(
             except Exception:
                 raise
             if dist is None or dist > 6.0:
-                print("ERROR: CUT DOWN THE WEAK: target not within 6\" of enemy")
+                logger.error("ERROR: CUT DOWN THE WEAK: target not within 6\" of enemy")
                 return False
             try:
                 if not unit.can_declare_charge_against(enemy, self.game, out_of_turn=True):
-                    print("ERROR: CUT DOWN THE WEAK: target cannot declare charge against enemy")
+                    logger.error("ERROR: CUT DOWN THE WEAK: target cannot declare charge against enemy")
                     return False
             except Exception:
                 raise
@@ -9492,7 +9492,7 @@ class StratagemManager(
             except Exception:
                 raise
             if not ok:
-                print("ERROR: CUT DOWN THE WEAK: charge failed")
+                logger.error("ERROR: CUT DOWN THE WEAK: charge failed")
             return True
 
         # Special-case: NEW ORDERS (discard one active Secondary and draw a new one)
@@ -9501,10 +9501,10 @@ class StratagemManager(
             # Additional availability: need an active secondary and at least one card to draw
             player_obj = self.player
             if not getattr(player_obj, 'active_secondaries', None):
-                print("ERROR: New Orders: no active Secondary to discard")
+                logger.error("ERROR: New Orders: no active Secondary to discard")
                 return False
             if not player_obj.can_draw_secondary():
-                print("ERROR: New Orders: no Secondary cards left to draw")
+                logger.error("ERROR: New Orders: no Secondary cards left to draw")
                 return False
             # Choose target card (allow UI to pass one)
             target_card = kwargs.get('secondary_card')
@@ -9515,7 +9515,7 @@ class StratagemManager(
                 except Exception:
                     raise
             if target_card is None or target_card not in player_obj.active_secondaries:
-                print("ERROR: New Orders: invalid or missing target Secondary card")
+                logger.error("ERROR: New Orders: invalid or missing target Secondary card")
                 return False
             # Spend CP per stratagem cost
             eff_cost = s.cp_cost
@@ -9533,7 +9533,7 @@ class StratagemManager(
             # Discard chosen card and draw back up to two
             try:
                 name = getattr(target_card, 'name', 'Secondary')
-                print(f"INFO: New Orders: discarding '{name}' and drawing a new Secondary")
+                logger.info(f"INFO: New Orders: discarding '{name}' and drawing a new Secondary")
             except Exception:
                 raise
             player_obj.discard_secondary(target_card, gain_cp=False)
@@ -9560,25 +9560,25 @@ class StratagemManager(
                     except Exception:
                         raise
             if target is None:
-                print("ERROR: Rapid Ingress: no target unit provided")
+                logger.error("ERROR: Rapid Ingress: no target unit provided")
                 return False
             # Validate ownership + reserves status
             try:
                 if target.get_parent_army().player is not self.player:
-                    print("ERROR: Rapid Ingress: target unit does not belong to player")
+                    logger.error("ERROR: Rapid Ingress: target unit does not belong to player")
                     return False
             except Exception:
                 raise
             if not getattr(target, "is_in_reserves", lambda: False)():
-                print("ERROR: Rapid Ingress: target unit is not in reserves")
+                logger.error("ERROR: Rapid Ingress: target unit is not in reserves")
                 return False
             # Cult Ambush restriction: cannot be targeted by Rapid Ingress.
             if bool(getattr(target, "_cult_ambush", False)):
-                print("INFO: Rapid Ingress: target unit is in Cult Ambush")
+                logger.info("INFO: Rapid Ingress: target unit is in Cult Ambush")
                 return False
             # Restriction: cannot arrive in a battle round it would not normally be able to
             if not getattr(target, "can_arrive_from_reserves", lambda _t: False)(getattr(self.game, "turn", 0)):
-                print("ERROR: Rapid Ingress: target unit cannot arrive from reserves this battle round")
+                logger.error("ERROR: Rapid Ingress: target unit cannot arrive from reserves this battle round")
                 return False
             # Determine placement
             position = kwargs.get("position")
@@ -9588,7 +9588,7 @@ class StratagemManager(
                 except Exception:
                     raise
             if not position:
-                print("ERROR: Rapid Ingress: could not find a valid placement position")
+                logger.error("ERROR: Rapid Ingress: could not find a valid placement position")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -9605,7 +9605,7 @@ class StratagemManager(
             except Exception as e:
                 raise
             if not ok:
-                print("ERROR: Rapid Ingress: arrival failed")
+                logger.error("ERROR: Rapid Ingress: arrival failed")
                 return False
             # Add to map unit list if needed
             try:
@@ -9616,8 +9616,8 @@ class StratagemManager(
                 raise
             # Spend CP (after success to avoid consuming CP on placement failure)
             if not self.player.spend_command_points(eff_cost, reason=f"Stratagem: {s.name}", source="stratagem"):
-                print("ERROR: Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
-            print(f"INFO: Rapid Ingress: {target.name} arrived from reserves")
+                logger.error("ERROR: Rapid Ingress succeeded but CP spend failed; adjusting CP manually")
+            logger.info(f"INFO: Rapid Ingress: {target.name} arrived from reserves")
             if kwargs.get('dequeue') is True:
                 self._dequeue_reaction_by_name(s.name)
             try:
@@ -9634,7 +9634,7 @@ class StratagemManager(
                 if cand:
                     target = cand[0]
             if target is None:
-                print("ERROR: GO TO GROUND: no target unit provided")
+                logger.error("ERROR: GO TO GROUND: no target unit provided")
                 return False
             # Spend CP
             eff_cost = s.cp_cost
@@ -9652,7 +9652,7 @@ class StratagemManager(
                     sr = {}
                 sr["go_to_ground_active"] = True
                 target.special_rules = sr
-                print(f"INFO: GO TO GROUND used on {getattr(target, 'name', 'Unit')}: Benefit of Cover + 6++ until end of phase")
+                logger.info(f"INFO: GO TO GROUND used on {getattr(target, 'name', 'Unit')}: Benefit of Cover + 6++ until end of phase")
             except Exception:
                 raise
             if kwargs.get("dequeue") is True:
@@ -9707,10 +9707,10 @@ class StratagemManager(
                         unit = u
                         break
             if unit is None:
-                print("ERROR: GRENADE: no eligible friendly GRENADES unit")
+                logger.error("ERROR: GRENADE: no eligible friendly GRENADES unit")
                 return False
             if not _grenade_unit_eligible(unit):
-                print("ERROR: GRENADE: selected unit is not eligible (already shot/advanced/fell back/engaged or no Grenades)")
+                logger.error("ERROR: GRENADE: selected unit is not eligible (already shot/advanced/fell back/engaged or no Grenades)")
                 return False
             if enemy is None and self.game and getattr(self.game, "map", None):
                 # Best-effort: pick the first eligible enemy within 8" and visible, and not in engagement range of any friendly unit.
@@ -9754,7 +9754,7 @@ class StratagemManager(
                     except Exception:
                         raise
             if enemy is None:
-                print("ERROR: GRENADE: no eligible enemy target found/provided")
+                logger.error("ERROR: GRENADE: no eligible enemy target found/provided")
                 return False
             # Spend CP
             eff_cost = s.cp_cost
@@ -9769,7 +9769,7 @@ class StratagemManager(
             rolls = [dice_module.get_roll("D6") for _ in range(6)]
             mw = sum(1 for r in rolls if int(r) >= 4)
             try:
-                print(f"INFO: GRENADE: rolls={rolls} -> {mw} mortal wounds to {enemy.name}")
+                logger.info(f"INFO: GRENADE: rolls={rolls} -> {mw} mortal wounds to {enemy.name}")
             except Exception:
                 raise
             if mw > 0:
@@ -9791,10 +9791,10 @@ class StratagemManager(
             enemy = kwargs.get("enemy_unit")
             eligible_enemies = kwargs.get("eligible_enemy_units") or []
             if unit is None:
-                print("ERROR: TANK SHOCK: no charging VEHICLE unit provided")
+                logger.error("ERROR: TANK SHOCK: no charging VEHICLE unit provided")
                 return False
             if not bool(getattr(unit, "is_vehicle", False)):
-                print("ERROR: TANK SHOCK: target unit is not a VEHICLE")
+                logger.error("ERROR: TANK SHOCK: target unit is not a VEHICLE")
                 return False
             if enemy is None:
                 enemy = eligible_enemies[0] if eligible_enemies else None
@@ -9809,7 +9809,7 @@ class StratagemManager(
                 except Exception:
                     raise
             if enemy is None:
-                print("ERROR: TANK SHOCK: no enemy unit in Engagement Range")
+                logger.error("ERROR: TANK SHOCK: no enemy unit in Engagement Range")
                 return False
             # Spend CP
             eff_cost = s.cp_cost
@@ -9846,19 +9846,19 @@ class StratagemManager(
                 except Exception:
                     raise
             if chosen_model is None:
-                print("ERROR: TANK SHOCK: no alive VEHICLE model found")
+                logger.error("ERROR: TANK SHOCK: no alive VEHICLE model found")
                 return False
             try:
                 tval = int(getattr(chosen_model, "toughness", getattr(unit, "toughness", 0)) or 0)
             except Exception:
                 raise
             if tval <= 0:
-                print("ERROR: TANK SHOCK: could not determine Toughness for VEHICLE model")
+                logger.error("ERROR: TANK SHOCK: could not determine Toughness for VEHICLE model")
                 return False
             rolls = [dice_module.get_roll("D6") for _ in range(int(tval))]
             mw = min(6, sum(1 for r in rolls if int(r) >= 5))
             try:
-                print(f"INFO: TANK SHOCK: rolls={rolls} (T{tval}) -> {mw} mortal wounds to {enemy.name}")
+                logger.info(f"INFO: TANK SHOCK: rolls={rolls} (T{tval}) -> {mw} mortal wounds to {enemy.name}")
             except Exception:
                 raise
             if mw > 0:
@@ -9886,25 +9886,25 @@ class StratagemManager(
                             candidates = list(r.get("candidates") or [])
                         break
             if enemy is None:
-                print("ERROR: Heroic Intervention: no enemy unit context")
+                logger.error("ERROR: Heroic Intervention: no enemy unit context")
                 return False
 
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None and candidates:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Heroic Intervention: no eligible unit selected")
+                logger.error("ERROR: Heroic Intervention: no eligible unit selected")
                 return False
 
             try:
                 if unit.get_parent_army().player is not self.player:
-                    print("ERROR: Heroic Intervention: target unit does not belong to player")
+                    logger.error("ERROR: Heroic Intervention: target unit does not belong to player")
                     return False
             except Exception:
                 raise
             try:
                 if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
-                    print("WARN: Heroic Intervention: only WALKER vehicles can be selected")
+                    logger.warning("WARN: Heroic Intervention: only WALKER vehicles can be selected")
                     return False
             except Exception:
                 raise
@@ -9915,12 +9915,12 @@ class StratagemManager(
             except Exception:
                 raise
             if dist is None or dist > 6.0:
-                print("ERROR: Heroic Intervention: target not within 6\" of enemy")
+                logger.error("ERROR: Heroic Intervention: target not within 6\" of enemy")
                 return False
 
             try:
                 if not unit.can_declare_charge_against(enemy, self.game, out_of_turn=True):
-                    print("ERROR: Heroic Intervention: target cannot declare charge against enemy")
+                    logger.error("ERROR: Heroic Intervention: target cannot declare charge against enemy")
                     return False
             except Exception:
                 raise
@@ -9946,7 +9946,7 @@ class StratagemManager(
             except Exception:
                 raise
             if not ok:
-                print("ERROR: Heroic Intervention: charge failed")
+                logger.error("ERROR: Heroic Intervention: charge failed")
             return True
 
         # Berzerker Warband: APOPLETIC FRENZY (advance and charge for Khorne Berzerkers)
@@ -9960,7 +9960,7 @@ class StratagemManager(
                             kwargs.setdefault("action", r.get("action"))
                         break
             if unit is None:
-                print("ERROR: Apoplectic Frenzy: no target unit provided")
+                logger.error("ERROR: Apoplectic Frenzy: no target unit provided")
                 return False
             try:
                 army = unit.get_parent_army()
@@ -9972,24 +9972,24 @@ class StratagemManager(
             # Timing: your Movement phase, just after selecting to Advance.
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: Apoplectic Frenzy: wrong phase")
+                logger.error("ERROR: Apoplectic Frenzy: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Apoplectic Frenzy: not your turn")
+                logger.error("ERROR: Apoplectic Frenzy: not your turn")
                 return False
             if str(kwargs.get("action", "") or "").strip().lower() not in ("", "advance"):
-                print("ERROR: Apoplectic Frenzy: invalid trigger")
+                logger.error("ERROR: Apoplectic Frenzy: invalid trigger")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("ERROR: Apoplectic Frenzy: target cannot be selected")
+                    logger.error("ERROR: Apoplectic Frenzy: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not (unit.has_keyword("KHORNE") and unit.has_keyword("BERZERKERS")):
-                    print("ERROR: Apoplectic Frenzy: target is not KHORNE BERZERKERS")
+                    logger.error("ERROR: Apoplectic Frenzy: target is not KHORNE BERZERKERS")
                     return False
             except Exception:
                 raise
@@ -10016,7 +10016,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
+            logger.info(f"INFO: APOPLETIC FRENZY: {getattr(unit, 'name', 'Unit')} can charge after advancing this turn.")
             return True
 
         goretrack_result = self._use_world_eaters_goretrack_stratagem(s, **kwargs)
@@ -10034,7 +10034,7 @@ class StratagemManager(
                             kwargs.setdefault("action", r.get("action"))
                         break
             if unit is None:
-                print("ERROR: RED WRATH: no target unit provided")
+                logger.error("ERROR: RED WRATH: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10051,30 +10051,30 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: RED WRATH: wrong phase")
+                logger.error("ERROR: RED WRATH: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: RED WRATH: not your turn")
+                logger.error("ERROR: RED WRATH: not your turn")
                 return False
             if str(kwargs.get("action", "") or "").strip().lower() not in ("", "advance"):
-                print("ERROR: RED WRATH: invalid trigger")
+                logger.error("ERROR: RED WRATH: invalid trigger")
                 return False
             try:
                 if not bool(getattr(getattr(root, "round_state", None), "advanced_this_round", False)):
-                    print("ERROR: RED WRATH: unit did not Advance")
+                    logger.error("ERROR: RED WRATH: unit did not Advance")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: RED WRATH: target cannot be selected")
+                    logger.error("ERROR: RED WRATH: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not root.has_any_keyword("BLOOD ANGELS"):
-                    print("ERROR: RED WRATH: target is not BLOOD ANGELS")
+                    logger.error("ERROR: RED WRATH: target is not BLOOD ANGELS")
                     return False
             except Exception:
                 raise
@@ -10092,7 +10092,7 @@ class StratagemManager(
                 choice = "both"
                 red_thirst = True
             else:
-                print("ERROR: RED WRATH: missing or invalid choice")
+                logger.error("ERROR: RED WRATH: missing or invalid choice")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -10129,9 +10129,9 @@ class StratagemManager(
             except Exception:
                 raise
             if choice == "both":
-                print(f"INFO: RED WRATH: {getattr(root, 'name', 'Unit')} can shoot and charge after advancing this turn.")
+                logger.info(f"INFO: RED WRATH: {getattr(root, 'name', 'Unit')} can shoot and charge after advancing this turn.")
             else:
-                print(f"INFO: RED WRATH: {getattr(root, 'name', 'Unit')} can {choice} after advancing this turn.")
+                logger.info(f"INFO: RED WRATH: {getattr(root, 'name', 'Unit')} can {choice} after advancing this turn.")
             return True
 
         # Warhost: BLITZING FIREPOWER
@@ -10142,7 +10142,7 @@ class StratagemManager(
                 if cand:
                     unit = cand[0]
             if unit is None:
-                print("ERROR: Blitzing Firepower: no target unit provided")
+                logger.error("ERROR: Blitzing Firepower: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10154,11 +10154,11 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Blitzing Firepower: wrong phase")
+                logger.error("ERROR: Blitzing Firepower: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Blitzing Firepower: not your turn")
+                logger.error("ERROR: Blitzing Firepower: not your turn")
                 return False
             try:
                 if not root.is_alive():
@@ -10177,7 +10177,7 @@ class StratagemManager(
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Blitzing Firepower: target cannot be selected")
+                    logger.error("ERROR: Blitzing Firepower: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -10214,7 +10214,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: BLITZING FIREPOWER: {getattr(root, 'name', 'Unit')} gains Sustained Hits vs targets within 12\".")
+            logger.info(f"INFO: BLITZING FIREPOWER: {getattr(root, 'name', 'Unit')} gains Sustained Hits vs targets within 12\".")
             return True
 
         # Warhost: FEIGNED RETREAT
@@ -10228,7 +10228,7 @@ class StratagemManager(
                             kwargs.setdefault("action", r.get("action"))
                         break
             if unit is None:
-                print("ERROR: Feigned Retreat: no target unit provided")
+                logger.error("ERROR: Feigned Retreat: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10240,18 +10240,18 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: Feigned Retreat: wrong phase")
+                logger.error("ERROR: Feigned Retreat: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Feigned Retreat: not your turn")
+                logger.error("ERROR: Feigned Retreat: not your turn")
                 return False
             if str(kwargs.get("action", "") or "").strip().lower() not in ("", "fall_back"):
-                print("ERROR: Feigned Retreat: invalid trigger")
+                logger.error("ERROR: Feigned Retreat: invalid trigger")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Feigned Retreat: target cannot be selected")
+                    logger.error("ERROR: Feigned Retreat: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -10289,7 +10289,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: FEIGNED RETREAT: {getattr(root, 'name', 'Unit')} can shoot and charge after falling back.")
+            logger.info(f"INFO: FEIGNED RETREAT: {getattr(root, 'name', 'Unit')} can shoot and charge after falling back.")
             return True
 
         # Warhost: FIRE AND FADE
@@ -10301,7 +10301,7 @@ class StratagemManager(
                         unit = r.get("unit") or r.get("target_unit")
                         break
             if unit is None:
-                print("ERROR: Fire and Fade: no target unit provided")
+                logger.error("ERROR: Fire and Fade: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10313,11 +10313,11 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Fire and Fade: wrong phase")
+                logger.error("ERROR: Fire and Fade: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Fire and Fade: not your turn")
+                logger.error("ERROR: Fire and Fade: not your turn")
                 return False
             try:
                 if not root.is_alive():
@@ -10336,7 +10336,7 @@ class StratagemManager(
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Fire and Fade: target cannot be selected")
+                    logger.error("ERROR: Fire and Fade: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -10412,7 +10412,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"ERROR: FIRE AND FADE: {getattr(root, 'name', 'Unit')} can move {move_max}\" and cannot charge or embark this turn.")
+            logger.error(f"ERROR: FIRE AND FADE: {getattr(root, 'name', 'Unit')} can move {move_max}\" and cannot charge or embark this turn.")
             return True
 
         # Warhost: LIGHTNING-FAST REACTIONS
@@ -10424,7 +10424,7 @@ class StratagemManager(
                         unit = r.get("unit") or r.get("target_unit")
                         break
             if unit is None:
-                print("ERROR: Lightning-Fast Reactions: no target unit provided")
+                logger.error("ERROR: Lightning-Fast Reactions: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10437,16 +10437,16 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             pname = str(phase_name or "").strip().lower()
             if pname not in ("shooting phase", "fight phase"):
-                print("ERROR: Lightning-Fast Reactions: wrong phase")
+                logger.error("ERROR: Lightning-Fast Reactions: wrong phase")
                 return False
             if pname == "shooting phase":
                 active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
                 if active_player is self.player:
-                    print("ERROR: Lightning-Fast Reactions: not opponent's Shooting phase")
+                    logger.error("ERROR: Lightning-Fast Reactions: not opponent's Shooting phase")
                     return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Lightning-Fast Reactions: target cannot be selected")
+                    logger.error("ERROR: Lightning-Fast Reactions: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -10480,7 +10480,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: LIGHTNING-FAST REACTIONS: {getattr(root, 'name', 'Unit')} is harder to hit this phase.")
+            logger.info(f"INFO: LIGHTNING-FAST REACTIONS: {getattr(root, 'name', 'Unit')} is harder to hit this phase.")
             return True
 
         # Warhost: SKYBORNE SANCTUARY
@@ -10495,7 +10495,7 @@ class StratagemManager(
                             transport_unit = r.get("transport_unit") or r.get("transport")
                         break
             if unit is None:
-                print("WARN: Skyborne Sanctuary: no target unit provided")
+                logger.warning("WARN: Skyborne Sanctuary: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10507,11 +10507,11 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("WARN: Skyborne Sanctuary: wrong phase")
+                logger.warning("WARN: Skyborne Sanctuary: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("WARN: Skyborne Sanctuary: target cannot be selected")
+                    logger.warning("WARN: Skyborne Sanctuary: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -10542,7 +10542,7 @@ class StratagemManager(
                 if owner and self.game is not None:
                     if owner == str(getattr(getattr(self.game, "get_current_player", lambda: None)(), "id", "") or ""):
                         if int(getattr(self.game, "turn", 0) or 0) == int(turn or 0):
-                            print("WARN: Skyborne Sanctuary: unit cannot embark this turn (Fire and Fade)")
+                            logger.warning("WARN: Skyborne Sanctuary: unit cannot embark this turn (Fire and Fade)")
                             return False
             except Exception:
                 raise
@@ -10575,7 +10575,7 @@ class StratagemManager(
                 except Exception:
                     raise
             if transport_unit is None:
-                print("WARN: Skyborne Sanctuary: no transport provided")
+                logger.warning("WARN: Skyborne Sanctuary: no transport provided")
                 return False
             try:
                 if not transport_unit.is_alive():
@@ -10611,7 +10611,7 @@ class StratagemManager(
                 if game_map is None:
                     raise RuntimeError("Skyborne Sanctuary requires an active game map.")
                 if not transport_unit.add_passenger(root, game_map=game_map):
-                    print("WARN: Skyborne Sanctuary: embark failed")
+                    logger.warning("WARN: Skyborne Sanctuary: embark failed")
                     return False
             except Exception:
                 raise
@@ -10621,7 +10621,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: Skyborne Sanctuary: {getattr(root, 'name', 'Unit')} embarked within {getattr(transport_unit, 'name', 'Transport')}.")
+            logger.info(f"INFO: Skyborne Sanctuary: {getattr(root, 'name', 'Unit')} embarked within {getattr(transport_unit, 'name', 'Transport')}.")
             return True
 
         # Warhost: WEBWAY TUNNEL
@@ -10633,7 +10633,7 @@ class StratagemManager(
                         unit = r.get("unit") or r.get("target_unit")
                         break
             if unit is None:
-                print("WARN: Webway Tunnel: no target unit provided")
+                logger.warning("WARN: Webway Tunnel: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -10645,15 +10645,15 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: Webway Tunnel: wrong phase")
+                logger.error("ERROR: Webway Tunnel: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: Webway Tunnel: not opponent's Fight phase")
+                logger.error("ERROR: Webway Tunnel: not opponent's Fight phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Webway Tunnel: target cannot be selected")
+                    logger.error("ERROR: Webway Tunnel: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -10745,7 +10745,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: Webway Tunnel: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.")
+            logger.info(f"INFO: Webway Tunnel: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.")
             return True
 
         # Berzerker Warband: BERZERKER'S WRATH (fixed 8" Blood Surge for Khorne Berzerkers)
@@ -10759,7 +10759,7 @@ class StratagemManager(
                         attacker_unit = attacker_unit or r.get("attacker_unit")
                         break
             if unit is None or attacker_unit is None:
-                print("ERROR: Berzerker's Wrath: missing target context")
+                logger.error("ERROR: Berzerker's Wrath: missing target context")
                 return False
             try:
                 army = unit.get_parent_army()
@@ -10770,27 +10770,27 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Berzerker's Wrath: wrong phase")
+                logger.error("ERROR: Berzerker's Wrath: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: Berzerker's Wrath: not opponent's turn")
+                logger.error("ERROR: Berzerker's Wrath: not opponent's turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("ERROR: Berzerker's Wrath: target cannot be selected")
+                    logger.error("ERROR: Berzerker's Wrath: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not (unit.has_keyword("KHORNE") and unit.has_keyword("BERZERKERS")):
-                    print("ERROR: Berzerker's Wrath: target is not KHORNE BERZERKERS")
+                    logger.error("ERROR: Berzerker's Wrath: target is not KHORNE BERZERKERS")
                     return False
             except Exception:
                 raise
             try:
                 if not unit.can_blood_surge(game=self.game, game_map=getattr(self.game, "map", None)):
-                    print("ERROR: Berzerker's Wrath: target cannot Blood Surge")
+                    logger.error("ERROR: Berzerker's Wrath: target cannot Blood Surge")
                     return False
             except Exception:
                 raise
@@ -10817,7 +10817,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
+            logger.info(f"INFO: BERZERKER'S WRATH: {getattr(unit, 'name', 'Unit')} will Blood Surge up to 8\".")
             return True
 
         # Khorne Daemonkin: DAEMONIC FURY (grant [LANCE], and [TWIN-LINKED] if Daemonic Rage active)
@@ -10856,7 +10856,7 @@ class StratagemManager(
                         target_unit = root
                         break
             if target_unit is None:
-                print("ERROR: Daemonic Fury: no target unit provided")
+                logger.error("ERROR: Daemonic Fury: no target unit provided")
                 return False
             try:
                 target_root = target_unit.get_attached_unit_root()
@@ -10864,7 +10864,7 @@ class StratagemManager(
                 raise
             try:
                 if target_root.get_parent_army().player is not self.player:
-                    print("ERROR: Daemonic Fury: target unit is not yours")
+                    logger.error("ERROR: Daemonic Fury: target unit is not yours")
                     return False
             except Exception:
                 raise
@@ -10895,7 +10895,7 @@ class StratagemManager(
                         we_unit = root
                         break
             if we_unit is None:
-                print("ERROR: Daemonic Fury: no WORLD EATERS unit within 6\"")
+                logger.error("ERROR: Daemonic Fury: no WORLD EATERS unit within 6\"")
                 return False
             try:
                 we_root = we_unit.get_attached_unit_root()
@@ -10903,7 +10903,7 @@ class StratagemManager(
                 raise
             try:
                 if we_root.get_parent_army().player is not self.player:
-                    print("ERROR: Daemonic Fury: support unit is not yours")
+                    logger.error("ERROR: Daemonic Fury: support unit is not yours")
                     return False
             except Exception:
                 raise
@@ -10916,39 +10916,39 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: Daemonic Fury: wrong phase")
+                logger.error("ERROR: Daemonic Fury: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Daemonic Fury: not your turn")
+                logger.error("ERROR: Daemonic Fury: not your turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(target_root):
-                    print("ERROR: Daemonic Fury: target cannot be selected")
+                    logger.error("ERROR: Daemonic Fury: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_blood_legions(target_root):
-                    print("ERROR: Daemonic Fury: target is not BLOOD LEGIONS")
+                    logger.error("ERROR: Daemonic Fury: target is not BLOOD LEGIONS")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_world_eaters(we_root):
-                    print("ERROR: Daemonic Fury: support unit is not WORLD EATERS")
+                    logger.error("ERROR: Daemonic Fury: support unit is not WORLD EATERS")
                     return False
             except Exception:
                 raise
             try:
                 if not getattr(target_root, "deployed", False) or getattr(target_root, "is_in_reserves", lambda: False)():
-                    print("ERROR: Daemonic Fury: target is not on battlefield")
+                    logger.error("ERROR: Daemonic Fury: target is not on battlefield")
                     return False
             except Exception:
                 raise
             try:
                 if not getattr(we_root, "deployed", False) or getattr(we_root, "is_in_reserves", lambda: False)():
-                    print("ERROR: Daemonic Fury: support unit is not on battlefield")
+                    logger.error("ERROR: Daemonic Fury: support unit is not on battlefield")
                     return False
             except Exception:
                 raise
@@ -10957,7 +10957,7 @@ class StratagemManager(
             except Exception:
                 raise
             if dist is None or dist > 6.0:
-                print("ERROR: Daemonic Fury: units are not within 6\"")
+                logger.error("ERROR: Daemonic Fury: units are not within 6\"")
                 return False
 
             eff_cost = s.cp_cost
@@ -10988,7 +10988,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DAEMONIC FURY: {getattr(we_root, 'name', 'Unit')} gains [LANCE] (and [TWIN-LINKED] if active).")
+            logger.info(f"INFO: DAEMONIC FURY: {getattr(we_root, 'name', 'Unit')} gains [LANCE] (and [TWIN-LINKED] if active).")
             return True
 
         # Khorne Daemonkin: BLESSING OF BURNING BLOOD (grant invulnerable save to targeted WORLD EATERS unit)
@@ -11005,7 +11005,7 @@ class StratagemManager(
                         we_unit = we_unit or r.get("world_eaters_unit")
                         break
             if target_unit is None or we_unit is None:
-                print("ERROR: Blessing of Burning Blood: missing target context")
+                logger.error("ERROR: Blessing of Burning Blood: missing target context")
                 return False
             try:
                 target_root = target_unit.get_attached_unit_root()
@@ -11017,13 +11017,13 @@ class StratagemManager(
                 raise
             try:
                 if target_root.get_parent_army().player is not self.player:
-                    print("ERROR: Blessing of Burning Blood: target unit is not yours")
+                    logger.error("ERROR: Blessing of Burning Blood: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if we_root.get_parent_army().player is not self.player:
-                    print("ERROR: Blessing of Burning Blood: affected unit is not yours")
+                    logger.error("ERROR: Blessing of Burning Blood: affected unit is not yours")
                     return False
             except Exception:
                 raise
@@ -11036,27 +11036,27 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() not in ("shooting phase", "fight phase"):
-                print("ERROR: Blessing of Burning Blood: wrong phase")
+                logger.error("ERROR: Blessing of Burning Blood: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: Blessing of Burning Blood: not opponent's turn")
+                logger.error("ERROR: Blessing of Burning Blood: not opponent's turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(target_root):
-                    print("ERROR: Blessing of Burning Blood: target cannot be selected")
+                    logger.error("ERROR: Blessing of Burning Blood: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_blood_legions(target_root):
-                    print("ERROR: Blessing of Burning Blood: target is not BLOOD LEGIONS")
+                    logger.error("ERROR: Blessing of Burning Blood: target is not BLOOD LEGIONS")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_world_eaters(we_root):
-                    print("ERROR: Blessing of Burning Blood: affected unit is not WORLD EATERS")
+                    logger.error("ERROR: Blessing of Burning Blood: affected unit is not WORLD EATERS")
                     return False
             except Exception:
                 raise
@@ -11065,7 +11065,7 @@ class StratagemManager(
             except Exception:
                 raise
             if dist is None or dist > 6.0:
-                print("ERROR: Blessing of Burning Blood: units are not within 6\"")
+                logger.error("ERROR: Blessing of Burning Blood: units are not within 6\"")
                 return False
 
             eff_cost = s.cp_cost
@@ -11100,7 +11100,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: BLESSING OF BURNING BLOOD: {getattr(we_root, 'name', 'Unit')} gains {inv_value}++.")
+            logger.info(f"INFO: BLESSING OF BURNING BLOOD: {getattr(we_root, 'name', 'Unit')} gains {inv_value}++.")
             return True
 
         # Khorne Daemonkin: DAEMONTIDE (return destroyed BLOOD LEGIONS models)
@@ -11117,7 +11117,7 @@ class StratagemManager(
                         bl_unit = bl_unit or r.get("blood_legions_unit")
                         break
             if we_unit is None:
-                print("ERROR: Daemontide: no WORLD EATERS unit provided")
+                logger.error("ERROR: Daemontide: no WORLD EATERS unit provided")
                 return False
             try:
                 we_root = we_unit.get_attached_unit_root()
@@ -11125,7 +11125,7 @@ class StratagemManager(
                 raise
             try:
                 if we_root.get_parent_army().player is not self.player:
-                    print("ERROR: Daemontide: target unit is not yours")
+                    logger.error("ERROR: Daemontide: target unit is not yours")
                     return False
             except Exception:
                 raise
@@ -11156,7 +11156,7 @@ class StratagemManager(
                         bl_unit = root
                         break
             if bl_unit is None:
-                print("ERROR: Daemontide: no BLOOD LEGIONS unit within 6\"")
+                logger.error("ERROR: Daemontide: no BLOOD LEGIONS unit within 6\"")
                 return False
             try:
                 bl_root = bl_unit.get_attached_unit_root()
@@ -11164,7 +11164,7 @@ class StratagemManager(
                 raise
             try:
                 if bl_root.get_parent_army().player is not self.player:
-                    print("ERROR: Daemontide: support unit is not yours")
+                    logger.error("ERROR: Daemontide: support unit is not yours")
                     return False
             except Exception:
                 raise
@@ -11177,27 +11177,27 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "command phase":
-                print("ERROR: Daemontide: wrong phase")
+                logger.error("ERROR: Daemontide: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Daemontide: not your turn")
+                logger.error("ERROR: Daemontide: not your turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(we_root):
-                    print("ERROR: Daemontide: target cannot be selected")
+                    logger.error("ERROR: Daemontide: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_world_eaters(we_root):
-                    print("ERROR: Daemontide: target is not WORLD EATERS")
+                    logger.error("ERROR: Daemontide: target is not WORLD EATERS")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_blood_legions(bl_root):
-                    print("ERROR: Daemontide: support unit is not BLOOD LEGIONS")
+                    logger.error("ERROR: Daemontide: support unit is not BLOOD LEGIONS")
                     return False
             except Exception:
                 raise
@@ -11206,7 +11206,7 @@ class StratagemManager(
             except Exception:
                 raise
             if dist is None or dist > 6.0:
-                print("ERROR: Daemontide: units are not within 6\"")
+                logger.error("ERROR: Daemontide: units are not within 6\"")
                 return False
 
             amount = 0
@@ -11218,7 +11218,7 @@ class StratagemManager(
                 elif bl_root.has_keyword("INFANTRY"):
                     amount = int(dice_module.get_roll("D6") or 0)
                 else:
-                    print("ERROR: Daemontide: unsupported BLOOD LEGIONS unit type")
+                    logger.error("ERROR: Daemontide: unsupported BLOOD LEGIONS unit type")
                     return False
             except Exception as exc:
                 raise
@@ -11254,7 +11254,7 @@ class StratagemManager(
                 )
             except Exception:
                 raise
-            print(f"INFO: DAEMONTIDE: {getattr(bl_root, 'name', 'Unit')} returns {returned} model(s).")
+            logger.info(f"INFO: DAEMONTIDE: {getattr(bl_root, 'name', 'Unit')} returns {returned} model(s).")
 
             if kwargs.get("dequeue") is True:
                 self._dequeue_reaction_by_name(s.name)
@@ -11275,7 +11275,7 @@ class StratagemManager(
                         target_unit = target_unit or r.get("target_unit")
                         break
             if unit is None or target_unit is None:
-                print("WARN:O A Worthy Skull: missing target context")
+                logger.warning("WARN:O A Worthy Skull: missing target context")
                 return False
             try:
                 unit = unit.get_attached_unit_root()
@@ -11290,17 +11290,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("WARN:O A Worthy Skull: wrong phase")
+                logger.warning("WARN:O A Worthy Skull: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("WARN:O A Worthy Skull: target cannot be selected")
+                    logger.warning("WARN:O A Worthy Skull: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not we_mgr.unit_is_blood_tithe_eligible(unit):
-                    print("WARN:O A Worthy Skull: unit not eligible for Blood Tithe")
+                    logger.warning("WARN:O A Worthy Skull: unit not eligible for Blood Tithe")
                     return False
             except Exception:
                 raise
@@ -11308,7 +11308,7 @@ class StratagemManager(
                 is_char = bool(target_unit.has_keyword("Character"))
                 is_mon = bool(target_unit.has_keyword("Monster"))
                 if not (is_char or is_mon):
-                    print("WARN:O A Worthy Skull: target was not CHARACTER or MONSTER")
+                    logger.warning("WARN:O A Worthy Skull: target was not CHARACTER or MONSTER")
                     return False
             except Exception:
                 raise
@@ -11365,14 +11365,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: A WORTHY SKULL: gained {int(roll)} Blood Tithe point(s).")
+            logger.info(f"INFO: A WORTHY SKULL: gained {int(roll)} Blood Tithe point(s).")
             return True
 
         # Berzerker Warband: HACK AND SLASH (+1 AP on melee weapons after charging)
         if s.name.upper() == "HACK AND SLASH":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("WARN:O Hack and Slash: no target unit provided")
+                logger.warning("WARN:O Hack and Slash: no target unit provided")
                 return False
             try:
                 army = unit.get_parent_army()
@@ -11383,17 +11383,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("WARN:O Hack and Slash: wrong phase")
+                logger.warning("WARN:O Hack and Slash: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("WARN:O Hack and Slash: target cannot be selected")
+                    logger.warning("WARN:O Hack and Slash: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
-                    print("WARN:O Hack and Slash: target is not WORLD EATERS")
+                    logger.warning("WARN:O Hack and Slash: target is not WORLD EATERS")
                     return False
             except Exception:
                 raise
@@ -11402,11 +11402,11 @@ class StratagemManager(
             except Exception:
                 raise
             if not charged:
-                print("WARN:O Hack and Slash: target did not charge this turn")
+                logger.warning("WARN:O Hack and Slash: target did not charge this turn")
                 return False
             try:
                 if getattr(getattr(unit, "round_state", None), "fought_this_phase", False):
-                    print("WARN:O Hack and Slash: target already fought this phase")
+                    logger.warning("WARN:O Hack and Slash: target already fought this phase")
                     return False
             except Exception:
                 raise
@@ -11434,14 +11434,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
+            logger.info(f"INFO: HACK AND SLASH: {getattr(unit, 'name', 'Unit')} gains +1 AP on melee weapons this phase.")
             return True
 
         # War Horde: ERE WE GO (+2 Advance/Charge rolls)
         if s.name.upper() == "ERE WE GO":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: ERE WE GO: no target unit provided")
+                logger.error("ERROR: ERE WE GO: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -11455,21 +11455,21 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: ERE WE GO: wrong phase")
+                logger.error("ERROR: ERE WE GO: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: ERE WE GO: not your turn")
+                logger.error("ERROR: ERE WE GO: not your turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: ERE WE GO: target cannot be selected")
+                    logger.error("ERROR: ERE WE GO: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not root.has_any_keyword("INFANTRY"):
-                    print("ERROR: ERE WE GO: target is not ORKS INFANTRY")
+                    logger.error("ERROR: ERE WE GO: target is not ORKS INFANTRY")
                     return False
             except Exception:
                 raise
@@ -11513,14 +11513,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: ERE WE GO: {getattr(root, 'name', 'Unit')} gains +2 to Advance and Charge rolls this turn.")
+            logger.info(f"INFO: ERE WE GO: {getattr(root, 'name', 'Unit')} gains +2 to Advance and Charge rolls this turn.")
             return True
 
         # War Horde: MOB RULE (clear Battle-shock within 6" of a MOB unit)
         if s.name.upper() == "MOB RULE":
             mob_unit = kwargs.get("mob_unit") or kwargs.get("unit") or kwargs.get("target_unit")
             if mob_unit is None:
-                print("ERROR: MOB RULE: no MOB unit provided")
+                logger.error("ERROR: MOB RULE: no MOB unit provided")
                 return False
             try:
                 root = mob_unit.get_attached_unit_root()
@@ -11534,21 +11534,21 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "command phase":
-                print("ERROR: MOB RULE: wrong phase")
+                logger.error("ERROR: MOB RULE: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: MOB RULE: not your turn")
+                logger.error("ERROR: MOB RULE: not your turn")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: MOB RULE: MOB unit cannot be targeted")
+                    logger.error("ERROR: MOB RULE: MOB unit cannot be targeted")
                     return False
             except Exception:
                 raise
             try:
                 if not root.has_any_keyword("MOB"):
-                    print("ERROR: MOB RULE: target is not a MOB unit")
+                    logger.error("ERROR: MOB RULE: target is not a MOB unit")
                     return False
             except Exception:
                 raise
@@ -11563,11 +11563,11 @@ class StratagemManager(
                 except Exception:
                     total_models += 0
             if total_models < 10:
-                print("ERROR: MOB RULE: target has fewer than 10 models")
+                logger.error("ERROR: MOB RULE: target has fewer than 10 models")
                 return False
             try:
                 if root.is_below_half_strength():
-                    print("ERROR: MOB RULE: target is below half-strength")
+                    logger.error("ERROR: MOB RULE: target is below half-strength")
                     return False
             except Exception:
                 raise
@@ -11628,20 +11628,20 @@ class StratagemManager(
                 candidates.append(cand_root)
 
             if not candidates:
-                print("ERROR: MOB RULE: no eligible Battle-shocked ORKS INFANTRY units within 6\"")
+                logger.error("ERROR: MOB RULE: no eligible Battle-shocked ORKS INFANTRY units within 6\"")
                 return False
             if bs_unit is None:
                 if len(candidates) == 1:
                     bs_unit = candidates[0]
                 else:
-                    print("ERROR: MOB RULE: missing Battle-shocked target selection")
+                    logger.error("ERROR: MOB RULE: missing Battle-shocked target selection")
                     return False
             try:
                 bs_root = bs_unit.get_attached_unit_root()
             except Exception:
                 raise
             if bs_root is None or bs_root not in candidates:
-                print("ERROR: MOB RULE: selected unit is not eligible")
+                logger.error("ERROR: MOB RULE: selected unit is not eligible")
                 return False
 
             eff_cost = s.cp_cost
@@ -11662,7 +11662,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: MOB RULE: {getattr(bs_root, 'name', 'Unit')} is no longer Battle-shocked.")
+            logger.info(f"INFO: MOB RULE: {getattr(bs_root, 'name', 'Unit')} is no longer Battle-shocked.")
             return True
 
         # War Horde: CAREEN! (move before Deadly Demise explosion)
@@ -11671,7 +11671,7 @@ class StratagemManager(
             model = kwargs.get("model")
             move_kind = kwargs.get("move_kind") or kwargs.get("choice") or kwargs.get("movement_type") or ""
             if unit is None or model is None:
-                print("ERROR: CAREEN!: missing unit or model")
+                logger.error("ERROR: CAREEN!: missing unit or model")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -11685,17 +11685,17 @@ class StratagemManager(
                 return False
             try:
                 if not root.has_any_keyword("VEHICLE"):
-                    print("ERROR: CAREEN!: target is not a VEHICLE")
+                    logger.error("ERROR: CAREEN!: target is not a VEHICLE")
                     return False
             except Exception:
                 raise
             if not bool(getattr(root, "_careen_pending_destroyed", False)):
-                print("ERROR: CAREEN!: no pending careen state")
+                logger.error("ERROR: CAREEN!: no pending careen state")
                 return False
             game_map = getattr(self.game, "map", None)
             prepared = self._careen_prepare(unit=root, model=model, move_kind=move_kind, game_map=game_map)
             if prepared is None:
-                print("ERROR: CAREEN!: invalid pending state")
+                logger.error("ERROR: CAREEN!: invalid pending state")
                 return False
             allowed = list(prepared.get("allowed_modes") or [])
             mk = str(prepared.get("move_kind", "") or "")
@@ -11703,7 +11703,7 @@ class StratagemManager(
                 mk = allowed[0]
                 prepared["move_kind"] = mk
             if not mk:
-                print("ERROR: CAREEN!: missing move choice")
+                logger.error("ERROR: CAREEN!: missing move choice")
                 return False
             if not self._careen_can_use(prepared):
                 return False
@@ -11722,7 +11722,7 @@ class StratagemManager(
             except Exception:
                 max_dist = int(getattr(model, "_movement", 0) or 0)
             if max_dist <= 0:
-                print("ERROR: CAREEN!: invalid movement distance")
+                logger.error("ERROR: CAREEN!: invalid movement distance")
                 return False
             req = None
             try:
@@ -11761,14 +11761,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: CAREEN!: {getattr(root, 'name', 'Unit')} can move {int(max_dist)}\" before exploding.")
+            logger.info(f"INFO: CAREEN!: {getattr(root, 'name', 'Unit')} can move {int(max_dist)}\" before exploding.")
             return True
 
         # War Horde: UNBRIDLED CARNAGE (criticals on 5+ in melee)
         if s.name.upper() == "UNBRIDLED CARNAGE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: UNBRIDLED CARNAGE: no target unit provided")
+                logger.error("ERROR: UNBRIDLED CARNAGE: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -11782,17 +11782,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: UNBRIDLED CARNAGE: wrong phase")
+                logger.error("ERROR: UNBRIDLED CARNAGE: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: UNBRIDLED CARNAGE: target cannot be selected")
+                    logger.error("ERROR: UNBRIDLED CARNAGE: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if getattr(getattr(root, "round_state", None), "fought_this_phase", False):
-                    print("ERROR: UNBRIDLED CARNAGE: target already fought this phase")
+                    logger.error("ERROR: UNBRIDLED CARNAGE: target already fought this phase")
                     return False
             except Exception:
                 raise
@@ -11835,14 +11835,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: UNBRIDLED CARNAGE: {getattr(root, 'name', 'Unit')} scores critical hits on 5+ in melee this phase.")
+            logger.info(f"INFO: UNBRIDLED CARNAGE: {getattr(root, 'name', 'Unit')} scores critical hits on 5+ in melee this phase.")
             return True
 
         # Rage-cursed Onslaught: LIMB FROM LIMB (+1 S or +1 AP, or Red Thirst for both + Battle-shock)
         if s.name.upper() == "LIMB FROM LIMB":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: LIMB FROM LIMB: no target unit provided")
+                logger.error("ERROR: LIMB FROM LIMB: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -11859,17 +11859,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: LIMB FROM LIMB: wrong phase")
+                logger.error("ERROR: LIMB FROM LIMB: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: LIMB FROM LIMB: target cannot be selected")
+                    logger.error("ERROR: LIMB FROM LIMB: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not root.has_any_keyword("BLOOD ANGELS"):
-                    print("ERROR: LIMB FROM LIMB: target is not BLOOD ANGELS")
+                    logger.error("ERROR: LIMB FROM LIMB: target is not BLOOD ANGELS")
                     return False
             except Exception:
                 raise
@@ -11878,7 +11878,7 @@ class StratagemManager(
             except Exception:
                 raise
             if not charged:
-                print("ERROR: LIMB FROM LIMB: target did not charge this turn")
+                logger.error("ERROR: LIMB FROM LIMB: target did not charge this turn")
                 return False
             choice = kwargs.get("choice") or kwargs.get("limb_from_limb_choice")
             if isinstance(choice, dict):
@@ -11896,7 +11896,7 @@ class StratagemManager(
                 ap_bonus = 1
                 red_thirst = True
             else:
-                print("ERROR: LIMB FROM LIMB: missing or invalid choice")
+                logger.error("ERROR: LIMB FROM LIMB: missing or invalid choice")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -11933,11 +11933,11 @@ class StratagemManager(
             except Exception:
                 raise
             if red_thirst:
-                print(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1S and +1 AP (Red Thirst) this phase.")
+                logger.info(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1S and +1 AP (Red Thirst) this phase.")
             elif s_bonus:
-                print(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 Strength this phase.")
+                logger.info(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 Strength this phase.")
             else:
-                print(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 AP this phase.")
+                logger.info(f"INFO: LIMB FROM LIMB: {getattr(root, 'name', 'Unit')} gains +1 AP this phase.")
             return True
 
         # Generic: +AP on melee weapons for a unit that charged and has not fought yet (e.g., CRUEL BLADESMAN).
@@ -11945,7 +11945,7 @@ class StratagemManager(
         if spec:
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print(f"ERROR: {s.name}: no target unit provided")
+                logger.error(f"ERROR: {s.name}: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -11955,17 +11955,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if "fight" not in str(phase_name or "").strip().lower():
-                print(f"ERROR: {s.name}: wrong phase")
+                logger.error(f"ERROR: {s.name}: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print(f"ERROR: {s.name}: target cannot be selected")
+                    logger.error(f"ERROR: {s.name}: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not self._unit_matches_defensive_target_spec(root, spec):
-                    print(f"ERROR: {s.name}: target does not match keywords")
+                    logger.error(f"ERROR: {s.name}: target does not match keywords")
                     return False
             except Exception:
                 raise
@@ -11977,11 +11977,11 @@ class StratagemManager(
                     raise
                 mgr = getattr(army, "emperors_children", None) if army is not None else None
                 if mgr is None or not getattr(mgr, "is_peerless_bladesmen", lambda: False)():
-                    print(f"ERROR: {s.name}: wrong detachment")
+                    logger.error(f"ERROR: {s.name}: wrong detachment")
                     return False
                 try:
                     if not mgr.is_emperors_children_unit(root):
-                        print(f"ERROR: {s.name}: target is not EMPEROR'S CHILDREN")
+                        logger.error(f"ERROR: {s.name}: target is not EMPEROR'S CHILDREN")
                         return False
                 except Exception:
                     raise
@@ -11990,14 +11990,14 @@ class StratagemManager(
             except Exception:
                 raise
             if spec.get("requires_charge") and not charged:
-                print(f"ERROR: {s.name}: target did not charge this turn")
+                logger.error(f"ERROR: {s.name}: target did not charge this turn")
                 return False
             try:
                 fought = bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False))
             except Exception:
                 raise
             if spec.get("requires_not_fought") and fought:
-                print(f"ERROR: {s.name}: target already fought this phase")
+                logger.error(f"ERROR: {s.name}: target already fought this phase")
                 return False
 
             eff_cost = s.cp_cost
@@ -12025,7 +12025,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: {s.name}: {getattr(root, 'name', 'Unit')} gains +{int(spec.get('ap_bonus', 1) or 1)} AP on melee weapons this phase.")
+            logger.info(f"INFO: {s.name}: {getattr(root, 'name', 'Unit')} gains +{int(spec.get('ap_bonus', 1) or 1)} AP on melee weapons this phase.")
             return True
 
         # Generic: extend Consolidation move distance with an engagement-range requirement (e.g., INCESSANT VIOLENCE).
@@ -12033,7 +12033,7 @@ class StratagemManager(
         if spec:
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print(f"ERROR: {s.name}: no target unit provided")
+                logger.error(f"ERROR: {s.name}: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -12043,17 +12043,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if "fight" not in str(phase_name or "").strip().lower():
-                print(f"ERROR: {s.name}: wrong phase")
+                logger.error(f"ERROR: {s.name}: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print(f"ERROR: {s.name}: target cannot be selected")
+                    logger.error(f"ERROR: {s.name}: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not self._unit_matches_defensive_target_spec(root, spec):
-                    print(f"ERROR: {s.name}: target does not match keywords")
+                    logger.error(f"ERROR: {s.name}: target does not match keywords")
                     return False
             except Exception:
                 raise
@@ -12063,7 +12063,7 @@ class StratagemManager(
                 except Exception:
                     max_dist = 0.0
                 if max_dist > 0 and not self._consolidate_requires_engagement_possible(root, max_dist):
-                    print(f"ERROR: {s.name}: no legal consolidation outcome")
+                    logger.error(f"ERROR: {s.name}: no legal consolidation outcome")
                     return False
             eff_cost = s.cp_cost
             try:
@@ -12101,7 +12101,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: {s.name}: {getattr(root, 'name', 'Unit')} consolidates up to {int(spec.get('max_distance', 0) or 0)}\" this phase.")
+            logger.info(f"INFO: {s.name}: {getattr(root, 'name', 'Unit')} consolidates up to {int(spec.get('max_distance', 0) or 0)}\" this phase.")
             return True
 
         # Berzerker Warband: FRENZIED RESILIENCE (-1 Damage allocated this phase)
@@ -12120,7 +12120,7 @@ class StratagemManager(
                             candidates = candidates or (r.get("candidates") or [])
                             break
             if unit is None:
-                print("WARN:O Frenzied Resilience: no target unit provided")
+                logger.warning("WARN:O Frenzied Resilience: no target unit provided")
                 return False
             try:
                 army = unit.get_parent_army()
@@ -12131,31 +12131,31 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("WARN:O Frenzied Resilience: wrong phase")
+                logger.warning("WARN:O Frenzied Resilience: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("WARN:O Frenzied Resilience: target cannot be selected")
+                    logger.warning("WARN:O Frenzied Resilience: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
-                    print("WARN:O Frenzied Resilience: target is not WORLD EATERS")
+                    logger.warning("WARN:O Frenzied Resilience: target is not WORLD EATERS")
                     return False
             except Exception:
                 raise
             if candidates:
                 try:
                     if unit not in list(candidates or []):
-                        print("WARN:O Frenzied Resilience: target was not selected as a target")
+                        logger.warning("WARN:O Frenzied Resilience: target was not selected as a target")
                         return False
                 except Exception:
                     raise
             if attacker_unit is not None:
                 try:
                     if attacker_unit.get_parent_army().player is self.player:
-                        print("WARN:O Frenzied Resilience: attacker is not enemy")
+                        logger.warning("WARN:O Frenzied Resilience: attacker is not enemy")
                         return False
                 except Exception:
                     raise
@@ -12183,7 +12183,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: FRENZIED RESILIENCE: {getattr(unit, 'name', 'Unit')} reduces damage by 1 this phase.")
+            logger.info(f"INFO: FRENZIED RESILIENCE: {getattr(unit, 'name', 'Unit')} reduces damage by 1 this phase.")
             return True
 
         # Berzerker Warband: SKULLS FOR THE SKULL THRONE! (extra unit-only Blessing of Khorne)
@@ -12201,7 +12201,7 @@ class StratagemManager(
                         selected = selected or r.get("selected_blessings") or r.get("selected_blessing_keys") or []
                         break
             if unit is None:
-                print("WARN:O Skulls for the Skull Throne: no target unit provided")
+                logger.warning("WARN:O Skulls for the Skull Throne: no target unit provided")
                 return False
             try:
                 unit = unit.get_attached_unit_root()
@@ -12216,17 +12216,17 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("WARN:O Skulls for the Skull Throne: wrong phase")
+                logger.warning("WARN:O Skulls for the Skull Throne: wrong phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(unit):
-                    print("WARN:O Skulls for the Skull Throne: target cannot be selected")
+                    logger.warning("WARN:O Skulls for the Skull Throne: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not (hasattr(unit, "has_any_keyword") and unit.has_any_keyword("WORLD EATERS")):
-                    print("WARN:O Skulls for the Skull Throne: target is not WORLD EATERS")
+                    logger.warning("WARN:O Skulls for the Skull Throne: target is not WORLD EATERS")
                     return False
             except Exception:
                 raise
@@ -12235,12 +12235,12 @@ class StratagemManager(
                     is_char = bool(target_unit.has_keyword("Character"))
                     is_mon = bool(target_unit.has_keyword("Monster"))
                     if not (is_char or is_mon):
-                        print("WARN:O Skulls for the Skull Throne: target was not CHARACTER or MONSTER")
+                        logger.warning("WARN:O Skulls for the Skull Throne: target was not CHARACTER or MONSTER")
                         return False
                 except Exception:
                     raise
             if not selected:
-                print("WARN:O Skulls for the Skull Throne: no blessing selected")
+                logger.warning("WARN:O Skulls for the Skull Throne: no blessing selected")
                 return False
             mgr = getattr(army, "blessings_of_khorne", None) if army is not None else None
             if mgr is None:
@@ -12255,7 +12255,7 @@ class StratagemManager(
                 except Exception:
                     raise
                 if not preview.get("ok", False):
-                    print("WARN:O Skulls for the Skull Throne: invalid blessing selection")
+                    logger.warning("WARN:O Skulls for the Skull Throne: invalid blessing selection")
                     return False
 
             eff_cost = s.cp_cost
@@ -12286,7 +12286,7 @@ class StratagemManager(
                     kk = str(k).strip().upper()
                     d = mgr.definitions.get(kk)
                     chosen_names.append(d.name if d is not None else kk)
-                print(f"INFO: SKULLS FOR THE SKULL THRONE!: {getattr(unit, 'name', 'Unit')} gains {', '.join(chosen_names)} until end of battle round.")
+                logger.info(f"INFO: SKULLS FOR THE SKULL THRONE!: {getattr(unit, 'name', 'Unit')} gains {', '.join(chosen_names)} until end of battle round.")
             except Exception:
                 raise
             return True
@@ -12303,7 +12303,7 @@ class StratagemManager(
                         candidates = candidates or (r.get("objective_candidates") or [])
                         break
             if unit is None:
-                print("ERROR: A Grim Warning: no target unit provided")
+                logger.warning("ERROR: A Grim Warning: no target unit provided")
                 return False
             try:
                 army = unit.get_parent_army()
@@ -12321,12 +12321,12 @@ class StratagemManager(
             if objective is None:
                 objective = candidates[0] if candidates else None
             if objective is None:
-                print("ERROR: A Grim Warning: no objective marker available")
+                logger.warning("ERROR: A Grim Warning: no objective marker available")
                 return False
             if candidates:
                 try:
                     if objective not in list(candidates or []):
-                        print("ERROR: A Grim Warning: objective not in candidates")
+                        logger.warning("ERROR: A Grim Warning: objective not in candidates")
                         return False
                 except Exception:
                     raise
@@ -12354,7 +12354,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: A GRIM WARNING: objective remains under your control until broken.")
+            logger.warning("INFO: A GRIM WARNING: objective remains under your control until broken.")
             return True
 
         # Berzerker Warband: BLOOD OFFERING (sticky objective on unit destruction)
@@ -12369,7 +12369,7 @@ class StratagemManager(
                         candidates = candidates or (r.get("objective_candidates") or [])
                         break
             if unit is None:
-                print("ERROR: Blood Offering: no target unit provided")
+                logger.error("ERROR: Blood Offering: no target unit provided")
                 return False
             try:
                 army = unit.get_parent_army()
@@ -12382,7 +12382,7 @@ class StratagemManager(
             if objective is None:
                 objective = candidates[0] if candidates else None
             if objective is None:
-                print("ERROR: Blood Offering: no objective marker available")
+                logger.error("ERROR: Blood Offering: no objective marker available")
                 return False
             # Spend CP
             eff_cost = s.cp_cost
@@ -12409,7 +12409,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: BLOOD OFFERING: objective remains under your control until broken.")
+            logger.info("INFO: BLOOD OFFERING: objective remains under your control until broken.")
             return True
 
         # Chaos Knights: PROFANE SYMBIOSIS (make a Malefic Surge at end of any phase)
@@ -12421,7 +12421,7 @@ class StratagemManager(
                         unit = r.get("unit") or r.get("target_unit")
                         break
             if unit is None:
-                print("ERROR: Profane Symbiosis: no target unit provided")
+                logger.error("ERROR: Profane Symbiosis: no target unit provided")
                 return False
             mgr = self._chaos_knights_detachment_manager()
             if mgr is None:
@@ -12435,14 +12435,14 @@ class StratagemManager(
             if not self._is_chaos_knights_unit(root):
                 return False
             if mgr.is_unit_empowered(root, game=self.game):
-                print("ERROR: Profane Symbiosis: unit is already Empowered")
+                logger.error("ERROR: Profane Symbiosis: unit is already Empowered")
                 return False
             if self._profane_symbiosis_used_this_round(root):
-                print("ERROR: Profane Symbiosis: unit already targeted this battle round")
+                logger.error("ERROR: Profane Symbiosis: unit already targeted this battle round")
                 return False
             candidates = self._profane_symbiosis_candidates()
             if candidates and root not in list(candidates or []):
-                print("ERROR: Profane Symbiosis: unit not eligible")
+                logger.error("ERROR: Profane Symbiosis: unit not eligible")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -12470,7 +12470,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: PROFANE SYMBIOSIS: {getattr(root, 'name', 'Unit')} makes a Malefic Surge.")
+            logger.info(f"INFO: PROFANE SYMBIOSIS: {getattr(root, 'name', 'Unit')} makes a Malefic Surge.")
             return True
 
         # Chaos Knights: CORRUPTING TAINT (sticky objective after Malefic Surge)
@@ -12485,7 +12485,7 @@ class StratagemManager(
                         candidates = candidates or (r.get("objective_candidates") or [])
                         break
             if unit is None:
-                print("ERROR: Corrupting Taint: no target unit provided")
+                logger.error("ERROR: Corrupting Taint: no target unit provided")
                 return False
             mgr = self._chaos_knights_detachment_manager()
             if mgr is None:
@@ -12500,21 +12500,21 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "command phase":
-                print("ERROR: Corrupting Taint: wrong phase")
+                logger.error("ERROR: Corrupting Taint: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Corrupting Taint: not your Command phase")
+                logger.error("ERROR: Corrupting Taint: not your Command phase")
                 return False
             if objective is None:
                 objective = candidates[0] if candidates else None
             if objective is None:
-                print("ERROR: Corrupting Taint: no objective marker available")
+                logger.error("ERROR: Corrupting Taint: no objective marker available")
                 return False
             if candidates:
                 try:
                     if objective not in list(candidates or []):
-                        print("ERROR: Corrupting Taint: objective not in candidates")
+                        logger.error("ERROR: Corrupting Taint: objective not in candidates")
                         return False
                 except Exception:
                     raise
@@ -12542,14 +12542,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: CORRUPTING TAINT: objective remains under your control until broken.")
+            logger.info("INFO: CORRUPTING TAINT: objective remains under your control until broken.")
             return True
 
         # Chaos Knights: UNLEASH BALEFIRE (mark unit; resolve after shooting)
         if s.name.upper() == "UNLEASH BALEFIRE":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: Unleash Balefire: no target unit provided")
+                logger.error("ERROR: Unleash Balefire: no target unit provided")
                 return False
             if self._chaos_knights_detachment_manager() is None:
                 return False
@@ -12563,15 +12563,15 @@ class StratagemManager(
                 return False
             candidates = self._infernal_lance_shooting_candidates()
             if candidates and root not in list(candidates or []):
-                print("ERROR: Unleash Balefire: unit already shot or not eligible")
+                logger.error("ERROR: Unleash Balefire: unit already shot or not eligible")
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Unleash Balefire: wrong phase")
+                logger.error("ERROR: Unleash Balefire: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Unleash Balefire: not your Shooting phase")
+                logger.error("ERROR: Unleash Balefire: not your Shooting phase")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -12598,14 +12598,14 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: UNLEASH BALEFIRE: {getattr(root, 'name', 'Unit')} will trigger after shooting.")
+            logger.info(f"INFO: UNLEASH BALEFIRE: {getattr(root, 'name', 'Unit')} will trigger after shooting.")
             return True
 
         # Chaos Knights: WARP VISION (ignore cover until end of phase)
         if s.name.upper() == "WARP VISION":
             unit = kwargs.get("unit") or kwargs.get("target_unit")
             if unit is None:
-                print("ERROR: Warp Vision: no target unit provided")
+                logger.error("ERROR: Warp Vision: no target unit provided")
                 return False
             if self._chaos_knights_detachment_manager() is None:
                 return False
@@ -12619,15 +12619,15 @@ class StratagemManager(
                 return False
             candidates = self._infernal_lance_shooting_candidates()
             if candidates and root not in list(candidates or []):
-                print("ERROR: Warp Vision: unit already shot or not eligible")
+                logger.error("ERROR: Warp Vision: unit already shot or not eligible")
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Warp Vision: wrong phase")
+                logger.error("ERROR: Warp Vision: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Warp Vision: not your Shooting phase")
+                logger.error("ERROR: Warp Vision: not your Shooting phase")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -12655,7 +12655,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: WARP VISION: {getattr(root, 'name', 'Unit')} ignores cover until end of phase.")
+            logger.info(f"INFO: WARP VISION: {getattr(root, 'name', 'Unit')} ignores cover until end of phase.")
             return True
 
         # Khorne Daemonkin: MURDER-CALL (return unit to Strategic Reserves)
@@ -12667,7 +12667,7 @@ class StratagemManager(
                         unit = r.get("unit") or r.get("target_unit")
                         break
             if unit is None:
-                print("ERROR: Murder-Call: no target unit provided")
+                logger.error("ERROR: Murder-Call: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -12675,7 +12675,7 @@ class StratagemManager(
                 raise
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: Murder-Call: target unit is not yours")
+                    logger.error("ERROR: Murder-Call: target unit is not yours")
                     return False
             except Exception:
                 raise
@@ -12688,25 +12688,25 @@ class StratagemManager(
                 return False
             try:
                 if not we_mgr.unit_is_blood_legions(root):
-                    print("ERROR: Murder-Call: target is not BLOOD LEGIONS")
+                    logger.error("ERROR: Murder-Call: target is not BLOOD LEGIONS")
                     return False
             except Exception:
                 raise
             try:
                 if not root.is_alive():
-                    print("ERROR: Murder-Call: target is not alive")
+                    logger.error("ERROR: Murder-Call: target is not alive")
                     return False
             except Exception:
                 raise
             try:
                 if getattr(root, "is_in_reserves", lambda: False)():
-                    print("ERROR: Murder-Call: target is already in reserves")
+                    logger.error("ERROR: Murder-Call: target is already in reserves")
                     return False
             except Exception:
                 raise
             game_map = getattr(self.game, "map", None)
             if game_map is None:
-                print("ERROR: Murder-Call: no map context")
+                logger.error("ERROR: Murder-Call: no map context")
                 return False
             try:
                 for enemy in list(game_map.get_enemy_units(root) or []):
@@ -12715,7 +12715,7 @@ class StratagemManager(
                     if not getattr(enemy, "deployed", True):
                         continue
                     if game_map.is_within_engagement_range(root, enemy):
-                        print("INFO: Murder-Call: target is within Engagement Range")
+                        logger.info("INFO: Murder-Call: target is within Engagement Range")
                         return False
             except Exception:
                 raise
@@ -12765,7 +12765,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: Murder-Call: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.")
+            logger.info(f"INFO: Murder-Call: {getattr(root, 'name', 'Unit')} placed into Strategic Reserves.")
             return True
 
         # Khorne Daemonkin: SUMMONED BY SLAUGHTER (set up Bloodletters from Reserves)
@@ -12791,7 +12791,7 @@ class StratagemManager(
                                 target_unit = candidates[0]
                             break
             if target_unit is None:
-                print("ERROR: Summoned by Slaughter: no target unit provided")
+                logger.error("ERROR: Summoned by Slaughter: no target unit provided")
                 return False
             try:
                 root = target_unit.get_attached_unit_root()
@@ -12799,7 +12799,7 @@ class StratagemManager(
                 raise
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: Summoned by Slaughter: target unit is not yours")
+                    logger.error("ERROR: Summoned by Slaughter: target unit is not yours")
                     return False
             except Exception:
                 raise
@@ -12811,11 +12811,11 @@ class StratagemManager(
             if we_mgr is None or not getattr(we_mgr, "is_khorne_daemonkin", lambda: False)():
                 return False
             if not self._is_bloodletters_unit(root):
-                print("ERROR: Summoned by Slaughter: target is not BLOODLETTERS")
+                logger.error("ERROR: Summoned by Slaughter: target is not BLOODLETTERS")
                 return False
             try:
                 if not root.is_in_reserves():
-                    print("ERROR: Summoned by Slaughter: target is not in Reserves")
+                    logger.error("ERROR: Summoned by Slaughter: target is not in Reserves")
                     return False
             except Exception:
                 raise
@@ -12824,13 +12824,13 @@ class StratagemManager(
             except Exception:
                 raise
             if br and int(self._used_battle_round.get("SUMMONED BY SLAUGHTER", 0) or 0) == br:
-                print("ERROR: Summoned by Slaughter: already used this battle round")
+                logger.error("ERROR: Summoned by Slaughter: already used this battle round")
                 return False
 
             # FAQ: units that started the battle in Reserves cannot deploy in battle round 1.
             try:
                 if br < 2 and bool(getattr(root, "_started_in_reserves", False)):
-                    print("ERROR: Summoned by Slaughter: unit started in Reserves and cannot arrive in battle round 1")
+                    logger.error("ERROR: Summoned by Slaughter: unit started in Reserves and cannot arrive in battle round 1")
                     return False
             except Exception:
                 raise
@@ -12845,14 +12845,14 @@ class StratagemManager(
                 except Exception:
                     raise
             if destroyed_base is None:
-                print("ERROR: Summoned by Slaughter: missing destroyed model position")
+                logger.error("ERROR: Summoned by Slaughter: missing destroyed model position")
                 return False
 
             manual = bool(kwargs.get("manual_placement") or kwargs.get("placement_complete"))
             game_map = getattr(self.game, "map", None)
 
             if not manual:
-                print("ERROR:O Summoned by Slaughter requires manual placement")
+                logger.error("ERROR:O Summoned by Slaughter requires manual placement")
                 return False
 
             eff_cost = s.cp_cost
@@ -12873,7 +12873,7 @@ class StratagemManager(
                 try:
                     if hasattr(game_map, "place_unit") and root not in getattr(game_map, "units", []):
                         if not game_map.place_unit(root):
-                            print("ERROR: Summoned by Slaughter: placement failed on map")
+                            logger.error("ERROR: Summoned by Slaughter: placement failed on map")
                             return False
                 except Exception:
                     raise
@@ -12899,7 +12899,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: Summoned by Slaughter: {getattr(root, 'name', 'Unit')} set up from Reserves.")
+            logger.info(f"INFO: Summoned by Slaughter: {getattr(root, 'name', 'Unit')} set up from Reserves.")
             return True
 
         # Necrons: UNYIELDING FORMS (defensive -1 to wound if S > T).
@@ -12920,7 +12920,7 @@ class StratagemManager(
                                 unit = candidates[0]
                             break
             if unit is None:
-                print("ERROR: UNYIELDING FORMS: no target unit provided")
+                logger.error("ERROR: UNYIELDING FORMS: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -12933,29 +12933,29 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             pname = str(phase_name or "").strip().lower()
             if pname not in ("shooting phase", "fight phase"):
-                print("ERROR: UNYIELDING FORMS: wrong phase")
+                logger.error("ERROR: UNYIELDING FORMS: wrong phase")
                 return False
             if pname == "shooting phase":
                 active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
                 if active_player is self.player:
-                    print("ERROR: UNYIELDING FORMS: not opponent's Shooting phase")
+                    logger.error("ERROR: UNYIELDING FORMS: not opponent's Shooting phase")
                     return False
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: UNYIELDING FORMS: target was not selected by the attacker")
+                        logger.error("ERROR: UNYIELDING FORMS: target was not selected by the attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: UNYIELDING FORMS: target unit is not yours")
+                    logger.error("ERROR: UNYIELDING FORMS: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: UNYIELDING FORMS: target cannot be selected")
+                    logger.error("ERROR: UNYIELDING FORMS: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -12978,20 +12978,20 @@ class StratagemManager(
             if mgr is not None:
                 try:
                     if not mgr.unit_is_necrons(root):
-                        print("ERROR: UNYIELDING FORMS: target is not NECRONS")
+                        logger.error("ERROR: UNYIELDING FORMS: target is not NECRONS")
                         return False
                     if mgr.unit_is_titanic(root):
-                        print("ERROR: UNYIELDING FORMS: target is TITANIC")
+                        logger.error("ERROR: UNYIELDING FORMS: target is TITANIC")
                         return False
                     if not mgr.unit_is_vehicle_or_mounted(root):
-                        print("ERROR: UNYIELDING FORMS: target is not VEHICLE or MOUNTED")
+                        logger.error("ERROR: UNYIELDING FORMS: target is not VEHICLE or MOUNTED")
                         return False
                 except Exception:
                     raise
             if attacker_unit is not None:
                 try:
                     if attacker_unit.get_parent_army().player is self.player:
-                        print("ERROR: UNYIELDING FORMS: attacker is not enemy")
+                        logger.error("ERROR: UNYIELDING FORMS: attacker is not enemy")
                         return False
                 except Exception:
                     raise
@@ -13020,7 +13020,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: UNYIELDING FORMS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
+            logger.info(f"INFO: UNYIELDING FORMS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
             return True
 
         # War Horde: 'ARD AS NAILS (-1 to wound)
@@ -13041,7 +13041,7 @@ class StratagemManager(
                                 unit = candidates[0]
                             break
             if unit is None:
-                print("ERROR: 'ARD AS NAILS: no target unit provided")
+                logger.error("ERROR: 'ARD AS NAILS: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13068,29 +13068,29 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             pname = str(phase_name or "").strip().lower()
             if pname not in ("shooting phase", "fight phase"):
-                print("ERROR: 'ARD AS NAILS: wrong phase")
+                logger.error("ERROR: 'ARD AS NAILS: wrong phase")
                 return False
             if pname == "shooting phase":
                 active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
                 if active_player is self.player:
-                    print("ERROR: 'ARD AS NAILS: not opponent's Shooting phase")
+                    logger.error("ERROR: 'ARD AS NAILS: not opponent's Shooting phase")
                     return False
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: 'ARD AS NAILS: target was not selected by the attacker")
+                        logger.error("ERROR: 'ARD AS NAILS: target was not selected by the attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: 'ARD AS NAILS: target unit is not yours")
+                    logger.error("ERROR: 'ARD AS NAILS: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: 'ARD AS NAILS: target cannot be selected")
+                    logger.error("ERROR: 'ARD AS NAILS: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -13112,7 +13112,7 @@ class StratagemManager(
             if attacker_unit is not None:
                 try:
                     if attacker_unit.get_parent_army().player is self.player:
-                        print("ERROR: 'ARD AS NAILS: attacker is not enemy")
+                        logger.error("ERROR: 'ARD AS NAILS: attacker is not enemy")
                         return False
                 except Exception:
                     raise
@@ -13140,7 +13140,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: 'ARD AS NAILS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
+            logger.info(f"INFO: 'ARD AS NAILS: {getattr(root, 'name', 'Unit')} is harder to wound this phase.")
             return True
 
         # Necrons: MERCILESS RECLAMATION (+1 to wound vs targets near objectives).
@@ -13151,7 +13151,7 @@ class StratagemManager(
                 if candidates:
                     unit = candidates[0] if len(candidates) == 1 else None
             if unit is None:
-                print("ERROR: MERCILESS RECLAMATION: no target unit provided")
+                logger.error("ERROR: MERCILESS RECLAMATION: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13164,21 +13164,21 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             pname = str(phase_name or "").strip().lower()
             if pname not in ("shooting phase", "fight phase"):
-                print("ERROR: MERCILESS RECLAMATION: wrong phase")
+                logger.error("ERROR: MERCILESS RECLAMATION: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: MERCILESS RECLAMATION: not your turn")
+                logger.error("ERROR: MERCILESS RECLAMATION: not your turn")
                 return False
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: MERCILESS RECLAMATION: target unit is not yours")
+                    logger.error("ERROR: MERCILESS RECLAMATION: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: MERCILESS RECLAMATION: target cannot be selected")
+                    logger.error("ERROR: MERCILESS RECLAMATION: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -13201,19 +13201,19 @@ class StratagemManager(
             if mgr is not None:
                 try:
                     if not mgr.unit_is_necrons(root):
-                        print("ERROR: MERCILESS RECLAMATION: target is not NECRONS")
+                        logger.error("ERROR: MERCILESS RECLAMATION: target is not NECRONS")
                         return False
                     if mgr.unit_is_titanic(root):
-                        print("ERROR: MERCILESS RECLAMATION: target is TITANIC")
+                        logger.error("ERROR: MERCILESS RECLAMATION: target is TITANIC")
                         return False
                 except Exception:
                     raise
             try:
                 if pname == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
-                    print("ERROR: MERCILESS RECLAMATION: target already shot")
+                    logger.error("ERROR: MERCILESS RECLAMATION: target already shot")
                     return False
                 if pname == "fight phase" and bool(getattr(getattr(root, "round_state", None), "fought_this_phase", False)):
-                    print("ERROR: MERCILESS RECLAMATION: target already fought")
+                    logger.error("ERROR: MERCILESS RECLAMATION: target already fought")
                     return False
             except Exception:
                 raise
@@ -13240,7 +13240,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: MERCILESS RECLAMATION: {getattr(root, 'name', 'Unit')} gains +1 to wound vs objectives this phase.")
+            logger.info(f"INFO: MERCILESS RECLAMATION: {getattr(root, 'name', 'Unit')} gains +1 to wound vs objectives this phase.")
             return True
 
         # Necrons: DIMENSIONAL TUNNEL (move through models/terrain this phase).
@@ -13251,7 +13251,7 @@ class StratagemManager(
                 if candidates:
                     unit = candidates[0] if len(candidates) == 1 else None
             if unit is None:
-                print("ERROR: DIMENSIONAL TUNNEL: no target unit provided")
+                logger.error("ERROR: DIMENSIONAL TUNNEL: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13263,21 +13263,21 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: DIMENSIONAL TUNNEL: wrong phase")
+                logger.error("ERROR: DIMENSIONAL TUNNEL: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: DIMENSIONAL TUNNEL: not your turn")
+                logger.error("ERROR: DIMENSIONAL TUNNEL: not your turn")
                 return False
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: DIMENSIONAL TUNNEL: target unit is not yours")
+                    logger.error("ERROR: DIMENSIONAL TUNNEL: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: DIMENSIONAL TUNNEL: target cannot be selected")
+                    logger.error("ERROR: DIMENSIONAL TUNNEL: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -13300,13 +13300,13 @@ class StratagemManager(
             if mgr is not None:
                 try:
                     if not mgr.unit_is_necrons(root):
-                        print("ERROR: DIMENSIONAL TUNNEL: target is not NECRONS")
+                        logger.error("ERROR: DIMENSIONAL TUNNEL: target is not NECRONS")
                         return False
                     if mgr.unit_is_titanic(root):
-                        print("ERROR: DIMENSIONAL TUNNEL: target is TITANIC")
+                        logger.error("ERROR: DIMENSIONAL TUNNEL: target is TITANIC")
                         return False
                     if not mgr.unit_is_vehicle_or_mounted(root):
-                        print("ERROR: DIMENSIONAL TUNNEL: target is not VEHICLE or MOUNTED")
+                        logger.error("ERROR: DIMENSIONAL TUNNEL: target is not VEHICLE or MOUNTED")
                         return False
                 except Exception:
                     raise
@@ -13340,7 +13340,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DIMENSIONAL TUNNEL: {getattr(root, 'name', 'Unit')} can move through models/terrain this phase.")
+            logger.info(f"INFO: DIMENSIONAL TUNNEL: {getattr(root, 'name', 'Unit')} can move through models/terrain this phase.")
             return True
 
         # Necrons: CHRONOSHIFT (Advance roll fixed at 6 for this phase).
@@ -13351,7 +13351,7 @@ class StratagemManager(
                 if candidates:
                     unit = candidates[0] if len(candidates) == 1 else None
             if unit is None:
-                print("ERROR: CHRONOSHIFT: no target unit provided")
+                logger.error("ERROR: CHRONOSHIFT: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13363,21 +13363,21 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: CHRONOSHIFT: wrong phase")
+                logger.error("ERROR: CHRONOSHIFT: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: CHRONOSHIFT: not your turn")
+                logger.error("ERROR: CHRONOSHIFT: not your turn")
                 return False
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: CHRONOSHIFT: target unit is not yours")
+                    logger.error("ERROR: CHRONOSHIFT: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: CHRONOSHIFT: target cannot be selected")
+                    logger.error("ERROR: CHRONOSHIFT: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -13400,19 +13400,19 @@ class StratagemManager(
             if mgr is not None:
                 try:
                     if not mgr.unit_is_necrons(root):
-                        print("ERROR: CHRONOSHIFT: target is not NECRONS")
+                        logger.error("ERROR: CHRONOSHIFT: target is not NECRONS")
                         return False
                     if mgr.unit_is_titanic(root):
-                        print("ERROR: CHRONOSHIFT: target is TITANIC")
+                        logger.error("ERROR: CHRONOSHIFT: target is TITANIC")
                         return False
                     if not mgr.unit_is_vehicle_or_mounted(root):
-                        print("ERROR: CHRONOSHIFT: target is not VEHICLE or MOUNTED")
+                        logger.error("ERROR: CHRONOSHIFT: target is not VEHICLE or MOUNTED")
                         return False
                 except Exception:
                     raise
             try:
                 if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
-                    print("ERROR: CHRONOSHIFT: target already moved this phase")
+                    logger.error("ERROR: CHRONOSHIFT: target already moved this phase")
                     return False
             except Exception:
                 raise
@@ -13439,7 +13439,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: CHRONOSHIFT: {getattr(root, 'name', 'Unit')} gains a fixed 6\" Advance this phase.")
+            logger.info(f"INFO: CHRONOSHIFT: {getattr(root, 'name', 'Unit')} gains a fixed 6\" Advance this phase.")
             return True
 
         # Necrons: ENDLESS SERVITUDE (trigger Reanimation Protocols).
@@ -13458,7 +13458,7 @@ class StratagemManager(
                                 unit = candidates[0]
                             break
             if unit is None:
-                print("ERROR: ENDLESS SERVITUDE: no target unit provided")
+                logger.error("ERROR: ENDLESS SERVITUDE: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13470,21 +13470,21 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: ENDLESS SERVITUDE: wrong phase")
+                logger.error("ERROR: ENDLESS SERVITUDE: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: ENDLESS SERVITUDE: not your turn")
+                logger.error("ERROR: ENDLESS SERVITUDE: not your turn")
                 return False
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: ENDLESS SERVITUDE: target unit is not yours")
+                    logger.error("ERROR: ENDLESS SERVITUDE: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: ENDLESS SERVITUDE: target cannot be selected")
+                    logger.error("ERROR: ENDLESS SERVITUDE: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -13507,23 +13507,23 @@ class StratagemManager(
             if mgr is not None:
                 try:
                     if not mgr.unit_is_necrons(root):
-                        print("ERROR: ENDLESS SERVITUDE: target is not NECRONS")
+                        logger.error("ERROR: ENDLESS SERVITUDE: target is not NECRONS")
                         return False
                     if mgr.unit_is_titanic(root):
-                        print("ERROR: ENDLESS SERVITUDE: target is TITANIC")
+                        logger.error("ERROR: ENDLESS SERVITUDE: target is TITANIC")
                         return False
                 except Exception:
                     raise
             try:
                 has_rp = getattr(root, "attached_unit_has_reanimation_protocols", None)
                 if callable(has_rp) and not has_rp():
-                    print("ERROR: ENDLESS SERVITUDE: unit lacks Reanimation Protocols")
+                    logger.error("ERROR: ENDLESS SERVITUDE: unit lacks Reanimation Protocols")
                     return False
             except Exception:
                 raise
             game_map = getattr(self.game, "map", None)
             if game_map is None:
-                print("ERROR: ENDLESS SERVITUDE: no map context")
+                logger.error("ERROR: ENDLESS SERVITUDE: no map context")
                 return False
             in_controlled = False
             for obj in list(getattr(game_map, "objectives", []) or []):
@@ -13544,7 +13544,7 @@ class StratagemManager(
                 except Exception:
                     continue
             if not in_controlled:
-                print("ERROR: ENDLESS SERVITUDE: unit is not within a controlled objective")
+                logger.error("ERROR: ENDLESS SERVITUDE: unit is not within a controlled objective")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -13571,7 +13571,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: ENDLESS SERVITUDE: {getattr(root, 'name', 'Unit')} reanimates (rolled {int(roll or 0)}).")
+            logger.info(f"INFO: ENDLESS SERVITUDE: {getattr(root, 'name', 'Unit')} reanimates (rolled {int(roll or 0)}).")
             return True
 
         # Necrons: REACTIVE REPOSITION (reactive Normal move D6").
@@ -13592,7 +13592,7 @@ class StratagemManager(
                                 unit = candidates[0]
                             break
             if unit is None:
-                print("ERROR: REACTIVE REPOSITION: no target unit provided")
+                logger.error("ERROR: REACTIVE REPOSITION: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13604,28 +13604,28 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: REACTIVE REPOSITION: wrong phase")
+                logger.error("ERROR: REACTIVE REPOSITION: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: REACTIVE REPOSITION: not opponent's Shooting phase")
+                logger.error("ERROR: REACTIVE REPOSITION: not opponent's Shooting phase")
                 return False
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: REACTIVE REPOSITION: target was not selected by the attacker")
+                        logger.error("ERROR: REACTIVE REPOSITION: target was not selected by the attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if root.get_parent_army().player is not self.player:
-                    print("ERROR: REACTIVE REPOSITION: target unit is not yours")
+                    logger.error("ERROR: REACTIVE REPOSITION: target unit is not yours")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: REACTIVE REPOSITION: target cannot be selected")
+                    logger.error("ERROR: REACTIVE REPOSITION: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -13648,23 +13648,23 @@ class StratagemManager(
             if mgr is not None:
                 try:
                     if not mgr.unit_is_necrons(root):
-                        print("ERROR: REACTIVE REPOSITION: target is not NECRONS")
+                        logger.error("ERROR: REACTIVE REPOSITION: target is not NECRONS")
                         return False
                     if mgr.unit_is_titanic(root):
-                        print("ERROR: REACTIVE REPOSITION: target is TITANIC")
+                        logger.error("ERROR: REACTIVE REPOSITION: target is TITANIC")
                         return False
                 except Exception:
                     raise
             if enemy_unit is not None:
                 try:
                     if enemy_unit.get_parent_army().player is self.player:
-                        print("ERROR: REACTIVE REPOSITION: attacker is not enemy")
+                        logger.error("ERROR: REACTIVE REPOSITION: attacker is not enemy")
                         return False
                 except Exception:
                     raise
             game_map = getattr(self.game, "map", None)
             if game_map is None:
-                print("ERROR: REACTIVE REPOSITION: no map context")
+                logger.error("ERROR: REACTIVE REPOSITION: no map context")
                 return False
             try:
                 engaged = False
@@ -13677,7 +13677,7 @@ class StratagemManager(
                         engaged = True
                         break
                 if engaged:
-                    print("ERROR: REACTIVE REPOSITION: unit is in Engagement Range")
+                    logger.error("ERROR: REACTIVE REPOSITION: unit is in Engagement Range")
                     return False
             except Exception:
                 raise
@@ -13725,7 +13725,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: REACTIVE REPOSITION: {getattr(root, 'name', 'Unit')} can move {int(move_max)}\".")
+            logger.info(f"INFO: REACTIVE REPOSITION: {getattr(root, 'name', 'Unit')} can move {int(move_max)}\".")
             return True
 
         # Generic defensive reaction stratagems (after targets selected).
@@ -13743,7 +13743,7 @@ class StratagemManager(
                             candidates = r.get("candidates") or r.get("target_units") or []
                         break
             if unit is None:
-                print(f"ERROR: {s.name}: no target unit provided")
+                logger.error(f"ERROR: {s.name}: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13754,7 +13754,7 @@ class StratagemManager(
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print(f"ERROR: {s.name}: target was not selected by the attacker")
+                        logger.error(f"ERROR: {s.name}: target was not selected by the attacker")
                         return False
                 except Exception:
                     raise
@@ -13762,26 +13762,26 @@ class StratagemManager(
             phase_key = str(phase_name or "").strip().lower()
             phase_tag = "shooting" if "shooting" in phase_key else "fight" if "fight" in phase_key else None
             if phase_tag is None or phase_tag not in set(spec.get("phases") or []):
-                print(f"ERROR: {s.name}: wrong phase")
+                logger.error(f"ERROR: {s.name}: wrong phase")
                 return False
             if spec.get("duration") == "attacker" and attacker_unit is None:
-                print(f"ERROR: {s.name}: missing attacker context")
+                logger.error(f"ERROR: {s.name}: missing attacker context")
                 return False
             try:
                 if attacker_unit is not None and attacker_unit.get_parent_army().player is self.player:
-                    print(f"ERROR: {s.name}: attacker is not enemy")
+                    logger.error(f"ERROR: {s.name}: attacker is not enemy")
                     return False
             except Exception:
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print(f"ERROR: {s.name}: target cannot be selected")
+                    logger.error(f"ERROR: {s.name}: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not self._unit_matches_defensive_target_spec(root, spec):
-                    print(f"ERROR: {s.name}: target does not match keywords")
+                    logger.error(f"ERROR: {s.name}: target does not match keywords")
                     return False
             except Exception:
                 raise
@@ -13808,7 +13808,7 @@ class StratagemManager(
             except Exception:
                 raise
             try:
-                print(f"WARN: {s.name}: {defensive_reaction_note(spec)}")
+                logger.warning(f"WARN: {s.name}: {defensive_reaction_note(spec)}")
             except Exception:
                 raise
             return True
@@ -13825,7 +13825,7 @@ class StratagemManager(
                         candidates = candidates or (r.get("candidates") or [])
                         break
             if unit is None:
-                print("ERROR: Corrupt Realspace: no target unit provided")
+                logger.error("ERROR: Corrupt Realspace: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13837,18 +13837,18 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "command phase":
-                print("ERROR: Corrupt Realspace: wrong phase")
+                logger.error("ERROR: Corrupt Realspace: wrong phase")
                 return False
             obj_candidates = self._corrupting_taint_objective_candidates(root)
             if objective is None:
                 objective = obj_candidates[0] if obj_candidates else None
             if objective is None:
-                print("ERROR: Corrupt Realspace: no objective marker available")
+                logger.error("ERROR: Corrupt Realspace: no objective marker available")
                 return False
             if obj_candidates:
                 try:
                     if objective not in list(obj_candidates or []):
-                        print("ERROR: Corrupt Realspace: objective not in candidates")
+                        logger.error("ERROR: Corrupt Realspace: objective not in candidates")
                         return False
                 except Exception:
                     raise
@@ -13876,7 +13876,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: CORRUPT REALSPACE: objective remains under your control until broken.")
+            logger.info("INFO: CORRUPT REALSPACE: objective remains under your control until broken.")
             return True
 
         # Chaos Daemons: DAEMONIC INVULNERABILITY (defensive reaction)
@@ -13892,7 +13892,7 @@ class StratagemManager(
                         candidates = candidates or (r.get("candidates") or [])
                         break
             if unit is None:
-                print("ERROR: Daemonic Invulnerability: no target unit provided")
+                logger.error("ERROR: Daemonic Invulnerability: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13905,17 +13905,17 @@ class StratagemManager(
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: Daemonic Invulnerability: target not in candidates")
+                        logger.error("ERROR: Daemonic Invulnerability: target not in candidates")
                         return False
                 except Exception:
                     raise
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Daemonic Invulnerability: wrong phase")
+                logger.error("ERROR: Daemonic Invulnerability: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: Daemonic Invulnerability: not opponent's Shooting phase")
+                logger.error("ERROR: Daemonic Invulnerability: not opponent's Shooting phase")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -13941,7 +13941,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DAEMONIC INVULNERABILITY: {getattr(root, 'name', 'Unit')} re-rolls invulnerable save 1s this phase.")
+            logger.info(f"INFO: DAEMONIC INVULNERABILITY: {getattr(root, 'name', 'Unit')} re-rolls invulnerable save 1s this phase.")
             return True
 
         # Chaos Daemons: DENIZENS OF THE WARP (Deep Strike min distance override)
@@ -13951,7 +13951,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Denizens of the Warp: no target unit provided")
+                logger.error("ERROR: Denizens of the Warp: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -13963,34 +13963,34 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "movement phase":
-                print("ERROR: Denizens of the Warp: wrong phase")
+                logger.error("ERROR: Denizens of the Warp: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Denizens of the Warp: not your Movement phase")
+                logger.error("ERROR: Denizens of the Warp: not your Movement phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Denizens of the Warp: target cannot be selected")
+                    logger.error("ERROR: Denizens of the Warp: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if not getattr(root, "is_in_reserves", lambda: False)():
-                    print("ERROR: Denizens of the Warp: target is not in Reserves")
+                    logger.error("ERROR: Denizens of the Warp: target is not in Reserves")
                     return False
             except Exception:
                 raise
             try:
                 if not getattr(root, "has_deep_strike", lambda: False)():
-                    print("ERROR: Denizens of the Warp: target lacks Deep Strike")
+                    logger.error("ERROR: Denizens of the Warp: target lacks Deep Strike")
                     return False
             except Exception:
                 raise
             try:
                 turn = int(getattr(self.game, "turn", 0) or 0)
                 if not getattr(root, "can_arrive_from_reserves", lambda _t: False)(turn):
-                    print("ERROR: Denizens of the Warp: target cannot arrive from Reserves this turn")
+                    logger.error("ERROR: Denizens of the Warp: target cannot arrive from Reserves this turn")
                     return False
             except Exception:
                 raise
@@ -14020,7 +14020,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DENIZENS OF THE WARP: {getattr(root, 'name', 'Unit')} can Deep Strike within 6\" this phase.")
+            logger.info(f"INFO: DENIZENS OF THE WARP: {getattr(root, 'name', 'Unit')} can Deep Strike within 6\" this phase.")
             return True
 
         # Chaos Daemons: DRAUGHT OF TERROR (+1 AP, reroll wounds vs Battle-shocked)
@@ -14030,7 +14030,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Draught of Terror: no target unit provided")
+                logger.error("ERROR: Draught of Terror: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -14043,27 +14043,27 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             phase_key = str(phase_name or "").strip().lower()
             if phase_key not in ("shooting phase", "fight phase"):
-                print("ERROR: Draught of Terror: wrong phase")
+                logger.error("ERROR: Draught of Terror: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if phase_key == "shooting phase" and active_player is not self.player:
-                print("ERROR: Draught of Terror: not your Shooting phase")
+                logger.error("ERROR: Draught of Terror: not your Shooting phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Draught of Terror: target cannot be selected")
+                    logger.error("ERROR: Draught of Terror: target cannot be selected")
                     return False
             except Exception:
                 raise
             try:
                 if phase_key == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
-                    print("ERROR: Draught of Terror: target already shot this phase")
+                    logger.error("ERROR: Draught of Terror: target already shot this phase")
                     return False
                 if phase_key == "fight phase":
                     fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
                     fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
                     if root in fought or bool(getattr(getattr(root, "round_state", None), "fought_this_round", False)):
-                        print("ERROR: Draught of Terror: target already fought this phase")
+                        logger.error("ERROR: Draught of Terror: target already fought this phase")
                         return False
             except Exception:
                 raise
@@ -14094,7 +14094,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: DRAUGHT OF TERROR: {getattr(root, 'name', 'Unit')} gains +1 AP and wound rerolls vs Battle-shocked this phase.")
+            logger.error(f"INFO: DRAUGHT OF TERROR: {getattr(root, 'name', 'Unit')} gains +1 AP and wound rerolls vs Battle-shocked this phase.")
             return True
 
         # Chaos Daemons: THE REALM OF CHAOS (end of opponent's turn)
@@ -14112,7 +14112,7 @@ class StratagemManager(
                         selected = r.get("units") or r.get("target_units") or r.get("selected_units")
                         break
             if selected is None:
-                print("ERROR: The Realm of Chaos: no target units provided")
+                logger.error("ERROR: The Realm of Chaos: no target units provided")
                 return False
             if not isinstance(selected, (list, tuple)):
                 selected = [selected]
@@ -14131,14 +14131,14 @@ class StratagemManager(
                 if unit is not None:
                     resolved.append(unit)
             if not resolved:
-                print("ERROR: The Realm of Chaos: no valid target units")
+                logger.error("ERROR: The Realm of Chaos: no valid target units")
                 return False
             if len(resolved) > 2:
-                print("ERROR: The Realm of Chaos: cannot target more than two units")
+                logger.error("ERROR: The Realm of Chaos: cannot target more than two units")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: The Realm of Chaos: not opponent's turn")
+                logger.error("ERROR: The Realm of Chaos: not opponent's turn")
                 return False
             within_shadow = []
             outside_shadow = []
@@ -14161,7 +14161,7 @@ class StratagemManager(
                     raise
                 try:
                     if _unit_cannot_be_target_of_stratagem(root):
-                        print("ERROR: The Realm of Chaos: target cannot be selected")
+                        logger.error("ERROR: The Realm of Chaos: target cannot be selected")
                         return False
                 except Exception:
                     raise
@@ -14196,7 +14196,7 @@ class StratagemManager(
                             engaged = True
                             break
                     if engaged:
-                        print("ERROR: The Realm of Chaos: unit within Engagement Range")
+                        logger.error("ERROR: The Realm of Chaos: unit within Engagement Range")
                         return False
                 except Exception:
                     raise
@@ -14205,7 +14205,7 @@ class StratagemManager(
                 else:
                     outside_shadow.append(root)
             if outside_shadow and len(resolved) != 1:
-                print("ERROR: The Realm of Chaos: only one unit can be selected if outside Shadow of Chaos")
+                logger.error("ERROR: The Realm of Chaos: only one unit can be selected if outside Shadow of Chaos")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -14245,7 +14245,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: THE REALM OF CHAOS: units placed into Strategic Reserves.")
+            logger.info("INFO: THE REALM OF CHAOS: units placed into Strategic Reserves.")
             return True
 
         # Chaos Daemons: WARP SURGE (advance and charge in Shadow of Chaos)
@@ -14255,7 +14255,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Warp Surge: no target unit provided")
+                logger.error("ERROR: Warp Surge: no target unit provided")
                 return False
             try:
                 root = unit.get_attached_unit_root()
@@ -14267,14 +14267,14 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "charge phase":
-                print("ERROR: Warp Surge: wrong phase")
+                logger.error("ERROR: Warp Surge: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Warp Surge: not your Charge phase")
+                logger.error("ERROR: Warp Surge: not your Charge phase")
                 return False
             if not self._unit_within_shadow_of_chaos(root):
-                print("ERROR: Warp Surge: unit is not within Shadow of Chaos")
+                logger.error("ERROR: Warp Surge: unit is not within Shadow of Chaos")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -14300,7 +14300,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: WARP SURGE: {getattr(root, 'name', 'Unit')} can charge after advancing this phase.")
+            logger.info(f"INFO: WARP SURGE: {getattr(root, 'name', 'Unit')} can charge after advancing this phase.")
             return True
 
         # Chaos Daemons: DELIRIUM UNMADE (end of opponent Fight phase)
@@ -14324,7 +14324,7 @@ class StratagemManager(
                         )
                         break
             if selected is None:
-                print("ERROR: Delirium Unmade: no target units provided")
+                logger.error("ERROR: Delirium Unmade: no target units provided")
                 return False
             if not isinstance(selected, (list, tuple)):
                 selected = [selected]
@@ -14343,21 +14343,21 @@ class StratagemManager(
                 if unit is not None:
                     resolved.append(unit)
             if not resolved:
-                print("ERROR: Delirium Unmade: no valid target units")
+                logger.error("ERROR: Delirium Unmade: no valid target units")
                 return False
             if len(resolved) > 2:
-                print("ERROR: Delirium Unmade: cannot target more than two units")
+                logger.error("ERROR: Delirium Unmade: cannot target more than two units")
                 return False
             if not self._is_scintillating_legion_detachment():
-                print("ERROR: Delirium Unmade: wrong detachment")
+                logger.error("ERROR: Delirium Unmade: wrong detachment")
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: Delirium Unmade: wrong phase")
+                logger.error("ERROR: Delirium Unmade: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: Delirium Unmade: not opponent's Fight phase")
+                logger.error("ERROR: Delirium Unmade: not opponent's Fight phase")
                 return False
             game_map = getattr(self.game, "map", None)
             if game_map is None:
@@ -14379,7 +14379,7 @@ class StratagemManager(
                     raise
                 try:
                     if _unit_cannot_be_target_of_stratagem(root):
-                        print("ERROR: Delirium Unmade: target cannot be selected")
+                        logger.error("ERROR: Delirium Unmade: target cannot be selected")
                         return False
                 except Exception:
                     raise
@@ -14418,7 +14418,7 @@ class StratagemManager(
             flux_mgr = getattr(self.game, "fates_in_flux", None)
             if requires_flux:
                 if flux_mgr is None or int(flux_mgr.tokens_for_player(self.player) or 0) < 1:
-                    print("ERROR: Delirium Unmade: Flux token required to select two units or engaged units")
+                    logger.error("ERROR: Delirium Unmade: Flux token required to select two units or engaged units")
                     return False
             eff_cost = s.cp_cost
             try:
@@ -14448,7 +14448,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: DELIRIUM UNMADE: units placed into Strategic Reserves.")
+            logger.info("INFO: DELIRIUM UNMADE: units placed into Strategic Reserves.")
             return True
 
         # Chaos Daemons: FATEBORNE NIGHTMARES (move through terrain)
@@ -14458,7 +14458,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Fateborne Nightmares: no target unit provided")
+                logger.error("ERROR: Fateborne Nightmares: no target unit provided")
                 return False
             if not self._is_scintillating_legion_detachment():
                 return False
@@ -14473,15 +14473,15 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             phase_key = str(phase_name or "").strip().lower()
             if phase_key not in ("movement phase", "charge phase"):
-                print("ERROR: Fateborne Nightmares: wrong phase")
+                logger.error("ERROR: Fateborne Nightmares: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Fateborne Nightmares: not your phase")
+                logger.error("ERROR: Fateborne Nightmares: not your phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Fateborne Nightmares: target cannot be selected")
+                    logger.error("ERROR: Fateborne Nightmares: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -14542,7 +14542,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: FATEBORNE NIGHTMARES: {getattr(root, 'name', 'Unit')} can move through terrain this phase.")
+            logger.info(f"INFO: FATEBORNE NIGHTMARES: {getattr(root, 'name', 'Unit')} can move through terrain this phase.")
             return True
 
         # Chaos Daemons: FICKLEFIRE (ignore engagement for ranged attacks)
@@ -14552,7 +14552,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Ficklefire: no target unit provided")
+                logger.error("ERROR: Ficklefire: no target unit provided")
                 return False
             if not self._is_scintillating_legion_detachment():
                 return False
@@ -14566,15 +14566,15 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "shooting phase":
-                print("ERROR: Ficklefire: wrong phase")
+                logger.error("ERROR: Ficklefire: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is not self.player:
-                print("ERROR: Ficklefire: not your Shooting phase")
+                logger.error("ERROR: Ficklefire: not your Shooting phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Ficklefire: target cannot be selected")
+                    logger.error("ERROR: Ficklefire: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -14614,7 +14614,7 @@ class StratagemManager(
             except Exception:
                 raise
             if not engaged:
-                print("ERROR: Ficklefire: unit is not within Engagement Range")
+                logger.error("ERROR: Ficklefire: unit is not within Engagement Range")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -14643,7 +14643,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print(f"INFO: FICKLEFIRE: {getattr(root, 'name', 'Unit')} ignores engagement for ranged attacks this phase.")
+            logger.info(f"INFO: FICKLEFIRE: {getattr(root, 'name', 'Unit')} ignores engagement for ranged attacks this phase.")
             return True
 
         # Chaos Daemons: FLICKERING REALITY (attacks of a hit roll value end)
@@ -14653,7 +14653,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Flickering Reality: no target unit provided")
+                logger.error("ERROR: Flickering Reality: no target unit provided")
                 return False
             if not self._is_scintillating_legion_detachment():
                 return False
@@ -14667,30 +14667,30 @@ class StratagemManager(
                 return False
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             if str(phase_name or "").strip().lower() != "fight phase":
-                print("ERROR: Flickering Reality: wrong phase")
+                logger.error("ERROR: Flickering Reality: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if active_player is self.player:
-                print("ERROR: Flickering Reality: not opponent's Fight phase")
+                logger.error("ERROR: Flickering Reality: not opponent's Fight phase")
                 return False
             attacking_unit = kwargs.get("attacking_unit") or kwargs.get("attacker_unit") or kwargs.get("enemy_unit")
             if attacking_unit is not None:
                 try:
                     if attacking_unit.get_parent_army().player is self.player:
-                        print("ERROR: Flickering Reality: attacker is not enemy")
+                        logger.error("ERROR: Flickering Reality: attacker is not enemy")
                         return False
                 except Exception:
                     raise
             if candidates:
                 try:
                     if root not in list(candidates or []):
-                        print("ERROR: Flickering Reality: target was not selected by the attacker")
+                        logger.error("ERROR: Flickering Reality: target was not selected by the attacker")
                         return False
                 except Exception:
                     raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Flickering Reality: target cannot be selected")
+                    logger.error("ERROR: Flickering Reality: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -14774,7 +14774,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Impossible Eclipse: no target unit provided")
+                logger.error("ERROR: Impossible Eclipse: no target unit provided")
                 return False
             if not self._is_scintillating_legion_detachment():
                 return False
@@ -14793,7 +14793,7 @@ class StratagemManager(
                 raise
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Impossible Eclipse: target cannot be selected")
+                    logger.error("ERROR: Impossible Eclipse: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -14825,7 +14825,7 @@ class StratagemManager(
                 or ""
             ).strip().lower()
             if zone_choice not in ("nml", "enemy", "both"):
-                print("ERROR: Impossible Eclipse: must select No Man's Land, enemy deployment, or both")
+                logger.error("ERROR: Impossible Eclipse: must select No Man's Land, enemy deployment, or both")
                 return False
             eff_cost = s.cp_cost
             try:
@@ -14839,7 +14839,7 @@ class StratagemManager(
             if zone_choice == "both":
                 flux_mgr = getattr(self.game, "fates_in_flux", None)
                 if flux_mgr is None or int(flux_mgr.tokens_for_player(self.player) or 0) < 1:
-                    print("ERROR: Impossible Eclipse: Flux token required to select both zones")
+                    logger.error("ERROR: Impossible Eclipse: Flux token required to select both zones")
                     return False
                 if not flux_mgr.spend_tokens(self.player, 1, reason="Impossible Eclipse"):
                     return False
@@ -14866,7 +14866,7 @@ class StratagemManager(
                 self._used_stratagems_this_phase.add((s.name or "").strip().upper())
             except Exception:
                 raise
-            print("INFO: IMPOSSIBLE ECLIPSE: Shadow of Chaos zones extended until end of phase.")
+            logger.info("INFO: IMPOSSIBLE ECLIPSE: Shadow of Chaos zones extended until end of phase.")
             return True
 
         # Chaos Daemons: PYROGENESIS (Strength/AP bonus)
@@ -14876,7 +14876,7 @@ class StratagemManager(
             if unit is None and candidates and len(candidates) == 1:
                 unit = candidates[0]
             if unit is None:
-                print("ERROR: Pyrogenesis: no target unit provided")
+                logger.error("ERROR: Pyrogenesis: no target unit provided")
                 return False
             if not self._is_scintillating_legion_detachment():
                 return False
@@ -14891,15 +14891,15 @@ class StratagemManager(
             phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
             phase_key = str(phase_name or "").strip().lower()
             if phase_key not in ("shooting phase", "fight phase"):
-                print("ERROR: Pyrogenesis: wrong phase")
+                logger.error("ERROR: Pyrogenesis: wrong phase")
                 return False
             active_player = getattr(self.game, "get_current_player", lambda: None)() if self.game else None
             if phase_key == "shooting phase" and active_player is not self.player:
-                print("ERROR: Pyrogenesis: not your Shooting phase")
+                logger.error("ERROR: Pyrogenesis: not your Shooting phase")
                 return False
             try:
                 if _unit_cannot_be_target_of_stratagem(root):
-                    print("ERROR: Pyrogenesis: target cannot be selected")
+                    logger.error("ERROR: Pyrogenesis: target cannot be selected")
                     return False
             except Exception:
                 raise
@@ -14925,13 +14925,13 @@ class StratagemManager(
                 raise
             try:
                 if phase_key == "shooting phase" and bool(getattr(getattr(root, "round_state", None), "shot_this_round", False)):
-                    print("ERROR: Pyrogenesis: target already shot this phase")
+                    logger.error("ERROR: Pyrogenesis: target already shot this phase")
                     return False
                 if phase_key == "fight phase":
                     fight_mgr = getattr(self.game, "fight_phase_manager", None) if self.game is not None else None
                     fought = getattr(fight_mgr, "fought_units", set()) if fight_mgr is not None else set()
                     if root in fought or bool(getattr(getattr(root, "round_state", None), "fought_this_round", False)):
-                        print("ERROR: Pyrogenesis: target already fought this phase")
+                        logger.error("ERROR: Pyrogenesis: target already fought this phase")
                         return False
             except Exception:
                 raise

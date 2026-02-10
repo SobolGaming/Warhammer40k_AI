@@ -7,6 +7,8 @@ import sys
 import os
 import unittest
 from unittest.mock import Mock, patch
+import logging
+logger = logging.getLogger(__name__)
 
 # Add the src directory to the path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -31,7 +33,7 @@ class TestPileInConstants(unittest.TestCase):
         self.assertEqual(max_relevant_distance, 4.0)
         
         # This is the distance beyond which enemies are excluded from pile-in validation
-        print(f"✅ Enemies beyond {max_relevant_distance}\" are excluded from pile-in validation")
+        logger.info(f"✅ Enemies beyond {max_relevant_distance}\" are excluded from pile-in validation")
 
 
 class TestPileInBaseContactLogic(unittest.TestCase):
@@ -84,7 +86,7 @@ class TestPileInValidationRules(unittest.TestCase):
                     self.assertEqual(pile_in_rules[rule_name], expected_value,
                                    f"Pile-in rule '{rule_name}' should be {expected_value}")
             
-            print(f"✅ Pile-in validation rules correctly configured")
+            logger.info(f"✅ Pile-in validation rules correctly configured")
             
         except ImportError as e:
             self.skipTest(f"Could not import validation rules: {e}")
@@ -147,15 +149,15 @@ def run_simple_pile_in_tests():
     result = runner.run(suite)
     
     if result.wasSuccessful():
-        print("\n🎉 All simplified pile-in tests passed!")
-        print("\n📋 What was tested:")
-        print("  ✅ Constants are properly defined")
-        print("  ✅ Base contact detection logic")
-        print("  ✅ Validation rules configuration")
-        print("  ✅ Distance comparison logic")
-        print("  ✅ Base contact requirement logic")
+        logger.info("\n🎉 All simplified pile-in tests passed!")
+        logger.info("\n📋 What was tested:")
+        logger.info("  ✅ Constants are properly defined")
+        logger.info("  ✅ Base contact detection logic")
+        logger.info("  ✅ Validation rules configuration")
+        logger.info("  ✅ Distance comparison logic")
+        logger.info("  ✅ Base contact requirement logic")
     else:
-        print(f"\n❌ {len(result.failures)} tests failed, {len(result.errors)} errors")
+        logger.error(f"\n❌ {len(result.failures)} tests failed, {len(result.errors)} errors")
     
     return result.wasSuccessful()
 

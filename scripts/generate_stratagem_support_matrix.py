@@ -23,6 +23,8 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Tuple
+import logging
+logger = logging.getLogger(__name__)
 
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -277,9 +279,10 @@ def main() -> None:
     rows = _load_stratagems()
     factions = _load_factions()
     _write_md(rows, factions)
-    print(f"Wrote {OUT_PATH}.")
+    logger.info(f"Wrote {OUT_PATH}.")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import subprocess
 from pathlib import Path
+import logging
+logger = logging.getLogger(__name__)
 
 
 def main() -> None:
@@ -20,8 +22,9 @@ def main() -> None:
         for hook in hooks_path.iterdir():
             if hook.is_file():
                 hook.chmod(hook.stat().st_mode | 0o111)
-    print("Git hooks installed to scripts/githooks")
+    logger.info("Git hooks installed to scripts/githooks")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

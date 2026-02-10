@@ -5,6 +5,8 @@ from typing import Union
 # Utility Library for Dice Roll random values
 from . import RNG
 from .game_context import get_active_game, get_roll_context
+import logging
+logger = logging.getLogger(__name__)
 
 # get result of a random dice roll, defaults to D6
 
@@ -105,11 +107,11 @@ def get_roll(data: str) -> Union[int, None]:
         dice = DiceCollection.from_string(data)
         return dice.roll()
     except ValueError as e:
-        print(f"ERROR: {e}")
+        logger.exception(f"ERROR: {e}")
         return None
 
 if __name__ == "__main__":
     test_rolls = ["D6", "2D6", "D6+5", "2D6+5"]
     for roll in test_rolls:
         value = get_roll(roll)
-        print(f"Roll of {roll}: {value}")
+        logger.info(f"Roll of {roll}: {value}")

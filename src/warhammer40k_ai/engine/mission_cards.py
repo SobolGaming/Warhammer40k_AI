@@ -6,6 +6,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 from ..utility.entity_ids import get_entity_id
 from ..utility.rng import resolve_rng
+import logging
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -501,7 +503,7 @@ class SupplyDropPrimary(PrimaryMissionCard):
                 loc = getattr(obj, 'location', None)
                 if loc and not getattr(loc, 'removed', False):
                     loc.removed = True
-                    print("INFO: Supply Drop removed objective at ({:.1f}, {:.1f})".format(loc.x, loc.y))
+                    logger.info("INFO: Supply Drop removed objective at ({:.1f}, {:.1f})".format(loc.x, loc.y))
             except Exception:
                 pass
         if br == 4 and self.alpha and not self._alpha_removed:

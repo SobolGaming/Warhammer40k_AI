@@ -11,13 +11,15 @@ Usage:
 import sys
 import subprocess
 import os
+import logging
+logger = logging.getLogger(__name__)
 
 def main():
     """Run the fight phase tests."""
     # Change to the tests directory
     test_dir = "tests"
     if not os.path.exists(test_dir):
-        print(f"❌ Tests directory '{test_dir}' not found!")
+        logger.error(f"❌ Tests directory '{test_dir}' not found!")
         return 1
     
     # Build the pytest command
@@ -29,30 +31,31 @@ def main():
     else:
         cmd.append("-v")  # Default to verbose output
     
-    print(f"🧪 Running Fight Phase Tests...")
-    print(f"Command: {' '.join(cmd)}")
-    print("=" * 60)
+    logger.info(f"🧪 Running Fight Phase Tests...")
+    logger.info(f"Command: {' '.join(cmd)}")
+    logger.info("=" * 60)
     
     # Run the tests
     try:
         result = subprocess.run(cmd, cwd=test_dir, check=False)
         
         if result.returncode == 0:
-            print("=" * 60)
-            print("✅ All Fight Phase Tests Passed!")
+            logger.info("=" * 60)
+            logger.info("✅ All Fight Phase Tests Passed!")
         else:
-            print("=" * 60)
-            print("❌ Some Fight Phase Tests Failed!")
+            logger.info("=" * 60)
+            logger.error("❌ Some Fight Phase Tests Failed!")
             
         return result.returncode
         
     except FileNotFoundError:
-        print("❌ pytest not found! Please install pytest:")
-        print("   pip install pytest")
+        logger.exception("❌ pytest not found! Please install pytest:")
+        logger.info("   pip install pytest")
         return 1
     except Exception as e:
-        print(f"❌ Error running tests: {e}")
+        logger.exception(f"❌ Error running tests: {e}")
         return 1
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     sys.exit(main()) 

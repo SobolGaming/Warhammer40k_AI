@@ -5,6 +5,8 @@ from typing import Iterable, Optional, Sequence
 from ..decision_dispatcher import _validate_choice_from_options
 from ..decisions import DecisionOption, DecisionRequest, DecisionResult
 from ...utility.entity_ids import maybe_entity_id
+import logging
+logger = logging.getLogger(__name__)
 
 
 def find_option(request: DecisionRequest, option_id: str) -> Optional[DecisionOption]:
@@ -203,7 +205,7 @@ def is_skip_choice(request: DecisionRequest, result: DecisionResult) -> bool:
 
 
 def validate_model_positions(game: object, unit: object, model_positions: object, *, context: str = "Move unit") -> Sequence[str]:
-    print(f"DEBUG: Validating model positions for {unit}")
+    logger.debug(f"DEBUG: Validating model positions for {unit}")
     if not isinstance(model_positions, list) or not model_positions:
         return (f"{context} requires model_positions list.",)
     for entry in model_positions:

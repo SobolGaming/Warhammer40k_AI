@@ -8,6 +8,9 @@ from ...utility.constants import RUINS_FLOOR_HEIGHT
 from ...utility.placement_validation import bases_overlap_3d
 from ...utility.entity_ids import get_entity_id
 from ...utility.debug import describe_callable, describe_self_stack
+import logging
+logger = logging.getLogger(__name__)
+
 # Additional colors specific to this dialog
 HIGHLIGHT_COLOR = (255, 255, 0)  # Yellow for model highlighting
 
@@ -68,7 +71,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # Check if unit has already moved this round (prevent multiple movements)
         if self._has_unit_already_moved(unit, movement_type):
-            print(f"ERROR: {unit.name} has already performed {movement_type} movement this round")
+            logger.error(f"ERROR: {unit.name} has already performed {movement_type} movement this round")
             if callback:
                 callback(False)  # Movement not allowed
             return
@@ -150,8 +153,8 @@ class IndividualModelMovementDialog(BaseDialog):
         self._create_model_buttons()
         self._create_dialog_buttons()
 
-        print(f"INFO: Individual model movement dialog opened for {unit.name} ({movement_type})")
-        print(f"INFO: Select a model, then click on the battlefield to move it")
+        logger.info(f"INFO: Individual model movement dialog opened for {unit.name} ({movement_type})")
+        logger.info(f"INFO: Select a model, then click on the battlefield to move it")
 
         # In deploy mode, auto-select the first alive model and wait for battlefield click
         if self.movement_type == 'deploy':
@@ -252,7 +255,7 @@ class IndividualModelMovementDialog(BaseDialog):
             # Models already in base-to-base contact cannot Pile In or Consolidate
             in_base_contact = self.movement_type in ('pile_in', 'consolidate') and self._is_model_in_base_contact(model)
             if in_base_contact:
-                print(f"DEBUG: {model.name} already in base contact - will be shown as disabled")
+                logger.debug(f"DEBUG: {model.name} already in base contact - will be shown as disabled")
                 
             row = button_index // models_per_row
             col = button_index % models_per_row
@@ -389,7 +392,7 @@ class IndividualModelMovementDialog(BaseDialog):
             if button['rect'].collidepoint(mouse_pos):
                 # Check if button is disabled
                 if button.get('disabled', False):
-                    print(f"ERROR: Cannot select {button['model'].name}: {button.get('disabled_reason', 'Model unavailable')}")
+                    logger.error(f"ERROR: Cannot select {button['model'].name}: {button.get('disabled_reason', 'Model unavailable')}")
                     return True
                 
                 self._select_model(button['model_index'])
@@ -418,7 +421,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Check if model is already moved
         if model_index in self.model_movements and self.model_movements[model_index]['completed']:
-            print(f"ERROR: {model.name} has already been moved")
+            logger.error(f"ERROR: {model.name} has already been moved")
             return
             
         self.selected_model_index = model_index
@@ -467,13 +470,11 @@ class IndividualModelMovementDialog(BaseDialog):
                 role = None
             actor_label = f"{player.name} ({role})" if role else f"{player.name}"
         if actor_label:
-            print(
-                f"INFO: {actor_label} Selected {model.name} (Model #{model_index + 1}) "
-                f"for {self.movement_type} movement"
-            )
+            logger.info(f"INFO: {actor_label} Selected {model.name} (Model #{model_index + 1}) "
+                f"for {self.movement_type} movement")
         else:
-            print(f"INFO: Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
-        print(f"INFO: Click on the battlefield to move this model")
+            logger.info(f"INFO: Selected {model.name} (Model #{model_index + 1}) for {self.movement_type} movement")
+        logger.info(f"INFO: Click on the battlefield to move this model")
 
     def _infer_default_deploy_facing_radians(self, model) -> Optional[float]:
         """Infer default deploy facing from the active player's deployment zone geometry.
@@ -715,8 +716,8 @@ class IndividualModelMovementDialog(BaseDialog):
                     return False
                 else:
                     # Click outside dialog without a model selected - show helpful message
-                    print(f"INFO: Please select a model first, then click on the battlefield to move it")
-                    print(f"INFO: Or press ESC to close the dialog")
+                    logger.info(f"INFO: Please select a model first, then click on the battlefield to move it")
+                    logger.info(f"INFO: Or press ESC to close the dialog")
                     # Don't close dialog, let user try again
                     return True
                 
@@ -817,7 +818,7 @@ class IndividualModelMovementDialog(BaseDialog):
         # If a floor selection dialog is open, ignore battlefield clicks until resolved.
         if getattr(self, 'floor_selection_dialog', None) is not None and getattr(self.floor_selection_dialog, 'visible', False):
             try:
-                print("INFO: Floor selection pending - ignoring battlefield click until confirm/cancel")
+                logger.info("INFO: Floor selection pending - ignoring battlefield click until confirm/cancel")
             except Exception:
                 pass
             return True
@@ -854,11 +855,9 @@ class IndividualModelMovementDialog(BaseDialog):
                     disabled = list(disabled_by_validation or [])
             try:
                 mname = getattr(model, 'name', 'Unknown model')
-                print(
-                    f"INFO: RUINS floor selection triggered for {self.unit.name} / {mname} "
+                logger.info(f"INFO: RUINS floor selection triggered for {self.unit.name} / {mname} "
                     f"at ({battlefield_x:.1f}, {battlefield_y:.1f}). "
-                    f"floors={floors_at_xy}, disabled={sorted(disabled)} (movement_type={self.movement_type})"
-                )
+                    f"floors={floors_at_xy}, disabled={sorted(disabled)} (movement_type={self.movement_type})")
             except Exception:
                 pass
             try:
@@ -869,13 +868,13 @@ class IndividualModelMovementDialog(BaseDialog):
                 self._pending_floor_z_by_level = dict(z_by_level or {})
                 dialog.show()
                 try:
-                    print(f"INFO: Floor selection dialog visible={getattr(dialog, 'visible', None)}")
+                    logger.info(f"INFO: Floor selection dialog visible={getattr(dialog, 'visible', None)}")
                 except Exception:
                     pass
                 return True  # Defer until selection
             except Exception as e:
                 try:
-                    print(f"ERROR: Floor selection dialog failed to open: {e}")
+                    logger.exception(f"ERROR: Floor selection dialog failed to open: {e}")
                 except Exception:
                     pass
                 # If UI fails, fall back to using provided Z
@@ -886,7 +885,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
         # If we're in deployment mode, run deployment validation and place the model directly
         if self.movement_type == 'deploy':
-            print(f"DEBUG: handling validation in deployment Mode")
+            logger.debug(f"DEBUG: handling validation in deployment Mode")
             model = self.unit.models[self.selected_model_index]
             # Validate single model deployment
             try:
@@ -894,7 +893,7 @@ class IndividualModelMovementDialog(BaseDialog):
             except Exception:
                 game = None
             if not game:
-                print("ERROR: Deployment failed: game context unavailable")
+                logger.error("ERROR: Deployment failed: game context unavailable")
                 return False
             # Determine player by unit ownership
             try:
@@ -907,11 +906,9 @@ class IndividualModelMovementDialog(BaseDialog):
                     facing_deg = math.degrees(self.get_deploy_facing_radians())
                 except Exception:
                     facing_deg = 0.0
-                print(
-                    f"ERROR: Deployment invalid for {model.name} at "
+                logger.error(f"ERROR: Deployment invalid for {model.name} at "
                     f"({battlefield_x:.1f}, {battlefield_y:.1f}, {battlefield_z:.1f}) facing={facing_deg:.1f}deg: "
-                    f"{validation['reason']}"
-                )
+                    f"{validation['reason']}")
                 return False
 
             # Prevent illegal base overlaps during deployment.
@@ -928,17 +925,15 @@ class IndividualModelMovementDialog(BaseDialog):
                     facing_deg = math.degrees(self.get_deploy_facing_radians())
                 except Exception:
                     facing_deg = 0.0
-                print(
-                    f"ERROR: Deployment invalid for {model.name} at "
+                logger.error(f"ERROR: Deployment invalid for {model.name} at "
                     f"({battlefield_x:.1f}, {battlefield_y:.1f}, {battlefield_z:.1f}) facing={facing_deg:.1f}deg: "
-                    f"{overlap_validation['reason']}"
-                )
+                    f"{overlap_validation['reason']}")
                 return False
 
             # Place the model at destination (preserve facing)
             current_facing = self.get_deploy_facing_radians()
             model.set_location(destination[0], destination[1], destination[2], float(current_facing))
-            print(f"INFO: {model.name} deployed to ({destination[0]:.1f}, {destination[1]:.1f}{'' if abs(destination[2]) < 1e-6 else f', {destination[2]:.1f}'})")
+            logger.info(f"INFO: {model.name} deployed to ({destination[0]:.1f}, {destination[1]:.1f}{'' if abs(destination[2]) < 1e-6 else f', {destination[2]:.1f}'})")
             success = True
         else:
             # Attempt to move the selected model (non-deployment movement)
@@ -964,7 +959,7 @@ class IndividualModelMovementDialog(BaseDialog):
             # Check if all models are moved
             if self._all_models_moved():
                 done_word = 'deployed' if self.movement_type == 'deploy' else 'moved'
-                print(f"INFO: All models in {self.unit.name} have been {done_word}")
+                logger.info(f"INFO: All models in {self.unit.name} have been {done_word}")
                 # Auto-complete after short delay or continue allowing more moves
                 
             # In deploy mode, immediately advance to the next unplaced alive model
@@ -990,8 +985,8 @@ class IndividualModelMovementDialog(BaseDialog):
         else:
             # On failure, keep the model selected and continue waiting for battlefield clicks
             fail_word = 'Deployment' if self.movement_type == 'deploy' else 'Movement'
-            print(f"ERROR: {fail_word} failed for {self.unit.models[self.selected_model_index].name}")
-            print(f"INFO: Model remains selected. Try clicking on a valid location.")
+            logger.error(f"ERROR: {fail_word} failed for {self.unit.models[self.selected_model_index].name}")
+            logger.info(f"INFO: Model remains selected. Try clicking on a valid location.")
         
         return success
 
@@ -1007,7 +1002,7 @@ class IndividualModelMovementDialog(BaseDialog):
         except Exception:
             game = None
         if not game:
-            print("ERROR: Deployment failed: game context unavailable")
+            logger.error("ERROR: Deployment failed: game context unavailable")
             return
 
         # Determine player by unit ownership
@@ -1022,11 +1017,9 @@ class IndividualModelMovementDialog(BaseDialog):
                 facing_deg = math.degrees(self.get_deploy_facing_radians())
             except Exception:
                 facing_deg = 0.0
-            print(
-                f"ERROR: Deployment invalid for {model.name} at "
+            logger.error(f"ERROR: Deployment invalid for {model.name} at "
                 f"({float(x):.1f}, {float(y):.1f}, {float(z):.1f}) facing={facing_deg:.1f}deg: "
-                f"{validation['reason']}"
-            )
+                f"{validation['reason']}")
             return
 
         # Prevent illegal base overlaps during deployment.
@@ -1042,17 +1035,15 @@ class IndividualModelMovementDialog(BaseDialog):
                 facing_deg = math.degrees(self.get_deploy_facing_radians())
             except Exception:
                 facing_deg = 0.0
-            print(
-                f"ERROR: Deployment invalid for {model.name} at "
+            logger.error(f"ERROR: Deployment invalid for {model.name} at "
                 f"({float(x):.1f}, {float(y):.1f}, {float(z):.1f}) facing={facing_deg:.1f}deg: "
-                f"{overlap_validation['reason']}"
-            )
+                f"{overlap_validation['reason']}")
             return
 
         # Place the model at destination (preserve facing)
         current_facing = self.get_deploy_facing_radians()
         model.set_location(float(x), float(y), float(z), float(current_facing))
-        print(f"INFO: {model.name} deployed to ({float(x):.1f}, {float(y):.1f}{'' if abs(float(z)) < 1e-6 else f', {float(z):.1f}'})")
+        logger.info(f"INFO: {model.name} deployed to ({float(x):.1f}, {float(y):.1f}{'' if abs(float(z)) < 1e-6 else f', {float(z):.1f}'})")
 
         # Mark model as deployed
         self.model_movements[self.selected_model_index] = {
@@ -1078,7 +1069,7 @@ class IndividualModelMovementDialog(BaseDialog):
 
     def _validate_deploy_like_placement(self, game, model, x: float, y: float, z: float, player_id: str) -> dict:
         """Validate deployment or custom placement for a single model."""
-        print(f"DEBUG: Validating deploy-like placement for {model.name} at ({x:.1f}, {y:.1f}, {z:.1f})")
+        logger.debug(f"DEBUG: Validating deploy-like placement for {model.name} at ({x:.1f}, {y:.1f}, {z:.1f})")
         if self.placement_kind:
             if callable(self.placement_validator):
                 try:
@@ -1212,7 +1203,7 @@ class IndividualModelMovementDialog(BaseDialog):
             self.selected_model_index = None
             self.awaiting_battlefield_click = False
         else:
-            print(f"ERROR: Movement failed after floor selection for {self.unit.models[self.selected_model_index].name}")
+            logger.error(f"ERROR: Movement failed after floor selection for {self.unit.models[self.selected_model_index].name}")
 
     def _get_ruins_floor_options_for_model_at_xy(self, model, x: float, y: float) -> tuple[list[int], dict[int, float], list[int]]:
         """Return RUINS floor options for this model's BASE at XY.
@@ -1314,7 +1305,7 @@ class IndividualModelMovementDialog(BaseDialog):
     def _move_model(self, model_index: int, destination) -> bool:
         """Move a specific model to the destination"""
         if model_index >= len(self.unit.models):
-            print(f"ERROR: Invalid model index: {model_index}")
+            logger.error(f"ERROR: Invalid model index: {model_index}")
             return False
             
         model = self.unit.models[model_index]
@@ -1335,7 +1326,7 @@ class IndividualModelMovementDialog(BaseDialog):
             self._aircraft_move_completed_all = bool(success)
             if success:
                 return True
-            print(f"ERROR: No valid aircraft move for {model.name} (Model #{model_index + 1})")
+            logger.error(f"ERROR: No valid aircraft move for {model.name} (Model #{model_index + 1})")
             return False
 
         # Use unified pathfinding for ALL movement types
@@ -1398,9 +1389,9 @@ class IndividualModelMovementDialog(BaseDialog):
         #    print(f" DEBUG: Path length: {len(path_result['path'])}")
 
         if not path_result['valid'] or not path_result['path']:
-            print(f"ERROR: No valid path found for {model.name} (Model #{model_index + 1})")
-            print(f"INFO: Reason: {path_result['reason']}")
-            print(f"INFO: Try clicking closer or on a clear area")
+            logger.error(f"ERROR: No valid path found for {model.name} (Model #{model_index + 1})")
+            logger.info(f"INFO: Reason: {path_result['reason']}")
+            logger.info(f"INFO: Try clicking closer or on a clear area")
             return False
 
         # Convert 2D path back to 3D for movement
@@ -1427,7 +1418,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
         # Unit position is now determined by model positions
         
-        print(f"INFO: {model.name} (Model #{model_index + 1}) moved from ({current_pos[0]:.1f}, {current_pos[1]:.1f}, {current_pos[2]:.1f}) to ({final_position[0]:.1f}, {final_position[1]:.1f}, {final_position[2]:.1f})")
+        logger.info(f"INFO: {model.name} (Model #{model_index + 1}) moved from ({current_pos[0]:.1f}, {current_pos[1]:.1f}, {current_pos[2]:.1f}) to ({final_position[0]:.1f}, {final_position[1]:.1f}, {final_position[2]:.1f})")
         try:
             from ...utility.event_bus import append_action
             player = model.parent_unit.get_parent_army().player
@@ -1454,7 +1445,7 @@ class IndividualModelMovementDialog(BaseDialog):
                 from ...utility.aura_utils import horizontal_distance_between_bases_2d
                 distance = float(horizontal_distance_between_bases_2d(model.model_base, enemy_model.model_base))
                 if distance <= BASE_CONTACT_EPSILON:
-                    print(f"DEBUG: {model.name} already in base contact with {enemy_model.name} (distance: {distance:.3f}\")")
+                    logger.debug(f"DEBUG: {model.name} already in base contact with {enemy_model.name} (distance: {distance:.3f}\")")
                     return True
         
         return False
@@ -1493,7 +1484,7 @@ class IndividualModelMovementDialog(BaseDialog):
                     or not self.model_movements[idx]['completed']
                 )
             ]
-            print(f"ERROR: Cannot complete placement: models {remaining_models} still need placement")
+            logger.error(f"ERROR: Cannot complete placement: models {remaining_models} still need placement")
             return
 
         # Validate unit coherency
@@ -1511,14 +1502,14 @@ class IndividualModelMovementDialog(BaseDialog):
 
         if not is_coherent:
             # Movement/deployment must END in coherency. If coherency would be broken, the move is not allowed.
-            print(f"ERROR: Cannot complete {self.movement_type}: {self.unit.name} would not be in coherency "
+            logger.error(f"ERROR: Cannot complete {self.movement_type}: {self.unit.name} would not be in coherency "
                   f"(non-coherent models: {non_coherent_models}). Reposition models and try again.")
             return
         if self.movement_type == "charge":
             targets = list(self.target_units or ([] if self.target_unit is None else [self.target_unit]))
             ok, reason = self.unit.validate_charge_end_state(targets, self.game_map)
             if not ok:
-                print(f"ERROR: Cannot complete charge: {reason}")
+                logger.error(f"ERROR: Cannot complete charge: {reason}")
                 return
         # No coherency violations, complete normally
         self._finalize_movement_completion()
@@ -1564,9 +1555,9 @@ class IndividualModelMovementDialog(BaseDialog):
     def _on_coherency_resolution(self, option_id: str, removed_model_ids: list):
         """Called when coherency violation dialog is complete"""
         if removed_model_ids:
-            print(f"INFO: Coherency violations resolved for {self.unit.name}")
+            logger.info(f"INFO: Coherency violations resolved for {self.unit.name}")
         else:
-            print(f"INFO: Coherency resolution cancelled for {self.unit.name}")
+            logger.info(f"INFO: Coherency resolution cancelled for {self.unit.name}")
 
         try:
             from ...engine.command_kinds import CMD_RESOLVE_DECISION
@@ -1600,8 +1591,8 @@ class IndividualModelMovementDialog(BaseDialog):
 
     def _finalize_movement_completion(self):
         """Finalize the movement completion"""
-        print(f"INFO: {self.unit.name} {self.movement_type.upper()} movement completed")
-        print(f"DEBUG: current stack: {describe_self_stack()}")
+        logger.info(f"INFO: {self.unit.name} {self.movement_type.upper()} movement completed")
+        logger.debug(f"DEBUG: current stack: {describe_self_stack()}")
 
         # Set unit round state based on movement type
         # NOTE: Scout movement happens before battle rounds, so it should NOT set round state flags
@@ -1642,7 +1633,7 @@ class IndividualModelMovementDialog(BaseDialog):
                         action = 'charge'
                     _game.event_system.publish("unit_move_ended", unit=self.unit, action=action)
             except Exception:
-                print(f"ERROR: Unexpected error publishing unit move ended event")
+                logger.exception(f"ERROR: Unexpected error publishing unit move ended event")
                 pass
         if self.movement_type == 'reactive':
             self._clear_battle_focus_reactive_flags()
@@ -1650,10 +1641,10 @@ class IndividualModelMovementDialog(BaseDialog):
         # Call callback with completion status
         if self.callback:
             try:
-                print(f"DEBUG: Calling callback after finalize movement completion {describe_callable(self.callback)} with argument True")
+                logger.debug(f"DEBUG: Calling callback after finalize movement completion {describe_callable(self.callback)} with argument True")
                 self.callback(True)  # Movement completed
             except Exception as exc:
-                print(f"ERROR: Movement completion callback failed: {exc}")
+                logger.exception(f"ERROR: Movement completion callback failed: {exc}")
                 import traceback; traceback.print_exc()
             finally:
                 self.hide()
@@ -1662,7 +1653,7 @@ class IndividualModelMovementDialog(BaseDialog):
         
     def _skip_movement(self):
         """Skip movement for this unit"""
-        print(f"INFO: Skipping {self.movement_type} movement for {self.unit.name}")
+        logger.info(f"INFO: Skipping {self.movement_type} movement for {self.unit.name}")
         if self.movement_type == "reactive":
             self._clear_battle_focus_reactive_flags()
 

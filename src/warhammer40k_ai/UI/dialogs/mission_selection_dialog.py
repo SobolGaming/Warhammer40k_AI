@@ -8,6 +8,8 @@ from typing import Optional, Tuple, Dict, List, Iterable
 from .base_dialog import BaseDialog
 from ..ui_fonts import get_ui_font
 from ...utility.rng import resolve_rng
+import logging
+logger = logging.getLogger(__name__)
 
 
 class MissionSelectionDialog(BaseDialog):
@@ -193,7 +195,7 @@ class MissionSelectionDialog(BaseDialog):
         combination = self.combinations[self.selected_combination]
         self.selected_layout = rng.choice(combination["layouts"])
         
-        print(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
+        logger.info(f"Randomly selected: {combination['id']} - {combination['primary']} / {combination['deployment']} / Layout {self.selected_layout}")
     
     def _handle_button_click(self, button_name: str) -> bool:
         """Handle button click events. Return True if handled."""

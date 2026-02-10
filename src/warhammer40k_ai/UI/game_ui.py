@@ -88,6 +88,8 @@ from .ui_constants import (
 from .dialogs.secondary_discard_dialog import SecondaryDiscardDialog
 from .dialogs.overwatch_shooter_dialog import OverwatchShooterDialog
 from .dialogs.battlefield_point_pick_dialog import BattlefieldPointPickDialog
+import logging
+logger = logging.getLogger(__name__)
 
 class GameView:
     def __init__(self, screen, env, game, game_map, player1, player2, ui_interface=None):
@@ -9130,7 +9132,7 @@ class GameView:
                         dequeue=True,
                     )
                     if not ok:
-                        print("Berzerker's Wrath failed; using normal Blood Surge.")
+                        logger.error("Berzerker's Wrath failed; using normal Blood Surge.")
                 _start_blood_surge_move()
 
             try:
@@ -16469,7 +16471,7 @@ class GameView:
             player1_units = _visible_roster(player1_units)
             player2_units = _visible_roster(player2_units)
             
-            print(f"Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
+            logger.info(f"Refreshing roster panes: Player1 has {len(player1_units)} units, Player2 has {len(player2_units)} units")
             
             # Update roster units
             self.left_roster_pane.roster = player1_units
@@ -16496,7 +16498,7 @@ class GameView:
             self.left_roster_pane.create_buttons()
             self.right_roster_pane.create_buttons()
             
-            print("Roster panes refreshed successfully")
+            logger.info("Roster panes refreshed successfully")
 
     def update_roster_pane_titles(self):
         """Update roster pane titles to show Attacker/Defender after roles are determined."""
@@ -16804,7 +16806,7 @@ class GameView:
 
                     def _after_unit(chosen_unit):
                         if chosen_unit is None:
-                            print("Corrupt Realspace: no unit selected")
+                            logger.info("Corrupt Realspace: no unit selected")
                             return
                         try:
                             obj_candidates = manager._corrupting_taint_objective_candidates(chosen_unit)
@@ -17247,12 +17249,12 @@ class GameView:
 
                 def _after_mob(chosen_mob):
                     if chosen_mob is None:
-                        print("Mob Rule: no MOB unit selected")
+                        logger.info("Mob Rule: no MOB unit selected")
                         return
 
                     def _after_bs(chosen_bs):
                         if chosen_bs is None:
-                            print("Mob Rule: no Battle-shocked unit selected")
+                            logger.info("Mob Rule: no Battle-shocked unit selected")
                             return
                         self._finalize_mob_rule(player, name, context, chosen_mob, chosen_bs)
 
@@ -17269,7 +17271,7 @@ class GameView:
             if callable(getattr(self, "_request_limb_from_limb_unit", None)):
                 def _after_unit(chosen):
                     if chosen is None:
-                        print("Limb From Limb: no unit selected")
+                        logger.info("Limb From Limb: no unit selected")
                         return
                     if callable(getattr(self, "_request_limb_from_limb_choice", None)):
                         self._request_limb_from_limb_choice(
@@ -17285,7 +17287,7 @@ class GameView:
             if callable(getattr(self, "_request_limb_from_limb_choice", None)):
                 unit = context.get("target_unit") or context.get("unit")
                 if unit is None:
-                    print("Limb From Limb: no unit selected")
+                    logger.info("Limb From Limb: no unit selected")
                     return
                 self._request_limb_from_limb_choice(
                     player,
@@ -17418,7 +17420,7 @@ class GameView:
 
                     def _after_transport(chosen_transport):
                         if chosen_transport is None:
-                            print("Aggressive Disembarkation: no transport selected")
+                            logger.info("Aggressive Disembarkation: no transport selected")
                             return
                         if embarked is not None:
                             self._finalize_aggressive_disembarkation(player, name, context, chosen_transport, embarked)
@@ -17509,7 +17511,7 @@ class GameView:
                 if callable(getattr(self, "_request_goretrack_embarked_unit", None)):
                     def _after_transport(chosen_transport):
                         if chosen_transport is None:
-                            print("Fury Unleashed: no transport selected")
+                            logger.info("Fury Unleashed: no transport selected")
                             return
                         self._request_goretrack_embarked_unit(
                             player,
@@ -17687,7 +17689,7 @@ class GameView:
                 def _done(payload):
                     self._blessings_flow_active = False
                     if not payload:
-                        print("Skulls for the Skull Throne cancelled or failed")
+                        logger.error("Skulls for the Skull Throne cancelled or failed")
                         return
                     ctx = dict(context)
                     try:
@@ -17698,9 +17700,9 @@ class GameView:
                         pass
                     ok2 = manager.use(name, **ctx)
                     if ok2:
-                        print(f"Used stratagem: {name}")
+                        logger.info(f"Used stratagem: {name}")
                     else:
-                        print(f"Could not use stratagem: {name}")
+                        logger.info(f"Could not use stratagem: {name}")
 
                 self._request_blessings_roll(player, self.game, context, _done)
             return
@@ -17827,9 +17829,9 @@ class GameView:
                             self._optional_flow_active = False
                             ok2 = manager.use(name, **context)
                             if ok2:
-                                print(f"Used stratagem: {name}")
+                                logger.info(f"Used stratagem: {name}")
                             else:
-                                print(f"Could not use stratagem: {name}")
+                                logger.info(f"Could not use stratagem: {name}")
                             return
 
                         decision = decisions.pop(0)
@@ -17885,9 +17887,9 @@ class GameView:
 
         ok = manager.use(name, **context)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_new_orders(self, player, name: str, context: Dict[str, Any], selected_card) -> None:
         manager = getattr(player, "stratagems", None)
@@ -17897,84 +17899,84 @@ class GameView:
         ctx["secondary_card"] = selected_card
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_generic_stratagem(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print(f"{name}: no unit selected")
+            logger.info(f"{name}: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["target_unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_mob_rule(self, player, name: str, context: Dict[str, Any], mob_unit, battle_shocked_unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if mob_unit is None:
-            print("Mob Rule: no MOB unit selected")
+            logger.info("Mob Rule: no MOB unit selected")
             return
         if battle_shocked_unit is None:
-            print("Mob Rule: no Battle-shocked unit selected")
+            logger.info("Mob Rule: no Battle-shocked unit selected")
             return
         ctx = dict(context)
         ctx["mob_unit"] = mob_unit
         ctx["battle_shocked_unit"] = battle_shocked_unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_a_grim_warning(self, player, name: str, context: Dict[str, Any], objective) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if objective is None:
-            print("A Grim Warning: no objective selected")
+            logger.warning("A Grim Warning: no objective selected")
             return
         ctx = dict(context)
         ctx["objective"] = objective
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_corrupting_taint(self, player, name: str, context: Dict[str, Any], objective) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if objective is None:
-            print("Corrupting Taint: no objective selected")
+            logger.info("Corrupting Taint: no objective selected")
             return
         ctx = dict(context)
         ctx["objective"] = objective
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_corrupt_realspace(self, player, name: str, context: Dict[str, Any], unit, objective) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Corrupt Realspace: no unit selected")
+            logger.info("Corrupt Realspace: no unit selected")
             return
         if objective is None:
-            print("Corrupt Realspace: no objective selected")
+            logger.info("Corrupt Realspace: no objective selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
@@ -17982,58 +17984,58 @@ class GameView:
         ctx["objective"] = objective
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_realm_of_chaos(self, player, name: str, context: Dict[str, Any], units) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if units is None:
-            print("The Realm of Chaos: no units selected")
+            logger.info("The Realm of Chaos: no units selected")
             return
         if not isinstance(units, (list, tuple)):
             units = [units]
         units = [u for u in units if u is not None]
         if not units:
-            print("The Realm of Chaos: no units selected")
+            logger.info("The Realm of Chaos: no units selected")
             return
         ctx = dict(context)
         ctx["units"] = list(units)
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_delirium_unmade(self, player, name: str, context: Dict[str, Any], units) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if units is None:
-            print("Delirium Unmade: no units selected")
+            logger.info("Delirium Unmade: no units selected")
             return
         if not isinstance(units, (list, tuple)):
             units = [units]
         units = [u for u in units if u is not None]
         if not units:
-            print("Delirium Unmade: no units selected")
+            logger.info("Delirium Unmade: no units selected")
             return
         ctx = dict(context)
         ctx["units"] = list(units)
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_impossible_eclipse(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Impossible Eclipse: no unit selected")
+            logger.info("Impossible Eclipse: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
@@ -18058,15 +18060,15 @@ class GameView:
 
         def _on_zone(zone_choice):
             if not zone_choice:
-                print("Impossible Eclipse: no zone selected")
+                logger.info("Impossible Eclipse: no zone selected")
                 return
             ctx2 = dict(ctx)
             ctx2["zone"] = zone_choice
             ok = manager.use(name, **ctx2)
             if ok:
-                print(f"Used stratagem: {name}")
+                logger.info(f"Used stratagem: {name}")
             else:
-                print(f"Could not use stratagem: {name}")
+                logger.info(f"Could not use stratagem: {name}")
 
         self._resolve_option_selection_dialog(
             player=player,
@@ -18090,10 +18092,10 @@ class GameView:
         if manager is None:
             return
         if unit is None:
-            print("Limb From Limb: no unit selected")
+            logger.info("Limb From Limb: no unit selected")
             return
         if not choice:
-            print("Limb From Limb: no choice selected")
+            logger.info("Limb From Limb: no choice selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
@@ -18101,19 +18103,19 @@ class GameView:
         ctx["choice"] = choice
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_red_wrath(self, player, name: str, context: Dict[str, Any], unit, choice) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Red Wrath: no unit selected")
+            logger.info("Red Wrath: no unit selected")
             return
         if not choice:
-            print("Red Wrath: no choice selected")
+            logger.info("Red Wrath: no choice selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
@@ -18121,9 +18123,9 @@ class GameView:
         ctx["mode"] = choice
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_overwatch(self, player, name: str, context: Dict[str, Any], shooter_unit) -> None:
         if self._overwatch_flow_active:
@@ -18132,7 +18134,7 @@ class GameView:
         if manager is None:
             return
         if shooter_unit is None:
-            print("Overwatch: no shooter selected")
+            logger.info("Overwatch: no shooter selected")
             return
         ctx = dict(context)
         ctx["shooter_unit"] = shooter_unit
@@ -18148,7 +18150,7 @@ class GameView:
         except Exception:
             can_traitor = False
         if overwatch_used and not can_traitor:
-            print("Overwatch: already used this turn")
+            logger.info("Overwatch: already used this turn")
             return
 
         def _continue_overwatch(use_traitor: bool):
@@ -18157,7 +18159,7 @@ class GameView:
             except Exception:
                 pass
             if overwatch_used and not use_traitor:
-                print("Overwatch: Brutal Example declined; cannot use Overwatch again this turn")
+                logger.info("Overwatch: Brutal Example declined; cannot use Overwatch again this turn")
                 return
             if callable(getattr(self, "_request_overwatch_shooting", None)):
                 overwatch_threshold = 6
@@ -18189,18 +18191,18 @@ class GameView:
                     if executed:
                         s = manager.get_by_name(str(name)) if manager else None
                         if s is None:
-                            print("Overwatch: stratagem not found")
+                            logger.info("Overwatch: stratagem not found")
                             return
                         apply_info = {}
                         eff_cost = s.cp_cost
                         if hasattr(player, "apply_stratagem_cp_cost"):
                             apply_info = player.apply_stratagem_cp_cost(s, target_unit=shooter_unit) or {}
                             if apply_info.get("denied"):
-                                print(f"Overwatch: {apply_info.get('reason', 'not allowed')}")
+                                logger.info(f"Overwatch: {apply_info.get('reason', 'not allowed')}")
                                 return
                             eff_cost = int(apply_info.get("cost", s.cp_cost))
                         if overwatch_used and not apply_info.get("traitor_enforcer_overwatch_use", False):
-                            print("Overwatch: already used this turn")
+                            logger.info("Overwatch: already used this turn")
                             return
                         if player.spend_command_points(
                             eff_cost,
@@ -18242,20 +18244,20 @@ class GameView:
                                         )
                                 except Exception:
                                     pass
-                            print(f"Used stratagem: {name}")
+                            logger.info(f"Used stratagem: {name}")
                         else:
-                            print("Overwatch: failed to spend CP")
+                            logger.error("Overwatch: failed to spend CP")
                     else:
-                        print("Overwatch cancelled or failed")
+                        logger.error("Overwatch cancelled or failed")
 
                 self._request_overwatch_shooting(shooter_unit, enemy, _done_callback)
                 return
 
             ok = manager.use(name, **ctx)
             if ok:
-                print(f"Used stratagem: {name}")
+                logger.info(f"Used stratagem: {name}")
             else:
-                print(f"Could not use stratagem: {name}")
+                logger.info(f"Could not use stratagem: {name}")
 
         if can_traitor:
             if self._optional_flow_active:
@@ -18325,11 +18327,11 @@ class GameView:
         if manager is None:
             return
         if unit is None:
-            print("Heroic Intervention: no unit selected")
+            logger.info("Heroic Intervention: no unit selected")
             return
         enemy_unit = context.get("enemy_unit")
         if enemy_unit is None:
-            print("Heroic Intervention: no enemy unit context")
+            logger.info("Heroic Intervention: no enemy unit context")
             return
 
         dist = None
@@ -18339,12 +18341,12 @@ class GameView:
         except Exception:
             dist = None
         if dist is None or dist > 6.0:
-            print("Heroic Intervention: unit not within 6\" of enemy")
+            logger.info("Heroic Intervention: unit not within 6\" of enemy")
             return
 
         try:
             if unit.has_keyword("Vehicle") and not unit.has_keyword("Walker"):
-                print("Heroic Intervention: only WALKER vehicles can be selected")
+                logger.info("Heroic Intervention: only WALKER vehicles can be selected")
                 return
         except Exception:
             pass
@@ -18352,17 +18354,17 @@ class GameView:
         try:
             from ..rules.stratagems import _unit_cannot_be_target_of_stratagem
             if _unit_cannot_be_target_of_stratagem(unit):
-                print("Heroic Intervention: unit cannot be targeted by stratagems")
+                logger.info("Heroic Intervention: unit cannot be targeted by stratagems")
                 return
         except Exception:
             pass
 
         try:
             if not unit.can_declare_charge_against(enemy_unit, self.game, out_of_turn=True):
-                print("Heroic Intervention: unit cannot declare a charge against that enemy")
+                logger.info("Heroic Intervention: unit cannot declare a charge against that enemy")
                 return
         except Exception:
-            print("Heroic Intervention: unit cannot declare a charge against that enemy")
+            logger.info("Heroic Intervention: unit cannot declare a charge against that enemy")
             return
 
         cmd_result = None
@@ -18398,17 +18400,17 @@ class GameView:
         except Exception:
             cmd_result = None
         if cmd_result is None or not getattr(cmd_result, "ok", False):
-            print("Heroic Intervention: charge declaration failed")
+            logger.error("Heroic Intervention: charge declaration failed")
             return
 
         name_u = str(name).strip().upper()
         if name_u == "HEROIC INTERVENTION" and name_u in getattr(manager, "_used_stratagems_this_phase", set()):
             try:
                 if not manager._heroic_intervention_repeat_allowed(target_unit=unit):
-                    print("Heroic Intervention: already used this phase")
+                    logger.info("Heroic Intervention: already used this phase")
                     return
             except Exception:
-                print("Heroic Intervention: already used this phase")
+                logger.info("Heroic Intervention: already used this phase")
                 return
 
         strat = manager.get_by_name(str(name)) if manager else None
@@ -18425,7 +18427,7 @@ class GameView:
             reason=f"Stratagem: {strat.name}",
             source="stratagem",
         ):
-            print("Heroic Intervention: failed to spend CP")
+            logger.error("Heroic Intervention: failed to spend CP")
             return
 
         if context.get("dequeue") is True and hasattr(manager, "_dequeue_reaction_by_name"):
@@ -18442,11 +18444,11 @@ class GameView:
             self._heroic_flow_active = False
             if completed:
                 if success:
-                    print(f"{unit.name} Heroic Intervention charge successful - achieved engagement range")
+                    logger.info(f"{unit.name} Heroic Intervention charge successful - achieved engagement range")
                 else:
-                    print(f"{unit.name} Heroic Intervention charge failed - did not achieve engagement range")
+                    logger.error(f"{unit.name} Heroic Intervention charge failed - did not achieve engagement range")
             else:
-                print(f"{unit.name} Heroic Intervention charge movement failed or skipped")
+                logger.error(f"{unit.name} Heroic Intervention charge movement failed or skipped")
 
         try:
             if self.phase_manager is not None:
@@ -18461,10 +18463,10 @@ class GameView:
                     self.phase_manager._handle_charge_roll_ready(unit, [get_entity_id(enemy_unit)])
         except Exception:
             self._heroic_flow_active = False
-            print("Heroic Intervention: failed to queue charge movement")
+            logger.exception("Heroic Intervention: failed to queue charge movement")
             return
 
-        print(f"Used stratagem: {name}")
+        logger.info(f"Used stratagem: {name}")
 
     def _finalize_rapid_ingress(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
@@ -18474,9 +18476,9 @@ class GameView:
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_counter_offensive(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
@@ -18486,101 +18488,101 @@ class GameView:
         ctx["target_unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_hack_and_slash(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Hack and Slash: no unit selected")
+            logger.info("Hack and Slash: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_frenzied_resilience(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Frenzied Resilience: no unit selected")
+            logger.info("Frenzied Resilience: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_daemonic_fury(self, player, name: str, context: Dict[str, Any], bl_unit, we_unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if bl_unit is None or we_unit is None:
-            print("Daemonic Fury: missing unit selection")
+            logger.info("Daemonic Fury: missing unit selection")
             return
         ctx = dict(context)
         ctx["target_unit"] = bl_unit
         ctx["world_eaters_unit"] = we_unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_daemontide(self, player, name: str, context: Dict[str, Any], we_unit, bl_unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if we_unit is None or bl_unit is None:
-            print("Daemontide: missing unit selection")
+            logger.info("Daemontide: missing unit selection")
             return
         ctx = dict(context)
         ctx["target_unit"] = we_unit
         ctx["blood_legions_unit"] = bl_unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_blessing_of_burning_blood(self, player, name: str, context: Dict[str, Any], bl_unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if bl_unit is None:
-            print("Blessing of Burning Blood: no unit selected")
+            logger.info("Blessing of Burning Blood: no unit selected")
             return
         ctx = dict(context)
         ctx["target_unit"] = bl_unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_murder_call(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Murder-Call: no unit selected")
+            logger.info("Murder-Call: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_summoned_by_slaughter(self, player, name: str, context: Dict[str, Any], unit) -> None:
         if self._summoned_by_slaughter_flow_active:
@@ -18589,20 +18591,20 @@ class GameView:
         if manager is None:
             return
         if unit is None:
-            print("Summoned by Slaughter: no unit selected")
+            logger.info("Summoned by Slaughter: no unit selected")
             return
         destroyed_base = context.get("destroyed_model_base") or context.get("destroyed_base")
         if destroyed_base is None:
-            print("Summoned by Slaughter: missing destroyed model position")
+            logger.info("Summoned by Slaughter: missing destroyed model position")
             return
         game_map = getattr(self.game, "map", None)
         if game_map is None:
-            print("Summoned by Slaughter: no map context")
+            logger.info("Summoned by Slaughter: no map context")
             return
 
         strat = manager.get_by_name(str(name)) if manager else None
         if strat is not None and player.command_points < strat.cp_cost:
-            print("Summoned by Slaughter: not enough CP")
+            logger.info("Summoned by Slaughter: not enough CP")
             return
 
         destroyed_shape = None
@@ -18677,16 +18679,16 @@ class GameView:
         def _on_complete(completed: bool):
             self._summoned_by_slaughter_flow_active = False
             if not completed:
-                print("Summoned by Slaughter: placement cancelled or failed")
+                logger.error("Summoned by Slaughter: placement cancelled or failed")
                 return
             ctx = dict(context)
             ctx["target_unit"] = unit
             ctx["manual_placement"] = True
             ok = manager.use(name, **ctx)
             if ok:
-                print(f"Used stratagem: {name}")
+                logger.info(f"Used stratagem: {name}")
             else:
-                print(f"Could not use stratagem: {name}")
+                logger.info(f"Could not use stratagem: {name}")
 
         try:
             self.phase_manager._request_move_unit_decision(
@@ -18698,53 +18700,53 @@ class GameView:
             )
         except Exception:
             self._summoned_by_slaughter_flow_active = False
-            print("Summoned by Slaughter: failed to open placement dialog")
+            logger.exception("Summoned by Slaughter: failed to open placement dialog")
 
     def _finalize_blitzing_firepower(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Blitzing Firepower: no unit selected")
+            logger.info("Blitzing Firepower: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_lightning_fast_reactions(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Lightning-Fast Reactions: no unit selected")
+            logger.info("Lightning-Fast Reactions: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_skyborne_sanctuary(self, player, name: str, context: Dict[str, Any], unit, transport) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None or transport is None:
-            print("Skyborne Sanctuary: missing unit or transport")
+            logger.info("Skyborne Sanctuary: missing unit or transport")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["transport_unit"] = transport
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_aggressive_disembarkation(
         self,
@@ -18758,7 +18760,7 @@ class GameView:
         if manager is None:
             return
         if transport is None or embarked_unit is None:
-            print("Aggressive Disembarkation: missing transport or embarked unit")
+            logger.info("Aggressive Disembarkation: missing transport or embarked unit")
             return
         ctx = dict(context)
         ctx["unit"] = transport
@@ -18766,9 +18768,9 @@ class GameView:
         ctx["embarked_unit"] = embarked_unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_fury_unleashed(
         self,
@@ -18782,7 +18784,7 @@ class GameView:
         if manager is None:
             return
         if transport is None or embarked_unit is None:
-            print("Fury Unleashed: missing transport or embarked unit")
+            logger.info("Fury Unleashed: missing transport or embarked unit")
             return
         ctx = dict(context)
         ctx["unit"] = transport
@@ -18790,9 +18792,9 @@ class GameView:
         ctx["embarked_unit"] = embarked_unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_endless_pursuit(
         self,
@@ -18806,31 +18808,31 @@ class GameView:
         if manager is None:
             return
         if unit is None or transport is None:
-            print("Endless Pursuit of Violence: missing unit or transport")
+            logger.info("Endless Pursuit of Violence: missing unit or transport")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ctx["transport_unit"] = transport
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     def _finalize_webway_tunnel(self, player, name: str, context: Dict[str, Any], unit) -> None:
         manager = getattr(player, "stratagems", None)
         if manager is None:
             return
         if unit is None:
-            print("Webway Tunnel: no unit selected")
+            logger.info("Webway Tunnel: no unit selected")
             return
         ctx = dict(context)
         ctx["unit"] = unit
         ok = manager.use(name, **ctx)
         if ok:
-            print(f"Used stratagem: {name}")
+            logger.info(f"Used stratagem: {name}")
         else:
-            print(f"Could not use stratagem: {name}")
+            logger.info(f"Could not use stratagem: {name}")
 
     # -------- Rule info helpers --------
     def _get_waha_helper(self):
@@ -19427,7 +19429,7 @@ class GameView:
                     continue
                 model_shape = model.model_base.get_base_shape()
                 if model_shape.contains(game_point):
-                    print(f"Found model {model.name} from unit {model.parent_unit.name}")
+                    logger.info(f"Found model {model.name} from unit {model.parent_unit.name}")
                     return model
         
         return None
@@ -19839,7 +19841,7 @@ class GameView:
         self.left_roster_pane.selected_unit = None
         self.right_roster_pane.selected_unit = None
         
-        print("Deployment phase completed! Press SPACE to start the game.")
+        logger.info("Deployment phase completed! Press SPACE to start the game.")
 
     def close_unit_details(self):
         """Close the unit details panel"""

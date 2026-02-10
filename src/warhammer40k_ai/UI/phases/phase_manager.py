@@ -11,6 +11,8 @@ from warhammer40k_ai.utility.dice import get_roll
 
 from ..ui_constants import TILE_SIZE
 from ...utility.debug import describe_callable
+import logging
+logger = logging.getLogger(__name__)
 
 
 def _apply_game_command(game, kind: str, *, player_id: str | None = None, payload: Optional[dict] = None):
@@ -155,17 +157,17 @@ class SetupPhaseHandler(BasePhaseHandler):
                 if current_phase_before.name == 'MUSTER_ARMIES':
                     # Armies were just loaded - refresh roster panes
                     self.game_view.refresh_roster_panes()
-                    print("UI updated after armies loaded")
+                    logger.info("UI updated after armies loaded")
                 elif current_phase_before.name == 'DETERMINE_ATTACKER_AND_DEFENDER':
                     # Attacker/Defender roles determined - update titles
                     self.game_view.update_roster_pane_titles()
-                    print("UI updated after attacker/defender determined")
+                    logger.info("UI updated after attacker/defender determined")
                 
                 if setup_complete:
                     # Final update after all setup phases complete
                     self.game_view.refresh_roster_panes()
                     self.game_view.update_roster_pane_titles()
-                    print("UI updated after setup completion")
+                    logger.info("UI updated after setup completion")
                 
                 return True
         
@@ -208,17 +210,17 @@ class SetupPhaseHandler(BasePhaseHandler):
             layout = result.get("layout")
             option_id = result.get("option_id", "")
             if not option_id:
-                print("ERROR: Mission selection option not found in decision options")
+                logger.error("ERROR: Mission selection option not found in decision options")
                 return
             resolve_decision_command(self.game, req, option_id, result_payload={"layout": layout})
-            print(f"Mission selected: {combination.get('id')} - {combination.get('primary')} / {combination.get('deployment')} / Layout {layout}")
+            logger.info(f"Mission selected: {combination.get('id')} - {combination.get('primary')} / {combination.get('deployment')} / Layout {layout}")
 
             # Execute the phase and advance
             _execute_setup_phase_cmd(self.game, player_id=_current_player_id(self.game), payload={})
             _advance_setup_phase_cmd(self.game, player_id=_current_player_id(self.game))
 
         def _cancel() -> None:
-            print("Mission selection cancelled - using default")
+            logger.info("Mission selection cancelled - using default")
             if req.options:
                 default_opt = req.options[0]
                 combo = dict(getattr(default_opt, "payload", {}) or {}).get("combination", {})
@@ -235,7 +237,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        print("Mission Selection Dialog opened - choose from approved combinations A-T")
+        logger.info("Mission Selection Dialog opened - choose from approved combinations A-T")
 
     def _show_leader_attachment_dialog(self):
         """Show the leader attachment dialog for DECLARE_BATTLE_FORMATIONS phase."""
@@ -272,7 +274,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     if army:
                         army.validate_leaders()
             except Exception as e:
-                print(f"  Leader attachment validation failed: {e}")
+                logger.exception(f"  Leader attachment validation failed: {e}")
                 return
 
             # Refresh roster panes so attached leaders collapse (once implemented)
@@ -323,7 +325,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        print("Leader Attachment Dialog opened - select leaders and attach to eligible units")
+        logger.info("Leader Attachment Dialog opened - select leaders and attach to eligible units")
 
     def _show_transport_assignment_dialog(self):
         """Show the transport assignment dialog for DECLARE_BATTLE_FORMATIONS phase."""
@@ -407,7 +409,7 @@ class SetupPhaseHandler(BasePhaseHandler):
         except Exception:
             pass
 
-        print("Transport Assignment Dialog opened - select transports and units to start embarked")
+        logger.info("Transport Assignment Dialog opened - select transports and units to start embarked")
 
     def _start_hover_mode_selection_flow(self, players, on_done) -> None:
         """Prompt local players to choose Hover mode for eligible AIRCRAFT before formations dialogs."""
@@ -533,7 +535,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     return []
 
             if len(players) != 2:
-                print("  Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
+                logger.info("  Side-by-side formations UI currently supports exactly 2 players; falling back to sequential flow.")
                 # Keep existing behavior by running as two sequential dialogs (old implementation).
                 # (We intentionally do not duplicate the old nested functions here.)
                 try:
@@ -624,7 +626,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_left.validate_leaders()
                     except Exception as e:
-                        print(f"  {p_left.name} leader attachment validation failed: {e}")
+                        logger.exception(f"  {p_left.name} leader attachment validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_left)
                     modal.left_done = True
@@ -645,7 +647,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_right.validate_leaders()
                     except Exception as e:
-                        print(f"  {p_right.name} leader attachment validation failed: {e}")
+                        logger.exception(f"  {p_right.name} leader attachment validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_right)
                     modal.right_done = True
@@ -729,7 +731,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_left.validate_support_artillery()
                     except Exception as e:
-                        print(f"  {p_left.name} support artillery validation failed: {e}")
+                        logger.exception(f"  {p_left.name} support artillery validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_left)
                     modal.left_done = True
@@ -750,7 +752,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                     try:
                         a_right.validate_support_artillery()
                     except Exception as e:
-                        print(f"  {p_right.name} support artillery validation failed: {e}")
+                        logger.exception(f"  {p_right.name} support artillery validation failed: {e}")
                         return
                     _mark_attached_leaders_handled(a_right)
                     modal.right_done = True
@@ -1413,7 +1415,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 try:
                     army.validate_support_artillery()
                 except Exception as e:
-                    print(f"  {player.name} support artillery validation failed: {e}")
+                    logger.exception(f"  {player.name} support artillery validation failed: {e}")
                     return
                 try:
                     self.game_view.refresh_roster_panes()
@@ -1469,7 +1471,7 @@ class SetupPhaseHandler(BasePhaseHandler):
                 try:
                     army.validate_leaders()
                 except Exception as e:
-                    print(f"  {player.name} leader attachment validation failed: {e}")
+                    logger.exception(f"  {player.name} leader attachment validation failed: {e}")
                     return
                 try:
                     self.game_view.refresh_roster_panes()
@@ -1657,23 +1659,23 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         """Handle mouse clicks during deployment phase"""
         x, y = mouse_pos
 
-        print(f"DEBUG: _handle_deployment_click at ({x}, {y})")
-        print(f"DEBUG: Left roster rect: {self.game_view.left_roster_pane.rect}")
-        print(f"DEBUG: Right roster rect: {self.game_view.right_roster_pane.rect}")
+        logger.debug(f"DEBUG: _handle_deployment_click at ({x}, {y})")
+        logger.debug(f"DEBUG: Left roster rect: {self.game_view.left_roster_pane.rect}")
+        logger.debug(f"DEBUG: Right roster rect: {self.game_view.right_roster_pane.rect}")
 
         # Check roster pane clicks first
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
-            print(f"DEBUG: Click is in LEFT roster pane")
+            logger.debug(f"DEBUG: Click is in LEFT roster pane")
             self.game_view.left_roster_pane.on_mouse_press(x, y, 1)
             self.game_view.selected_unit = self.game_view.left_roster_pane.selected_unit
             return True
         elif self.game_view.right_roster_pane.rect.collidepoint(x, y):
-            print(f"DEBUG: Click is in RIGHT roster pane")
+            logger.debug(f"DEBUG: Click is in RIGHT roster pane")
             self.game_view.right_roster_pane.on_mouse_press(x, y, 1)
             self.game_view.selected_unit = self.game_view.right_roster_pane.selected_unit
             return True
         else:
-            print(f"DEBUG: Click is NOT in any roster pane")
+            logger.debug(f"DEBUG: Click is NOT in any roster pane")
 
         # Handle battlefield deployment clicks
         if (self.game_view.selected_unit and not self.game_view.selected_unit.deployed and
@@ -1717,7 +1719,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 except Exception:
                     pass
 
-            print(f"[DeploymentPhaseHandler] Opening per-model deployment dialog for {self.game_view.selected_unit.name}")
+            logger.info(f"[DeploymentPhaseHandler] Opening per-model deployment dialog for {self.game_view.selected_unit.name}")
             self._request_move_unit_decision(
                 self.game_view.selected_unit,
                 "deploy",
@@ -1736,7 +1738,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
         """Handle unit deployment on battlefield"""
         # Check if deployment zones are loaded
         if not hasattr(self.game, 'deployment_zones') or not self.game.deployment_zones:
-            print(f"Press SPACE to begin deployment sequence first")
+            logger.info(f"Press SPACE to begin deployment sequence first")
             return True
         
         # Convert screen coordinates to game coordinates using helper method
@@ -1770,9 +1772,9 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 self.game_view.selected_unit, unit_x, unit_y, player_id):
                 # Invalid position - reset and show error
                 if self.game_view.selected_unit.has_infiltrate():
-                    print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")
+                    logger.error(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name} (Infiltrate)")
                 else:
-                    print(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name}")
+                    logger.error(f"ERROR: Invalid deployment position for {self.game_view.selected_unit.name}")
                 self.game_view.reset_unit_position(self.game_view.selected_unit,
                                                  None, original_model_positions)
                 return True
@@ -1794,9 +1796,9 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                         else:
                             parts.append(f"({mx:.1f}, {my:.1f}, {mz:.1f})")
                     positions_str = ", ".join(parts)
-                    print(f"Unit {self.game_view.selected_unit.name} deployed at: {positions_str}")
+                    logger.info(f"Unit {self.game_view.selected_unit.name} deployed at: {positions_str}")
                 except Exception:
-                    print(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
+                    logger.info(f"Unit {self.game_view.selected_unit.name} deployed at ({unit_x:.1f}, {unit_y:.1f})")
                 self.game_view.selected_unit.deployed = True
                 
                 # Record deployment action
@@ -1813,7 +1815,7 @@ class DeploymentPhaseHandler(BasePhaseHandler):
                 self.game_view.left_roster_pane.selected_unit = None
                 self.game_view.right_roster_pane.selected_unit = None
             else:
-                print("Failed to place unit")
+                logger.error("Failed to place unit")
                 self.game_view.reset_unit_position(self.game_view.selected_unit,
                                                  None, original_model_positions)
         
@@ -1864,17 +1866,17 @@ class BattlePhaseHandler(BasePhaseHandler):
         if current_phase.name == 'FIGHT_PHASE':
             if self.fight_phase_manager and not self.fight_phase_manager.is_complete():
                 # Force complete the fight phase
-                print("INFO: Manually completing fight phase...")
+                logger.info("INFO: Manually completing fight phase...")
                 self.fight_phase_manager._complete_fight_phase()
                 return True
             else:
                 # Fight phase already complete, advance to next phase
-                print("INFO: Fight phase complete, advancing to next phase...")
+                logger.info("INFO: Fight phase complete, advancing to next phase...")
                 return False  # Let main loop advance phase
 
         # For other phases, let main loop handle advancement
         else:
-            print(f"INFO: Manually advancing {current_phase.name}...")
+            logger.info(f"INFO: Manually advancing {current_phase.name}...")
             return False  # Let main loop advance phase
 
     def _handle_battle_click(self, mouse_pos, button) -> bool:
@@ -1948,12 +1950,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Check if this unit belongs to the current player
         if not (unit.parent_army and unit.parent_army.player == current_player):
-            print(f"ERROR: {unit.name} does not belong to current player {current_player.name}")
+            logger.error(f"ERROR: {unit.name} does not belong to current player {current_player.name}")
             return
         
         # Only allow local control to interact with units during their turn
         if not current_player.has_control():
-            print(f"ERROR: Current player {current_player.name} has no local control")
+            logger.error(f"ERROR: Current player {current_player.name} has no local control")
             return
         
         # Synchronize selection across UI components
@@ -1969,7 +1971,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         elif current_phase.name == 'FIGHT_PHASE':
             self._handle_fight_phase_selection(unit)
         else:
-            print(f"ERROR: Unit selection not available in {current_phase.name}")
+            logger.error(f"ERROR: Unit selection not available in {current_phase.name}")
     
     def _handle_movement_phase_selection(self, unit) -> None:
         """Handle unit selection during movement phase"""
@@ -2052,18 +2054,18 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Check if unit can shoot
         if unit.round_state.shot_this_round:
-            print(f"ERROR: {unit.name} has already shot this round")
+            logger.error(f"ERROR: {unit.name} has already shot this round")
             return
 
         try:
             if hasattr(unit, "is_shooting_phase_ineligible") and unit.is_shooting_phase_ineligible(self.game):
-                print(f"ERROR: {unit.name} is not eligible to shoot this phase")
+                logger.error(f"ERROR: {unit.name} is not eligible to shoot this phase")
                 return
         except Exception:
             pass
         
         if unit.round_state.fell_back_this_round:
-            print(f"ERROR: {unit.name} cannot shoot after falling back")
+            logger.error(f"ERROR: {unit.name} cannot shoot after falling back")
             return
         
         # Check if unit is engaged and can't shoot with detailed debugging
@@ -2077,12 +2079,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         is_engaged = len(engaged_enemies) > 0
 
         if is_engaged:
-            print(f"DEBUG: {unit.name} is in engagement range of: {', '.join(engaged_enemies)}")
+            logger.debug(f"DEBUG: {unit.name} is in engagement range of: {', '.join(engaged_enemies)}")
 
             # Show detailed position information
             if unit.models:
                 unit_pos = unit.models[0].get_location() if unit.models[0].is_alive else None
-                print(f"DEBUG: {unit.name} position: {unit_pos}")
+                logger.debug(f"DEBUG: {unit.name} position: {unit_pos}")
 
                 for enemy_name in engaged_enemies:
                     enemy_unit = next((e for e in enemy_units if e.name == enemy_name), None)
@@ -2090,7 +2092,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         enemy_pos = enemy_unit.models[0].get_location() if enemy_unit.models[0].is_alive else None
                         if unit_pos and enemy_pos:
                             distance = ((unit_pos[0] - enemy_pos[0])**2 + (unit_pos[1] - enemy_pos[1])**2)**0.5
-                            print(f"DEBUG: Distance to {enemy_name}: {distance:.1f}\"")
+                            logger.debug(f"DEBUG: Distance to {enemy_name}: {distance:.1f}\"")
 
         if is_engaged:
             # Check if unit has any weapons that can shoot while engaged
@@ -2110,7 +2112,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     break
             
             if not has_eligible_weapons:
-                print(f"ERROR: {unit.name} is engaged and has no weapons that can shoot in engagement range")
+                logger.error(f"ERROR: {unit.name} is engaged and has no weapons that can shoot in engagement range")
                 return
         
         def _show_shooting_dialog():
@@ -2286,12 +2288,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Handle unit selection during charge phase"""
         # Check if unit has already charged this round
         if hasattr(unit.round_state, 'attempted_charge_this_round') and unit.round_state.attempted_charge_this_round:
-            print(f"ERROR: {unit.name} has already attempted a charge this round")
+            logger.error(f"ERROR: {unit.name} has already attempted a charge this round")
             return
         
         # Check if unit can charge (not advanced unless allowed, not fell back, etc.)
         if unit.round_state.fell_back_this_round:
-            print(f"ERROR: {unit.name} fell back and cannot charge")
+            logger.error(f"ERROR: {unit.name} fell back and cannot charge")
             return
         
         # Show charge declaration dialog
@@ -2406,28 +2408,28 @@ class BattlePhaseHandler(BasePhaseHandler):
         unit_owner = unit.get_parent_army().player if unit.get_parent_army() else None
         
         if not unit_owner:
-            print(f"ERROR: {unit.name} has no owner")
+            logger.error(f"ERROR: {unit.name} has no owner")
             return
         
         if active_player != unit_owner:
-            print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+            logger.error(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
             return
         
         # Check if unit is eligible to fight in current stage
         eligible_units = self.fight_phase_manager._get_eligible_units_for_player(unit_owner)
         if unit not in eligible_units:
-            print(f"ERROR: {unit.name} is not eligible to fight in the current stage")
+            logger.error(f"ERROR: {unit.name} is not eligible to fight in the current stage")
             return
         
         # Unit is valid - process the selection
-        print(f"OK: {unit_owner.name} selected {unit.name} to fight")
+        logger.info(f"OK: {unit_owner.name} selected {unit.name} to fight")
         def _after_battle_focus():
             self.fight_phase_manager.unit_selected(unit, current_player, opponent_player)
         self.game_view._maybe_prompt_battle_focus_sudden_strike(unit, _after_battle_focus)
     
     def _initialize_fight_phase_manager(self, current_player: Player, opponent_player: Player) -> None:
         """Initialize the fight phase manager with proper callbacks."""
-        print("INFO: Initializing Fight Phase Manager")
+        logger.info("INFO: Initializing Fight Phase Manager")
         self.fight_phase_manager = FightPhaseManager(self.game)
         try:
             self.game.fight_phase_manager = self.fight_phase_manager
@@ -2436,12 +2438,12 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # Set up callbacks for local player interaction
         def on_unit_selection_required(active_player: Player, eligible_units: List[Unit], stage: FightStage):
-            print(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.control.name})")
-            print(f"DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
+            logger.debug(f"DEBUG: on_unit_selection_required called for {active_player.name} ({active_player.control.name})")
+            logger.debug(f"DEBUG: Stage: {stage.value}, Eligible units: {[unit.name for unit in eligible_units]}")
 
             if active_player.has_control():
-                print(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
-                print(f"   Eligible units: {[unit.name for unit in eligible_units]}")
+                logger.info(f"{active_player.name} must select a unit to fight ({stage.value} stage)")
+                logger.info(f"   Eligible units: {[unit.name for unit in eligible_units]}")
                 from ...engine.decision_kinds import DECISION_SELECT_FIGHTER
                 from ...engine.decisions import DecisionOption, DecisionRequest
                 from ...utility.decision_utils import resolve_decision_value
@@ -2464,32 +2466,32 @@ class BattlePhaseHandler(BasePhaseHandler):
                     def on_unit_selected(option_id):
                         value, apply_result = resolve_decision_value(self.game, req, option_id)
                         if value is None or not getattr(apply_result, "ok", False):
-                            print("ERROR: Failed to resolve fight unit selection decision")
+                            logger.error("ERROR: Failed to resolve fight unit selection decision")
                             return
                         selected_unit = value
-                        print(f"DEBUG: Unit selected callback called for {selected_unit.name}")
+                        logger.debug(f"DEBUG: Unit selected callback called for {selected_unit.name}")
                         def _after_battle_focus():
                             self.fight_phase_manager.unit_selected(selected_unit, current_player, opponent_player)
                         self.game_view._maybe_prompt_battle_focus_sudden_strike(selected_unit, _after_battle_focus)
 
                     def on_cancel():
-                        print("Fight unit selection cancelled")
+                        logger.info("Fight unit selection cancelled")
 
                     self.game_view.ui_interface.show_fight_unit_selection_dialog(
                         stage.value, eligible_units, on_unit_selected, on_cancel, decision_request=req
                     )
             else:
-                print(f"Waiting for remote unit selection: {active_player.name}")
+                logger.info(f"Waiting for remote unit selection: {active_player.name}")
                 return
 
         def on_target_selection_required(fighting_unit: Unit, eligible_targets: List[Unit], active_player: Player):
             if not active_player.has_control():
-                print(f"Waiting for remote target selection: {active_player.name}")
+                logger.info(f"Waiting for remote target selection: {active_player.name}")
                 return
 
             def _start_fight_target_selection() -> None:
-                print(f"INFO: {active_player.name} must select targets for {fighting_unit.name}")
-                print(f"   Eligible targets: {[target.name for target in eligible_targets]}")
+                logger.info(f"INFO: {active_player.name} must select targets for {fighting_unit.name}")
+                logger.info(f"   Eligible targets: {[target.name for target in eligible_targets]}")
                 from ...engine.decision_kinds import DECISION_SELECT_FIGHT_TARGETS
                 from ...engine.decisions import DecisionOption, DecisionRequest
                 from ...utility.decision_utils import resolve_decision_value
@@ -2558,7 +2560,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
                 if len(target_ids) <= 1:
                     option_id = options[0].option_id if options else ""
-                    print("INFO: Auto-selecting single target")
+                    logger.info("INFO: Auto-selecting single target")
                     _resolve_targets(option_id, target_ids)
                     return
 
@@ -2756,7 +2758,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             _start_fight_target_selection()
         
         def on_stage_complete():
-            print("OK: Fight Phase complete")
+            logger.info("OK: Fight Phase complete")
             def _advance_phase():
                 self.fight_phase_manager = None
                 try:
@@ -2769,7 +2771,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         def on_movement_required(movement_type: str, unit: Unit, callback):
             """Handle pile-in and consolidate movements using Individual Model Movement Dialog"""
-            print(f"{unit.name} needs to perform {movement_type} movement")
+            logger.info(f"{unit.name} needs to perform {movement_type} movement")
 
             # Determine max distance based on movement type
             max_distance = 3.0  # Default is 3"
@@ -2789,7 +2791,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         def on_weapon_selection_required(unit: Unit, target_unit: Unit, callback):
             """Handle melee weapon selection using Melee Weapon Declaration Dialog"""
-            print(f"{unit.name} needs to select melee weapons against {target_unit.name}")
+            logger.info(f"{unit.name} needs to select melee weapons against {target_unit.name}")
             def _show_weapons():
                 self._request_melee_weapon_declarations(unit, target_unit, callback)
             if hasattr(self.game_view, "_maybe_prompt_fight_within_3"):
@@ -3164,7 +3166,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         decision_request=None,
     ) -> None:
         if movement_type in ("pile_in", "consolidate") and bool(getattr(unit, "is_aircraft", False)):
-            print(f"{getattr(unit, 'name', 'Unit')} cannot {movement_type.replace('_', ' ')} (AIRCRAFT)")
+            logger.info(f"{getattr(unit, 'name', 'Unit')} cannot {movement_type.replace('_', ' ')} (AIRCRAFT)")
             if callable(callback):
                 callback(False)
             return
@@ -3227,7 +3229,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                         err_list = list(getattr(cmd_result, "errors", ()) or ())
                     except Exception:
                         err_list = []
-                    print(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
+                    logger.error(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
             else:
                 cmd_result = resolve_decision_command(self.game, req, skip_id, result_payload={"skipped": True})
                 if not getattr(cmd_result, "ok", False):
@@ -3235,9 +3237,9 @@ class BattlePhaseHandler(BasePhaseHandler):
                         err_list = list(getattr(cmd_result, "errors", ()) or ())
                     except Exception:
                         err_list = []
-                    print(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
+                    logger.error(f"ERROR: Decision resolve failed for {getattr(req, 'decision_type', '')}: {err_list}")
             if callable(callback):
-                print(f"DEBUG: Calling callback from _on_move_complete {describe_callable(callback)} with argument {completed}")
+                logger.debug(f"DEBUG: Calling callback from _on_move_complete {describe_callable(callback)} with argument {completed}")
                 callback(completed)
 
         self.game_view.individual_model_movement_dialog.show(
@@ -3256,7 +3258,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         try:
             self.game_view.dialog_manager.open(self.game_view.individual_model_movement_dialog, modal=True)
         except Exception:
-            print(f"Unexpected Error while opening individual_model_movement_dialog")
+            logger.exception(f"Unexpected Error while opening individual_model_movement_dialog")
             pass
 
     def _request_melee_weapon_declarations(
@@ -3312,17 +3314,17 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _start_comprehensive_fight_sequence(self, fighting_unit: Unit, target_units: List[Unit], current_player: Player, opponent_player: Player):
         """Start the comprehensive fight sequence following proper Warhammer 40k rules."""
-        print(f"Starting comprehensive fight sequence: {fighting_unit.name} vs {[t.name for t in target_units]}")
+        logger.info(f"Starting comprehensive fight sequence: {fighting_unit.name} vs {[t.name for t in target_units]}")
         
         # Step 1: Pile-in movement
         def on_pile_in_complete(completed: bool):
-            print(f"{fighting_unit.name} pile-in completed: {completed}")
+            logger.info(f"{fighting_unit.name} pile-in completed: {completed}")
             
             if len(target_units) == 1:
                 # Single target - proceed directly to weapon allocation
                 self._start_weapon_allocation_phase(fighting_unit, target_units[0], current_player, opponent_player)
             else:
-                print("INFO: Multiple targets available - selecting weapons then allocating targets per weapon")
+                logger.info("INFO: Multiple targets available - selecting weapons then allocating targets per weapon")
                 self._start_multi_target_weapon_allocation_phase(
                     fighting_unit,
                     target_units,
@@ -3331,7 +3333,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 )
         
         # Start pile-in movement
-        print(f"{fighting_unit.name} needs to perform pile_in movement")
+        logger.info(f"{fighting_unit.name} needs to perform pile_in movement")
         max_distance = 3.0
         try:
             override = fighting_unit.get_fight_phase_move_distance_override("pile_in")
@@ -3373,7 +3375,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             eligible_models = None
 
         def on_weapon_allocation_complete(weapon_declarations):
-            print(f"Weapon allocation completed with {len(weapon_declarations)} declarations")
+            logger.info(f"Weapon allocation completed with {len(weapon_declarations)} declarations")
             self._start_multi_target_weapon_target_allocation_phase(
                 fighting_unit,
                 target_units,
@@ -3406,7 +3408,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         """Allocate weapon bundles to targets (and optional splits), then resolve attacks."""
         def on_allocation_confirm(attack_declarations: List[dict]):
             if not attack_declarations:
-                print("INFO: No weapon target allocations - skipping attacks")
+                logger.info("INFO: No weapon target allocations - skipping attacks")
                 self._start_consolidate_phase(fighting_unit, current_player, opponent_player)
                 return
             self._start_multi_target_attack_resolution(
@@ -3418,7 +3420,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             )
 
         def on_allocation_cancel():
-            print("INFO: Weapon target allocation cancelled")
+            logger.info("INFO: Weapon target allocation cancelled")
             self.fight_phase_manager._switch_active_player(current_player, opponent_player)
 
         from ...engine.decision_kinds import DECISION_ALLOCATE_MELEE_TARGETS
@@ -3473,7 +3475,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         ordered_targets = [t for t in target_units if t in grouped]
         if not ordered_targets:
-            print("INFO: No target groups to resolve")
+            logger.info("INFO: No target groups to resolve")
             self._start_consolidate_phase(fighting_unit, current_player, opponent_player)
             return
 
@@ -3512,10 +3514,10 @@ class BattlePhaseHandler(BasePhaseHandler):
         skip_consolidate: bool = False,
     ):
         """Handle weapon allocation phase - each model selects one weapon (except EXTRA ATTACKS)."""
-        print(f"Starting weapon allocation: {fighting_unit.name} vs {target_unit.name}")
+        logger.info(f"Starting weapon allocation: {fighting_unit.name} vs {target_unit.name}")
         
         def on_weapon_allocation_complete(weapon_declarations):
-            print(f"Weapon allocation completed with {len(weapon_declarations)} declarations")
+            logger.info(f"Weapon allocation completed with {len(weapon_declarations)} declarations")
             self._start_target_model_selection_phase(
                 fighting_unit,
                 target_unit,
@@ -3551,7 +3553,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         skip_consolidate: bool = False,
     ):
         """Handle target model selection phase."""
-        print(f"INFO: Starting target model selection phase")
+        logger.info(f"INFO: Starting target model selection phase")
         
         # NOTE: PRECISION (10e) is *not* "pick a target model up-front".
         # It is an allocation override that happens after a successful wound is allocated.
@@ -3562,7 +3564,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         has_mixed_attributes = self._unit_has_mixed_attributes(target_unit)
         
         if has_mixed_attributes:
-            print(f"INFO: Mixed attributes detected - defender selects wound allocation")
+            logger.info(f"INFO: Mixed attributes detected - defender selects wound allocation")
 
             from ...engine.decision_kinds import DECISION_SELECT_TARGET_MODEL
             from ...engine.decisions import DecisionOption, DecisionRequest
@@ -3593,11 +3595,11 @@ class BattlePhaseHandler(BasePhaseHandler):
                 if apply_result is None or not getattr(apply_result, "ok", False):
                     value = None
                 if value is not None:
-                    print(f"INFO: Wound allocation: {getattr(value, 'name', 'model')} selected to receive wounds")
+                    logger.info(f"INFO: Wound allocation: {getattr(value, 'name', 'model')} selected to receive wounds")
                     for decl in weapon_declarations:
                         decl['wound_target'] = value
                 else:
-                    print("INFO: Wound allocation: using automatic allocation")
+                    logger.info("INFO: Wound allocation: using automatic allocation")
                 self._start_attack_resolution_phase(
                     fighting_unit,
                     target_unit,
@@ -3627,7 +3629,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             )
             
         else:
-            print(f"INFO: No special targeting required - proceeding to attack resolution")
+            logger.info(f"INFO: No special targeting required - proceeding to attack resolution")
             self._start_attack_resolution_phase(
                 fighting_unit,
                 target_unit,
@@ -3663,7 +3665,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         skip_consolidate: bool = False,
     ):
         """Handle sequential attack resolution."""
-        print(f"Starting attack resolution phase")
+        logger.info(f"Starting attack resolution phase")
         
         # Resolve attacks sequentially
         self._resolve_sequential_attacks(fighting_unit, target_unit, weapon_declarations)
@@ -3678,7 +3680,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     def _start_consolidate_phase(self, fighting_unit: Unit, current_player: Player, opponent_player: Player) -> None:
         """Handle consolidate movement after attacks are resolved."""
         def on_consolidate_complete(completed: bool):
-            print(f"INFO: {fighting_unit.name} consolidate completed: {completed}")
+            logger.info(f"INFO: {fighting_unit.name} consolidate completed: {completed}")
 
             on_bonus = getattr(self, "_bonus_fight_on_complete", None)
             if callable(on_bonus):
@@ -3691,7 +3693,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
             self.fight_phase_manager.finalize_unit_fight(fighting_unit, current_player, opponent_player)
 
-        print(f"INFO: {fighting_unit.name} needs to perform consolidate movement")
+        logger.info(f"INFO: {fighting_unit.name} needs to perform consolidate movement")
         max_distance = 3.0
         try:
             override = fighting_unit.get_fight_phase_move_distance_override("consolidate")
@@ -3708,7 +3710,7 @@ class BattlePhaseHandler(BasePhaseHandler):
     
     def _resolve_sequential_attacks(self, fighting_unit: Unit, target_unit: Unit, weapon_declarations: List):
         """Resolve attacks one at a time with proper wound allocation."""
-        print(f"Resolving {len(weapon_declarations)} weapon attacks sequentially")
+        logger.info(f"Resolving {len(weapon_declarations)} weapon attacks sequentially")
         fight_manager = self.fight_phase_manager or FightPhaseManager(self.game)
         attack_unit = fighting_unit
         if hasattr(fight_manager, "_as_attached_view"):
@@ -3816,7 +3818,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             hit_roll = get_roll("1D6")
             hit_needed = weapon_skill
             
-            print(f"    INFO: Hit: {hit_roll} vs {hit_needed}+ = {'HIT' if hit_roll >= hit_needed else 'MISS'}")
+            logger.info(f"    INFO: Hit: {hit_roll} vs {hit_needed}+ = {'HIT' if hit_roll >= hit_needed else 'MISS'}")
             
             if hit_roll < hit_needed:
                 return False
@@ -3825,7 +3827,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             wound_roll = get_roll("1D6")
             wound_needed = self._calculate_wound_target(strength, target_model.toughness)
             
-            print(f"    WOUND: Wound: {wound_roll} vs {wound_needed}+ = {'WOUND' if wound_roll >= wound_needed else 'NO WOUND'}")
+            logger.info(f"    WOUND: Wound: {wound_roll} vs {wound_needed}+ = {'WOUND' if wound_roll >= wound_needed else 'NO WOUND'}")
             
             if wound_roll < wound_needed:
                 return False
@@ -3839,7 +3841,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                     can_see = getattr(game_map, "can_model_see_model", None) if game_map is not None else None
                     if getattr(precision_choice_model, "is_alive", True) and (not callable(can_see) or can_see(attacking_model, precision_choice_model)):
                         target_model = precision_choice_model
-                        print(f"    INFO: PRECISION allocation: {getattr(target_model, 'name', 'CHARACTER')}")
+                        logger.info(f"    INFO: PRECISION allocation: {getattr(target_model, 'name', 'CHARACTER')}")
                 except Exception:
                     pass
             
@@ -3885,7 +3887,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             except Exception:
                 pass
 
-            print(f"     Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
+            logger.info(f"     Save: {save_roll} vs {effective_needed}+ ({detail_text}) = {'SAVED' if save_roll >= effective_needed else 'FAILED'}")
             
             if save_roll >= effective_needed:
                 return False
@@ -3896,7 +3898,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             else:
                 damage_dealt = int(damage) if damage else 1
             
-            print(f"    ' Damage: {damage_dealt}")
+            logger.info(f"    ' Damage: {damage_dealt}")
             
             # Use the model's take_damage method which handles FNP, death, etc.
             wounds_before = target_model.wounds
@@ -3906,7 +3908,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             return actual_damage > 0
             
         except Exception as e:
-            print(f"    ERROR: Attack resolution error: {e}")
+            logger.exception(f"    ERROR: Attack resolution error: {e}")
             return False
     
     def _calculate_wound_target(self, strength: int, toughness: int) -> int:
@@ -3973,7 +3975,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 return self._show_transport_embark_dialog(unit)
             if choice == 'disembark' and getattr(unit, "is_transport", False):
                 return self._show_transport_disembark_dialog(unit)
-            print(f"ERROR: Invalid movement choice: {choice}")
+            logger.error(f"ERROR: Invalid movement choice: {choice}")
             return
         
         # Get the unit's current engagement state
@@ -3983,7 +3985,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         # Check if the chosen action is available
         chosen_action = choice_mapping[choice]
         if chosen_action.value not in available_actions:
-            print(f"ERROR: {choice.title()} action not available for {unit.name}")
+            logger.error(f"ERROR: {choice.title()} action not available for {unit.name}")
             return
 
         def _begin_movement():
@@ -4013,9 +4015,9 @@ class BattlePhaseHandler(BasePhaseHandler):
                     self.game.request_decision(req)
                     if req.options:
                         resolve_decision_command(self.game, req, req.options[0].option_id, result_payload={})
-                    print(f"INFO: {unit.name} remains stationary")
+                    logger.info(f"INFO: {unit.name} remains stationary")
                 except Exception:
-                    print(f"ERROR: Failed to resolve stationary action for {unit.name}")
+                    logger.exception(f"ERROR: Failed to resolve stationary action for {unit.name}")
                 # Clear selection since action is complete
                 self.game_view.selected_unit_for_movement = None
                 self.game_view.movement_action = None
@@ -4043,10 +4045,10 @@ class BattlePhaseHandler(BasePhaseHandler):
                         cmd_result = resolve_decision_command(self.game, req, req.options[0].option_id, result_payload={})
                         if cmd_result is None or not getattr(cmd_result, "ok", False):
                             self._pending_advance_units.discard(unit_id)
-                            print(f"ERROR: Advance decision rejected for {unit.name}")
+                            logger.error(f"ERROR: Advance decision rejected for {unit.name}")
                             return
                 except Exception:
-                    print(f"ERROR: Failed to request advance roll for {unit.name}")
+                    logger.exception(f"ERROR: Failed to request advance roll for {unit.name}")
                     try:
                         self._pending_advance_units.discard(get_entity_id(unit))
                     except Exception:
@@ -4112,9 +4114,9 @@ class BattlePhaseHandler(BasePhaseHandler):
                     cmd = GameCommand.create(CMD_RESOLVE_DECISION, player_id=move_request.player_id, payload=cmd_payload)
                     self.game.apply_command(cmd)
                     if completed:
-                        print(f"{unit.name} {choice} movement completed")
+                        logger.info(f"{unit.name} {choice} movement completed")
                     else:
-                        print(f"{unit.name} {choice} movement skipped")
+                        logger.info(f"{unit.name} {choice} movement skipped")
                     # Clear selection after movement
                     self.game_view.selected_unit_for_movement = None
                     self.game_view.movement_action = None
@@ -4320,9 +4322,9 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         def _on_complete(completed: bool):
             if completed:
-                print(f"{unit.name} advance movement completed")
+                logger.info(f"{unit.name} advance movement completed")
             else:
-                print(f"{unit.name} advance movement skipped")
+                logger.info(f"{unit.name} advance movement skipped")
             self.game_view.selected_unit_for_movement = None
             self.game_view.movement_action = None
             self.game_view.selected_model_for_movement = None
@@ -4409,14 +4411,14 @@ class BattlePhaseHandler(BasePhaseHandler):
                             pass
                     success = True
                     if callback is None:
-                        print(f"{unit.name} charge successful - achieved engagement range for all targets")
+                        logger.info(f"{unit.name} charge successful - achieved engagement range for all targets")
                 else:
                     unit.round_state.charged_this_round = False
                     if callback is None:
-                        print(f"{unit.name} charge failed - {reason}")
+                        logger.error(f"{unit.name} charge failed - {reason}")
             else:
                 if callback is None:
-                    print(f"{unit.name} charge movement failed or skipped")
+                    logger.error(f"{unit.name} charge movement failed or skipped")
             self.game_view.selected_unit_for_movement = None
             self.game_view.movement_action = None
             self.game_view.selected_model_for_movement = None
@@ -4542,7 +4544,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
         passengers = list(getattr(transport_unit, "transport_passengers", []) or [])
         if not passengers:
-            print(f"ERROR: {transport_unit.name} has no embarked units")
+            logger.error(f"ERROR: {transport_unit.name} has no embarked units")
             return
 
         if not hasattr(self.game_view, "transport_disembark_dialog"):
@@ -4876,7 +4878,7 @@ class BattlePhaseHandler(BasePhaseHandler):
         
         # If fight phase manager is still None after initialization, fight phase is complete
         if not self.fight_phase_manager:
-            print("OK: Fight phase is complete - no actions available")
+            logger.info("OK: Fight phase is complete - no actions available")
             return False
         
         # Always check if a unit was clicked on the battlefield first
@@ -4894,7 +4896,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self._handle_fight_phase_selection(clicked_unit)
                 return True
             else:
-                print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                logger.error(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
                 return False
         
         # If no unit was clicked, fall back to selected unit (e.g., from RosterPane)
@@ -4906,7 +4908,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 self._handle_fight_phase_selection(self.game_view.selected_unit)
                 return True
             else:
-                print(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
+                logger.error(f"ERROR: It's {active_player.name}'s turn to select a unit, not {unit_owner.name}'s")
                 return False
         
         return False
@@ -4971,7 +4973,7 @@ class BattlePhaseHandler(BasePhaseHandler):
             self.game_view.individual_model_movement_dialog.visible and
             self.game_view.individual_model_movement_dialog.selected_model_index is not None):
 
-            print(f"DEBUG: Individual model movement tracking active at ({x}, {y})")
+            logger.debug(f"DEBUG: Individual model movement tracking active at ({x}, {y})")
 
             # Check if mouse is over battlefield area
             if self.game_view.battlefield_left < x < self.game_view.battlefield_right:
@@ -4980,7 +4982,7 @@ class BattlePhaseHandler(BasePhaseHandler):
 
                 # Store mouse position for individual model movement preview
                 self.game_view.individual_model_preview_target = (battlefield_x, battlefield_y)
-                print(f"DEBUG: Set preview target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
+                logger.debug(f"DEBUG: Set preview target to ({battlefield_x:.1f}, {battlefield_y:.1f})")
                 return True
             else:
                 # Clear preview when mouse leaves battlefield
@@ -4992,7 +4994,7 @@ class BattlePhaseHandler(BasePhaseHandler):
                 dialog = self.game_view.individual_model_movement_dialog
                 # print(f"DEBUG: Dialog exists - visible: {dialog.visible}, selected_model: {dialog.selected_model_index}")
             else:
-                print(f"DEBUG: No individual_model_movement_dialog found")
+                logger.debug(f"DEBUG: No individual_model_movement_dialog found")
 
         # Update roster pane hovers
         if self.game_view.left_roster_pane.rect.collidepoint(x, y):
@@ -5079,7 +5081,7 @@ class PhaseManager:
             elif current_setup_phase.name == 'RESOLVE_PREBATTLE_RULES':
                 # Start the scout phase if not already started for this phase
                 if not hasattr(self.prebattle_handler, 'scout_phase_started') or not self.prebattle_handler.scout_phase_started:
-                    print("Starting scout phase...")
+                    logger.info("Starting scout phase...")
                     self.prebattle_handler.start_scout_phase()
                     self.prebattle_handler.scout_phase_started = True
                 return self.prebattle_handler
@@ -5092,7 +5094,7 @@ class PhaseManager:
             # Auto-start fight phase if we're in fight phase and it hasn't been started
             if self.game.is_fight_phase():
                 if not hasattr(self.battle_handler, 'fight_phase_started') or not self.battle_handler.fight_phase_started:
-                    print("Auto-starting fight phase...")
+                    logger.info("Auto-starting fight phase...")
                     current_player = self.game.get_current_player()
                     opponent_player = self.game.get_opponent()
                     self.battle_handler._initialize_fight_phase_manager(current_player, opponent_player)
@@ -5197,17 +5199,17 @@ class PhaseManager:
 
         if not is_coherent:
             # Movement must END in coherency. Do not remove models for movement-caused incoherency.
-            print(f"ERROR: {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
+            logger.error(f"ERROR: {unit.name} is not in coherency after movement (non-coherent models: {non_coherent_models}). "
                   f"Movement ending out of coherency is not allowed.")
         else:
-            print(f"OK: {unit.name} maintains coherency after movement")
+            logger.info(f"OK: {unit.name} maintains coherency after movement")
 
     def _on_coherency_resolution(self, models_removed: bool):
         """Called when coherency violation dialog is complete"""
         if models_removed:
-            print("OK: Coherency violations resolved")
+            logger.info("OK: Coherency violations resolved")
         else:
-            print("ERROR: Coherency resolution cancelled")
+            logger.error("ERROR: Coherency resolution cancelled")
 
 
 class PreBattlePhaseHandler(BasePhaseHandler):
@@ -5224,7 +5226,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
 
     def start_scout_phase(self):
         """Initialize the queue of eligible human scout units."""
-        print("Initializing scout phase...")
+        logger.info("Initializing scout phase...")
         self.scout_units_queue = []
         self.current_scout_unit = None
         self.current_scout_player = None  # Reset player tracking
@@ -5243,33 +5245,33 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             first_turn_player = game.get_attacker() if game.attacker_index is not None else game.players[0]
         
         players_in_order = [first_turn_player] + [p for p in game.players if p != first_turn_player]
-        print(f"DEBUG: Scout phase players in order: {[p.name for p in players_in_order]}")
+        logger.debug(f"DEBUG: Scout phase players in order: {[p.name for p in players_in_order]}")
         
         for player in players_in_order:
             if player.has_control() and player.get_army():
-                print(f"DEBUG: Checking {player.name}'s units for scout ability")
+                logger.debug(f"DEBUG: Checking {player.name}'s units for scout ability")
                 for unit in player.get_army().units:
                     has_scout, scout_distance = unit.has_scout()
-                    print(f"DEBUG: {unit.name} - has_scout={has_scout}, deployed={unit.deployed}, reserve_status={unit.reserve_status}, scout_move_made={getattr(unit, 'scout_move_made', False)}")
+                    logger.debug(f"DEBUG: {unit.name} - has_scout={has_scout}, deployed={unit.deployed}, reserve_status={unit.reserve_status}, scout_move_made={getattr(unit, 'scout_move_made', False)}")
                     if has_scout and unit.deployed and unit.reserve_status == 'deployed' and not getattr(unit, 'scout_move_made', False):
                         self.scout_units_queue.append((unit, player, scout_distance))
-                        print(f"DEBUG: Added {unit.name} to scout queue")
+                        logger.debug(f"DEBUG: Added {unit.name} to scout queue")
         
-        print(f"DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
+        logger.debug(f"DEBUG: Scout queue has {len(self.scout_units_queue)} units: {[unit.name for unit, player, distance in self.scout_units_queue]}")
         self._next_scout_unit()
 
     def _next_scout_unit(self):
-        print(f"DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")
+        logger.debug(f"DEBUG: _next_scout_unit called, queue has {len(self.scout_units_queue)} units")
         if self.scout_units_queue:
             unit, player, scout_distance = self.scout_units_queue.pop(0)
-            print(f"DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
+            logger.debug(f"DEBUG: Processing next scout unit: {unit.name} (Player: {player.name})")
 
             # Check if player has changed and clear enemy model cache if so
             if self.current_scout_player != player:
                 if self.current_scout_player is not None:  # Not the first unit
 
                     clear_enemy_model_cache(id(self.game_view.game.map))
-                    print(f"Scout phase player switched to {player.name} - cleared enemy model cache")
+                    logger.info(f"Scout phase player switched to {player.name} - cleared enemy model cache")
                 self.current_scout_player = player
 
             self.current_scout_unit = unit
@@ -5284,7 +5286,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             self.scout_callback = None
             self.scout_distance = 0
             self.mouse_pos = None
-            print("OK: All human SCOUT moves complete. Press SPACE to continue.")
+            logger.info("OK: All human SCOUT moves complete. Press SPACE to continue.")
 
     def _show_scout_dialog(self, unit):
         # print(f"DEBUG: _show_scout_dialog called for {unit.name}")
@@ -5333,7 +5335,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                     # print(f"DEBUG: Scout movement complete for {unit.name}: completed={completed}")
                     # print(f"DEBUG: Setting scout_move_made=True for {unit.name}")
                     if completed:
-                        print(f"OK: {unit.name} scout movement completed")
+                        logger.info(f"OK: {unit.name} scout movement completed")
                         model_positions = []
                         for model in list(getattr(unit, "models", []) or []):
                             if not getattr(model, "is_alive", True):
@@ -5350,7 +5352,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                             )
                         _send_decision("scout", {"model_positions": model_positions})
                     else:
-                        print(f"INFO:  {unit.name} scout movement skipped")
+                        logger.info(f"INFO:  {unit.name} scout movement skipped")
                         _send_decision("skip", {})
                     # print(f"DEBUG: Calling _next_scout_unit() to proceed to next unit")
                     self._next_scout_unit()
@@ -5360,10 +5362,10 @@ class PreBattlePhaseHandler(BasePhaseHandler):
                 )
             elif choice == 'skip':
                 _send_decision("skip", {})
-                print(f"OK: {unit.name} scout move skipped")
+                logger.info(f"OK: {unit.name} scout move skipped")
                 self._next_scout_unit()
             elif choice == 'defer':
-                print(f"INFO:  {unit.name} scout decision deferred - moving to end of current player's queue")
+                logger.info(f"INFO:  {unit.name} scout decision deferred - moving to end of current player's queue")
                 # Move this unit to the end of the current player's units in the queue
                 player = None
                 for p in self.game_view.game.players:
@@ -5520,7 +5522,7 @@ class PreBattlePhaseHandler(BasePhaseHandler):
             if not self._current_player_has_control():
                 return True
             if not self.scout_units_queue and not self.awaiting_battlefield_click:
-                print("Proceeding to next phase...")
+                logger.info("Proceeding to next phase...")
                 return False  # Let the main loop advance the phase
         return False
 

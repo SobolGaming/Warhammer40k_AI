@@ -4,6 +4,8 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
+import logging
+logger = logging.getLogger(__name__)
 
 VERSION_PATH = Path(__file__).resolve().parents[1] / "src" / "warhammer40k_ai" / "version.py"
 
@@ -71,12 +73,13 @@ def main() -> None:
         new_version = _bump(current_version, "patch")
 
     if new_version == current_version:
-        print(f"Version unchanged: {current_version}")
+        logger.info(f"Version unchanged: {current_version}")
         return
 
     _write_version(new_version, content)
-    print(f"Version updated: {current_version} -> {new_version}")
+    logger.info(f"Version updated: {current_version} -> {new_version}")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

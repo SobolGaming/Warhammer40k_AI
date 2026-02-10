@@ -3,6 +3,8 @@ from __future__ import annotations
 from typing import Any, List, Optional
 
 from ..utility.entity_ids import get_entity_id
+import logging
+logger = logging.getLogger(__name__)
 
 
 class WorldEatersStratagemMixin:
@@ -409,7 +411,7 @@ class WorldEatersStratagemMixin:
         if transport_unit is None and len(candidates) == 1:
             transport_unit = candidates[0]
         if transport_unit is None:
-            print("ERROR: Aggressive Disembarkation: no transport provided")
+            logger.error("ERROR: Aggressive Disembarkation: no transport provided")
             return False
 
         root = self._goretrack_root(transport_unit)
@@ -419,21 +421,21 @@ class WorldEatersStratagemMixin:
             return False
         phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
         if str(phase_name).strip().lower() != "movement phase":
-            print("ERROR: Aggressive Disembarkation: wrong phase")
+            logger.error("ERROR: Aggressive Disembarkation: wrong phase")
             return False
         get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
         active_player = get_current_player() if callable(get_current_player) else None
         if active_player is not self.player:
-            print("ERROR: Aggressive Disembarkation: not your turn")
+            logger.error("ERROR: Aggressive Disembarkation: not your turn")
             return False
         if candidates and root not in candidates:
-            print("ERROR: Aggressive Disembarkation: target was not selected")
+            logger.error("ERROR: Aggressive Disembarkation: target was not selected")
             return False
         if not self._goretrack_owned_by_player(root, self.player):
-            print("ERROR: Aggressive Disembarkation: transport is not yours")
+            logger.error("ERROR: Aggressive Disembarkation: transport is not yours")
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: Aggressive Disembarkation: target cannot be selected")
+            logger.error("ERROR: Aggressive Disembarkation: target cannot be selected")
             return False
         if not self._is_unit_alive(root):
             return False
@@ -443,15 +445,15 @@ class WorldEatersStratagemMixin:
             return False
         has_keyword = getattr(root, "has_keyword", None)
         if not callable(has_keyword) or not bool(has_keyword("RHINO")):
-            print("ERROR: Aggressive Disembarkation: target is not a RHINO")
+            logger.error("ERROR: Aggressive Disembarkation: target is not a RHINO")
             return False
         if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
-            print("ERROR: Aggressive Disembarkation: transport already moved this phase")
+            logger.error("ERROR: Aggressive Disembarkation: transport already moved this phase")
             return False
 
         valid_rhinos = self._goretrack_rhino_candidates(require_not_moved=True, require_any_passengers=True)
         if root not in valid_rhinos:
-            print("ERROR: Aggressive Disembarkation: transport is not eligible")
+            logger.error("ERROR: Aggressive Disembarkation: transport is not eligible")
             return False
 
         passengers = self._goretrack_embarked_units(
@@ -460,16 +462,16 @@ class WorldEatersStratagemMixin:
             require_khorne_berzerkers=False,
         )
         if not passengers:
-            print("ERROR: Aggressive Disembarkation: no embarked units")
+            logger.error("ERROR: Aggressive Disembarkation: no embarked units")
             return False
         if embarked_unit is None:
             if len(passengers) == 1:
                 embarked_unit = passengers[0]
             else:
-                print("ERROR: Aggressive Disembarkation: no embarked unit selected")
+                logger.error("ERROR: Aggressive Disembarkation: no embarked unit selected")
                 return False
         if embarked_unit not in passengers:
-            print("ERROR: Aggressive Disembarkation: embarked unit is not eligible")
+            logger.error("ERROR: Aggressive Disembarkation: embarked unit is not eligible")
             return False
         if not self._goretrack_spend_cp(stratagem, target_unit=root):
             return False
@@ -508,11 +510,11 @@ class WorldEatersStratagemMixin:
                     special_rules.pop(key, None)
                 embarked_unit.special_rules = special_rules
         if not ok:
-            print("ERROR: Aggressive Disembarkation: disembark failed")
+            logger.error("ERROR: Aggressive Disembarkation: disembark failed")
             return False
 
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: AGGRESSIVE DISEMBARKATION: {getattr(embarked_unit, 'name', 'Unit')} disembarks within 6\".")
+        logger.info(f"INFO: AGGRESSIVE DISEMBARKATION: {getattr(embarked_unit, 'name', 'Unit')} disembarks within 6\".")
         return True
 
     def _use_goretrack_full_throttle_assault(self, stratagem: Any, **kwargs) -> bool:
@@ -526,7 +528,7 @@ class WorldEatersStratagemMixin:
         if transport_unit is None and len(candidates) == 1:
             transport_unit = candidates[0]
         if transport_unit is None:
-            print("ERROR: Full-Throttle Assault: no transport provided")
+            logger.error("ERROR: Full-Throttle Assault: no transport provided")
             return False
 
         root = self._goretrack_root(transport_unit)
@@ -536,21 +538,21 @@ class WorldEatersStratagemMixin:
             return False
         phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
         if str(phase_name).strip().lower() != "movement phase":
-            print("ERROR: Full-Throttle Assault: wrong phase")
+            logger.error("ERROR: Full-Throttle Assault: wrong phase")
             return False
         get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
         active_player = get_current_player() if callable(get_current_player) else None
         if active_player is not self.player:
-            print("ERROR: Full-Throttle Assault: not your turn")
+            logger.error("ERROR: Full-Throttle Assault: not your turn")
             return False
         if candidates and root not in candidates:
-            print("ERROR: Full-Throttle Assault: target was not selected")
+            logger.error("ERROR: Full-Throttle Assault: target was not selected")
             return False
         if not self._goretrack_owned_by_player(root, self.player):
-            print("ERROR: Full-Throttle Assault: transport is not yours")
+            logger.error("ERROR: Full-Throttle Assault: transport is not yours")
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: Full-Throttle Assault: target cannot be selected")
+            logger.error("ERROR: Full-Throttle Assault: target cannot be selected")
             return False
         if not self._is_unit_alive(root):
             return False
@@ -560,15 +562,15 @@ class WorldEatersStratagemMixin:
             return False
         has_keyword = getattr(root, "has_keyword", None)
         if not callable(has_keyword) or not bool(has_keyword("RHINO")):
-            print("ERROR: Full-Throttle Assault: target is not a RHINO")
+            logger.error("ERROR: Full-Throttle Assault: target is not a RHINO")
             return False
         if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
-            print("ERROR: Full-Throttle Assault: transport already moved this phase")
+            logger.error("ERROR: Full-Throttle Assault: transport already moved this phase")
             return False
 
         valid_rhinos = self._goretrack_rhino_candidates(require_not_moved=True, require_any_passengers=False)
         if root not in valid_rhinos:
-            print("ERROR: Full-Throttle Assault: transport is not eligible")
+            logger.error("ERROR: Full-Throttle Assault: transport is not eligible")
             return False
         if not self._goretrack_spend_cp(stratagem, target_unit=root):
             return False
@@ -586,7 +588,7 @@ class WorldEatersStratagemMixin:
         root.special_rules = special_rules
 
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: FULL-THROTTLE ASSAULT: {getattr(root, 'name', 'Unit')} disembarking units can charge after moving.")
+        logger.info(f"INFO: FULL-THROTTLE ASSAULT: {getattr(root, 'name', 'Unit')} disembarking units can charge after moving.")
         return True
 
     def _use_goretrack_smash_through(self, stratagem: Any, **kwargs) -> bool:
@@ -595,7 +597,7 @@ class WorldEatersStratagemMixin:
         if unit is None and len(candidates) == 1:
             unit = candidates[0]
         if unit is None:
-            print("ERROR: Smash Through: no target unit provided")
+            logger.error("ERROR: Smash Through: no target unit provided")
             return False
 
         root = self._goretrack_root(unit)
@@ -605,21 +607,21 @@ class WorldEatersStratagemMixin:
             return False
         phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
         if str(phase_name).strip().lower() != "movement phase":
-            print("ERROR: Smash Through: wrong phase")
+            logger.error("ERROR: Smash Through: wrong phase")
             return False
         get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
         active_player = get_current_player() if callable(get_current_player) else None
         if active_player is not self.player:
-            print("ERROR: Smash Through: not your turn")
+            logger.error("ERROR: Smash Through: not your turn")
             return False
         if candidates and root not in candidates:
-            print("ERROR: Smash Through: target was not selected")
+            logger.error("ERROR: Smash Through: target was not selected")
             return False
         if not self._goretrack_owned_by_player(root, self.player):
-            print("ERROR: Smash Through: target unit is not yours")
+            logger.error("ERROR: Smash Through: target unit is not yours")
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: Smash Through: target cannot be selected")
+            logger.error("ERROR: Smash Through: target cannot be selected")
             return False
         if not self._is_unit_alive(root):
             return False
@@ -632,15 +634,15 @@ class WorldEatersStratagemMixin:
         if callable(has_keyword):
             is_vehicle = is_vehicle or bool(has_keyword("VEHICLE"))
         if not is_vehicle:
-            print("ERROR: Smash Through: target is not a VEHICLE")
+            logger.error("ERROR: Smash Through: target is not a VEHICLE")
             return False
         if bool(getattr(getattr(root, "round_state", None), "moved_this_round", False)):
-            print("ERROR: Smash Through: target already moved this phase")
+            logger.error("ERROR: Smash Through: target already moved this phase")
             return False
 
         valid_vehicles = self._goretrack_vehicle_candidates(require_not_moved=True)
         if root not in valid_vehicles:
-            print("ERROR: Smash Through: target is not eligible")
+            logger.error("ERROR: Smash Through: target is not eligible")
             return False
         if not self._goretrack_spend_cp(stratagem, target_unit=root):
             return False
@@ -669,7 +671,7 @@ class WorldEatersStratagemMixin:
         root.special_rules = special_rules
 
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: SMASH THROUGH: {getattr(root, 'name', 'Unit')} can move through terrain this phase.")
+        logger.info(f"INFO: SMASH THROUGH: {getattr(root, 'name', 'Unit')} can move through terrain this phase.")
         return True
 
     def _use_goretrack_endless_pursuit_of_violence(self, stratagem: Any, **kwargs) -> bool:
@@ -684,7 +686,7 @@ class WorldEatersStratagemMixin:
                     transport_unit = reaction.get("transport_unit") or reaction.get("transport")
                 break
         if unit is None:
-            print("WARN: Endless Pursuit of Violence: no target unit provided")
+            logger.warning("WARN: Endless Pursuit of Violence: no target unit provided")
             return False
 
         root = self._goretrack_root(unit)
@@ -694,14 +696,14 @@ class WorldEatersStratagemMixin:
             return False
         phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
         if str(phase_name).strip().lower() != "fight phase":
-            print("WARN: Endless Pursuit of Violence: wrong phase")
+            logger.warning("WARN: Endless Pursuit of Violence: wrong phase")
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("WARN: Endless Pursuit of Violence: target cannot be selected")
+            logger.warning("WARN: Endless Pursuit of Violence: target cannot be selected")
             return False
         has_keyword = getattr(root, "has_keyword", None)
         if not callable(has_keyword) or not bool(has_keyword("INFANTRY")):
-            print("WARN: Endless Pursuit of Violence: target is not INFANTRY")
+            logger.warning("WARN: Endless Pursuit of Violence: target is not INFANTRY")
             return False
         if not self._is_unit_alive(root):
             return False
@@ -712,7 +714,7 @@ class WorldEatersStratagemMixin:
 
         game_map = getattr(self.game, "map", None)
         if game_map is None:
-            print("WARN: Endless Pursuit of Violence: no map context")
+            logger.warning("WARN: Endless Pursuit of Violence: no map context")
             return False
         get_enemy_units = getattr(game_map, "get_enemy_units", None)
         is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None)
@@ -733,7 +735,7 @@ class WorldEatersStratagemMixin:
             _, transports_by_unit = self._goretrack_endless_pursuit_candidates()
             transport_unit = (transports_by_unit.get(root) or [None])[0]
         if transport_unit is None:
-            print("WARN: Endless Pursuit of Violence: no transport provided")
+            logger.warning("WARN: Endless Pursuit of Violence: no transport provided")
             return False
         if not self._is_unit_alive(transport_unit):
             return False
@@ -755,14 +757,12 @@ class WorldEatersStratagemMixin:
         if not self._goretrack_spend_cp(stratagem, target_unit=root):
             return False
         if not bool(transport_unit.add_passenger(root, game_map=game_map)):
-            print("WARN: Endless Pursuit of Violence: embark failed")
+            logger.warning("WARN: Endless Pursuit of Violence: embark failed")
             return False
 
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(
-            "INFO: Endless Pursuit of Violence: "
-            f"{getattr(root, 'name', 'Unit')} embarked within {getattr(transport_unit, 'name', 'Transport')}."
-        )
+        logger.info("INFO: Endless Pursuit of Violence: "
+            f"{getattr(root, 'name', 'Unit')} embarked within {getattr(transport_unit, 'name', 'Transport')}.")
         return True
 
     def _use_goretrack_fury_unleashed(self, stratagem: Any, **kwargs) -> bool:
@@ -793,7 +793,7 @@ class WorldEatersStratagemMixin:
                         transport_unit = candidates[0]
                     break
         if transport_unit is None:
-            print("ERROR: Fury Unleashed: no transport provided")
+            logger.error("ERROR: Fury Unleashed: no transport provided")
             return False
 
         root = self._goretrack_root(transport_unit)
@@ -803,21 +803,21 @@ class WorldEatersStratagemMixin:
             return False
         phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
         if str(phase_name).strip().lower() != "shooting phase":
-            print("ERROR: Fury Unleashed: wrong phase")
+            logger.error("ERROR: Fury Unleashed: wrong phase")
             return False
         get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
         active_player = get_current_player() if callable(get_current_player) else None
         if active_player is self.player:
-            print("ERROR: Fury Unleashed: not opponent's Shooting phase")
+            logger.error("ERROR: Fury Unleashed: not opponent's Shooting phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: Fury Unleashed: target was not selected by the attacker")
+            logger.error("ERROR: Fury Unleashed: target was not selected by the attacker")
             return False
         if not self._goretrack_owned_by_player(root, self.player):
-            print("ERROR: Fury Unleashed: transport is not yours")
+            logger.error("ERROR: Fury Unleashed: transport is not yours")
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: Fury Unleashed: target cannot be selected")
+            logger.error("ERROR: Fury Unleashed: target cannot be selected")
             return False
         if not self._is_unit_alive(root):
             return False
@@ -827,14 +827,14 @@ class WorldEatersStratagemMixin:
             return False
         has_keyword = getattr(root, "has_keyword", None)
         if not callable(has_keyword) or not bool(has_keyword("RHINO")):
-            print("ERROR: Fury Unleashed: target is not a RHINO")
+            logger.error("ERROR: Fury Unleashed: target is not a RHINO")
             return False
 
         special_rules = getattr(root, "special_rules", None)
         if isinstance(special_rules, dict):
             phase_key = self._goretrack_phase_key()
             if str(special_rules.get("goretrack_unrelenting_advance_phase_key", "") or "") == phase_key:
-                print("ERROR: Fury Unleashed: unit already targeted by Unrelenting Advance this phase")
+                logger.error("ERROR: Fury Unleashed: unit already targeted by Unrelenting Advance this phase")
                 return False
 
         passengers = self._goretrack_embarked_units(
@@ -843,19 +843,19 @@ class WorldEatersStratagemMixin:
             require_khorne_berzerkers=True,
         )
         if not passengers:
-            print("ERROR: Fury Unleashed: no embarked KHORNE BERZERKERS unit")
+            logger.error("ERROR: Fury Unleashed: no embarked KHORNE BERZERKERS unit")
             return False
         if embarked_unit is None:
             if len(passengers) == 1:
                 embarked_unit = passengers[0]
             else:
-                print("ERROR: Fury Unleashed: no embarked unit selected")
+                logger.error("ERROR: Fury Unleashed: no embarked unit selected")
                 return False
         if embarked_unit not in passengers:
-            print("ERROR: Fury Unleashed: embarked unit is not eligible")
+            logger.error("ERROR: Fury Unleashed: embarked unit is not eligible")
             return False
         if enemy_unit is not None and self._goretrack_owned_by_player(enemy_unit, self.player):
-            print("ERROR: Fury Unleashed: attacker is not enemy")
+            logger.error("ERROR: Fury Unleashed: attacker is not enemy")
             return False
         if not self._goretrack_spend_cp(stratagem, target_unit=root):
             return False
@@ -871,7 +871,7 @@ class WorldEatersStratagemMixin:
             )
         )
         if not ok:
-            print("ERROR: Fury Unleashed: disembark failed")
+            logger.error("ERROR: Fury Unleashed: disembark failed")
             return False
 
         can_blood_surge = getattr(embarked_unit, "can_blood_surge", None)
@@ -897,7 +897,7 @@ class WorldEatersStratagemMixin:
         root.special_rules = special_rules
 
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: FURY UNLEASHED: {getattr(embarked_unit, 'name', 'Unit')} disembarks and Blood Surges.")
+        logger.info(f"INFO: FURY UNLEASHED: {getattr(embarked_unit, 'name', 'Unit')} disembarks and Blood Surges.")
         return True
 
     def _use_goretrack_unrelenting_advance(self, stratagem: Any, **kwargs) -> bool:
@@ -918,7 +918,7 @@ class WorldEatersStratagemMixin:
                         unit = candidates[0]
                     break
         if unit is None:
-            print("ERROR: UNRELENTING ADVANCE: no target unit provided")
+            logger.error("ERROR: UNRELENTING ADVANCE: no target unit provided")
             return False
 
         root = self._goretrack_root(unit)
@@ -928,21 +928,21 @@ class WorldEatersStratagemMixin:
             return False
         phase_name = kwargs.get("phase_name") or self._current_phase_name or ""
         if str(phase_name).strip().lower() != "shooting phase":
-            print("ERROR: UNRELENTING ADVANCE: wrong phase")
+            logger.error("ERROR: UNRELENTING ADVANCE: wrong phase")
             return False
         get_current_player = getattr(self.game, "get_current_player", None) if self.game is not None else None
         active_player = get_current_player() if callable(get_current_player) else None
         if active_player is self.player:
-            print("ERROR: UNRELENTING ADVANCE: not opponent's Shooting phase")
+            logger.error("ERROR: UNRELENTING ADVANCE: not opponent's Shooting phase")
             return False
         if candidates and root not in candidates:
-            print("ERROR: UNRELENTING ADVANCE: target was not selected by the attacker")
+            logger.error("ERROR: UNRELENTING ADVANCE: target was not selected by the attacker")
             return False
         if not self._goretrack_owned_by_player(root, self.player):
-            print("ERROR: UNRELENTING ADVANCE: target unit is not yours")
+            logger.error("ERROR: UNRELENTING ADVANCE: target unit is not yours")
             return False
         if self._unit_cannot_be_target_of_stratagem(root):
-            print("ERROR: UNRELENTING ADVANCE: target cannot be selected")
+            logger.error("ERROR: UNRELENTING ADVANCE: target cannot be selected")
             return False
         if not self._is_unit_alive(root):
             return False
@@ -955,22 +955,22 @@ class WorldEatersStratagemMixin:
         if callable(has_keyword):
             is_vehicle = is_vehicle or bool(has_keyword("VEHICLE"))
         if not is_vehicle:
-            print("ERROR: UNRELENTING ADVANCE: target is not a VEHICLE")
+            logger.error("ERROR: UNRELENTING ADVANCE: target is not a VEHICLE")
             return False
 
         special_rules = getattr(root, "special_rules", None)
         if isinstance(special_rules, dict):
             phase_key = self._goretrack_phase_key()
             if str(special_rules.get("goretrack_fury_unleashed_phase_key", "") or "") == phase_key:
-                print("ERROR: UNRELENTING ADVANCE: unit already targeted by Fury Unleashed this phase")
+                logger.error("ERROR: UNRELENTING ADVANCE: unit already targeted by Fury Unleashed this phase")
                 return False
         if enemy_unit is not None and self._goretrack_owned_by_player(enemy_unit, self.player):
-            print("ERROR: UNRELENTING ADVANCE: attacker is not enemy")
+            logger.error("ERROR: UNRELENTING ADVANCE: attacker is not enemy")
             return False
 
         game_map = getattr(self.game, "map", None)
         if game_map is None:
-            print("ERROR: UNRELENTING ADVANCE: no map context")
+            logger.error("ERROR: UNRELENTING ADVANCE: no map context")
             return False
         get_enemy_units = getattr(game_map, "get_enemy_units", None)
         is_within_engagement_range = getattr(game_map, "is_within_engagement_range", None)
@@ -982,7 +982,7 @@ class WorldEatersStratagemMixin:
                 if not bool(getattr(enemy, "deployed", True)):
                     continue
                 if is_within_engagement_range(root, enemy):
-                    print("ERROR: UNRELENTING ADVANCE: unit is in Engagement Range")
+                    logger.error("ERROR: UNRELENTING ADVANCE: unit is in Engagement Range")
                     return False
 
         if not self._goretrack_spend_cp(stratagem, target_unit=root):
@@ -1005,5 +1005,5 @@ class WorldEatersStratagemMixin:
         root.special_rules = special_rules
 
         self._goretrack_finalize_use(stratagem, dequeue=kwargs.get("dequeue") is True)
-        print(f"INFO: UNRELENTING ADVANCE: {getattr(root, 'name', 'Unit')} can move up to 6\".")
+        logger.info(f"INFO: UNRELENTING ADVANCE: {getattr(root, 'name', 'Unit')} can move up to 6\".")
         return True

@@ -152,7 +152,7 @@ class Unit(
         try:
             self.unit_composition = self._parse_unit_composition(datasheet.datasheets_unit_composition)
         except Exception as e:
-            print(f"{self.name} - NEED TO HANDLE - ERROR PARSING UNIT COMPOSITION: {e}")
+            logger.exception(f"{self.name} - NEED TO HANDLE - ERROR PARSING UNIT COMPOSITION: {e}")
             self.unit_composition = {}
             return
         try:

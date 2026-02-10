@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class PositioningMixin:
@@ -2856,7 +2858,7 @@ class PositioningMixin:
         ])
         repulsors.append(top_edge)
 
-        print(f"DEBUG: _get_reduced_boundary_repulsors returning {len(repulsors)} repulsors for map size {game_map.width}x{game_map.height}")
+        logger.debug(f"DEBUG: _get_reduced_boundary_repulsors returning {len(repulsors)} repulsors for map size {game_map.width}x{game_map.height}")
 
         return repulsors
 
@@ -2947,20 +2949,20 @@ class PositioningMixin:
             self.models[0].set_location(start_x, start_y, z, 0.0)
             return [(start_x, start_y, z, 0.0)]
 
-        print(f"DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
-        print(f"DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
-        print(f"DEBUG: avoid_friendly_units: {avoid_friendly_units}")
-        print(f"DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
+        logger.debug(f"DEBUG: calculate_model_positions for {self.name} ({len(self.models)} models)")
+        logger.debug(f"DEBUG: start position: ({start_x:.1f}, {start_y:.1f})")
+        logger.debug(f"DEBUG: avoid_friendly_units: {avoid_friendly_units}")
+        logger.debug(f"DEBUG: boundary_repulsors: {len(boundary_repulsors) if boundary_repulsors else 0}")
 
         # Debug boundary repulsors
         if len(boundary_repulsors) == 0:
-            print(f"DEBUG: No boundary repulsors provided - this might cause formation finding issues")
+            logger.debug(f"DEBUG: No boundary repulsors provided - this might cause formation finding issues")
         else:
-            print(f"DEBUG: Boundary repulsors provided: {[type(br).__name__ for br in boundary_repulsors]}")
+            logger.debug(f"DEBUG: Boundary repulsors provided: {[type(br).__name__ for br in boundary_repulsors]}")
 
         # FAST PATH FOR SINGLE-MODEL UNITS (avoid terrain & enemy models)
         if len(self.models) == 1:
-            print(f"DEBUG: Using single-model fast path")
+            logger.debug(f"DEBUG: Using single-model fast path")
             # initial drop
             z = game_map.get_height_at_point(start_x, start_y)
             f = self.calculate_strategic_facing(start_x, start_y, game_map)
@@ -3007,15 +3009,15 @@ class PositioningMixin:
                     if not any(poly.intersects(b) for b in hits):
                         break
                 except TypeError as e:
-                    print(f"DEBUG: TypeError in single-model intersects check: {e}")
-                    print(f"DEBUG: poly type: {type(poly)}")
-                    print(f"DEBUG: hits count: {len(hits)}")
+                    logger.debug(f"DEBUG: TypeError in single-model intersects check: {e}")
+                    logger.debug(f"DEBUG: poly type: {type(poly)}")
+                    logger.debug(f"DEBUG: hits count: {len(hits)}")
                     for i, hit in enumerate(hits):
-                        print(f"DEBUG: hit {i}: {type(hit)} - {hit}")
+                        logger.debug(f"DEBUG: hit {i}: {type(hit)} - {hit}")
                         if hasattr(hit, 'geom_type'):
-                            print(f"DEBUG:   geom_type: {hit.geom_type}")
+                            logger.debug(f"DEBUG:   geom_type: {hit.geom_type}")
                         if hasattr(hit, 'is_valid'):
-                            print(f"DEBUG:   is_valid: {hit.is_valid}")
+                            logger.debug(f"DEBUG:   is_valid: {hit.is_valid}")
                     raise
 
                 # repel vector from first blocker
@@ -3029,15 +3031,15 @@ class PositioningMixin:
 
             # commit and return
             m.set_location(*pos)
-            print(f"DEBUG: Single-model positioning successful")
+            logger.debug(f"DEBUG: Single-model positioning successful")
             return [(pos[0], pos[1], pos[2], pos[3])]
 
-        print(f"DEBUG: Using multi-model formation templates")
+        logger.debug(f"DEBUG: Using multi-model formation templates")
         # SLOW PATH FOR MULTI-MODEL UNITS
         # 1) Build list of blocking models (enemies + optionally friendlies)
         enemy_models = game_map.get_enemy_models(self)
         blocking_models = enemy_models
-        print(f"DEBUG: Found {len(enemy_models)} enemy models")
+        logger.debug(f"DEBUG: Found {len(enemy_models)} enemy models")
         
         if avoid_friendly_units:
             # Add friendly models from other units (excluding self)
@@ -3046,9 +3048,9 @@ class PositioningMixin:
                 if unit != self:  # Don't include models from the unit being positioned
                     friendly_models.extend(unit.models)
             blocking_models.extend(friendly_models)
-            print(f"DEBUG: Added {len(friendly_models)} friendly models from other units")
+            logger.debug(f"DEBUG: Added {len(friendly_models)} friendly models from other units")
         
-        print(f"DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
+        logger.debug(f"DEBUG: Total blocking models: {len(blocking_models)} (enemies: {len(enemy_models)}, friendlies: {len(blocking_models) - len(enemy_models)})")
         
         # 2) Use provided boundary repulsors or default to empty list
         if boundary_repulsors is None:
@@ -3069,17 +3071,17 @@ class PositioningMixin:
         # Models can be in base-to-base contact (spacing = 2 * radius) but we allow slightly tighter
         base_radius = self.models[0].model_base.radius[0]
         spacing = 2 * base_radius * 0.8  # 80% of full spacing allows for tighter formations
-        print(f"DEBUG: Computed spacing: {spacing:.2f} inches (base radius: {base_radius:.2f})")
+        logger.debug(f"DEBUG: Computed spacing: {spacing:.2f} inches (base radius: {base_radius:.2f})")
 
         # 5) Build formation templates
         templates = build_formation_templates(len(self.models), spacing)
-        print(f"DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
+        logger.debug(f"DEBUG: Generated {len(templates)} formation templates: {list(templates.keys())}")
 
         origin_2d = np.array((start_x, start_y), float)
 
         # 6) Try each template
         for template_name, offsets in templates.items():
-            print(f"DEBUG: Trying template '{template_name}' with {len(offsets)} positions")
+            logger.debug(f"DEBUG: Trying template '{template_name}' with {len(offsets)} positions")
             
             # world positions in 2D & then lift to 3D + facing
             world = []
@@ -3116,7 +3118,7 @@ class PositioningMixin:
                         break
             
             if model_collision_detected:
-                print(f"DEBUG: Template '{template_name}' rejected - model base overlap detected")
+                logger.debug(f"DEBUG: Template '{template_name}' rejected - model base overlap detected")
                 continue
 
             # Debug: Check if any models are outside battlefield bounds
@@ -3126,10 +3128,10 @@ class PositioningMixin:
                     models_outside_bounds += 1
 
             if models_outside_bounds > 0:
-                print(f"DEBUG: Template '{template_name}' rejected - {models_outside_bounds} models outside battlefield bounds (map: {game_map.width}x{game_map.height})")
+                logger.debug(f"DEBUG: Template '{template_name}' rejected - {models_outside_bounds} models outside battlefield bounds (map: {game_map.width}x{game_map.height})")
                 continue
 
-            print(f"DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
+            logger.debug(f"DEBUG: Template '{template_name}' passed footprint check, starting relaxation")
 
             # Relaxation loop (terrain + self-collisions)
             for relax_iter in range(relax_iters):
@@ -3155,15 +3157,15 @@ class PositioningMixin:
                     try:
                         intersects_any = any(poly_i.intersects(b) for b in hits)
                     except TypeError as e:
-                        print(f"DEBUG: TypeError in multi-model intersects check: {e}")
-                        print(f"DEBUG: poly_i type: {type(poly_i)}")
-                        print(f"DEBUG: hits count: {len(hits)}")
+                        logger.debug(f"DEBUG: TypeError in multi-model intersects check: {e}")
+                        logger.debug(f"DEBUG: poly_i type: {type(poly_i)}")
+                        logger.debug(f"DEBUG: hits count: {len(hits)}")
                         for idx, hit in enumerate(hits):
-                            print(f"DEBUG: hit {idx}: {type(hit)} - {hit}")
+                            logger.debug(f"DEBUG: hit {idx}: {type(hit)} - {hit}")
                             if hasattr(hit, 'geom_type'):
-                                print(f"DEBUG:   geom_type: {hit.geom_type}")
+                                logger.debug(f"DEBUG:   geom_type: {hit.geom_type}")
                             if hasattr(hit, 'is_valid'):
-                                print(f"DEBUG:   is_valid: {hit.is_valid}")
+                                logger.debug(f"DEBUG:   is_valid: {hit.is_valid}")
                         raise
                     
                     if intersects_any:
@@ -3178,10 +3180,10 @@ class PositioningMixin:
                         collided = True
                         
                 if not collided:
-                    print(f"DEBUG: Template '{template_name}' completed relaxation after {relax_iter + 1} iterations")
+                    logger.debug(f"DEBUG: Template '{template_name}' completed relaxation after {relax_iter + 1} iterations")
                     break
                 elif relax_iter == relax_iters - 1:
-                    print(f"DEBUG: Template '{template_name}' still had collisions after {relax_iters} relaxation iterations")
+                    logger.debug(f"DEBUG: Template '{template_name}' still had collisions after {relax_iters} relaxation iterations")
 
             # after you've cleared collisions...
             attract_iters = 5
@@ -3226,7 +3228,7 @@ class PositioningMixin:
                 if not ok:
                     break
             if not ok:
-                print(f"DEBUG: Template '{template_name}' rejected - final overlap check failed")
+                logger.debug(f"DEBUG: Template '{template_name}' rejected - final overlap check failed")
                 continue
 
             # Commit & coherency-graph check
@@ -3234,16 +3236,16 @@ class PositioningMixin:
                 m.set_location(*pos)
                 
             coherency_ok = self.check_coherency_graph()
-            print(f"DEBUG: Template '{template_name}' coherency check: {' PASSED' if coherency_ok else ' FAILED'}")
+            logger.debug(f"DEBUG: Template '{template_name}' coherency check: {' PASSED' if coherency_ok else ' FAILED'}")
             
             if coherency_ok:
-                print(f"DEBUG: Successfully found formation using template '{template_name}'")
+                logger.debug(f"DEBUG: Successfully found formation using template '{template_name}'")
                 return [(x, y, z, f) for x, y, z, f in world]
             else:
-                print(f"DEBUG: Template '{template_name}' rejected - coherency check failed")
+                logger.debug(f"DEBUG: Template '{template_name}' rejected - coherency check failed")
 
         # 7) If none fit, raise or fallback
-        print(f"DEBUG: All {len(templates)} templates failed - no valid formation found")
+        logger.debug(f"DEBUG: All {len(templates)} templates failed - no valid formation found")
         # No valid formation found - return None instead of raising exception
         # This allows auto-deployment to try other positions
         return None
@@ -4341,7 +4343,7 @@ class PositioningMixin:
                             count = max(count, total)
                             # Cache roll detail for UI/logging (generic cache)
                             setattr(self, '_redeploy_d_roll', {'expr': expr, 'total': total, 'rolls': rolls})
-                            print(f"{self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
+                            logger.info(f"{self.name} Redeploy {expr} roll: {total} (rolled {rolls})")
                         except Exception:
                             # Fallback to minimal 1 if dice utilities unavailable
                             count = max(count, 1)

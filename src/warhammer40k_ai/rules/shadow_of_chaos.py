@@ -6,6 +6,8 @@ from typing import Optional
 
 from ..utility.ability_support import ABILITY_SHADOW_OF_CHAOS, army_has_ability_id
 from ..utility.dice import get_roll
+import logging
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -643,7 +645,7 @@ class ShadowOfChaosManager:
         if cls._unit_is_battleline(unit):
             restored = cls._return_destroyed_models(unit, amount)
         if restored > 0:
-            print(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} returns {restored} model(s).")
+            logger.info(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} returns {restored} model(s).")
             return
 
         damaged_model = None
@@ -673,7 +675,7 @@ class ShadowOfChaosManager:
                 damaged_model.wounds = min(base_wounds, int(getattr(damaged_model, "wounds", 0) or 0) + amount)
             except Exception:
                 pass
-        print(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} regains up to {amount} lost wounds.")
+        logger.info(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} regains up to {amount} lost wounds.")
 
     @classmethod
     def _return_destroyed_models(cls, unit, amount: int) -> int:
@@ -747,4 +749,4 @@ class ShadowOfChaosManager:
                         break
         except Exception:
             return
-        print(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} suffers mortal wounds from Daemonic Terror.")
+        logger.error(f"Shadow of Chaos: {getattr(unit, 'name', 'unit')} suffers mortal wounds from Daemonic Terror.")

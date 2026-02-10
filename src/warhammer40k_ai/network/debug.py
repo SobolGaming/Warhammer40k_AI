@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 from typing import Any
+import logging
+logger = logging.getLogger(__name__)
 
 _DEBUG_ENV = "W40K_NETWORK_LOG"
 
@@ -27,6 +29,6 @@ def log_network(event: str, **fields: Any) -> None:
             continue
         parts.append(f"{key}={_shorten(val)}")
     if parts:
-        print(f"[network] {event} " + " ".join(parts))
+        logger.info(f"[network] {event} " + " ".join(parts))
     else:
-        print(f"[network] {event}")
+        logger.info(f"[network] {event}")

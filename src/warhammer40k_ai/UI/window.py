@@ -5,6 +5,8 @@ import sys
 from typing import Tuple
 
 import pygame
+import logging
+logger = logging.getLogger(__name__)
 
 
 def _desired_window_size() -> Tuple[int, int]:
@@ -80,24 +82,20 @@ def create_pygame_screen(*, title: str = "Warhammer 40,000 Battlefield") -> pyga
     if os.environ.get("WH_UI_DISPLAY_DEBUG", "").strip():
         try:
             info = pygame.display.Info()
-            print(
-                f"Display debug: desired={desired_width}x{desired_height} "
+            logger.debug(f"Display debug: desired={desired_width}x{desired_height} "
                 f"info={int(info.current_w)}x{int(info.current_h)} "
                 f"chosen_display={monitor_width}x{monitor_height} "
                 f"usable={usable_width}x{usable_height} "
-                f"scale={scale_factor:.2f}"
-            )
+                f"scale={scale_factor:.2f}")
         except Exception:
             pass
 
     if scale_factor < 1.0:
         actual_width = int(desired_width * scale_factor)
         actual_height = int(desired_height * scale_factor)
-        print(
-            f"Scaling window to fit display: {desired_width}x{desired_height} -> "
-            f"{actual_width}x{actual_height} (scale: {scale_factor:.2f})"
-        )
+        logger.info(f"Scaling window to fit display: {desired_width}x{desired_height} -> "
+            f"{actual_width}x{actual_height} (scale: {scale_factor:.2f})")
         screen = pygame.display.set_mode((actual_width, actual_height), pygame.RESIZABLE)
     else:
-        print(f"Using full size window: {desired_width}x{desired_height}")
+        logger.info(f"Using full size window: {desired_width}x{desired_height}")
     return screen

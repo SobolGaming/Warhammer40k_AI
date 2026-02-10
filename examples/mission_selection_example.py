@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Example demonstrating the Mission Selection Dialog for Chapter Approved 2025/2026.
 This shows how to integrate the dialog into the game setup process.
@@ -7,6 +7,8 @@ This shows how to integrate the dialog into the game setup process.
 import sys
 import os
 import pygame
+import logging
+logger = logging.getLogger(__name__)
 
 # Add the src directory to the Python path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'src'))
@@ -38,15 +40,15 @@ def main():
     running = True
     dialog_result = None
     
-    print("ðŸŽ¯ Mission Selection Dialog Example")
-    print("=" * 50)
-    print("Instructions:")
-    print("- Click on mission combinations to select them")
-    print("- Click on terrain layout numbers to choose layout")
-    print("- Click 'Pick Random' or press 'R' for random selection")
-    print("- Use mouse wheel or arrow keys to scroll")
-    print("- Press ESC to cancel or ENTER to confirm")
-    print("- Click Cancel/Confirm buttons to close dialog")
+    logger.info("ðŸŽ¯ Mission Selection Dialog Example")
+    logger.info("=" * 50)
+    logger.info("Instructions:")
+    logger.info("- Click on mission combinations to select them")
+    logger.info("- Click on terrain layout numbers to choose layout")
+    logger.info("- Click 'Pick Random' or press 'R' for random selection")
+    logger.info("- Use mouse wheel or arrow keys to scroll")
+    logger.info("- Press ESC to cancel or ENTER to confirm")
+    logger.info("- Click Cancel/Confirm buttons to close dialog")
     
     while running and dialog_result is None:
         # Handle events
@@ -81,11 +83,11 @@ def main():
             combination = dialog_result["combination"]
             layout = dialog_result["layout"]
             
-            print(f"\nâœ… Mission Selected:")
-            print(f"   ID: {combination['id']}")
-            print(f"   Primary Mission: {combination['primary']}")
-            print(f"   Deployment: {combination['deployment']}")
-            print(f"   Terrain Layout: {layout}")
+            logger.info(f"\nâœ… Mission Selected:")
+            logger.info(f"   ID: {combination['id']}")
+            logger.info(f"   Primary Mission: {combination['primary']}")
+            logger.info(f"   Deployment: {combination['deployment']}")
+            logger.info(f"   Terrain Layout: {layout}")
             
             # Apply the selection to the game
             game.selected_mission_info = {
@@ -94,33 +96,34 @@ def main():
                 "layout": layout
             }
             
-            print(f"\nðŸŽ® Setting up battlefield with selected mission...")
+            logger.info(f"\nðŸŽ® Setting up battlefield with selected mission...")
             
             # Execute the mission setup phases
             try:
                 game.execute_select_mission_objectives_phase()
                 game.execute_create_battlefield_phase()
-                print(f"âœ… Battlefield setup complete!")
+                logger.info(f"âœ… Battlefield setup complete!")
                 
                 # Show mission summary
-                print(f"\nðŸ“‹ Mission Summary:")
-                print(f"   Battlefield: {game.get_battlefield_size()}")
-                print(f"   Deployment zones: {len(game.deployment_zones)}")
-                print(f"   Objectives: {len(game.objectives)}")
+                logger.info(f"\nðŸ“‹ Mission Summary:")
+                logger.info(f"   Battlefield: {game.get_battlefield_size()}")
+                logger.info(f"   Deployment zones: {len(game.deployment_zones)}")
+                logger.info(f"   Objectives: {len(game.objectives)}")
                 
             except Exception as e:
-                print(f"âŒ Error setting up battlefield: {e}")
+                logger.exception(f"âŒ Error setting up battlefield: {e}")
                 import traceback
                 traceback.print_exc()
                 
         else:
-            print("\nâŒ Mission selection cancelled")
+            logger.info("\nâŒ Mission selection cancelled")
     else:
-        print("\nâŒ Dialog closed without selection")
+        logger.info("\nâŒ Dialog closed without selection")
     
     pygame.quit()
-    print("\nðŸŽ‰ Example completed!")
+    logger.info("\nðŸŽ‰ Example completed!")
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
     main()

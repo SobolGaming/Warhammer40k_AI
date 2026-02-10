@@ -9,6 +9,7 @@ import argparse
 import logging
 import os
 from typing import Tuple
+logger = logging.getLogger(__name__)
 
 # Suppress pygame initialization messages before importing pygame
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
@@ -101,7 +102,7 @@ def execute_setup_phases(game: Game, player_configs: dict, ui_interface) -> None
 def execute_human_turn(game: Game, player: Player, ui_interface=None) -> None:
     """Execute a local player's turn."""
     if game.is_fight_phase():
-        print(f"{player.name} fight phase - use UI to select units and fight")
+        logger.info(f"{player.name} fight phase - use UI to select units and fight")
         return
     if game.is_command_phase():
         game.start_command_phase()
@@ -170,10 +171,10 @@ def run_game_loop(player_configs: dict) -> None:
                         if game_view:
                             if current_phase.name == "MUSTER_ARMIES":
                                 game_view.refresh_roster_panes()
-                                print("Roster panes updated with army units")
+                                logger.info("Roster panes updated with army units")
                             elif current_phase.name == "DETERMINE_ATTACKER_AND_DEFENDER":
                                 game_view.update_roster_pane_titles()
-                                print("Roster pane titles updated with roles")
+                                logger.info("Roster pane titles updated with roles")
 
                         should_advance = True
                         if current_phase.name == "DEPLOY_ARMIES":
@@ -188,11 +189,11 @@ def run_game_loop(player_configs: dict) -> None:
                                     ]
                                     if undeployed_units:
                                         local_players_deploying = True
-                                        print(f"{player.name} still has {len(undeployed_units)} units to deploy")
+                                        logger.info(f"{player.name} still has {len(undeployed_units)} units to deploy")
                                         break
                             if local_players_deploying:
                                 should_advance = False
-                                print("Press SPACE again after all units are deployed")
+                                logger.info("Press SPACE again after all units are deployed")
 
                         if getattr(game, "waiting_for_deployment_input", False):
                             should_advance = False
@@ -200,7 +201,7 @@ def run_game_loop(player_configs: dict) -> None:
                         if should_advance:
                             setup_complete = game.advance_setup_phase()
                             if setup_complete:
-                                print("Setup complete! Battle begins!")
+                                logger.info("Setup complete! Battle begins!")
                     elif manual_phases:
                         current_player = game.get_current_player()
                         if game.is_command_phase():
@@ -224,7 +225,7 @@ def run_game_loop(player_configs: dict) -> None:
             if game_view:
                 game_view.refresh_roster_panes()
                 game_view.update_roster_pane_titles()
-                print("UI updated after automatic setup completion")
+                logger.info("UI updated after automatic setup completion")
 
         if game_view:
             game_view.draw()
@@ -264,18 +265,18 @@ def main() -> None:
         "manual_phases": args.manual_phases,
     }
 
-    print("Game Configuration:")
-    print(f"   Player 1: {player_configs['player1_army_file']}")
-    print(f"   Player 2: {player_configs['player2_army_file']}")
+    logger.info("Game Configuration:")
+    logger.info(f"   Player 1: {player_configs['player1_army_file']}")
+    logger.info(f"   Player 2: {player_configs['player2_army_file']}")
     if args.manual_phases:
-        print("   Manual Phases: ENABLED")
+        logger.info("   Manual Phases: ENABLED")
 
     try:
         run_game_loop(player_configs)
     except KeyboardInterrupt:
-        print("\nGame interrupted by user.")
+        logger.info("\nGame interrupted by user.")
     except Exception as exc:
-        print(f"An error occurred: {exc}")
+        logger.exception(f"An error occurred: {exc}")
         import traceback
 
         traceback.print_exc()

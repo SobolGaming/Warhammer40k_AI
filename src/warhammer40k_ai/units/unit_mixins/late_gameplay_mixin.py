@@ -1,6 +1,8 @@
 """Auto-extracted Unit mixin methods from unit.py."""
 
 from ._common import *
+import logging
+logger = logging.getLogger(__name__)
 
 
 class LateGameplayMixin:
@@ -1199,7 +1201,7 @@ class LateGameplayMixin:
 
         label = reason or "mid-battle ability"
         try:
-            print(f"{root.name} placed into Strategic Reserves ({label})")
+            logger.info(f"{root.name} placed into Strategic Reserves ({label})")
         except Exception:
             pass
         return True
@@ -1685,15 +1687,15 @@ class LateGameplayMixin:
         try:
             sr = getattr(self, "special_rules", None)
             if isinstance(sr, dict) and sr.get("bearer_unit_auto_pass_desperate_escape"):
-                print(f"{self.name} automatically passes Desperate Escape tests.")
+                logger.info(f"{self.name} automatically passes Desperate Escape tests.")
                 return 0
         except Exception:
             pass
         note = str(reason or "").strip()
         if note:
-            print(f"{self.name} {note} - taking Desperate Escape Test!")
+            logger.info(f"{self.name} {note} - taking Desperate Escape Test!")
         else:
-            print(f"{self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
+            logger.info(f"{self.name} is Battle-Shocked and falling back - taking Desperate Escape Test!")
         
         models_to_test = self.models.copy()  # Copy to avoid modifying list while iterating
         models_destroyed = 0
@@ -1705,22 +1707,22 @@ class LateGameplayMixin:
             if final_roll <= 2:
                 # Model is destroyed
                 if mod:
-                    print(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! ")
+                    logger.info(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - DESTROYED! ")
                 else:
-                    print(f"Model {i+1}: Rolled {roll} - DESTROYED! ")
+                    logger.info(f"Model {i+1}: Rolled {roll} - DESTROYED! ")
                 self.remove_model(model, fleed=True, game_map=game_map)  # Mark as fled, not killed in combat
                 models_destroyed += 1
             else:
                 # Model survives
                 if mod:
-                    print(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ")
+                    logger.info(f"Model {i+1}: Rolled {roll} ({mod:+d} -> {final_roll}) - Survives ")
                 else:
-                    print(f"Model {i+1}: Rolled {roll} - Survives ")
+                    logger.info(f"Model {i+1}: Rolled {roll} - Survives ")
         
         if models_destroyed > 0:
-            print(f"Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
+            logger.info(f"Desperate Escape Test complete: {models_destroyed} model(s) destroyed, {len(self.models)} remain")
         else:
-            print(f"Desperate Escape Test complete: All models survived!")
+            logger.info(f"Desperate Escape Test complete: All models survived!")
         
         return models_destroyed
 

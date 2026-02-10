@@ -6,6 +6,8 @@ from pathlib import Path
 
 from .client import NetworkClient
 from .server import NetworkServer
+import logging
+logger = logging.getLogger(__name__)
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -57,7 +59,7 @@ async def _run_server(args: argparse.Namespace) -> None:
         ping_timeout=args.ping_timeout,
     )
     await server.start()
-    print(f"Network server listening on {server.transport.host}:{server.transport.port}")
+    logger.info(f"Network server listening on {server.transport.host}:{server.transport.port}")
     try:
         await server.run()
     finally:
@@ -84,14 +86,14 @@ async def _run_client(args: argparse.Namespace) -> None:
     hello_msg = await _wait_for_control(client, "hello")
     hello_payload = hello_msg.get("payload", {})
     if not hello_payload.get("ok"):
-        print(f"Version mismatch: {hello_payload.get('errors', [])}")
+        logger.info(f"Version mismatch: {hello_payload.get('errors', [])}")
         await client.close()
         return
     await client.send_auth(join_code=args.join_code, reconnect_token=args.reconnect_token)
     auth_msg = await _wait_for_control(client, "auth")
     payload = auth_msg.get("payload", {})
     if not payload.get("ok"):
-        print(f"Auth failed: {payload.get('errors', [])}")
+        logger.error(f"Auth failed: {payload.get('errors', [])}")
         await client.close()
         return
     if args.role:
@@ -105,12 +107,12 @@ async def _run_client(args: argparse.Namespace) -> None:
         await client.send_ready(True)
         await _wait_for_control(client, "ready")
 
-    print("Connected. Listening for updates...")
+    logger.info("Connected. Listening for updates...")
     try:
         while True:
             event = await client.next_message()
             client.handle_message(event)
-            print(f"[{event.category}] {event.message_type}")
+            logger.info(f"[{event.category}] {event.message_type}")
     except asyncio.CancelledError:
         raise
     finally:
